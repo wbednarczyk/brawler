@@ -13,7 +13,6 @@ const controlsCss = readStyle("controls.css");
 const eventsCss = readStyle("screens/events.css");
 const inboxCss = readStyle("screens/inbox.css");
 const layoutCss = readStyle("layout.css");
-const notebooksCss = readStyle("screens/notebooks.css");
 const researchCss = [
   readStyle("screens/research-layout.css"),
   readStyle("screens/research-components.css"),
@@ -160,27 +159,6 @@ describe("layout scroll contracts", () => {
     expect(shellCss).not.toContain(".sidebar-resizer");
     // Inbox splits feed/detail side by side, 50/50 by default (percentage track).
     expect(contentGridRule).toContain("var(--detail-pane-width, 50%)");
-  });
-
-  it("keeps Notebooks subpanels independently scrollable on desktop", () => {
-    const screenRule = ruleFor(notebooksCss, ".notebooks-screen");
-    const companiesRule = ruleFor(notebooksCss, ".notebooks-company-nav");
-    const mainRule = ruleFor(notebooksCss, ".notebooks-main");
-    const notesRule = ruleFor(notebooksCss, ".notebooks-notes-list");
-    const detailRule = ruleFor(notebooksCss, ".notebooks-detail-pane");
-    const responsiveNotebooksRule = ruleFor(responsiveCss, ".notebooks-screen");
-
-    expect(screenRule).toContain("min-height: 0");
-    expect(screenRule).toContain("overflow: hidden");
-    expect(companiesRule).toContain("min-height: 0");
-    expect(companiesRule).toContain("overflow: auto");
-    expect(mainRule).toContain("grid-template-rows: auto auto auto minmax(0, 1fr)");
-    expect(mainRule).toContain("overflow: hidden");
-    expect(notesRule).toContain("min-height: 0");
-    expect(notesRule).toContain("overflow: auto");
-    expect(detailRule).toContain("min-height: 0");
-    expect(detailRule).toContain("overflow: auto");
-    expect(responsiveNotebooksRule).toContain("overflow: auto");
   });
 
   it("keeps Events headers and filters outside the scrollable event body", () => {

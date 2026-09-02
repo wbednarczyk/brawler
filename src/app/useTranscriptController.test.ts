@@ -21,7 +21,7 @@ vi.mock("../api/transcripts", () => ({
   runVideoTranscriptJob: vi.fn(),
 }));
 
-import { listTranscriptSegments, listVideoTranscriptJobs } from "../api/transcripts";
+import { createNoteFromTranscriptSelection, listTranscriptSegments, listVideoTranscriptJobs } from "../api/transcripts";
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void; reject: (cause: unknown) => void };
 function deferred<T>(): Deferred<T> {
@@ -74,7 +74,9 @@ function segment(id: string, jobId: string): TranscriptSegment {
 // piece of AppStateRoot's transcript state as setters — this wires the SAME
 // shape with local `useState` so the request-sequence guard runs against
 // real React state updates, not stubs.
-function useHarness() {
+function useHarness(overrides: {
+  navigateToCompanyNotebook?: (companyId: string, intent: { entryId?: string }) => void;
+} = {}) {
   const [transcriptJobs, setTranscriptJobs] = useState<TranscriptJob[]>([]);
   const [transcriptJobsError, setTranscriptJobsError] = useState<string | null>(null);
   const [transcriptSegmentsByJobId, setTranscriptSegmentsByJobId] = useState<Record<string, TranscriptSegment[]>>({});
@@ -87,13 +89,10 @@ function useHarness() {
 
   const controller = useTranscriptController({
     geminiCredentialStatus: { providerId: "provider_gemini", secretKind: "api_key", configured: true, storage: "keychain", label: "Gemini", devFallbackAvailable: false, error: null },
-    refreshNotebookEntries: async () => {},
+    navigateToCompanyNotebook: overrides.navigateToCompanyNotebook ?? (() => {}),
     selectedTranscriptJobId,
     selectedTranscriptSegmentIdsByJobId,
     settings: null,
-    setNotebookEntries: () => {},
-    setSelectedNotebookCompanyId: () => {},
-    setSelectedNotebookScreenEntryId: () => {},
     setSelectedTranscriptJobId,
     setSelectedTranscriptSegmentIdsByJobId,
     setTranscriptDeleteInFlight: () => {},
@@ -245,5 +244,32 @@ describe("useTranscriptController — request-sequence guard (sol R1 finding 4)"
 
     expect(result.current.transcriptSegmentsByJobId.job_a?.map((s) => s.id)).toEqual(["seg_fresh"]);
     expect(result.current.transcriptSegmentsErrorByJobId.job_a).toBeNull();
+  });
+});
+
+// F4c S2 (ADR 0108 amendment, sol re-review): a note created from a
+// transcript selection lands on the Spółka `notatnik` tool, highlighted —
+// never the retired Notebooks-global screen's local state.
+describe("useTranscriptController — note creation lands on the Spółka notatnik tool (F4c S2)", () => {
+  it("navigates to the linked company's notebook with the new entry highlighted", async () => {
+    const navigateToCompanyNotebook = vi.fn();
+    const created = { id: "note_new", companyId: "company_1" };
+    vi.mocked(createNoteFromTranscriptSelection).mockResolvedValue(created as never);
+
+    const { result } = renderHook(() => useHarness({ navigateToCompanyNotebook }));
+
+    act(() => {
+      result.current.toggleTranscriptSegment("job_a", "seg_1");
+    });
+
+    await act(async () => {
+      result.current.createTranscriptNotebookEntry(
+        job("job_a", { companyId: "company_1" }),
+        { preventDefault: () => {} } as never,
+      );
+      await Promise.resolve();
+    });
+
+    expect(navigateToCompanyNotebook).toHaveBeenCalledWith("company_1", { entryId: "note_new" });
   });
 });

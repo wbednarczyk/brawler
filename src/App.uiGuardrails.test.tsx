@@ -31,13 +31,12 @@ function expectNoForbiddenNormalUserTerms(section: string) {
 describe("normal user UI guardrails", () => {
   it("does not expose implementation wording in normal app sections", async () => {
     // Render each section in isolation via its initial section, including
-    // Notebooks/Events (reached via the palette, not top-nav buttons) — the
-    // wording guard must still cover them.
+    // Events (reached via the palette, not top-nav buttons) — the wording
+    // guard must still cover it.
     const sectionHeadings = [
       "Inbox",
       "Companies",
       "Watchlists",
-      "Notebooks",
       "Events",
       "Transcripts",
       "Sources",

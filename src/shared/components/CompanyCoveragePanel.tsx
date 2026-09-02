@@ -365,7 +365,7 @@ export function CompanyCoveragePanel({
   // Lean status line (ADR 0077 §3, T3.2): backfill phase while backfilling, then the
   // sweep status. `automation_off` is explicit, never a silent skip.
   const statusLabel = (): string | null => {
-    if (backfilling) return text("Backfilling…");
+    if (backfilling) return text("Fetching history…");
     if (sweeping) return extractingLabel();
     if (reextracting) return reextractingLabel();
     if (modeOff) return text("Automation off");
@@ -374,7 +374,7 @@ export function CompanyCoveragePanel({
       // with the machine code `unsupported_market` (card bfc4c98) — say so
       // specifically, never the blanket "failed". Other errors keep the generic.
       if (backfillProgress.error.startsWith("unsupported_market")) {
-        return text("Backfill isn't available for this company's market (NewConnect) yet");
+        return text("History fetch isn't available for NewConnect companies yet");
       }
       if (backfillProgress.error.startsWith("no_bankier_page")) {
         return text("No Bankier page was found for this company");
@@ -388,7 +388,7 @@ export function CompanyCoveragePanel({
       if (backfillProgress.error.startsWith("not_tracked")) {
         return text("This company isn't tracked by this source");
       }
-      return text("Backfill failed");
+      return text("History fetch failed");
     }
     const sweep = sweepProgress?.sweep;
     if (sweep) {
@@ -448,7 +448,7 @@ export function CompanyCoveragePanel({
       return (
         <>
           <span className="coverage-cell-miss">{text("No report")}</span>
-          <span className="coverage-sub">{text("not found in backfill")}</span>
+          <span className="coverage-sub">{text("not found in the fetched history")}</span>
         </>
       );
     }
@@ -682,7 +682,7 @@ export function CompanyCoveragePanel({
             onClick={runBackfill}
           >
             <History size={15} aria-hidden="true" />
-            {backfilling ? text("Backfilling…") : text("Fetch older reports")}
+            {backfilling ? text("Fetching history…") : text("Fetch older reports")}
           </Button>
           <Button
             variant="secondary"

@@ -65,6 +65,10 @@ styleguide mockup: `docs/mockups/frontend-v2-styleguide/` (canvas + five artboar
 
 - **Decision 3 — three verbs added.** `edit` (Edit/Zmień) = enter edit mode of an existing record (persisted by a later `save`). `confirm` (Confirm/Potwierdź) = accept a proposed record into the canonical set. `reject` (Reject/Odrzuć) = decline a proposed record — proposals only. Draft `Discard`/`Cancel` and notice `Dismiss` stay `kind="control"`. Retries are the dictionary action that re-runs the read, never a control.
 
+### Amendment (2026-09-02, F4c S1, #410 F4c)
+
+- **Decision 3 — two verbs added.** `link` (Link/Powiąż) = attach a piece of evidence to a research question. `snooze` (Snooze/Odłóż) = defer a reminder without completing it. `Delete` is retired from Research screen copy (4 sites: the reminder row, the question row, and their two confirm labels) — the same collection-removal unification as F4a S1's `remove`. **Tooltip-only icon buttons are not labelled actions**: an icon button whose only accessible name comes from a `title`/`aria-label` attribute, with no visible text, fails the "an action is a label, not a guess" bar the dictionary exists to enforce — every icon action gets a visible label alongside its icon.
+
 ## Foundations review (question-everything doctrine, owner 2026-08-19)
 
 Every foundation gets an explicit verdict; "keep" also needs evidence. Gated studies block their

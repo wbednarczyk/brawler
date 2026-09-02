@@ -83,7 +83,7 @@ test.describe("J6 — buy / pass decision", { tag: "@journey" }, () => {
 
     // Provenance: link one piece of supporting evidence from the company
     // timeline.
-    const linkButtons = journal.getByRole("button", { name: "Link evidence" });
+    const linkButtons = journal.getByRole("button", { name: /^(Link to decision|Powiąż z decyzją):/ });
     await expect(linkButtons.first()).toBeVisible();
     const linkCountBefore = await linkButtons.count();
     await j.click(linkButtons.first());

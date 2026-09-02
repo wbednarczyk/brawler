@@ -1,7 +1,6 @@
 import type { CompaniesScreenProps } from "../../screens/Companies/CompaniesScreen";
 import type { EventsScreenProps } from "../../screens/Events/eventTypes";
 import type { InboxScreenProps } from "../../screens/Inbox/inboxTypes";
-import type { NotebooksScreenProps } from "../../screens/Notebooks/notebookTypes";
 import type { ReportSeasonScreenProps } from "../../screens/ReportSeason/ReportSeasonScreen";
 import type { ResearchScreenProps } from "../../screens/Research/ResearchScreen";
 import type { SettingsScreenProps } from "../../screens/Settings/settingsTypes";
@@ -24,8 +23,6 @@ export const [WatchlistsProvider, useWatchlistsViewModel] =
   createScreenContext<WatchlistsScreenProps>("Watchlists");
 export const [ResearchProvider, useResearchViewModel] =
   createScreenContext<ResearchScreenProps>("Research");
-export const [NotebooksProvider, useNotebooksViewModel] =
-  createScreenContext<NotebooksScreenProps>("Notebooks");
 export const [ReportSeasonProvider, useReportSeasonViewModel] =
   createScreenContext<ReportSeasonScreenProps>("ReportSeason");
 export const [EventsProvider, useEventsViewModel] =

@@ -54,8 +54,8 @@
       "byProject": {}
     },
     "J7": {
-      "_comment": "Owner decision 2026-08-26 (ADR 0107): leg 4 now opens the company via the review queue row's own 'Open company' action instead of the ⌘K palette, dropping the palette round-trip — measured 10/4/2/0 (chromium-wide/quarter-uw/compact-light, identical), floor tightened to measured+1, re-measured 2026-08-27.",
-      "interactions": 11,
+      "_comment": "F4c S3 (#94): leg 3 opens Research from the Library nav (one click) instead of the ⌘K palette hop — measured 8 interactions (chromium-compact), floor tightened to measured+1 (2026-09-02). Earlier: owner decision 2026-08-26 (ADR 0107), leg 4 via the review queue row's own company action, measured 10/4/2/0, floor 11.",
+      "interactions": 9,
       "screenTransitions": 5,
       "modalOpens": 3,
       "contextLosses": 1,

@@ -251,7 +251,7 @@ describe("CompanyCoveragePanel", () => {
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
     expect(await screen.findByText("No report")).toBeInTheDocument();
-    expect(screen.getByText("not found in backfill")).toBeInTheDocument();
+    expect(screen.getByText("not found in the fetched history")).toBeInTheDocument();
   });
 
   it("renders a validated facts cell in the success tone with an all-validated sub-line", async () => {
@@ -504,7 +504,7 @@ describe("CompanyCoveragePanel", () => {
     const backfill = await screen.findByRole("button", { name: /Fetch older reports/ });
     await userEvent.click(backfill);
     // While in flight the button shows the running label and both actions disable.
-    expect(await screen.findByRole("button", { name: /Backfilling…/ })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: /Fetching history…/ })).toBeDisabled();
 
     resolveBackfill({
       companyId: "company_gpw_cdr",
@@ -699,7 +699,7 @@ describe("CompanyCoveragePanel", () => {
 
   // Card bfc4c98 (UI half): a backfill on a market with no history-capable source
   // adapter (NewConnect today) fails with the machine code `unsupported_market`.
-  // The status line must say so specifically, not the generic "Backfill failed".
+  // The status line must say so specifically, not the generic "History fetch failed".
   it("maps an unsupported_market backfill failure to a market-specific message", async () => {
     getBackfillProgressMock.mockResolvedValue({
       companyId: "company_gpw_cdr",
@@ -718,14 +718,14 @@ describe("CompanyCoveragePanel", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
-        "Backfill isn't available for this company's market (NewConnect) yet",
+        "History fetch isn't available for NewConnect companies yet",
       ),
     );
-    expect(screen.queryByText("Backfill failed")).not.toBeInTheDocument();
+    expect(screen.queryByText("History fetch failed")).not.toBeInTheDocument();
   });
 
   // The five other typed causes (card bfc4c98, B5) must each surface their own
-  // message — never collapse into the generic "Backfill failed". One branch per
+  // message — never collapse into the generic "History fetch failed". One branch per
   // code; parameterized so a new code without a mapping reddens the class here.
   it.each([
     ["no_bankier_page: slug unresolvable", "No Bankier page was found for this company"],
@@ -749,7 +749,7 @@ describe("CompanyCoveragePanel", () => {
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(message));
-    expect(screen.queryByText("Backfill failed")).not.toBeInTheDocument();
+    expect(screen.queryByText("History fetch failed")).not.toBeInTheDocument();
   });
 
   it("keeps the generic failed message for a non-market backfill error", async () => {
@@ -768,7 +768,7 @@ describe("CompanyCoveragePanel", () => {
     });
     render(<CompanyCoveragePanel companyId="company_gpw_cdr" />);
 
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Backfill failed"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("History fetch failed"));
   });
 
   // T3.3: a backfill that hit the page cap before the cutoff reports truncation

@@ -7,8 +7,8 @@ import { NotebookQuarterField } from "../../../shared/components/NotebookQuarter
 import { MarkdownNoteBody } from "../../../shared/components/MarkdownNoteBody";
 import { CompanyNotebookSection } from "../../Companies/CompanyNotebookSection";
 import { FundamentalsPanel as CompanyFundamentalsPanel } from "../../Companies/FundamentalsPanel";
-import { formatDetailTimestamp } from "../../../shared/format/datetime";
 import { emptyNotebookForm } from "../../../app/notebookForms";
+import type { NotebookDraft } from "../route";
 import { useFundamentalsPanel } from "./useFundamentalsPanel";
 import { useCompanyNotebookPanel } from "./useCompanyNotebookPanel";
 import { useDecisionJournalPanel } from "./useDecisionJournalPanel";
@@ -57,9 +57,21 @@ export function FundamentalsPanel({
 // `CompanyNotebookSection` with caller-owned state (`useCompanyNotebookPanel`).
 // Origins render read-only (label + external source link) — the cross-screen
 // "open origin feed item" nav belongs to the Inbox, not a self-contained panel.
-export function CompanyNotebookPanel({ company }: { company: Company }) {
+export function CompanyNotebookPanel({
+  company,
+  highlightEntryId,
+  initialDraft,
+}: {
+  company: Company;
+  /** Deep-link navigation (F4c S2, ADR 0108 amendment): scroll + flash this
+   * entry once it renders. */
+  highlightEntryId?: string;
+  /** A prefilled-but-unsaved note from a cross-screen caller (Inbox,
+   * research evidence, transcript) — opens the composer seeded with it. */
+  initialDraft?: NotebookDraft;
+}) {
   const { text } = useLocale();
-  const notebook = useCompanyNotebookPanel(company);
+  const notebook = useCompanyNotebookPanel(company, { highlightEntryId, initialDraft });
 
   // Register the notebook composer/edit draft with the Spółka workshop's
   // dirty gate (F3a S2, ADR 0107) — a no-op when hosted outside it.
@@ -79,6 +91,7 @@ export function CompanyNotebookPanel({ company }: { company: Company }) {
   return (
     <CompanyNotebookSection
       company={company}
+      highlightEntryId={notebook.highlightEntryId}
       notebookEntries={notebook.entries}
       isComposerOpen={notebook.isComposerOpen}
       notebookForm={notebook.notebookForm}
@@ -93,6 +106,7 @@ export function CompanyNotebookPanel({ company }: { company: Company }) {
       setSelectedNotebookEntryId={notebook.setSelectedEntryId}
       saveNotebookEntry={notebook.saveNotebookEntry}
       cancelNotebookEdit={notebook.cancelNotebookEdit}
+      deleteNotebookEntry={notebook.deleteNotebookEntry}
       setNotebookEditMode={notebook.setEditMode}
       updateNotebookEditForm={notebook.updateNotebookEditForm}
       NotebookDateField={NotebookDateField}
@@ -200,7 +214,6 @@ export function DecisionJournalPanel({ company }: { company: Company }) {
       cancelSupersede={journal.cancelSupersede}
       setSelectedEntryId={journal.setSelectedEntryId}
       linkEvidence={journal.linkEvidence}
-      formatTimestamp={formatDetailTimestamp}
     />
   );
 }

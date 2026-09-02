@@ -10,7 +10,6 @@ import { expect, renderApp, screen, userEvent } from "../test/appWorkflowHarness
 // exclusions: a new screen with violations reddens this guard.
 const SCREENS = [
   "Watchlists",
-  "Notebooks",
   "Research",
   "Settings",
   "Inbox",
@@ -21,9 +20,6 @@ const SCREENS = [
   // palette / deep link, so the guard applies now.
   "ReportSeason",
   "Transcripts",
-  // Decision journal, all companies (F3a S3, ADR 0107) — a standalone screen
-  // route, no top-level nav item.
-  "Journal",
 ] as const;
 
 // Only two rules stay off, each for a reason that cannot be engineered away
@@ -34,7 +30,7 @@ const AXE_RULES = {
   // runs the WCAG A/AA set in a real browser, across the viewport matrix and the
   // light-theme project — both palettes.
   "color-contrast": { enabled: false },
-  // Notebooks/Research render their detail pane as an in-workspace complementary
+  // Research renders its detail pane as an in-workspace complementary
   // <aside>; this rule wants complementary landmarks at top level, which does not
   // fit a multi-pane desktop workspace where the rail is intentionally nested in
   // the main content. Disabled deliberately (a design point, not a defect) so the

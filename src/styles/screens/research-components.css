@@ -66,7 +66,10 @@
 
 .research-reminder-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-1);
+  min-width: 0;
 }
 
 .research-active-question strong,
@@ -107,7 +110,7 @@
 
 .research-question-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-1);
   align-items: center;
   width: 100%;
@@ -174,7 +177,10 @@
 
 .research-active-question {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
+  /* `minmax(0, auto)`, not `max-content`: the actions column must shrink so
+     its flex-wrapped buttons wrap instead of clipping past the pane edge —
+     seen on the live app at a ~1000px window (F4c real-data check). */
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   align-items: start;
   gap: var(--space-2);
   min-width: 0;
@@ -458,6 +464,18 @@
    height fight and the revealed fold's content painted over the next section
    (#416). Folded bodies are display:none and space pressure re-folds via the
    short tier — the fold never needs to shrink below its content. */
+
+/* F4c S3 harvest: the labelled row actions (icon + visible text, ADR 0104
+   dec. 3) sit wider than the old icon-only clusters and, in `.research-
+   reminder-actions`/`.research-question-actions`, are allowed to wrap onto a
+   second line as a last resort at a narrow width. Every revealed fold's
+   height is otherwise a hairline's width from the next section (M and L
+   tiers both showed the reminders/questions folds a couple of px from
+   touching, #416 class) — this margin is the fixed buffer against that one
+   extra wrapped line, independent of tier. */
+.research-fold[data-fold="m"] {
+  margin-bottom: var(--space-4);
+}
 
 .research-fold-chip {
   display: inline-flex;

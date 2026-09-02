@@ -56,7 +56,6 @@ export type DecisionJournalSectionProps = {
   cancelSupersede: () => void;
   setSelectedEntryId: (id: string | null) => void;
   linkEvidence: (item: ResearchEvidenceItem) => void;
-  formatTimestamp: (value: string | null | undefined) => string;
 };
 
 // The company-scoped decision-journal composer + immutable entry list (ADR 0071,
@@ -81,7 +80,6 @@ export function DecisionJournalSection({
   cancelSupersede,
   setSelectedEntryId,
   linkEvidence,
-  formatTimestamp,
 }: DecisionJournalSectionProps) {
   const { text, locale } = useLocale();
   const noun = pluralNoun(locale, entries.length, {
@@ -233,6 +231,7 @@ export function DecisionJournalSection({
                 {evidenceCandidates.map((item) => (
                   <EvidenceRow
                     key={item.id}
+                    linkLabel="Link to decision"
                     item={item}
                     changed={false}
                     canLink={!linkedEvidenceKeys.has(`${item.evidenceType}:${item.sourceId}`)}
@@ -241,7 +240,6 @@ export function DecisionJournalSection({
                       candidate.sourceUrl ? void openUrl(candidate.sourceUrl) : undefined
                     }
                     onOpenUrl={(url) => void openUrl(url)}
-                    formatTimestamp={formatTimestamp}
                     text={text}
                   />
                 ))}

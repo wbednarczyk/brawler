@@ -86,6 +86,12 @@ const PANEL_CONTRACTS: PanelContract[] = [
         await expect(pane.locator(".research-summary")).toBeVisible();
         await expect(pane.locator(".research-reminders")).toBeHidden();
         await expect(pane.locator(".research-questions")).toBeHidden();
+        // F4c S3 (contract § Research item 6): the labelled-actions pass adds
+        // several visible-text buttons per row — pin that at most one still
+        // reads as the filled/primary action, and the pane itself never grows
+        // a horizontal scrollbar.
+        await expectFilledAtRest(pane, { max: 1 });
+        await expectNoPageOverflow(page);
       },
       // M: + review-queue strip (reminders body reveals); questions stay a chip.
       M: async (page, pane) => {
@@ -100,6 +106,8 @@ const PANEL_CONTRACTS: PanelContract[] = [
           pane.locator('.research-fold[data-fold="l"]'),
           "Research review-queue fold vs questions fold (M)",
         );
+        await expectFilledAtRest(pane, { max: 1 });
+        await expectNoPageOverflow(page);
       },
       // L: + questions/reminders columns; both fold chips gone.
       L: async (page, pane) => {
@@ -112,6 +120,8 @@ const PANEL_CONTRACTS: PanelContract[] = [
           pane.locator('.research-fold[data-fold="l"]'),
           "Research review-queue fold vs questions fold (L)",
         );
+        await expectFilledAtRest(pane, { max: 1 });
+        await expectNoPageOverflow(page);
       },
       // short: summary counts + timeline; everything else re-folds behind chips.
       short: async (page, pane) => {

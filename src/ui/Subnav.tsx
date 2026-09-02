@@ -26,6 +26,7 @@ export function Subnav<Id extends string>({
       {items.map((item) => (
         <button
           className={activeId === item.id ? "ui-subnav-item ui-subnav-item-active" : "ui-subnav-item"}
+          data-action-kind="control"
           key={item.id}
           onClick={() => onSelect(item.id)}
           type="button"

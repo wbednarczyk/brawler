@@ -1,4 +1,4 @@
-import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openPalette, expectNoPageOverflow } from "./helpers/harness";
 import type { Page } from "@playwright/test";
 
 // Global command palette (v0.50 U6): Ctrl/⌘+K opens a shared palette from any
@@ -16,8 +16,7 @@ test.describe("command palette", { tag: "@clickable" }, () => {
   test("Ctrl+K opens the palette and a listed command navigates", async ({ page }) => {
     await openApp(page);
 
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const palette = await openPalette(page);
     await expect(palette).toBeVisible();
 
     // App-level commands come from the shortcut registry; running one navigates.
@@ -31,8 +30,7 @@ test.describe("command palette", { tag: "@clickable" }, () => {
   test("Escape closes the palette", async ({ page }) => {
     await openApp(page);
 
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const palette = await openPalette(page);
     await expect(palette).toBeVisible();
 
     await page.keyboard.press("Escape");
@@ -43,16 +41,19 @@ test.describe("command palette", { tag: "@clickable" }, () => {
   // the palette dictionary is app-level navigation only. Assert what's
   // actually still offered: global "Open screen: …" / "Open company: …"
   // entries from any screen — never "Open view: …" or "Open panel: …", both
-  // retired labels.
+  // retired labels. F4c S2 (ADR 0108 amendment): "Open screen: Notebooks" /
+  // "Open screen: Decision journal" retire with the global screens — every
+  // deep link lands on the Spółka `notatnik` tool instead.
   test("the palette lists the global navigation commands from any screen, no Open view entries", async ({ page }) => {
     await openApp(page);
 
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const palette = await openPalette(page);
     await expect(palette).toBeVisible();
 
     await palette.getByLabel("Search commands").fill("Open screen");
     await expect(palette.getByRole("button", { name: "Open screen: Research", exact: true })).toBeVisible();
+    await expect(palette.getByRole("button", { name: /^Open screen: Notebooks/ })).toHaveCount(0);
+    await expect(palette.getByRole("button", { name: /^Open screen: Decision journal/ })).toHaveCount(0);
 
     await palette.getByLabel("Search commands").fill("Open company: CDR");
     await expect(
@@ -73,8 +74,7 @@ test.describe("command palette", { tag: "@clickable" }, () => {
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     await expectNoPageOverflow(page);
 
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const palette = await openPalette(page);
     await expect(palette).toBeVisible();
 
     await palette.getByLabel("Search commands").fill("Open notebook");

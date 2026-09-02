@@ -124,7 +124,7 @@ test.describe("U7-E2 density contracts", { tag: "@clickable" }, () => {
   // The cockpit-hosted "Watchlists" global panel (opened via the retired
   // "Add panel" surface) no longer exists (F3a S3, ADR 0107 decision 5; ADR 0108) —
   // Watchlists has always had its own sidebar nav button too (unlike
-  // Research/Events/Notebooks/Report Season, it never gained an "Open
+  // Research/Events/Report Season, it never gained an "Open
   // screen: …" palette entry, since it already had one). This exercises the
   // same `.watchlists-workspace` component through its one surviving entry
   // point, sized via the screen's own `.workspace` pane container.

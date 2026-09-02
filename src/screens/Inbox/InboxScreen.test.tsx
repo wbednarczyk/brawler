@@ -197,6 +197,9 @@ describe("Inbox screen workflows", () => {
     expect(await within(spolka).findByLabelText("Workshop tool")).toHaveAttribute("data-tool", "feedItem");
   });
 
+  // F4c S2 (ADR 0108 amendment): "Create note draft" lands on the Spółka
+  // `notatnik` tool (typed intent, `useNotebookController.openFeedItemNoteDraft`
+  // → `navigateToCompanyNotebook`), never the retired Notebooks-global screen.
   it("creates a notebook draft from an inbox feed item with feed origins", async () => {
     const user = userEvent.setup();
 
@@ -205,20 +208,24 @@ describe("Inbox screen workflows", () => {
     await screen.findByLabelText("Feed item details");
     await user.click(screen.getByRole("button", { name: "Note" }));
 
-    const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
+    // ONE guarded transition lands the Spółka screen with the `notatnik`
+    // tool open (F3a, ADR 0107; F4c S2, ADR 0108 amendment).
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    expect(await within(spolka).findByLabelText("Workshop tool")).toHaveAttribute("data-tool", "notatnik");
 
-    expect(screen.getByRole("heading", { name: "Notebooks" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Notebook screen note title")).toHaveValue(
+    const notebookPanel = within(spolka).getByLabelText("Company notebook");
+
+    expect(screen.getByLabelText("Notebook note title")).toHaveValue(
       "Current report placeholder for watchlist company",
     );
-    expect(screen.getByLabelText("Notebook screen note body")).toHaveValue(
+    expect(screen.getByLabelText("Notebook note body")).toHaveValue(
       "Sample official report used to validate feed filtering and detail rendering.",
     );
-    expect(screen.getByLabelText("Notebook screen note tags")).toHaveValue(
+    expect(screen.getByLabelText("Notebook note tags")).toHaveValue(
       "feed, official-report, gpw-espi/ebi",
     );
 
-    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Save" }));
+    await user.click(within(notebookPanel).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("create_notebook_entry", {
@@ -245,23 +252,13 @@ describe("Inbox screen workflows", () => {
       });
     });
 
-    const originFeedButton = await within(notebooksWorkspace).findByRole("button", {
-      name: "Open origin feed item: GPW ESPI/EBI: Current report placeholder for watchlist company",
-    });
+    // Origins render read-only in the Spółka tool (companyPanels.tsx,
+    // `renderNotebookOrigins`): a "Source" link out, no cross-screen "open
+    // origin feed item" back-nav — that button belonged to the
+    // Notebooks-global screen and retired with it.
     expect(
-      within(notebooksWorkspace).getByRole("link", {
-        name: "Open origin source: GPW ESPI/EBI: Current report placeholder for watchlist company",
-      }),
+      await within(notebookPanel).findByRole("link", { name: "Source" }),
     ).toHaveAttribute("href", "https://www.gpw.pl/komunikaty");
-
-    await user.click(originFeedButton);
-
-    expect(screen.getByRole("heading", { name: "Inbox" })).toBeInTheDocument();
-    expect(
-      within(screen.getByLabelText("Feed item details")).getByRole("heading", {
-        name: "Current report placeholder for watchlist company",
-      }),
-    ).toBeInTheDocument();
   });
 
   it("selects inbox feed items with the keyboard", async () => {
@@ -367,8 +364,11 @@ describe("Inbox screen workflows", () => {
     });
 
     fireEvent.keyDown(document, { key: "N", code: "KeyN" });
-    expect(await screen.findByRole("heading", { name: "Notebooks" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Notebook screen note title")).toHaveValue(
+    // F4c S2 (ADR 0108 amendment): the draft lands on the Spółka `notatnik`
+    // tool (typed intent), not the retired Notebooks-global screen.
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    expect(await within(spolka).findByLabelText("Workshop tool")).toHaveAttribute("data-tool", "notatnik");
+    expect(screen.getByLabelText("Notebook note title")).toHaveValue(
       "Sample item proving the inbox layout can scan dense rows",
     );
   });

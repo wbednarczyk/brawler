@@ -74,6 +74,156 @@ function listSourceFiles(root: string, dir: string, out: string[]): string[] {
   return out;
 }
 
+// F4c S1 (docs/plans/f4c-contracts/s1-guardrails.md item 3, plan §
+// Decisions 1, 7b): pins the Notebooks-global screen's key family (retired by
+// S2 — decision 1 deletes `src/screens/Notebooks/**`) and the Research
+// tooltip-only labels the dec. 3/4 relabel retires (retired by S3). Both
+// families are RED today — the keys/call sites still exist; S2/S3 make this
+// green. `notebooks.title`/`notebooks.description` are typed keys
+// (`en.ts:68-69`, `pl.ts:70-71`); the rest are `plText` keys.
+const RETIRED_T_KEYS_F4C = ["notebooks.title", "notebooks.description"];
+
+const RETIRED_PLTEXT_KEYS_F4C = [
+  // plText.ts:829-872 — the Notebooks-global-screen-exclusive keys: every
+  // `Notebooks workspace` / `Notebook companies` / `Notebook screen …` /
+  // `Notebook *filter*` key in that block (verified against src/** call
+  // sites: each name below resolves ONLY inside `src/screens/Notebooks/**`
+  // today).
+  "Notebooks workspace",
+  "Notebook companies",
+  "Notebook screen entries",
+  "Notebook watchlist filter",
+  "Notebook filter reset",
+  "Notebook filters",
+  "Notebook kind filter",
+  "Notebook claim status filter",
+  "Notebook tag filter",
+  "Notebook follow-up filter",
+  "Notebook screen note title",
+  "Notebook screen note kind",
+  "Notebook screen note tags",
+  "Notebook screen note claim status",
+  "Notebook screen note event date",
+  "Notebook screen note follow-up quarter",
+  "Notebook screen note follow-up date",
+  "Notebook screen note body",
+  "Select notebook screen entry",
+  "Notebook screen entry detail",
+  "Notebook screen selected title",
+  "Notebook screen selected body",
+  "Notebook screen selected kind",
+  "Notebook screen selected claim status",
+  "Notebook screen selected tags",
+  "Notebook screen selected event date",
+  "Notebook screen selected follow-up quarter",
+  "Notebook screen selected follow-up date",
+  // plText.ts:1115, :1131-1134 — the "Open Notebooks" shortcut/palette entry
+  // and the notebook-entry-editor shortcut copy (`app.openNotebooks`
+  // retires; decision 3: Ctrl+4 moves to Research).
+  "Open Notebooks",
+  "Open notebook entry editor",
+  "Save notebook edit",
+  "Notebooks",
+  // F4c S2 (contract "Notes from S1"): the non-pattern-named keys that were
+  // ALSO exclusive to the deleted Notebooks-global screen — verified with
+  // `grep -rn 'text("<key>")\|t("<key>")' src` after S2's deletions: zero
+  // live call sites for any of these.
+  "Open notebook company",
+  "notebook entries for",
+  "Show open claims for",
+  "Show follow-ups for",
+  "Open company workspace",
+  "Add companies before using notebooks.",
+  "No notebook companies match this watchlist.",
+  "No company selected",
+  "visible note",
+  "visible notes",
+  "Notebook follow-up summary",
+  "Tag",
+  "tag",
+  "Has follow-up",
+  "No follow-up",
+  "No notes for",
+  // Research tooltip-only labels the dec. 3/4 relabel retires (S3):
+  // `Mark reviewed` → `Mark as reviewed`; `Delete reminder`/`Delete research
+  // question` → `Remove reminder`/`Remove question`; `Snooze reminder` →
+  // `Snooze`; `Complete reminder` → `Mark as done`; `Reopen reminder` stays
+  // `Reopen` but drops the tooltip-only "reminder" suffix once it carries a
+  // visible label; `Link evidence`/`Open evidence`/`Open source URL` →
+  // `Link to question`/`Open`/`Open source`.
+  "Mark reviewed",
+  "Delete reminder",
+  "Delete research question",
+  "Snooze reminder",
+  "Complete reminder",
+  "Reopen reminder",
+  "Link evidence",
+  "Open evidence",
+  "Open source URL",
+];
+
+// F4c S4 (docs/plans/f4c-contracts/s4-settings-pass-banner.md, sol R2
+// amendment): `AI workers` was a dead `plText` key — no live `text()` call
+// site (ADR 0084 already retired the AI-routing UI it once labeled) — with
+// only a negative assertion in `SettingsScreen.test.tsx` proving its absence.
+// Pinned here so it can't quietly reappear.
+const RETIRED_PLTEXT_KEYS_S4 = ["AI workers"];
+
+describe("retired 'AI workers' vocabulary stays retired (F4c S4)", () => {
+  it("is absent from the plText resource table", () => {
+    const hits = RETIRED_PLTEXT_KEYS_S4.filter((key) => key in plText).map((key) => `plText.ts: ${key}`);
+    expect(hits, `Retired keys still present:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("is absent from every src/** call site", () => {
+    const files = listSourceFiles(process.cwd(), SCAN_ROOT, []);
+    const needles = RETIRED_PLTEXT_KEYS_S4.flatMap((token) => [
+      `text("${token}")`,
+      `t("${token}")`,
+      `text('${token}')`,
+      `t('${token}')`,
+    ]);
+    const hits: string[] = [];
+    for (const rel of files) {
+      const content = readFileSync(join(process.cwd(), rel), "utf8");
+      for (const needle of needles) {
+        if (content.includes(needle)) hits.push(`${rel}: ${needle}`);
+      }
+    }
+    expect(hits, `Retired keys still referenced:\n${hits.join("\n")}`).toEqual([]);
+  });
+});
+
+describe("retired Notebooks-global-screen + Research tooltip-only vocabulary (F4c S1)", () => {
+  it("is absent from every locale resource table", () => {
+    const hits = [
+      ...RETIRED_T_KEYS_F4C.filter((key) => key in en).map((key) => `en.ts: ${key}`),
+      ...RETIRED_T_KEYS_F4C.filter((key) => key in pl).map((key) => `pl.ts: ${key}`),
+      ...RETIRED_PLTEXT_KEYS_F4C.filter((key) => key in plText).map((key) => `plText.ts: ${key}`),
+    ];
+    expect(hits, `Retired keys still present:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("is absent from every src/** call site", () => {
+    const files = listSourceFiles(process.cwd(), SCAN_ROOT, []);
+    const retiredTokens = [...RETIRED_T_KEYS_F4C, ...RETIRED_PLTEXT_KEYS_F4C];
+    const needles = retiredTokens.flatMap((token) => [
+      `text("${token}")`,
+      `t("${token}")`,
+      `text('${token}')`,
+      `t('${token}')`,
+    ]);
+    const hits: string[] = [];
+    for (const rel of files) {
+      const content = readFileSync(join(process.cwd(), rel), "utf8");
+      for (const needle of needles) {
+        if (content.includes(needle)) hits.push(`${rel}: ${needle}`);
+      }
+    }
+    expect(hits, `Retired keys still referenced:\n${hits.join("\n")}`).toEqual([]);
+  });
+});
+
 describe("retired Transcripts 'job' vocabulary stays retired (F4b S2)", () => {
   it("is absent from every locale resource table", () => {
     const hits = [

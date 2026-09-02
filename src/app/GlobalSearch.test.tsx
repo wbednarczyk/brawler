@@ -68,6 +68,42 @@ describe("Global search", () => {
     });
   });
 
+  // F4c S2 (ADR 0108 amendment): a `notebook_entry` result lands on the
+  // Spółka `notatnik` tool (typed intent) — the `searchFocusSelector` leg it
+  // used for the retired Notebooks-global screen is gone.
+  it("navigates a notebook_entry result to the Spółka notatnik tool", async () => {
+    const user = userEvent.setup();
+    appTestState.searchResponse = {
+      groups: [
+        {
+          contentType: "notebook_entry",
+          matches: [
+            {
+              contentType: "notebook_entry",
+              sourceId: "note_1",
+              companyId: "company_gpw_cdr",
+              title: "Profit note",
+              snippet: "Possible profit warning next quarter",
+              score: 1.5,
+            },
+          ],
+        },
+      ],
+    };
+
+    renderApp();
+
+    const input = await screen.findByLabelText("Global search");
+    await user.type(input, "profit");
+
+    const results = await screen.findByRole("listbox", { name: "Global search" });
+    await user.click(await within(results).findByRole("option", { name: /Profit note/ }));
+
+    const company = await screen.findByRole("region", { name: "Company view" });
+    const tool = await within(company).findByRole("group", { name: "Workshop tool" });
+    expect(tool).toHaveAttribute("data-tool", "notatnik");
+  });
+
   // Regression for bug c80dabe: cross-navigation into the Inbox promised to
   // clear filters "so the selected item is not hidden by an active filter",
   // but the signal filter was omitted from the reset — a stale signal filter

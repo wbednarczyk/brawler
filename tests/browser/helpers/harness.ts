@@ -85,10 +85,12 @@ export async function openInbox(page: Page) {
 // cockpit are retired outright (ADR 0108: no "+ New view"/"Add panel").
 // `label` is the screen name as it appears in the palette ("Notebooks",
 // "Research", "Events", "Report Season", "Decision journal").
-export async function openScreen(page: Page, label: string) {
-  // ⌘K is suppressed while an editable control holds focus and can race the
-  // shortcut listener's mount on a slow CI runner (shard 4/4 flake, PR #432):
-  // release focus first and press once more if the dialog does not appear.
+// Open the ⌘K palette and return its dialog. ⌘K is suppressed while an
+// editable control holds focus and can race the shortcut listener's mount on a
+// slow CI runner (shard 4/4 flake, PR #432; again on PR #452): release focus
+// first and press once more if the dialog does not appear. Every spec that
+// opens the palette goes through here — never a bare `Control+K`.
+export async function openPalette(page: Page): Promise<Locator> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
@@ -96,6 +98,11 @@ export async function openScreen(page: Page, label: string) {
     await page.waitForTimeout(500);
     if (!(await palette.isVisible().catch(() => false))) await page.keyboard.press("Control+K");
   }
+  return palette;
+}
+
+export async function openScreen(page: Page, label: string) {
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill(`Open screen: ${label}`);
   await palette.getByRole("button", { name: `Open screen: ${label}`, exact: true }).first().click();
 }

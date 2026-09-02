@@ -63,8 +63,8 @@ test.describe("settings", { tag: "@clickable" }, () => {
     const settingsRegion = page.getByLabel("Application settings");
     await settingsRegion.getByRole("button", { name: "Transcripts" }).click();
 
-    const model = page.getByLabel("Gemini transcription model");
-    const timeout = page.getByLabel("Gemini transcription timeout");
+    const model = page.getByLabel("Transcription quality");
+    const timeout = page.getByLabel("Give up after");
 
     // Seed is gemini-2.5-flash / 300s; change both to non-default values.
     await expect(model).toHaveValue("gemini-2.5-flash");
@@ -76,8 +76,8 @@ test.describe("settings", { tag: "@clickable" }, () => {
     await settingsRegion.getByRole("button", { name: "Credentials" }).click();
     await settingsRegion.getByRole("button", { name: "Transcripts" }).click();
 
-    await expect(page.getByLabel("Gemini transcription model")).toHaveValue("gemini-3.5-flash");
-    await expect(page.getByLabel("Gemini transcription timeout")).toHaveValue("600");
+    await expect(page.getByLabel("Transcription quality")).toHaveValue("gemini-3.5-flash");
+    await expect(page.getByLabel("Give up after")).toHaveValue("600");
   });
 
   // M4 (ADR 0078): the MCP section's connection snippet is unbreakable command

@@ -59,17 +59,17 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
   await region.getByRole("button", { name: /MCP/ }).click();
 
   const serverToggle = region.getByRole("switch", {
-    name: /Enable the server|Włącz serwer/,
+    name: /Let assistants connect|Pozwól asystentom się łączyć/,
   });
   const gateToggle = region.getByRole("switch", {
-    name: /Allow acquisition access|Zezwól na dostęp akwizycyjny/,
+    name: /Allow report-data processing|Pozwól przetwarzać dane raportów/,
   });
   const serverWasOn = await serverToggle.isChecked();
   const gateWasOn = await gateToggle.isChecked();
   if (!serverWasOn) await serverToggle.click();
   if (!gateWasOn) await gateToggle.click();
 
-  const portField = region.getByLabel(/Listen port|Port nasłuchu/);
+  const portField = region.getByLabel(/^Port$/);
   const port = Number.parseInt((await portField.inputValue()) || "8317", 10);
 
   // Credential STOP branch: the OS keychain is SHARED with the real app.
@@ -325,7 +325,7 @@ test("two-run server-invariance: identical manifest + reobserve + cooperative re
     console.log("cooperative resume: bare start(runId) keepalive froze attemptCount");
   } finally {
     const revokeButtons = region.getByRole("button", {
-      name: /Revoke acquisition token|Unieważnij token akwizycyjny/,
+      name: /Remove acquisition token|Usuń token akwizycyjny/,
     });
     await revokeButtons.first().click();
     await revokeButtons.first().click();

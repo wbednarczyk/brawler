@@ -55,6 +55,12 @@ export const ITEM_FORMS: PluralForms = {
   pl: ["pozycja", "pozycje", "pozycji"],
 };
 
+// Settings → Logs "History kept" figure (F4c S4): "N files × M MB".
+export const FILE_FORMS: PluralForms = {
+  en: ["file", "files"],
+  pl: ["plik", "pliki", "plików"],
+};
+
 // Grouped fundamentals matrix (card #307): "N metryk" in a collapsible
 // group's header.
 export const METRIC_FORMS: PluralForms = {

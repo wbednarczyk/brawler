@@ -69,8 +69,11 @@ test.describe("J7 — weekly review", { tag: "@journey" }, () => {
     await expectNoPageOverflow(page);
 
     // Leg 3: Research — the watchlist-scoped review queue (the research
-    // debts, not vague guilt).
-    await openScreenViaJourney(j, page, "Research");
+    // debts, not vague guilt). F4c S3 (contract § Decisions #4): Research
+    // joins the Library nav — one sidebar click, not the ⌘K palette hop (the
+    // palette path stays covered by command-palette.spec.ts's "Open screen:
+    // Research" entry).
+    await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Research" }));
     await j.markScreen("Research");
     const research = page.locator(".research-panel");
     await expect(research).toBeVisible();
@@ -81,12 +84,13 @@ test.describe("J7 — weekly review", { tag: "@journey" }, () => {
     await expectNoPageOverflow(page);
 
     // Leg 4: Spółka — deepening on a company from the watchlist, via the
-    // review queue row's own "Open company" action (owner decision
-    // 2026-08-26, ADR 0107) — no palette round-trip needed anymore. Scoped
-    // to the CDR row: the full browser mock runtime seeds many watchlist
-    // members, so an unscoped "Open company" match is ambiguous.
+    // review queue row's own "Company" destination action (owner decision
+    // 2026-08-26, ADR 0107; relabeled from "Open company" to the noun
+    // "Company" in F4c S3, `kind="destination"`, dec. 4) — no palette
+    // round-trip needed anymore. Scoped to the CDR row: the full browser mock
+    // runtime seeds many watchlist members, so an unscoped match is ambiguous.
     const cdrQueueRow = reviewQueue.locator(".research-company-queue-row", { hasText: "CDR" });
-    await j.click(cdrQueueRow.getByRole("button", { name: "Open company" }));
+    await j.click(cdrQueueRow.getByRole("button", { name: /^Company:/ }));
     const spolka = page.getByRole("region", { name: "Company view", exact: true });
     await expect(spolka).toBeVisible();
     await j.markScreen("Spółka");

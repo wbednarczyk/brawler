@@ -49,9 +49,12 @@ describe("visual-update-core", () => {
   // ["default", "empty"]` (transcripts, events) must have a baseline for
   // BOTH, or a missing "empty" cell went unguarded. 86 "default"-only cells
   // + transcripts' 4 "empty" cells (S/M/L dark + M light) + events' 4 =~ 94.
-  it("every catalog cell (94 today) has an existing baseline file", () => {
+  // F4c S1 (docs/plans/f4c-contracts/s1-guardrails.md item 6): 94 → 90 — the
+  // `notebooks-global` row (4 cells: S/M/L dark + M light, `states:
+  // ["default"]`) is deleted from the catalog ahead of S2's screen deletion.
+  it("every catalog cell (90 today) has an existing baseline file", () => {
     const cells = allExpectedCells();
-    expect(cells.length).toBe(94);
+    expect(cells.length).toBe(90);
     // Sol R2 blocker: every cell maps to a DISTINCT file — a state-less
     // filename would alias "empty" cells onto the default PNGs and the
     // existence check below would prove nothing.

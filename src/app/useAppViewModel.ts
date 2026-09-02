@@ -3,7 +3,6 @@ import type { SourceStatusSummary } from "./AppShell";
 import type { InboxEmptyState, InboxStatusFilter } from "../screens/Inbox/inboxTypes";
 import type { TranscriptJobForm } from "../screens/Transcripts/transcriptTypes";
 import type { CompanyEventViewMode } from "../shared/types/events";
-import type { NotebookForm } from "../shared/types/notebook";
 import {
   addLocalDays,
   formatLocalDate,
@@ -17,14 +16,12 @@ import type {
   CompanyRegistryEntry,
   CompanySignal,
   FeedItem,
-  NotebookEntry,
   SourceAdapter,
   Theme,
   UserSettings,
   WatchlistMembership,
 } from "../api/types";
 import { resolveTheme } from "./theme";
-import { notebookFormFromEntry } from "./notebookForms";
 
 type AppViewModelInput = {
   companies: Company[];
@@ -43,24 +40,13 @@ type AppViewModelInput = {
   inboxStatusFilter: InboxStatusFilter;
   inboxTypeFilter: string;
   inboxWatchlistFilter: string;
-  notebookEditForm: NotebookForm;
   signals: CompanySignal[];
-  notebookEntries: NotebookEntry[];
-  notebookScreenWatchlistFilter: string;
-  notebookScreenClaimStatusFilter: string;
-  notebookScreenEditForm: NotebookForm;
-  notebookScreenFollowUpFilter: string;
-  notebookScreenKindFilter: string;
-  notebookScreenTagFilter: string;
   searchQuery: string;
   selectedCompanyFeedItemId: string | null;
   selectedCompanyId: string | null;
   selectedCompanyRegistryTicker: string | null;
   selectedCompanyEventId: string | null;
   selectedFeedItemId: string | null;
-  selectedNotebookCompanyId: string | null;
-  selectedNotebookEntryId: string | null;
-  selectedNotebookScreenEntryId: string | null;
   settings: UserSettings | null;
   sourceAdapters: SourceAdapter[];
   sourceAdaptersError: string | null;
@@ -86,23 +72,12 @@ export function useAppViewModel({
   inboxTypeFilter,
   inboxWatchlistFilter,
   signals,
-  notebookEditForm,
-  notebookEntries,
-  notebookScreenWatchlistFilter,
-  notebookScreenClaimStatusFilter,
-  notebookScreenEditForm,
-  notebookScreenFollowUpFilter,
-  notebookScreenKindFilter,
-  notebookScreenTagFilter,
   searchQuery,
   selectedCompanyFeedItemId,
   selectedCompanyId,
   selectedCompanyRegistryTicker,
   selectedCompanyEventId,
   selectedFeedItemId,
-  selectedNotebookCompanyId,
-  selectedNotebookEntryId,
-  selectedNotebookScreenEntryId,
   sourceAdapters,
   sourceAdaptersError,
   theme,
@@ -308,86 +283,6 @@ export function useAppViewModel({
       ? companies.find((company) => company.qualifiedTicker === selectedFeedItem.company) ?? null
       : null;
   const selectedCompany = companies.find((company) => company.id === selectedCompanyId) ?? null;
-  const selectedCompanyNotebookEntries = useMemo(() => {
-    if (!selectedCompany) {
-      return [];
-    }
-
-    return notebookEntries.filter((entry) => entry.companyId === selectedCompany.id);
-  }, [notebookEntries, selectedCompany]);
-  const selectedNotebookEntry =
-    selectedCompanyNotebookEntries.find((entry) => entry.id === selectedNotebookEntryId) ??
-    selectedCompanyNotebookEntries[0] ??
-    null;
-  const isNotebookEditDirty = selectedNotebookEntry
-    ? JSON.stringify(notebookEditForm) !== JSON.stringify(notebookFormFromEntry(selectedNotebookEntry))
-    : false;
-  const filteredNotebookScreenCompanies = useMemo(() => {
-    return companies.filter((company) =>
-      companyMatchesWatchlist(company, notebookScreenWatchlistFilter),
-    );
-  }, [companies, companyMatchesWatchlist, notebookScreenWatchlistFilter]);
-  const selectedNotebookScreenCompany =
-    filteredNotebookScreenCompanies.find((company) => company.id === selectedNotebookCompanyId) ??
-    filteredNotebookScreenCompanies[0] ??
-    null;
-  const selectedNotebookScreenEntries = useMemo(() => {
-    if (!selectedNotebookScreenCompany) {
-      return [];
-    }
-
-    const normalizedSearch = searchQuery.trim().toLowerCase();
-    const normalizedTagFilter = notebookScreenTagFilter.trim().toLowerCase();
-    const entries = notebookEntries.filter(
-      (entry) => entry.companyId === selectedNotebookScreenCompany.id,
-    );
-
-    return entries.filter((entry) => {
-      const kindMatches =
-        notebookScreenKindFilter === "all" || entry.kind === notebookScreenKindFilter;
-      const statusMatches =
-        notebookScreenClaimStatusFilter === "all" ||
-        entry.claimStatus === notebookScreenClaimStatusFilter;
-      const hasFollowUp = Boolean(entry.followUpAfter || entry.followUpDate);
-      const followUpMatches =
-        notebookScreenFollowUpFilter === "all" ||
-        (notebookScreenFollowUpFilter === "has_follow_up" && hasFollowUp) ||
-        (notebookScreenFollowUpFilter === "no_follow_up" && !hasFollowUp);
-      const tagMatches =
-        normalizedTagFilter.length === 0 ||
-        entry.tags.some((tag) => tag.toLowerCase().includes(normalizedTagFilter));
-      const searchMatches =
-        normalizedSearch.length === 0 ||
-        [
-          entry.title,
-          entry.body,
-          entry.kind,
-          entry.claimStatus ?? "",
-          entry.followUpAfter ?? "",
-          entry.followUpDate ?? "",
-          entry.tags.join(" "),
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedSearch);
-
-      return kindMatches && statusMatches && followUpMatches && tagMatches && searchMatches;
-    });
-  }, [
-    notebookEntries,
-    notebookScreenClaimStatusFilter,
-    notebookScreenKindFilter,
-    notebookScreenFollowUpFilter,
-    notebookScreenTagFilter,
-    searchQuery,
-    selectedNotebookScreenCompany,
-  ]);
-  const selectedNotebookScreenEntry =
-    selectedNotebookScreenEntries.find((entry) => entry.id === selectedNotebookScreenEntryId) ?? null;
-  const isNotebookScreenEditDirty = selectedNotebookScreenEntry
-    ? JSON.stringify(notebookScreenEditForm) !==
-      JSON.stringify(notebookFormFromEntry(selectedNotebookScreenEntry))
-    : false;
   const selectedCompanyFeedItems = useMemo(() => {
     if (!selectedCompany) {
       return [];
@@ -495,37 +390,14 @@ export function useAppViewModel({
     [selectedCompanyFeedItems],
   );
   const sourceStatusSummary = useMemo<SourceStatusSummary>(() => {
-    if (sourceAdaptersError) {
-      return {
-        label: "error",
-        title: `Source refresh failed: ${sourceAdaptersError}`,
-        tone: "danger",
-      };
-    }
-
-    if (sourceAdapters.length === 0) {
-      return {
-        label: "0 sources",
-        title: "No sources configured",
-        tone: "warn",
-      };
-    }
-
-    const enabledAdapters = sourceAdapters.filter((adapter) => adapter.enabled);
-    const adaptersWithErrors = sourceAdapters.filter((adapter) => adapter.lastError);
-
-    if (adaptersWithErrors.length > 0) {
-      return {
-        label: `${adaptersWithErrors.length} issue${adaptersWithErrors.length === 1 ? "" : "s"}`,
-        title: `${adaptersWithErrors.length} source issue${adaptersWithErrors.length === 1 ? "" : "s"}`,
-        tone: "danger",
-      };
-    }
-
+    if (sourceAdaptersError) return { kind: "error", message: sourceAdaptersError };
+    if (sourceAdapters.length === 0) return { kind: "none" };
+    const issues = sourceAdapters.filter((adapter) => adapter.lastError).length;
+    if (issues > 0) return { kind: "issues", count: issues };
     return {
-      label: `${enabledAdapters.length}/${sourceAdapters.length}`,
-      title: `${enabledAdapters.length} enabled source${enabledAdapters.length === 1 ? "" : "s"} ready`,
-      tone: "ok",
+      kind: "ok",
+      enabled: sourceAdapters.filter((adapter) => adapter.enabled).length,
+      total: sourceAdapters.length,
     };
   }, [sourceAdapters, sourceAdaptersError]);
   // Keep this axis list in sync with `clearInboxFilters` (useFeedController)
@@ -566,12 +438,9 @@ export function useAppViewModel({
     filteredCompanies,
     filteredCompanyRegistryEntries,
     filteredFeedItems,
-    filteredNotebookScreenCompanies,
     hasActiveInboxFilters,
     inboxEmptyState,
     inboxReviewStats,
-    isNotebookEditDirty,
-    isNotebookScreenEditDirty,
     membershipsByCompany,
     registryAdapter,
     scheduledSourceAdapterKey,
@@ -581,13 +450,8 @@ export function useAppViewModel({
     selectedCompanyFeedItem,
     selectedCompanyFeedItems,
     selectedCompanyFeedStats,
-    selectedCompanyNotebookEntries,
     selectedFeedCompany,
     selectedFeedItem,
-    selectedNotebookEntry,
-    selectedNotebookScreenCompany,
-    selectedNotebookScreenEntries,
-    selectedNotebookScreenEntry,
     signalsByFeedItemId,
     sourceStatusSummary,
     totalUnreadFeedItems,

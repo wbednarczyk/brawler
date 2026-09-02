@@ -15,8 +15,6 @@ function useHarness() {
   const navigateCallsRef = useRef<SpolkaTransition[]>([]);
 
   const controller = useWorkspaceNavigationController({
-    companiesById: { [company.id]: company },
-    feedState: [],
     scopeInboxToCompany: () => {},
     selectedCompanyFeedItemId: null,
     selectedCompanyId,

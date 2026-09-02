@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { AppShell, type PinnedCompany } from "./AppShell";
 import { appShortcutReferenceItems, type AppShortcutActionMap } from "./shortcuts";
@@ -36,7 +36,7 @@ function baseProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
     sourceRefreshError: null,
     sourceRefreshResult: null,
     sourceRefreshState: "idle",
-    sourceStatusSummary: { label: "OK", title: "Sources OK", tone: "ok" },
+    sourceStatusSummary: { kind: "ok", enabled: 2, total: 2 },
     theme: "dark",
     locale: "en",
     shortcutBindings: {},
@@ -104,11 +104,16 @@ describe("AppShell — exactly one aria-current across modes and pinned rows", (
 });
 
 // F4b S4 (contract § Decisions #1): Events and Report Season join the
-// Library nav — seven destinations in the documented order, both locales.
-describe("AppShell — Library group lists seven destinations in order, both locales", () => {
+// Library nav. F4c S1 (docs/plans/f4c-contracts/s1-guardrails.md item 5,
+// plan § Decisions 4): Research joins next to Report Season (both "work"
+// surfaces; Transcripts/Sources stay last as utilities) — eight destinations
+// in the documented order, both locales. `nav.research` = "Research" in BOTH
+// locales (plText.ts:521 keeps the English name in PL). RED today — Research
+// is not yet a Library nav entry (`navigation.ts:88-92`); S3 adds it.
+describe("AppShell — Library group lists eight destinations in order, both locales", () => {
   const LIBRARY_ORDER = {
-    en: ["Companies", "Watchlists", "Alerts", "Events", "Report Season", "Transcripts", "Sources"],
-    pl: ["Spółki", "Listy", "Alerty", "Wydarzenia", "Sezon raportów", "Transkrypcje", "Źródła"],
+    en: ["Companies", "Watchlists", "Alerts", "Events", "Report Season", "Research", "Transcripts", "Sources"],
+    pl: ["Spółki", "Listy", "Alerty", "Wydarzenia", "Sezon raportów", "Research", "Transkrypcje", "Źródła"],
   } as const;
 
   it.each(["en", "pl"] as const)("%s", (locale) => {
@@ -117,5 +122,19 @@ describe("AppShell — Library group lists seven destinations in order, both loc
     if (!group) throw new Error("Library nav group not found");
     const items = Array.from(group.querySelectorAll(".nav-item")).map((node) => node.textContent);
     expect(items).toEqual(LIBRARY_ORDER[locale]);
+  });
+});
+
+// F4c S3 (sol R2 amendment): Ctrl+4 invokes the Research section through
+// AppShell's own shortcut wiring (`useKeyboardShortcuts`, registered on
+// `document`), not just the default-binding table.
+describe("AppShell — Ctrl+4 invokes the Research section", () => {
+  it("calls setActiveSection('Research') on Ctrl+4", () => {
+    let active: string | null = null;
+    renderShell({ setActiveSection: (section) => { active = section; } });
+
+    fireEvent.keyDown(document, { key: "4", code: "Digit4", ctrlKey: true });
+
+    expect(active).toBe("Research");
   });
 });

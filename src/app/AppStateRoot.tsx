@@ -26,7 +26,7 @@ import {
   detailPaneMinFraction,
 } from "./layout";
 import { type Section } from "./navigation";
-import { emptyNotebookForm, manualNotebookOrigins } from "./notebookForms";
+import { emptyNotebookForm } from "./notebookForms";
 import * as sourcesApi from "../api/sources";
 import * as eventsApi from "../api/events";
 import * as signalsApi from "../api/signals";
@@ -52,11 +52,11 @@ import {
 } from "./shortcuts";
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import { useToast, useUndoableDelete } from "../ui";
-import { DecisionJournalGlobalPanel } from "../screens/Spolka/panels/DecisionJournalGlobalPanel";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { SpolkaScreenHost, useSpolkaToolHost } from "./useSpolkaScreenWiring";
 import { useCompanyEntryActions } from "./useCompanyEntryActions";
 import { useSpolkaNavigate } from "./useSpolkaNavigate";
+import type { NotebookToolIntent } from "../screens/Spolka/route";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { AppContentErrorFallback } from "./AppErrorFallback";
 import { DiagnosticsScreen } from "../screens/Diagnostics/DiagnosticsScreen";
@@ -64,8 +64,6 @@ import { EventsScreen } from "../screens/Events/EventsScreen";
 import { InboxScreen } from "../screens/Inbox/InboxScreen";
 import { ReportSeasonScreen } from "../screens/ReportSeason/ReportSeasonScreen";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
-import { NotebooksScreen } from "../screens/Notebooks/NotebooksScreen";
-import type { NotebooksScreenProps } from "../screens/Notebooks/notebookTypes";
 import {
   ResearchScreen,
   type ResearchScreenProps,
@@ -75,7 +73,6 @@ import { SourcesScreen } from "../screens/Sources/SourcesScreen";
 import { TranscriptsScreen } from "../screens/Transcripts/TranscriptsScreen";
 import { WatchlistsScreen } from "../screens/Watchlists/WatchlistsScreen";
 import type { TranscriptJobForm } from "../screens/Transcripts/transcriptTypes";
-import { MarkdownNoteBody } from "../shared/components/MarkdownNoteBody";
 import { NotebookDateField } from "../shared/components/NotebookDateField";
 import { NotebookQuarterField } from "../shared/components/NotebookQuarterField";
 import {
@@ -106,7 +103,6 @@ import {
   CompaniesProvider,
   EventsProvider,
   InboxProvider,
-  NotebooksProvider,
   ReportSeasonProvider,
   ResearchProvider,
   SettingsScreenProvider,
@@ -131,8 +127,6 @@ import type {
   FeedItem,
   HealthResponse,
   LicenseStatus,
-  NotebookDraftOrigin,
-  NotebookEntry,
   SourceAdapter,
   SourceIngestionResult,
   Theme,
@@ -201,8 +195,6 @@ export function AppStateRoot({
     WatchlistMembership[]
   >([]);
   const [watchlistsError, setWatchlistsError] = useState<string | null>(null);
-  const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
-  const [notebookError, setNotebookError] = useState<string | null>(null);
   const [inboxWatchlistFilter, setInboxWatchlistFilter] = useState("all");
   const [inboxCompanyFilter, setInboxCompanyFilter] = useState("all");
   const [inboxTypeFilter, setInboxTypeFilter] = useState("all");
@@ -344,35 +336,6 @@ export function AppStateRoot({
   const [selectedCompanyFeedItemId, setSelectedCompanyFeedItemId] = useState<
     string | null
   >(null);
-  const [selectedNotebookEntryId, setSelectedNotebookEntryId] = useState<
-    string | null
-  >(null);
-  const [isNotebookComposerOpen, setNotebookComposerOpen] = useState(false);
-  const [isNotebookEditMode, setNotebookEditMode] = useState(false);
-  const [selectedNotebookCompanyId, setSelectedNotebookCompanyId] = useState<
-    string | null
-  >(null);
-  const [selectedNotebookScreenEntryId, setSelectedNotebookScreenEntryId] =
-    useState<string | null>(null);
-  const [isNotebookScreenComposerOpen, setNotebookScreenComposerOpen] =
-    useState(false);
-  const [isNotebookScreenEditMode, setNotebookScreenEditMode] = useState(false);
-  const [notebookScreenKindFilter, setNotebookScreenKindFilter] =
-    useState("all");
-  const [notebookScreenWatchlistFilter, setNotebookScreenWatchlistFilter] =
-    useState("all");
-  const [notebookScreenClaimStatusFilter, setNotebookScreenClaimStatusFilter] =
-    useState("all");
-  const [notebookScreenFollowUpFilter, setNotebookScreenFollowUpFilter] =
-    useState("all");
-  const [notebookScreenTagFilter, setNotebookScreenTagFilter] = useState("");
-  const [notebookScreenForm, setNotebookScreenForm] =
-    useState<NotebookForm>(emptyNotebookForm);
-  const [notebookScreenDraftOrigins, setNotebookScreenDraftOrigins] = useState<
-    NotebookDraftOrigin[]
-  >(manualNotebookOrigins);
-  const [notebookScreenEditForm, setNotebookScreenEditForm] =
-    useState<NotebookForm>(emptyNotebookForm);
   const [detailPaneFraction, setDetailPaneFraction] = useState(
     detailPaneDefaultFraction,
   );
@@ -425,11 +388,6 @@ export function AppStateRoot({
     displayName: "",
     isin: "",
   });
-  const [notebookForm, setNotebookForm] =
-    useState<NotebookForm>(emptyNotebookForm);
-  const [notebookEditForm, setNotebookEditForm] =
-    useState<NotebookForm>(emptyNotebookForm);
-
   const {
     companiesById,
     companyEventStatuses,
@@ -448,20 +406,14 @@ export function AppStateRoot({
     filteredCompanyRegistryEntries,
     filteredFeedItems,
     signalsByFeedItemId,
-    filteredNotebookScreenCompanies,
     hasActiveInboxFilters,
     inboxEmptyState,
     inboxReviewStats,
-    isNotebookScreenEditDirty,
     membershipsByCompany,
     scheduledSourceAdapters,
     selectedCompany,
     selectedFeedCompany,
     selectedFeedItem,
-    selectedNotebookEntry,
-    selectedNotebookScreenCompany,
-    selectedNotebookScreenEntries,
-    selectedNotebookScreenEntry,
     sourceStatusSummary,
     totalUnreadFeedItems,
     transcriptCompanySuggestions,
@@ -483,23 +435,12 @@ export function AppStateRoot({
     inboxTypeFilter,
     inboxWatchlistFilter,
     signals,
-    notebookEditForm,
-    notebookEntries,
-    notebookScreenWatchlistFilter,
-    notebookScreenClaimStatusFilter,
-    notebookScreenEditForm,
-    notebookScreenFollowUpFilter,
-    notebookScreenKindFilter,
-    notebookScreenTagFilter,
     searchQuery,
     selectedCompanyFeedItemId,
     selectedCompanyId,
     selectedCompanyRegistryTicker,
     selectedCompanyEventId,
     selectedFeedItemId,
-    selectedNotebookCompanyId,
-    selectedNotebookEntryId,
-    selectedNotebookScreenEntryId,
     settings,
     sourceAdapters,
     sourceAdaptersError,
@@ -795,9 +736,6 @@ export function AppStateRoot({
     setCompanyWatchlistFilter((current) =>
       current === watchlistId ? "all" : current,
     );
-    setNotebookScreenWatchlistFilter((current) =>
-      current === watchlistId ? "all" : current,
-    );
     setSelectedManagedWatchlistId((current) =>
       current === watchlistId ? null : current,
     );
@@ -844,56 +782,31 @@ export function AppStateRoot({
     text,
   });
 
-  const {
-    cancelNotebookScreenEdit,
-    createNotebookScreenEntry,
-    deleteNotebookScreenEntry,
-    discardNotebookScreenDraft,
-    feedItemSummary,
-    openFeedItemNoteDraft,
-    refreshNotebookEntries,
-    saveNotebookEntry,
-    saveNotebookScreenEntry,
-    selectNotebookScreenCompany,
-    showNotebookCompanyFollowUps,
-    showNotebookCompanyOpenClaims,
-    toggleNotebookScreenComposer,
-    toggleNotebookScreenEntry,
-    updateNotebookScreenEditForm,
-    updateNotebookScreenForm,
-  } = useNotebookController({
+  // Moved ahead of useNotebookController/useTranscriptController (F4c S2,
+  // ADR 0108 amendment): both now land their cross-company deep links on the
+  // Spółka `notatnik` tool through this ONE guarded transition, so they need
+  // `navigate` at call time.
+  const { navigate, highlightClaimId } = useSpolkaNavigate({
+    spolkaTool,
+    setSelectedCompanyId,
+    setActiveSectionRaw,
+  });
+
+  // The ONE landing point for the Spółka `notatnik` tool (F4c S2, ADR 0108
+  // amendment, sol re-review): every cross-screen deep link (Inbox, research
+  // evidence, global search, transcript) routes through this, never
+  // `spolkaTool.openTool` directly — that only commits tool state and
+  // neither selects the company nor activates Spółka.
+  const navigateToCompanyNotebook = useCallback(
+    (companyId: string, intent: NotebookToolIntent) => {
+      navigate({ companyId, section: "Spolka", tool: { t: "notatnik", ...intent } });
+    },
+    [navigate],
+  );
+
+  const { feedItemSummary, openFeedItemNoteDraft } = useNotebookController({
     companies,
-    notebookEditForm,
-    notebookForm,
-    notebookScreenDraftOrigins,
-    notebookScreenEditForm,
-    notebookScreenForm,
-    selectedCompany,
-    selectedNotebookCompanyId,
-    selectedNotebookEntry,
-    selectedNotebookScreenCompany,
-    selectedNotebookScreenEntry,
-    setActiveSection,
-    setNotebookComposerOpen,
-    setNotebookEditForm,
-    setNotebookEditMode,
-    setNotebookEntries,
-    setNotebookError,
-    setNotebookForm,
-    setNotebookScreenComposerOpen,
-    setNotebookScreenDraftOrigins,
-    setNotebookScreenEditForm,
-    setNotebookScreenEditMode,
-    setNotebookScreenFollowUpFilter,
-    setNotebookScreenForm,
-    setNotebookScreenKindFilter,
-    setNotebookScreenClaimStatusFilter,
-    setNotebookScreenTagFilter,
-    setSelectedNotebookCompanyId,
-    setSelectedNotebookEntryId,
-    setSelectedNotebookScreenEntryId,
-    text,
-    runUndoableDelete,
+    navigateToCompanyNotebook,
   });
 
   const {
@@ -916,13 +829,10 @@ export function AppStateRoot({
     updateTranscriptNoteForm,
   } = useTranscriptController({
     geminiCredentialStatus,
-    refreshNotebookEntries,
+    navigateToCompanyNotebook,
     selectedTranscriptJobId,
     selectedTranscriptSegmentIdsByJobId,
     settings,
-    setNotebookEntries,
-    setSelectedNotebookCompanyId,
-    setSelectedNotebookScreenEntryId,
     setSelectedTranscriptJobId,
     setSelectedTranscriptSegmentIdsByJobId,
     setTranscriptDeleteInFlight,
@@ -949,11 +859,6 @@ export function AppStateRoot({
     transcriptNoteForm,
   });
 
-  const { navigate, highlightClaimId } = useSpolkaNavigate({
-    spolkaTool,
-    setSelectedCompanyId,
-    setActiveSectionRaw,
-  });
   const {
     clearInboxFilters,
     inboxDetailActivationToken,
@@ -1046,15 +951,11 @@ export function AppStateRoot({
   }, [searchFocusSelector]);
 
   const {
-    focusCompanyWorkspace,
     openCompanyClaims,
     openCompanyInboxFilter,
     openCompanyWorkspace,
     openCompanyWorkspaceFromKeyboard,
-    renderNotebookOrigins,
   } = useWorkspaceNavigationController({
-    companiesById,
-    feedState,
     scopeInboxToCompany,
     selectedCompanyFeedItemId,
     selectedCompanyId,
@@ -1147,27 +1048,16 @@ export function AppStateRoot({
     refreshGeminiCredentialStatus,
     refreshHealth,
     refreshLicenseStatus,
-    refreshNotebookEntries,
     refreshSettings,
     refreshSourceAdapters,
     refreshTranscriptJobs,
     refreshWatchlistMemberships,
     refreshWatchlists,
-    selectedCompanyId,
     selectedFeedItemId,
-    selectedNotebookCompanyId,
-    selectedNotebookEntry,
-    selectedNotebookScreenEntry,
     licenseCanUseApp,
     setNextRegistryRefreshAt,
     setNextSourceRefreshAtByAdapterId,
-    setNotebookEditForm,
-    setNotebookEditMode,
-    setNotebookScreenEditForm,
-    setNotebookScreenEditMode,
     setSelectedFeedItemId,
-    setSelectedNotebookCompanyId,
-    setSelectedNotebookEntryId,
     sourceAdapters,
     sourceAdaptersRef,
   });
@@ -1183,9 +1073,9 @@ export function AppStateRoot({
         setActiveSection("Inbox");
         break;
       case "notebooks":
-        setSelectedNotebookCompanyId(item.companyId);
-        setSelectedNotebookScreenEntryId(item.sourceId);
-        setActiveSection("Notebooks");
+        // F4c S2 (ADR 0108 amendment): notes land on the Spółka `notatnik`
+        // tool, highlighted — the global Notebooks screen is retired.
+        navigateToCompanyNotebook(item.companyId, { entryId: item.sourceId });
         break;
       case "research":
         // Evidence deep-links land on the Spółka `research` tool (F3a, ADR
@@ -1236,12 +1126,12 @@ export function AppStateRoot({
         setSearchFocusSelector(`[data-feed-item-id="${match.sourceId}"]`);
         break;
       case "notebook_entry":
+        // F4c S2 (ADR 0108 amendment): lands on the Spółka `notatnik` tool
+        // (typed intent, `entryId`) — the `searchFocusSelector` leg retires
+        // with the global Notebooks screen it targeted.
         if (match.companyId) {
-          setSelectedNotebookCompanyId(match.companyId);
+          navigateToCompanyNotebook(match.companyId, { entryId: match.sourceId });
         }
-        setSelectedNotebookScreenEntryId(match.sourceId);
-        setActiveSection("Notebooks");
-        setSearchFocusSelector(`[data-notebook-entry-id="${match.sourceId}"]`);
         break;
       case "research_brief":
       case "digest":
@@ -1349,8 +1239,7 @@ export function AppStateRoot({
     () => ({
       "app.openInbox": () => undefined,
       "app.openCompanies": () => undefined,
-      "app.openWatchlists": () => undefined,
-      "app.openNotebooks": () => undefined,
+      "app.openWatchlists": () => undefined, "app.openResearch": () => undefined,
       "app.openEvents": () => undefined,
       "app.openTranscripts": () => undefined,
       "app.openSources": () => undefined,
@@ -1402,48 +1291,15 @@ export function AppStateRoot({
       // bindings/config stay valid.
       "company.nextTab": () => false,
       "company.previousTab": () => false,
-      "notebook.editSelected": () => {
-        if (activeSection === "Notebooks" && selectedNotebookScreenEntry) {
-          setNotebookScreenEditMode(true);
-          return true;
-        }
-
-        return false;
-      },
-      "notebook.saveCurrent": () => {
-        if (activeSection === "Notebooks") {
-          if (isNotebookScreenComposerOpen && selectedNotebookScreenCompany) {
-            createNotebookScreenEntry();
-            return true;
-          }
-
-          if (isNotebookScreenEditMode && selectedNotebookScreenEntry) {
-            saveNotebookScreenEntry();
-            return true;
-          }
-        }
-
-        return false;
-      },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- view-model memo keyed on the listed UI state; the plain keyboard-navigation helpers (selectAdjacentCompany/selectAdjacentInboxItem/switchCompanyWorkspaceTab) are excluded to keep it from recomputing every render — they read the same state already in the dep list
     [
       activeSection,
-      createNotebookScreenEntry,
       filteredCompanies,
       filteredFeedItems,
-      isNotebookComposerOpen,
-      isNotebookEditMode,
-      isNotebookScreenComposerOpen,
-      isNotebookScreenEditMode,
       openFeedItemNoteDraft,
-      saveNotebookEntry,
-      saveNotebookScreenEntry,
       selectedCompany,
       selectedFeedItem,
-      selectedNotebookEntry,
-      selectedNotebookScreenCompany,
-      selectedNotebookScreenEntry,
       updateSelectedFeedItem,
     ],
   );
@@ -1524,49 +1380,6 @@ export function AppStateRoot({
     openEvidence: openResearchEvidence,
     openEvidenceUrl: openExternalUrl,
     formatTimestamp,
-  };
-  const notebooksViewModel: NotebooksScreenProps = {
-    companies: filteredNotebookScreenCompanies,
-    totalCompanyCount: companies.length,
-    watchlists,
-    notebookEntries,
-    selectedNotebookScreenCompany,
-    selectedNotebookScreenEntries,
-    selectedNotebookScreenEntry,
-    isNotebookScreenComposerOpen,
-    isNotebookScreenEditMode,
-    isNotebookScreenEditDirty,
-    notebookScreenKindFilter,
-    notebookScreenWatchlistFilter,
-    notebookScreenClaimStatusFilter,
-    notebookScreenFollowUpFilter,
-    notebookScreenTagFilter,
-    notebookScreenForm,
-    notebookScreenEditForm,
-    notebookError,
-    selectNotebookScreenCompany,
-    showNotebookCompanyOpenClaims,
-    showNotebookCompanyFollowUps,
-    focusCompanyWorkspace,
-    toggleNotebookScreenComposer,
-    discardNotebookScreenDraft,
-    createNotebookScreenEntry,
-    toggleNotebookScreenEntry,
-    saveNotebookScreenEntry,
-    deleteNotebookScreenEntry,
-    cancelNotebookScreenEdit,
-    setNotebookScreenEditMode,
-    setNotebookScreenKindFilter,
-    setNotebookScreenWatchlistFilter,
-    setNotebookScreenClaimStatusFilter,
-    setNotebookScreenFollowUpFilter,
-    setNotebookScreenTagFilter,
-    updateNotebookScreenForm,
-    updateNotebookScreenEditForm,
-    NotebookDateField,
-    NotebookQuarterField,
-    MarkdownNoteBody,
-    renderNotebookOrigins,
   };
   // Pinned-company spine (ADR 0054). Resolve persisted IDs against the live
   // company list, dropping any that no longer exist, and preserve pin order.
@@ -1815,17 +1628,6 @@ export function AppStateRoot({
                   />
                 </ResearchProvider>
               ) : null}
-              {activeSection === "Journal" ? (
-                // Decision journal, all companies (F3a S3, ADR 0107 plan
-                // "Trasy powierzchni globalnych"): a standalone screen route.
-                // No separate PanelHeader: the panel's own
-                // "Decision journal" heading (SectionHeader h3) is this
-                // screen's only heading — a second h1 above it would repeat
-                // the same title and break heading order (axe).
-                <section className="feed-panel" role="region" aria-label={text("Decision journal")}>
-                  <DecisionJournalGlobalPanel companies={companies} />
-                </section>
-              ) : null}
               {activeSection === "Today" ? (
                 <TodayScreen
                   {...buildTodayScreenProps({
@@ -1890,11 +1692,6 @@ export function AppStateRoot({
                 <ResearchProvider value={researchViewModel}>
                   <ResearchScreen />
                 </ResearchProvider>
-              ) : null}
-              {activeSection === "Notebooks" ? (
-                <NotebooksProvider value={notebooksViewModel}>
-                  <NotebooksScreen />
-                </NotebooksProvider>
               ) : null}
               {activeSection === "ReportSeason" ? (
                 <ReportSeasonProvider value={reportSeasonViewModel}>

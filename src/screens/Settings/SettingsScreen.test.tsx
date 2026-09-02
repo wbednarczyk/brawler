@@ -59,16 +59,16 @@ describe("Settings screen workflows", () => {
     await user.click(within(settingsRegion).getByRole("button", { name: "Transcripts" }));
 
     expect(within(settingsRegion).getByRole("heading", { name: "Transcripts" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Gemini transcription model")).toHaveValue("gemini-2.5-flash");
-    expect(screen.getByLabelText("Gemini transcription timeout")).toHaveValue("300");
+    expect(screen.getByLabelText("Transcription quality")).toHaveValue("gemini-2.5-flash");
+    expect(screen.getByLabelText("Give up after")).toHaveValue("300");
     expect(within(settingsRegion).queryByText("provider_gemini")).not.toBeInTheDocument();
     expect(within(settingsRegion).queryByText("Cheapest supported")).not.toBeInTheDocument();
     expect(within(settingsRegion).queryByText("YouTube transcription provider ID")).not.toBeInTheDocument();
 
     await user.click(within(settingsRegion).getByRole("button", { name: "Credentials" }));
 
-    expect(within(settingsRegion).getByText("Credential kind")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("API Key")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("API key")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Stored in")).toBeInTheDocument();
 
     await user.click(within(settingsRegion).getByRole("button", { name: "Keyboard shortcuts" }));
 
@@ -84,7 +84,11 @@ describe("Settings screen workflows", () => {
     expect(within(settingsRegion).getByText("F9")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Shift+F9")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Open next inbox item")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Open notebook entry editor")).toBeInTheDocument();
+    // F4c S2 (ADR 0108 amendment): the Notebooks-global screen retired —
+    // `app.openNotebooks`/`notebook.editSelected`/`notebook.saveCurrent` are
+    // deleted outright (no ghost rows for a retired id, retiredKeys.test.ts).
+    expect(within(settingsRegion).queryByText(/^Open notebook entry editor$/)).not.toBeInTheDocument();
+    expect(within(settingsRegion).queryByText(/^Save notebook edit$/)).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Shortcut key Open Inbox"), {
       target: { value: "I" },
@@ -144,34 +148,34 @@ describe("Settings screen workflows", () => {
 
     await user.click(within(settingsRegion).getByRole("button", { name: "Źródła" }));
 
-    await user.selectOptions(screen.getByLabelText("Interwał odpytywania źródeł w ustawieniach"), "1800");
+    await user.selectOptions(screen.getByLabelText("Sprawdzanie źródeł w ustawieniach"), "1800");
 
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: {
         pollIntervalSeconds: 1800,
       },
     });
-    expect(screen.getByLabelText("Interwał odpytywania źródeł w ustawieniach")).toHaveValue("1800");
+    expect(screen.getByLabelText("Sprawdzanie źródeł w ustawieniach")).toHaveValue("1800");
 
     await user.click(within(settingsRegion).getByRole("button", { name: "Transkrypcje" }));
 
-    await user.selectOptions(screen.getByLabelText("Model transkrypcji Gemini"), "gemini-2.5-flash");
+    await user.selectOptions(screen.getByLabelText("Jakość transkrypcji"), "gemini-2.5-flash");
 
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: {
         youtubeTranscriptionModel: "gemini-2.5-flash",
       },
     });
-    expect(screen.getByLabelText("Model transkrypcji Gemini")).toHaveValue("gemini-2.5-flash");
+    expect(screen.getByLabelText("Jakość transkrypcji")).toHaveValue("gemini-2.5-flash");
 
-    await user.selectOptions(screen.getByLabelText("Limit czasu transkrypcji Gemini"), "600");
+    await user.selectOptions(screen.getByLabelText("Poddaj się po"), "600");
 
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: {
         youtubeTranscriptionTimeoutSeconds: 600,
       },
     });
-    expect(screen.getByLabelText("Limit czasu transkrypcji Gemini")).toHaveValue("600");
+    expect(screen.getByLabelText("Poddaj się po")).toHaveValue("600");
 
     await user.click(within(settingsRegion).getByRole("button", { name: "Poświadczenia" }));
 
@@ -185,7 +189,7 @@ describe("Settings screen workflows", () => {
       },
     });
     expect(await within(settingsRegion).findByText("Skonfigurowane")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Rodzaj poświadczenia")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Przechowywany w")).toBeInTheDocument();
     expect(screen.getByLabelText("Klucz API Gemini")).toHaveValue("");
 
     await user.click(screen.getByRole("button", { name: "Wyczyść" }));
@@ -348,21 +352,35 @@ describe("Settings screen workflows", () => {
     expect(within(settingsRegion).getByRole("heading", { name: "Data storage" })).toBeInTheDocument();
     expect(
       within(settingsRegion).getByText(
-        "Advanced connection-pool tuning. Changes apply on the next app launch.",
+        "How hard the app works on your data at once. Applies after restart.",
       ),
     ).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText("Max connections"), "8");
+    await user.selectOptions(screen.getByLabelText("Parallel work"), "8");
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { dbMaxConnections: 8 },
     });
 
-    await user.selectOptions(screen.getByLabelText("Busy timeout (ms)"), "30000");
+    await user.selectOptions(screen.getByLabelText("Wait when busy"), "30000");
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { dbBusyTimeoutMs: 30000 },
     });
 
     const databaseSection = within(settingsRegion).getByRole("region", { name: "Data storage" });
+
+    // sol fix1 item 2: option labels read as seconds ("1 s" … "60 s") while
+    // the persisted/committed value stays the raw millisecond figure the
+    // API expects — selecting the seconds-labelled option must still emit
+    // the millisecond number, never the display string.
+    await user.selectOptions(within(databaseSection).getByLabelText("Wait when busy"), "1 s");
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { dbBusyTimeoutMs: 1000 },
+    });
+    await user.selectOptions(within(databaseSection).getByLabelText("Wait to start"), "30 s");
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { dbAcquireTimeoutMs: 30000 },
+    });
+
     await user.click(within(databaseSection).getByRole("button", { name: "Reset to defaults" }));
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 },
@@ -384,14 +402,14 @@ describe("Settings screen workflows", () => {
       within(queueSection).getByRole("heading", { name: "Background work" }),
     ).toBeInTheDocument();
 
-    await user.selectOptions(within(queueSection).getByLabelText("Autopilot workers"), "6");
+    await user.selectOptions(within(queueSection).getByLabelText("Autopilot tasks at once"), "6");
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { autopilotWorkers: 6 },
     });
 
-    // ADR 0084: the AI lane is retired with the analysis layer — its worker and
-    // per-provider-concurrency controls must not come back.
-    expect(within(queueSection).queryByLabelText("AI workers")).not.toBeInTheDocument();
+    // ADR 0084: the AI lane is retired with the analysis layer — its
+    // per-provider-concurrency control must not come back (its own worker
+    // control is retired outright, pinned in retiredKeys.test.ts).
     expect(
       within(queueSection).queryByLabelText("Max concurrent calls per AI provider"),
     ).not.toBeInTheDocument();
@@ -400,6 +418,27 @@ describe("Settings screen workflows", () => {
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { sourcesWorkers: 2, autopilotWorkers: 3 },
     });
+  });
+
+  // F4c S4 (docs/plans/f4c-contracts/s4-settings-pass-banner.md "Amendments
+  // after sol R2" § Log level): the enum display map is presentation-only —
+  // selecting the product label "Detailed" must still persist the backend's
+  // raw token "debug", never the display string.
+  it("persists the raw log-level token when a product-language option is selected", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(within(settingsRegion).getByRole("button", { name: "Logs" }));
+
+    await user.selectOptions(screen.getByLabelText("Detail level"), "debug");
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { logLevel: "debug" },
+    });
+    expect(within(settingsRegion).getByText("Detailed")).toBeInTheDocument();
   });
 
   // T3.3 (ADR 0077 §3): backfill depth is configurable (default 3, 1–10). The
@@ -414,7 +453,7 @@ describe("Settings screen workflows", () => {
     await user.click(within(settingsRegion).getByRole("button", { name: "Sources" }));
 
     // Defaults to 3 (the sample settings value), shown in the bound numeric input.
-    const yearsInput = screen.getByLabelText("Backfill history depth in years");
+    const yearsInput = screen.getByLabelText("How far back to fetch (years)");
     expect(yearsInput).toHaveValue(3);
 
     await user.click(within(settingsRegion).getByRole("button", { name: "5" }));
@@ -468,8 +507,8 @@ describe("Settings screen workflows", () => {
 
     // The transcript-provider section survives, with both of its controls.
     expect(within(settingsRegion).getByRole("heading", { name: "Transcripts" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Gemini transcription model")).toBeInTheDocument();
-    expect(screen.getByLabelText("Gemini transcription timeout")).toBeInTheDocument();
+    expect(screen.getByLabelText("Transcription quality")).toBeInTheDocument();
+    expect(screen.getByLabelText("Give up after")).toBeInTheDocument();
 
     // Every analysis-routing control is gone.
     for (const label of [

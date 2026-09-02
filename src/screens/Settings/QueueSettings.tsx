@@ -1,6 +1,6 @@
 import type { UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
-import { FieldRow, SelectField } from "../../ui";
+import { ActionButton, FieldRow, SelectField } from "../../ui";
 
 type QueueSettingsProps = {
   settings: UserSettings | null;
@@ -25,13 +25,13 @@ export function QueueSettings({
       <h2 id="settings-queue-title">{text("Background work")}</h2>
       <p className="settings-note">
         {text(
-          "Worker threads per lane. Worker counts apply on the next app launch.",
+          "How many things run at once in the background. Applies after restart.",
         )}
       </p>
       <FieldRow>
         <SelectField
-          aria-label={text("Source workers")}
-          label={text("Source workers")}
+          aria-label={text("Source refreshes at once")}
+          label={text("Source refreshes at once")}
           value={queue?.sourcesWorkers ?? 2}
           onChange={(event) => onSourcesWorkersChange(Number(event.target.value))}
         >
@@ -42,8 +42,8 @@ export function QueueSettings({
           ))}
         </SelectField>
         <SelectField
-          aria-label={text("Autopilot workers")}
-          label={text("Autopilot workers")}
+          aria-label={text("Autopilot tasks at once")}
+          label={text("Autopilot tasks at once")}
           value={queue?.autopilotWorkers ?? 3}
           onChange={(event) => onAutopilotWorkersChange(Number(event.target.value))}
         >
@@ -54,9 +54,9 @@ export function QueueSettings({
           ))}
         </SelectField>
       </FieldRow>
-      <button type="button" className="secondary-button" onClick={onResetQueueSettings}>
+      <ActionButton kind="control" onClick={onResetQueueSettings}>
         {text("Reset to defaults")}
-      </button>
+      </ActionButton>
     </section>
   );
 }

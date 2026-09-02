@@ -8,7 +8,7 @@ import { setAutopilotRunNotificationState } from "../../api/autopilot";
 import { listAttentionEvents } from "../../api/attention";
 import type { TodayItem } from "../../api/generated/TodayItem";
 import type { AttentionController } from "../../app/useAttentionController";
-import { COMPANY_SPECS, makeAttentionEvent, makeCompany } from "../../test/scenarios/entities";
+import { COMPANY_SPECS, makeAttentionEvent, makeCompany, makeSourceAdapters } from "../../test/scenarios/entities";
 
 vi.mock("../../api/today", () => ({
   getTodayView: vi.fn(),
@@ -176,6 +176,29 @@ describe("TodayScreen", () => {
 
     await user.click(screen.getByRole("button", { name: "Refresh sources" }));
     expect(refreshSources).toHaveBeenCalledWith("manual");
+  });
+
+  // F4c dec. 6 (ConfigBanner.tsx, ADR 0087 dec. 5): a source in "attention"
+  // health renders the config-state banner ONCE with a "Sources" action —
+  // it always opened Sources; the label used to misname it "Diagnostics".
+  it("renders the config banner with a Sources action for a source needing attention, and opens Sources on click", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    getTodayViewMock.mockResolvedValue(emptyView());
+    const openSources = vi.fn();
+    render(
+      <TodayScreen
+        {...baseProps({
+          openSources,
+          sourceAdapters: makeSourceAdapters().filter(
+            (adapter) => adapter.healthStatus === "attention",
+          ),
+        })}
+      />,
+    );
+
+    const action = await screen.findByRole("button", { name: "Sources" });
+    await user.click(action);
+    expect(openSources).toHaveBeenCalled();
   });
 
   it("Success: renders day sections with exactly one screen-wide primary action, and stamps the visit anchor once", async () => {

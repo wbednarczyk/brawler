@@ -38,7 +38,6 @@ const baseProps: DecisionJournalSectionProps = {
   cancelSupersede: noop,
   setSelectedEntryId: noop,
   linkEvidence: noop,
-  formatTimestamp: (value) => value ?? "",
 };
 
 describe("DecisionJournalSection (ADR 0071, J3)", () => {

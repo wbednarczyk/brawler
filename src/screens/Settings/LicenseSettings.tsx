@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 import { KeyRound, Save, Trash2 } from "lucide-react";
 import type { LicenseStatus } from "../../api/types";
-import { ActionRow, Button, ErrorText, InfoGrid, TextareaField } from "../../ui";
+import { ActionButton, ActionRow, ErrorText, InfoGrid, TextareaField } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type LicenseSettingsProps = {
@@ -33,7 +33,7 @@ export function LicenseSettings({
       <InfoGrid
         className="settings-grid"
         items={[
-          { label: text("Status"), value: formatLicenseStatus(licenseStatus) },
+          { label: text("Status"), value: text(formatLicenseStatus(licenseStatus)) },
           { label: text("Holder"), value: license?.holder ?? text("Not available") },
           { label: text("Channel"), value: license?.channel ?? text("Not available") },
           { label: text("Expires"), value: license?.expiresAt ?? text("Not available") },
@@ -51,26 +51,30 @@ export function LicenseSettings({
           onChange={(event) => onLicenseKeyDraftChange(event.target.value)}
         />
         <ActionRow className="credential-actions">
-          <Button
+          <ActionButton
+            verb="save"
             disabled={licenseInFlight || !licenseKeyDraft.trim()}
             type="submit"
-            variant="action"
+            variant="primary"
+            data-ux-primary-action="true"
           >
             {licenseInFlight ? <KeyRound size={14} /> : <Save size={14} />}
             {text("Save license")}
-          </Button>
-          <Button
+          </ActionButton>
+          <ActionButton
+            verb="remove"
             disabled={licenseInFlight}
             onClick={onClearLicenseKey}
             variant="ghost"
           >
             <Trash2 size={14} />
             {text("Clear license")}
-          </Button>
+          </ActionButton>
         </ActionRow>
       </form>
 
-      {licenseStatus?.reason ? <p className="settings-note">{licenseStatus.reason}</p> : null}
+      {/* The backend's reason is one of a few fixed sentences (licensing/mod.rs) — translated by literal lookup, never rendered raw. */}
+      {licenseStatus?.reason ? <p className="settings-note">{text(licenseStatus.reason)}</p> : null}
       {licenseError ? <ErrorText>{licenseError}</ErrorText> : null}
     </section>
   );
