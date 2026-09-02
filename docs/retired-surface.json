@@ -404,7 +404,8 @@
       "adr": "ADR 0108 amendment (#410 F4c)",
       "allow": [
         "docs/product-spec.md",
-        "docs/ui-information-architecture.md"
+        "docs/ui-information-architecture.md",
+        "docs/data-model.md"
       ]
     }
   ]
