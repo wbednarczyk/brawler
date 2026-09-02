@@ -25,16 +25,36 @@ function offenders(strings: string[], source: string, pattern: RegExp = FORBIDDE
   return strings.filter((value) => pattern.test(value)).map((value) => `${source}: ${value}`);
 }
 
+// Developer-gated Diagnostics may use implementation terms (ui-authoring.md
+// § product language). A locale table cannot tell where a key is used, so the
+// table scan carries a NARROW allowlist of keys whose only live call site is
+// under `src/screens/Diagnostics/**` — and the test below proves that
+// property, so the allowlist can never hide a string that leaks elsewhere.
+const DIAGNOSTICS_ONLY_KEYS = new Set(["Pre-migration snapshot"]);
+
 describe("dev-speak guard over user-facing copy", () => {
   it("keeps implementation vocabulary out of every locale surface", () => {
+    const keys = Object.keys(plText).filter((key) => !DIAGNOSTICS_ONLY_KEYS.has(key));
     const found = [
       // plText keys ARE the English user-facing strings (text() passthrough).
-      ...offenders(Object.keys(plText), "plText key"),
-      ...offenders(Object.values(plText), "plText pl value"),
+      ...offenders(keys, "plText key"),
+      ...offenders(keys.map((key) => plText[key as keyof typeof plText]), "plText pl value"),
       ...offenders(Object.values(en), "en value"),
       ...offenders(Object.values(pl), "pl value"),
     ];
     expect(found, `Dev-speak in user-facing copy:\n${found.join("\n")}`).toEqual([]);
+  });
+
+  it("allowlisted Diagnostics-only keys are called from Diagnostics and nowhere else", () => {
+    const files = listTextCallSiteFiles(process.cwd(), SCAN_ROOT, [], { includeDiagnostics: true });
+    for (const key of DIAGNOSTICS_ONLY_KEYS) {
+      const callers = files.filter((rel) => readFileSync(join(process.cwd(), rel), "utf8").includes(`"${key}"`));
+      expect(callers.length, `${key}: no live call site — drop it from the table and the allowlist`).toBeGreaterThan(0);
+      expect(
+        callers.filter((rel) => !rel.startsWith("src/screens/Diagnostics/")),
+        `${key} is allowlisted as Diagnostics-only but is used elsewhere`,
+      ).toEqual([]);
+    }
   });
 });
 
@@ -74,18 +94,23 @@ const SCAN_EXCLUDE_SUFFIXES = [
   "shared/locale/resources/pl.ts",
 ];
 
-function listTextCallSiteFiles(root: string, dir: string, out: string[]): string[] {
+function listTextCallSiteFiles(
+  root: string,
+  dir: string,
+  out: string[],
+  opts: { includeDiagnostics?: boolean } = {},
+): string[] {
   for (const entry of readdirSync(join(root, dir))) {
     const rel = dir ? `${dir}/${entry}` : entry;
     const full = join(root, rel);
     if (statSync(full).isDirectory()) {
-      listTextCallSiteFiles(root, rel, out);
+      listTextCallSiteFiles(root, rel, out, opts);
     } else if (
       SCAN_EXTENSIONS.some((ext) => rel.endsWith(ext)) &&
       !rel.endsWith(".test.ts") &&
       !rel.endsWith(".test.tsx")
     ) {
-      if (SCAN_EXCLUDE_PREFIXES.some((prefix) => rel.startsWith(prefix))) continue;
+      if (!opts.includeDiagnostics && SCAN_EXCLUDE_PREFIXES.some((prefix) => rel.startsWith(prefix))) continue;
       if (SCAN_EXCLUDE_SUFFIXES.some((suffix) => rel.endsWith(suffix))) continue;
       out.push(rel);
     }
@@ -98,7 +123,9 @@ function listTextCallSiteFiles(root: string, dir: string, out: string[]): string
 // forbidden word (e.g. `formatBackfillProgress`) never gets flagged.
 function collectTextCallSiteLiterals(): { file: string; value: string }[] {
   const files = listTextCallSiteFiles(process.cwd(), SCAN_ROOT, []);
-  const literalPattern = /\btext\(\s*(["'])((?:(?!\1)[^\\]|\\.)*)\1/g;
+  // Quoted strings AND static template literals (no `${…}`); dynamic template
+  // literals, variables, formatter output and lookup maps are the table scan's job.
+  const literalPattern = /\btext\(\s*(["'`])((?:(?!\1)(?!\$\{)[^\\]|\\.)*)\1/g;
   const literals: { file: string; value: string }[] = [];
   for (const rel of files) {
     const content = readFileSync(join(process.cwd(), rel), "utf8");

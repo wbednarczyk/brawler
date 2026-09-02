@@ -111,7 +111,7 @@ const LABELS = {
     markAsAnswered: "Oznacz jako odpowiedziane",
     markAsClosed: "Oznacz jako zamknięte",
     // Unchanged (plText.ts:566) — only the `kind` (unclassified → resume) changes.
-    reopenQuestion: "Otwórz ponownie",
+    reopenQuestion: "Wznów",
     // Unchanged (plText.ts:567) — only the `kind` (unclassified → control) changes.
     clearSelection: "Wyczyść wybór",
     linkToQuestion: "Powiąż z pytaniem",
