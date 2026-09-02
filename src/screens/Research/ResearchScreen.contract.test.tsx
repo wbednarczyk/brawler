@@ -17,24 +17,33 @@ import {
 import type { ResearchEvidenceItem, ResearchQuestion, ResearchReminder } from "../../api/researchTypes";
 
 // F4c S1 (docs/plans/f4c-contracts/s1-guardrails.md item 4, plan §
-// Decisions 4): RED contract skeleton for the Research language pass — S3
-// makes every control an `ActionButton` carrying the labels/kinds this table
-// names; this file pins the target shape. Shape mirrors
-// SourcesScreen.contract.test.tsx (F4b S4). Four states cover the contract's
-// named substates: `rest` (reminders + questions + evidence all seeded — the
-// FIRST question auto-selects, `useResearchController.ts:191-195`, so both
-// the "Active question" panel's status actions AND the evidence row's "Link
-// to question" render without any click; `Reopen reminder`, which needs a
-// non-open reminder, is the one icon action out of this skeleton's coverage),
-// `no-reminders` / `no-questions` (each empties one company-mode collection —
-// an `invitation` empty state per plan dec. 4; emptying questions also drops
-// the selection, so no "Link to question" there), `watchlist-mode-empty` (a
-// watchlist with no member companies and no evidence — the `quiet` empty
-// state). Every state fails TODAY on both axes: every button's
-// `data-action-kind` is `"unclassified"` (no `ActionButton` yet) and the
-// icon-only tooltip actions still carry their pre-F4c labels (`Mark
-// reviewed`, `Complete/Snooze/Delete reminder`, `Delete research question`,
-// `Link/Open evidence`, `Open source URL`) instead of the dec. 4 relabel.
+// Decisions 4): contract for the Research language pass — S3 makes every
+// control an `ActionButton` carrying the labels/kinds this table names.
+// Shape mirrors SourcesScreen.contract.test.tsx (F4b S4). Four states cover
+// the contract's named substates: `rest` (reminders + questions + evidence
+// all seeded — the FIRST question auto-selects,
+// `useResearchController.ts:191-195`, so both the "Active question" panel's
+// status actions AND the evidence row's "Link to question" render without
+// any click; `Reopen`, which needs a non-open reminder, is the one action out
+// of this skeleton's coverage — exercised instead by the `dense` state
+// below), `no-reminders` / `no-questions` (each empties one company-mode
+// collection — an `invitation` empty state per plan dec. 4; emptying
+// questions also drops the selection, so no "Link to question" there),
+// `watchlist-mode-empty` (a watchlist with no member companies and no
+// evidence — the `quiet` empty state).
+//
+// Amendment (sol R2, binding, `s3-research-pass-nav.md` § "Amendments after
+// sol R2"): a repeated-row action's VISIBLE label stays concise ("Snooze",
+// "Remove reminder", "Open", "Open source", "Link to question", "Remove
+// question") but its `aria-label` is suffixed with the row's own title
+// (`"Snooze: <reminder title>"`) so identically-labelled actions across
+// multiple rows never collide on accessible name — `computeAccessibleName`
+// resolves to that full `aria-label`, so every per-row entry below carries
+// the fixture's title as a suffix (deviation from the S1 skeleton's bare
+// names, stated reason: the amendment). The `dense` state at the bottom
+// seeds >=2 reminders/questions and >=3 evidence rows across different
+// companies and asserts no two buttons share an accessible name, in both
+// locales.
 
 const LOCALES = ["en", "pl"] as const;
 type Locale = (typeof LOCALES)[number];
@@ -45,6 +54,18 @@ const cdr = COMPANY_SPECS.find((spec) => spec.key === "cdr")!;
 const reminderFixture: ResearchReminder = makeResearchReminder(cdr);
 const questionFixture: ResearchQuestion = makeResearchQuestion(cdr);
 const evidenceFixture: ResearchEvidenceItem = makeResearchEvidenceItem(cdr);
+
+// `dense` state fixtures (sol R2 amendment): distinct companies so every
+// title differs from the `cdr` fixtures above, giving each repeated-row
+// action a genuinely different accessible name to assert uniqueness over.
+const pkn = COMPANY_SPECS.find((spec) => spec.key === "pkn")!;
+const kgh = COMPANY_SPECS.find((spec) => spec.key === "kgh")!;
+// Non-open, so its row exercises the "Reopen" action the four states above
+// never reach (the skeleton's one documented gap).
+const reminderFixtureClosed: ResearchReminder = { ...makeResearchReminder(pkn), status: "completed" };
+const questionFixture2: ResearchQuestion = makeResearchQuestion(pkn);
+const evidenceFixture2: ResearchEvidenceItem = makeResearchEvidenceItem(pkn);
+const evidenceFixture3: ResearchEvidenceItem = makeResearchEvidenceItem(kgh);
 
 function sorted(entries: ActionInventoryEntry[]): ActionInventoryEntry[] {
   return [...entries].sort(
@@ -164,20 +185,25 @@ function scopeBarInventory(locale: Locale): ActionInventoryEntry[] {
   ];
 }
 
-function reminderRowInventory(locale: Locale): ActionInventoryEntry[] {
+// sol R2 amendment: the accessible name is the visible label suffixed with
+// the row's own title (`aria-label`), not the bare label — defaults to
+// `reminderFixture.title`/`questionFixture.title`/`evidenceFixture.title` so
+// every existing call site keeps working unchanged; the `dense` state below
+// passes the other fixtures' titles explicitly.
+function reminderRowInventory(locale: Locale, title = reminderFixture.title): ActionInventoryEntry[] {
   const t = LABELS[locale];
   return [
-    { name: t.markAsDone, kind: "markAs" },
-    { name: t.snooze, kind: "snooze" },
-    { name: t.removeReminder, kind: "remove" },
+    { name: `${t.markAsDone}: ${title}`, kind: "markAs" },
+    { name: `${t.snooze}: ${title}`, kind: "snooze" },
+    { name: `${t.removeReminder}: ${title}`, kind: "remove" },
   ];
 }
 
-function questionRowInventory(locale: Locale): ActionInventoryEntry[] {
+function questionRowInventory(locale: Locale, title = questionFixture.title): ActionInventoryEntry[] {
   const t = LABELS[locale];
   return [
     { name: questionRowName(locale), kind: "control" },
-    { name: t.removeQuestion, kind: "remove" },
+    { name: `${t.removeQuestion}: ${title}`, kind: "remove" },
   ];
 }
 
@@ -185,12 +211,16 @@ function questionRowInventory(locale: Locale): ActionInventoryEntry[] {
 // selected (`canLink` in ResearchEvidencePanel.tsx) — true whenever the
 // company-mode question list is non-empty (the first question auto-selects),
 // false once the question list is empty or in watchlist mode.
-function evidenceRowInventory(locale: Locale, withLink: boolean): ActionInventoryEntry[] {
+function evidenceRowInventory(
+  locale: Locale,
+  withLink: boolean,
+  title = evidenceFixture.title,
+): ActionInventoryEntry[] {
   const t = LABELS[locale];
   return [
-    ...(withLink ? [{ name: t.linkToQuestion, kind: "link" }] : []),
-    { name: t.open, kind: "open" },
-    { name: t.openSource, kind: "open" },
+    ...(withLink ? [{ name: `${t.linkToQuestion}: ${title}`, kind: "link" }] : []),
+    { name: `${t.open}: ${title}`, kind: "open" },
+    { name: `${t.openSource}: ${title}`, kind: "open" },
   ];
 }
 
@@ -330,5 +360,24 @@ describe("Research action inventory (F4c contract § Research, plan dec. 4)", ()
       (entry) => entry.kind === "unclassified",
     );
     expect(unclassified).toEqual([]);
+  });
+});
+
+// sol R2 amendment (binding): a dense state — >=2 reminders (one closed, so
+// its row shows "Reopen" instead of "Mark as done"/"Snooze"), >=2 questions,
+// >=3 evidence rows, across different companies — asserting no two buttons
+// share an accessible name. The per-row `aria-label` suffix
+// (`reminderRowInventory` et al. above) is what keeps repeated "Snooze"/
+// "Open"/"Open source" actions apart; this is the guard that would catch a
+// regression back to bare labels.
+describe("Research action inventory — dense state, accessible-name uniqueness (sol R2 amendment)", () => {
+  it.each(LOCALES)("no two buttons share an accessible name (%s)", async (locale) => {
+    const region = await openResearch(locale, {
+      reminders: [reminderFixture, reminderFixtureClosed],
+      questions: [questionFixture, questionFixture2],
+      evidence: [evidenceFixture, evidenceFixture2, evidenceFixture3],
+    });
+    const names = collectActionInventory(region, locale).map((entry) => entry.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 });

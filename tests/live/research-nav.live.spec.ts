@@ -40,11 +40,19 @@ test("the Company mode nav entry opens the Spółka screen scoped to a company o
   await expect(page.getByRole("button", { name: /Add panel|Dodaj panel/ })).toHaveCount(0);
   await page.screenshot({ path: "test-results/live/dashboard-nav-spolka.png", fullPage: true });
 
-  // Research is a standalone screen now — reached from the ⌘K palette.
+  // Research is a Library nav destination now (F4c S3, contract § Decisions
+  // #4) — reached from the sidebar, one click, no palette round-trip.
+  await nav.getByRole("button", { name: "Research" }).click();
+  await expect(page.locator(".research-panel")).toBeVisible();
+  await page.screenshot({ path: "test-results/live/research-screen.png", fullPage: true });
+
+  // The palette path stays reachable too (command-palette.spec.ts covers it
+  // in the browser-mock suite; this is the one live-app case).
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: /Command palette|Paleta poleceń/ });
   await palette.getByLabel(/Search commands|Szukaj poleceń/).fill("Research");
-  await palette.getByRole("button", { name: /^(Open screen|Otwórz ekran): Research/ }).first().click();
-  await expect(page.locator(".research-panel")).toBeVisible();
-  await page.screenshot({ path: "test-results/live/research-screen.png", fullPage: true });
+  await expect(
+    palette.getByRole("button", { name: /^(Open screen|Otwórz ekran): Research/ }).first(),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
 });

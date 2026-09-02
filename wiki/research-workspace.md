@@ -30,7 +30,7 @@ The sidebar is grouped so you always know where you are:
 - **Pinned companies** — companies you marked for one-click access; each shows
   a small status dot. Unpin from the sidebar (hover the row).
 - **Library** — the reference surfaces: **Companies** (browse, search, add), **Watchlists**, **Alerts**,
-  **Transcripts**, **Sources**.
+  **Events**, **Report Season**, **Research** (Ctrl+4), **Transcripts**, **Sources**.
 - **Utilities** — **Settings** (and **Diagnostics** in developer mode).
 
 ## Today — what needs your attention

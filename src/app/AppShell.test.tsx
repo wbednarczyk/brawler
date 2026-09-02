@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { AppShell, type PinnedCompany } from "./AppShell";
 import { appShortcutReferenceItems, type AppShortcutActionMap } from "./shortcuts";
@@ -122,5 +122,19 @@ describe("AppShell — Library group lists eight destinations in order, both loc
     if (!group) throw new Error("Library nav group not found");
     const items = Array.from(group.querySelectorAll(".nav-item")).map((node) => node.textContent);
     expect(items).toEqual(LIBRARY_ORDER[locale]);
+  });
+});
+
+// F4c S3 (sol R2 amendment): Ctrl+4 invokes the Research section through
+// AppShell's own shortcut wiring (`useKeyboardShortcuts`, registered on
+// `document`), not just the default-binding table.
+describe("AppShell — Ctrl+4 invokes the Research section", () => {
+  it("calls setActiveSection('Research') on Ctrl+4", () => {
+    let active: string | null = null;
+    renderShell({ setActiveSection: (section) => { active = section; } });
+
+    fireEvent.keyDown(document, { key: "4", code: "Digit4", ctrlKey: true });
+
+    expect(active).toBe("Research");
   });
 });

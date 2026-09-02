@@ -1,6 +1,6 @@
 import { ArrowRight, ExternalLink, Link } from "lucide-react";
 import type { ResearchEvidenceItem } from "../../api/researchTypes";
-import { Button, DenseRow } from "../../ui";
+import { ActionButton, DenseRow, Figure } from "../../ui";
 import {
   formatEvidenceAttribution,
   formatEvidenceSummary,
@@ -13,7 +13,6 @@ type EvidenceRowProps = {
   item: ResearchEvidenceItem;
   changed: boolean;
   text: (value: string) => string;
-  formatTimestamp: (value: string | null | undefined) => string;
   onOpen: (item: ResearchEvidenceItem) => void;
   onOpenUrl: (url: string) => void;
   onLink: (item: ResearchEvidenceItem) => void;
@@ -24,7 +23,6 @@ export function EvidenceRow({
   item,
   changed,
   text,
-  formatTimestamp,
   onOpen,
   onOpenUrl,
   onLink,
@@ -32,6 +30,11 @@ export function EvidenceRow({
 }: EvidenceRowProps) {
   const summary = formatEvidenceSummary(item);
   const attribution = formatEvidenceAttribution(item);
+  // The evidence title, once through `text()` — reused below as the
+  // per-row aria-label suffix (sol R2 amendment) so identically-labelled
+  // "Open"/"Open source"/"Link to question" buttons across rows stay
+  // uniquely named.
+  const title = text(formatEvidenceTitle(item));
 
   return (
     <DenseRow className="research-evidence-row" interactive={false}>
@@ -41,29 +44,45 @@ export function EvidenceRow({
           <span>{text(formatEvidenceType(item.evidenceType))}</span>
           <span>{text(formatTrustCategory(item.trustCategory))}</span>
           {changed ? <span className="research-change-pill">{text("Changed")}</span> : null}
-          <time dateTime={item.occurredAt}>{formatTimestamp(item.occurredAt)}</time>
+          <time dateTime={item.occurredAt}>
+            <Figure kind="datetime" value={item.occurredAt} />
+          </time>
         </div>
-        <h2>{text(formatEvidenceTitle(item))}</h2>
+        <h2>{title}</h2>
         {summary ? <p>{text(summary)}</p> : null}
         {attribution ? <span className="research-attribution">{text(attribution)}</span> : null}
       </div>
       <div className="research-evidence-actions">
         {canLink ? (
-          <Button className="icon-button" onClick={() => onLink(item)} title={text("Link evidence")}>
-            <Link size={16} />
-          </Button>
-        ) : null}
-        <Button className="icon-button" onClick={() => onOpen(item)} title={text("Open evidence")}>
-          <ArrowRight size={16} />
-        </Button>
-        {item.sourceUrl ? (
-          <Button
-            className="icon-button"
-            onClick={() => onOpenUrl(item.sourceUrl ?? "")}
-            title={text("Open source URL")}
+          <ActionButton
+            className="compact-button"
+            onClick={() => onLink(item)}
+            verb="link"
+            aria-label={`${text("Link to question")}: ${title}`}
           >
-            <ExternalLink size={16} />
-          </Button>
+            <Link size={15} />
+            {text("Link to question")}
+          </ActionButton>
+        ) : null}
+        <ActionButton
+          className="compact-button"
+          onClick={() => onOpen(item)}
+          verb="open"
+          aria-label={`${text("Open")}: ${title}`}
+        >
+          <ArrowRight size={15} />
+          {text("Open")}
+        </ActionButton>
+        {item.sourceUrl ? (
+          <ActionButton
+            className="compact-button"
+            onClick={() => onOpenUrl(item.sourceUrl ?? "")}
+            verb="open"
+            aria-label={`${text("Open source")}: ${title}`}
+          >
+            <ExternalLink size={15} />
+            {text("Open source")}
+          </ActionButton>
         ) : null}
       </div>
     </DenseRow>

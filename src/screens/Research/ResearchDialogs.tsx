@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { Button, TextField, TextareaField } from "../../ui";
+import { ActionButton, TextField, TextareaField } from "../../ui";
 
 type AddQuestionDialogProps = {
   questionTitle: string;
@@ -35,14 +35,14 @@ export function AddQuestionDialog({
       >
         <div className="research-dialog-header">
           <h2>{text("Add research question")}</h2>
-          <button
+          <ActionButton
             aria-label={text("Close")}
             className="research-question-delete"
-            type="button"
+            kind="control"
             onClick={onCancel}
           >
             <X size={14} />
-          </button>
+          </ActionButton>
         </div>
         <TextField
           label={<span>{text("Question title")}</span>}
@@ -59,12 +59,17 @@ export function AddQuestionDialog({
           onChange={(event) => setQuestionBody(event.target.value)}
         />
         <div className="research-dialog-actions">
-          <Button className="compact-button" type="button" onClick={onCancel}>
+          <ActionButton className="compact-button" kind="control" type="button" onClick={onCancel}>
             {text("Cancel")}
-          </Button>
-          <Button className="compact-button" disabled={questionInFlight || !questionTitle.trim()} type="submit">
+          </ActionButton>
+          <ActionButton
+            className="compact-button"
+            disabled={questionInFlight || !questionTitle.trim()}
+            type="submit"
+            verb="save"
+          >
             {text("Save question")}
-          </Button>
+          </ActionButton>
         </div>
       </form>
     </div>
@@ -109,14 +114,14 @@ export function AddReminderDialog({
       >
         <div className="research-dialog-header">
           <h2>{text("Add research reminder")}</h2>
-          <button
+          <ActionButton
             aria-label={text("Close")}
             className="research-question-delete"
-            type="button"
+            kind="control"
             onClick={onCancel}
           >
             <X size={14} />
-          </button>
+          </ActionButton>
         </div>
         <TextField
           label={<span>{text("Reminder title")}</span>}
@@ -140,12 +145,17 @@ export function AddReminderDialog({
           onChange={(event) => setReminderDueAt(event.target.value)}
         />
         <div className="research-dialog-actions">
-          <Button className="compact-button" type="button" onClick={onCancel}>
+          <ActionButton className="compact-button" kind="control" type="button" onClick={onCancel}>
             {text("Cancel")}
-          </Button>
-          <Button className="compact-button" disabled={reminderInFlight || !reminderTitle.trim()} type="submit">
+          </ActionButton>
+          <ActionButton
+            className="compact-button"
+            disabled={reminderInFlight || !reminderTitle.trim()}
+            type="submit"
+            verb="save"
+          >
             {text("Save reminder")}
-          </Button>
+          </ActionButton>
         </div>
       </form>
     </div>

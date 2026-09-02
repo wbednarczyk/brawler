@@ -33,6 +33,8 @@ export const pl: LocaleResources = {
   "nav.sources": "Źródła",
   "nav.events": "Wydarzenia",
   "nav.reportSeason": "Sezon raportów",
+  // "Research" stays the English name in PL too (plan § Decisions 4).
+  "nav.research": "Research",
   "nav.diagnostics": "Diagnostyka",
   "nav.settings": "Ustawienia",
   "nav.today": "Dziś",

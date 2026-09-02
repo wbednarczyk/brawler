@@ -526,7 +526,6 @@ export const plText: Record<string, string> = {
   "Source items, notes, events, and transcripts for this scope.": "Elementy kanału, notatki, wydarzenia i transkrypcje dla tego zakresu.",
   "Refresh": "Odśwież",
   "Marking reviewed": "Oznaczanie jako przejrzane",
-  "Mark reviewed": "Oznacz jako przejrzane",
   "Research filters": "Filtry researchu",
   "Evidence type filters": "Filtry typu dowodów",
   "Notes": "Notatki",
@@ -548,9 +547,6 @@ export const plText: Record<string, string> = {
   "Evidence link failed": "Linkowanie dowodu nie powiodło się",
   "Evidence unlink failed": "Odlinkowanie dowodu nie powiodło się",
   "Evidence timeline": "Oś dowodów",
-  "Open evidence": "Otwórz dowód",
-  "Open source URL": "Otwórz URL źródła",
-  "Link evidence": "Połącz dowód",
   "No evidence for selected filters.": "Brak dowodów dla wybranych filtrów.",
   "Research questions": "Pytania badawcze",
   "Active question": "Aktywne pytanie",
@@ -563,9 +559,11 @@ export const plText: Record<string, string> = {
   "Answered": "Odpowiedziane",
   "Close": "Zamknij",
   "Closed": "Zamknięte",
-  "Reopen": "Otwórz ponownie",
+  // F4c S3 (sol R2 amendment): "Reopen" is Research-question-only (its one
+  // live call site, ResearchQuestionsPanel.tsx) — the `resume` dictionary
+  // verb's PL form, "Wznów", replaces the generic "Otwórz ponownie".
+  "Reopen": "Wznów",
   "Clear selection": "Wyczyść wybór",
-  "Delete research question": "Usuń pytanie badawcze",
   "Linked evidence": "Połączone dowody",
   "No linked evidence yet.": "Brak połączonych dowodów.",
   "Feed item": "Element kanału",
@@ -586,10 +584,6 @@ export const plText: Record<string, string> = {
   "Reminder title": "Tytuł przypomnienia",
   "Reminder notes": "Notatki przypomnienia",
   "Save reminder": "Zapisz przypomnienie",
-  "Complete reminder": "Zakończ przypomnienie",
-  "Snooze reminder": "Odłóż przypomnienie",
-  "Reopen reminder": "Otwórz przypomnienie ponownie",
-  "Delete reminder": "Usuń przypomnienie",
   "Due date": "Termin",
   "Claim follow-up": "Sprawdzenie tezy",
   "Event review": "Przegląd wydarzenia",
@@ -2187,4 +2181,18 @@ export const plText: Record<string, string> = {
   "Failed to check later weeks": "Nie udało się sprawdzić kolejnych tygodni",
   "Feed Item": "Wpis z kanału",
   "Official Report": "Raport oficjalny",
+  // ---- F4c Research ----
+  "Open Research": "Otwórz Research",
+  "Remove reminder": "Usuń przypomnienie",
+  "Mark as done": "Oznacz jako zrobione",
+  "Snooze": "Odłóż",
+  "Remove question": "Usuń pytanie",
+  "Link to question": "Powiąż z pytaniem",
+  "Mark as answered": "Oznacz jako odpowiedziane",
+  "Mark as closed": "Oznacz jako zamknięte",
+  "Reminders track follow-ups on claims, questions, and reviews.":
+    "Przypomnienia śledzą działania następcze dla tez, pytań i przeglądów.",
+  "Questions capture what you still need to find out about this company.":
+    "Pytania zapisują to, czego jeszcze potrzebujesz dowiedzieć się o tej spółce.",
+  // ---- /F4c Research ----
 };

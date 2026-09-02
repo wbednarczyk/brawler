@@ -17,7 +17,7 @@ import type { ResearchMode } from "../../app/useResearchController";
 import { useLocale } from "../../shared/locale";
 import { useToolHost } from "../../shared/toolHost";
 import { useResearchViewModel } from "../../app/state/screenViewModels";
-import { ActionRow, Button, ErrorText, PanelHeader } from "../../ui";
+import { ActionButton, ActionRow, ErrorText, PanelHeader } from "../../ui";
 import { AddQuestionDialog, AddReminderDialog } from "./ResearchDialogs";
 import { ResearchEvidencePanel } from "./ResearchEvidencePanel";
 import { ResearchFoldSection } from "./ResearchFoldSection";
@@ -128,7 +128,6 @@ export function ResearchScreen() {
   deleteReminder,
   openEvidence,
   openEvidenceUrl,
-  formatTimestamp,
   } = useResearchViewModel();
   const { text } = useLocale();
   const workspaceRef = useRef<HTMLDivElement | null>(null);
@@ -307,6 +306,12 @@ export function ResearchScreen() {
   const markReviewedDisabled =
     reviewInFlight ||
     (mode === "company" ? !selectedCompany : !selectedWatchlist || watchlistCompanies.length === 0);
+  // The review queue (reminders) is the primary reason to mark a scope
+  // reviewed — "Mark as reviewed" is the screen's filled action whenever
+  // there is something in that queue, and goes quiet once it is empty
+  // (contract § Research, plan dec. 4).
+  const markReviewedPrimary = reminders.length > 0;
+  const hasActiveEvidenceFilters = selectedEvidenceTypes.length > 0;
 
   const Root: "div" | "section" = hosted ? "div" : "section";
   return (
@@ -325,14 +330,21 @@ export function ResearchScreen() {
         titleId="research-title"
         actions={
           <ActionRow className="research-header-actions">
-            <Button className="compact-button" disabled={loading} onClick={refreshTimeline}>
+            <ActionButton className="compact-button" disabled={loading} onClick={refreshTimeline} verb="refresh">
               <RefreshCw size={15} />
               {loading ? text("Refreshing") : text("Refresh")}
-            </Button>
-            <Button className="compact-button" disabled={markReviewedDisabled} onClick={markReviewed}>
+            </ActionButton>
+            <ActionButton
+              className="compact-button"
+              data-ux-primary-action={markReviewedPrimary ? "true" : undefined}
+              disabled={markReviewedDisabled}
+              onClick={markReviewed}
+              variant={markReviewedPrimary ? "primary" : "secondary"}
+              verb="markAs"
+            >
               <CheckCheck size={15} />
-              {reviewInFlight ? text("Marking reviewed") : text("Mark reviewed")}
-            </Button>
+              {reviewInFlight ? text("Marking reviewed") : text("Mark as reviewed")}
+            </ActionButton>
           </ActionRow>
         }
       />
@@ -358,7 +370,6 @@ export function ResearchScreen() {
         />
 
         <ResearchSummaryStrip
-          formatTimestamp={formatTimestamp}
           mode={mode}
           selectedCompany={selectedCompany}
           selectedWatchlist={selectedWatchlist}
@@ -384,7 +395,6 @@ export function ResearchScreen() {
                 canAdd={mode === "company" ? Boolean(selectedCompany) : Boolean(selectedWatchlist)}
                 completeReminder={completeReminder}
                 deleteReminder={deleteReminder}
-                formatTimestamp={formatTimestamp}
                 onAdd={openReminderDialog}
                 reminderInFlight={reminderInFlight}
                 reminders={reminders}
@@ -422,7 +432,8 @@ export function ResearchScreen() {
             <ResearchEvidencePanel
               companiesCount={companies.length}
               companySummaryById={companySummaryById}
-              formatTimestamp={formatTimestamp}
+              hasActiveFilters={hasActiveEvidenceFilters}
+              onClearFilters={clearEvidenceTypes}
               linkEvidence={linkEvidence}
               linkedEvidenceKeys={linkedEvidenceKeys}
               mode={mode}
