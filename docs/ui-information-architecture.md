@@ -407,13 +407,13 @@ Global search (delivered in `v0.38.0`, see [ADR 0032](adr/0032-search-and-backup
 
 A global, keyboard-reachable search box lives in the top toolbar and queries the unified `search_index`. Results are ranked, grouped by content type, and show a snippet; selecting a result navigates to the owning screen/item. Copy is localized (en/pl).
 
-The earlier constraint that kept search workspace-scoped is lifted now that a cross-workspace result model exists. The existing per-workspace search/filter inputs remain: Inbox owns feed-item filtering in its toolbar, Companies owns company-list search, and Notebooks owns note filtering. Global search complements, rather than replaces, those local lists.
+The earlier constraint that kept search workspace-scoped is lifted now that a cross-workspace result model exists. The existing per-workspace search/filter inputs remain: Inbox owns feed-item filtering in its toolbar, Companies owns company-list search, and the Spółka `notatnik` tool owns note filtering for its company. Global search complements, rather than replaces, those local lists.
 
 ## Research Workspace
 
 The Research workspace (company/watchlist evidence timeline, review checkpoints, questions, reminders) shipped through `v0.31.0` (its AI brief/digest halves are retired — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)); its live behavior is governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md) and specified in [Contracts § Research Evidence Boundary](contracts.md#research-evidence-boundary) and [Data Model § Research Evidence Boundary](data-model.md#research-evidence-boundary). Delivery chronicle (M25/M26/M29/M31) moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02).
 
-**Reachability** ([ADR 0107](adr/0107-company-view-paradigm.md), F3a). `ResearchScreen` has no persistent top-level nav button; it is reached two ways: the command palette's `Open screen: Research` entry (a standalone route, no company scope), and the Spółka workshop's **`research`** tool (hosts the same global screen — it is not company-scoped; the company picker inside it selects the scope).
+**Reachability** ([ADR 0107](adr/0107-company-view-paradigm.md), F3a; [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md) amendment, F4c). `ResearchScreen` is reached three ways: its **Library nav entry** (Ctrl+4, #94), the command palette's `Open screen: Research` entry (the same standalone route, no company scope), and the Spółka workshop's **`research`** tool (hosts the same global screen — it is not company-scoped; the company picker inside it selects the scope).
 
 ## Responsive Behavior
 

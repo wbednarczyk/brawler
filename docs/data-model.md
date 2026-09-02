@@ -191,7 +191,7 @@ Rules:
 
 ### Notebook Entries
 
-Supports company notebooks, cross-company Notebooks screen, claims follow-up, and notes from feed/transcripts.
+Supports company notebooks (the Spółka `notatnik` tool; the cross-company Notebooks screen was retired 2026-09-02, ADR 0108 amendment), claims follow-up, and notes from feed/transcripts.
 
 Fields:
 

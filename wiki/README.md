@@ -23,7 +23,7 @@ per feature.
 - **[Autopilot](autopilot.md)** — let Brawler detect, fetch, and extract a
   company's new report automatically, per company, with everything cited,
   flagged, and reversible.
-- **[Fundamentals coverage and history backfill](fundamentals-coverage.md)** —
+- **[Fundamentals coverage and history fetch](fundamentals-coverage.md)** —
   the Coverage map (what has data, what's missing, per period), one-click
   automatic arrival of core figures (BiznesRadar-primary + issuer filings), the
   queue, and the AI spend budget.
