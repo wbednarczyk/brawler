@@ -33,7 +33,7 @@ export function LicenseSettings({
       <InfoGrid
         className="settings-grid"
         items={[
-          { label: text("Status"), value: formatLicenseStatus(licenseStatus) },
+          { label: text("Status"), value: text(formatLicenseStatus(licenseStatus)) },
           { label: text("Holder"), value: license?.holder ?? text("Not available") },
           { label: text("Channel"), value: license?.channel ?? text("Not available") },
           { label: text("Expires"), value: license?.expiresAt ?? text("Not available") },
@@ -73,7 +73,8 @@ export function LicenseSettings({
         </ActionRow>
       </form>
 
-      {licenseStatus?.reason ? <p className="settings-note">{licenseStatus.reason}</p> : null}
+      {/* The backend's reason is one of a few fixed sentences (licensing/mod.rs) — translated by literal lookup, never rendered raw. */}
+      {licenseStatus?.reason ? <p className="settings-note">{text(licenseStatus.reason)}</p> : null}
       {licenseError ? <ErrorText>{licenseError}</ErrorText> : null}
     </section>
   );

@@ -2214,5 +2214,24 @@ export const plText: Record<string, string> = {
   "Activity records stay on this computer. Nothing is sent anywhere.":
     "Zapis aktywności zostaje na tym komputerze. Nic nie jest wysyłane.",
   "MB": "MB",
+  // License tab (found on the live app: English inside the Polish UI, ADR 0104 dec. 3).
+  "Holder": "Właściciel",
+  "Channel": "Kanał",
+  "Expires": "Wygasa",
+  "Not available": "Niedostępne",
+  "Replace license key": "Zamień klucz licencji",
+  "checking": "sprawdzanie",
+  "missing": "brak",
+  "valid": "ważna",
+  "invalid": "nieprawidłowa",
+  "expired": "wygasła",
+  "wrong version": "niewłaściwa wersja",
+  "unsupported version": "nieobsługiwana wersja",
+  "storage error": "błąd zapisu",
+  "Core features are available without a license. Add a license only for gated entitlements.":
+    "Podstawowe funkcje działają bez licencji. Dodaj licencję tylko dla funkcji, które jej wymagają.",
+  "This license key was made for an unsupported license format.":
+    "Ten klucz licencji ma nieobsługiwany format.",
+  "This license key format is not recognized.": "Nie rozpoznano formatu tego klucza licencji.",
   // ---- /F4c Settings ----
 };

@@ -3,7 +3,7 @@ import { connectToLiveApp, type LiveConnection } from "./helpers/liveConnect";
 
 // F4c real-data check (DoD § G, docs/plans/frontend-v2-f4c.md § Verification):
 // on the owner's real Windows app — Research is reachable from the Library nav
-// (and Ctrl+4), Settings reads as product language on every tab, an Inbox item
+// (and Ctrl+4) at the real window size, Settings reads as product language on every tab, an Inbox item
 // lands its note draft in the Spółka Notebook tool, and no path to the retired
 // global Notebooks/Journal screens remains. Screenshots are attached for the
 // integrator's review; assertions stay structural (the mock harness owns pixel
@@ -17,6 +17,12 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await connection.browser.close();
+});
+
+// The live app keeps state between specs and runs: close any dialog a previous
+// (possibly interrupted) test left open before the next one clicks the sidebar.
+test.beforeEach(async () => {
+  await connection.page.keyboard.press("Escape");
 });
 
 const SHOTS = "test-results/live-f4c";
@@ -38,11 +44,6 @@ async function expectAtMostOneFilled(page: LiveConnection["page"]) {
   expect(await page.locator('[data-ux-primary-action="true"]:visible').count()).toBeLessThanOrEqual(1);
 }
 
-async function setWidth(page: LiveConnection["page"], width: number) {
-  // The real window cannot be resized from the harness; CDP emulation stands in.
-  const client = await page.context().newCDPSession(page);
-  await client.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
-}
 
 test("Research opens from the Library nav and via Ctrl+4, labelled actions, one primary at most", async ({}, testInfo) => {
   const { page } = connection;
@@ -54,12 +55,9 @@ test("Research opens from the Library nav and via Ctrl+4, labelled actions, one 
   const unlabelled = panel.locator("button:visible").filter({ hasNotText: /\S/ });
   expect(await unlabelled.count()).toBe(0);
   await expectAtMostOneFilled(page);
-  await shoot(page, "research-nav-1440", testInfo);
-  await setWidth(page, 1000);
-  await shoot(page, "research-nav-1000", testInfo);
-  await setWidth(page, 1440);
+  await shoot(page, "research-nav", testInfo);
   // Ctrl+4 lands on Research from another screen.
-  await page.getByRole("button", { name: /^(Dziś|Today)$/ }).first().click();
+  await page.getByRole("button", { name: /^(Dziś|Today)\b/ }).first().click();
   await page.keyboard.press("Control+4");
   await expect(panel).toBeVisible({ timeout: 15_000 });
 });
@@ -81,7 +79,7 @@ test("Settings: every tab renders product language (no ops vocabulary on screen)
     const copy = await region.innerText();
     // Copy-paste snippets (the MCP registration commands) legitimately carry
     // implementation tokens; everything else on the tab must be product language.
-    const prose = copy.replace(/claude mcp add[^\n]*|BRAWLER_MCP_TOKEN[^\n]*/g, "");
+    const prose = copy.replace(/claude mcp add[^\n]*|BRAWLER_MCP_TOKEN[^\n]*|brawler-mcp-stdio[^\n]*/g, "");
     expect(prose, `ops vocabulary on Settings tab ${name}`).not.toMatch(banned);
     await expectAtMostOneFilled(page);
     await shoot(page, `settings-${i}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, testInfo);
@@ -91,7 +89,7 @@ test("Settings: every tab renders product language (no ops vocabulary on screen)
 test("Inbox item → Note lands in the Spółka Notebook tool with the draft prefilled", async ({}, testInfo) => {
   const { page } = connection;
   test.setTimeout(120_000);
-  await page.getByRole("button", { name: /^Inbox$/ }).first().click();
+  await page.getByRole("button", { name: /^Inbox\b/ }).first().click();
   const firstRow = page.locator(".feed-row, [data-feed-item-id]").first();
   await expect(firstRow).toBeVisible({ timeout: 15_000 });
   await firstRow.click();
@@ -108,7 +106,7 @@ test("No path to the retired global Notebooks/Journal screens remains", async ({
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: /Command palette|Paleta poleceń/ });
   await expect(palette).toBeVisible({ timeout: 10_000 });
-  const search = palette.getByRole("textbox");
+  const search = palette.getByLabel(/Search commands|Szukaj poleceń/);
   for (const needle of ["Notebook", "Notatnik", "Journal", "Dziennik"]) {
     await search.fill(needle);
     await expect(palette.getByRole("button", { name: /(Open screen|Otwórz ekran): / })).toHaveCount(0);

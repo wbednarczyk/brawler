@@ -177,7 +177,10 @@
 
 .research-active-question {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
+  /* `minmax(0, auto)`, not `max-content`: the actions column must shrink so
+     its flex-wrapped buttons wrap instead of clipping past the pane edge —
+     seen on the live app at a ~1000px window (F4c real-data check). */
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   align-items: start;
   gap: var(--space-2);
   min-width: 0;

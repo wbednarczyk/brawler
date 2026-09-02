@@ -1,6 +1,6 @@
 import type { UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
-import { ActionButton, FieldRow, Figure, InfoGrid, SelectField } from "../../ui";
+import { ActionButton, FieldRow, SelectField } from "../../ui";
 
 type DatabaseSettingsProps = {
   settings: UserSettings | null;
@@ -82,27 +82,6 @@ export function DatabaseSettings({
           ))}
         </SelectField>
       </FieldRow>
-      <InfoGrid
-        className="settings-grid"
-        items={[
-          {
-            label: text("Wait when busy"),
-            value: (
-              <>
-                <Figure value={busyTimeoutMs / 1000} /> {text("s")}
-              </>
-            ),
-          },
-          {
-            label: text("Wait to start"),
-            value: (
-              <>
-                <Figure value={acquireTimeoutMs / 1000} /> {text("s")}
-              </>
-            ),
-          },
-        ]}
-      />
       <ActionButton kind="control" onClick={onResetDatabaseSettings}>
         {text("Reset to defaults")}
       </ActionButton>
