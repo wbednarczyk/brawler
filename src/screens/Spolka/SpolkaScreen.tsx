@@ -526,9 +526,12 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, onOpenExternalUrl, text,
 // APG toolbar (F3c S1, plan § Design 1): `role="toolbar"`, roving tabindex
 // via the shared `useRovingToolbar` hook (owned by `SpolkaScreen`, so its
 // `focusItem` is also reachable from the "entry"/"overview" focus-intent
-// effect). The pressed entry and the roving tab stop are deliberately
-// independent state (APG: the tab stop follows the LAST FOCUSED entry, not
-// the active one) — `pressedIndex` only drives `aria-pressed`.
+// effect). The pressed entry and the roving tab stop are separate state:
+// while the bar has focus the stop follows the LAST FOCUSED entry (APG);
+// when the open tool changes while the bar is unfocused (H/L, palette) the
+// stop moves to the pressed entry (`selectedIndex`) so Tab-from-the-tool
+// lands on the current tool — `pressedIndex` otherwise only drives
+// `aria-pressed`.
 function WorkshopBar({
   onOpenTool,
   onOverview,

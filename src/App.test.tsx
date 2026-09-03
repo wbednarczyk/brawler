@@ -603,6 +603,15 @@ describe("Spółka keyboard shortcuts (F3c S1)", () => {
     fireEvent.keyDown(document, { key: "H", code: "KeyH" });
     await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
     expect(within(bar).getByRole("button", { name: "Overview" })).toHaveFocus();
+
+    // L pressed while the persistent ✕ button holds focus still lands on the
+    // NEW tool's heading (heading intent is authoritative, sol diff R2).
+    fireEvent.keyDown(document, { key: "L", code: "KeyL" });
+    const frame = await screen.findByRole("group", { name: "Workshop tool" });
+    within(frame).getByRole("button", { name: "Close tool" }).focus();
+    fireEvent.keyDown(within(frame).getByRole("button", { name: "Close tool" }), { key: "L", code: "KeyL" });
+    await waitFor(() => expect(frame).toHaveAttribute("data-tool", "feed"));
+    await waitFor(() => expect(within(frame).getByRole("heading", { level: 2, name: "Feed" })).toHaveFocus());
   });
 
   it("opening a company from the sidebar leaves the company picker unfocused (no ring for mouse users)", async () => {
@@ -701,6 +710,27 @@ describe("focus never falls to <body> (F3c)", () => {
     (document.activeElement as HTMLElement | null)?.blur?.();
 
     await runPaletteCommand(user, "Open screen: Today");
+    const heading = await screen.findByRole("heading", { name: "Today" });
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+
+  it("a dirty palette hop to ANOTHER screen + Discard lands on that screen's heading (Spółka unmounts first)", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "CDR" }));
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    await user.click(within(spolka).getByRole("button", { name: "Notebook" }));
+    await screen.findByRole("group", { name: "Workshop tool" });
+    await user.click(await screen.findByRole("button", { name: "New note" }));
+    await user.type(await screen.findByRole("textbox", { name: "Notebook note title" }), "Draft in progress");
+
+    await runPaletteCommand(user, "Open screen: Today");
+    const dialog = await screen.findByRole("dialog", { name: "Unsaved changes in this tool" });
+    // Let the palette's own rAF fallback elapse while the dialog still owns
+    // focus — the Discard path must carry its own fallback (sol diff R2).
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    await user.click(within(dialog).getByRole("button", { name: "Discard" }));
     const heading = await screen.findByRole("heading", { name: "Today" });
     await waitFor(() => expect(heading).toHaveFocus());
   });

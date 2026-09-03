@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type MutableRefObject } from "react";
 import { Button, Modal } from "../../ui";
+import { focusScreenHeadingIfBody } from "../../shared/focus/focusScreenHeading";
 import { useLocale } from "../../shared/locale";
 import { ToolHostContext, type ToolHandle } from "../../shared/toolHost";
 import type { Tool } from "./route";
@@ -159,6 +160,13 @@ export function useSpolkaToolHost(): SpolkaToolHostApi {
     setPendingNext((current) => {
       current?.();
       return null;
+    });
+    // The pending transition may leave Spółka entirely (a dirty palette hop
+    // to another screen): its `none` intent then never runs, the Modal's
+    // invoker (the Discard button) is gone, and focus would strand on
+    // `<body>` — land on the new screen's heading instead (sol diff R2).
+    requestAnimationFrame(() => {
+      focusScreenHeadingIfBody();
     });
   }, []);
 

@@ -28,17 +28,29 @@ export type ModalProps = {
 const TABBABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-// Browser-faithful enough for a dialog (sol diff R1): a hidden/inert/
-// aria-hidden ancestor, a negative tabindex, or `display:none`/`visibility:
-// hidden` anywhere up the chain excludes the element. Layout geometry
-// (`offsetParent`, `getClientRects`) is unusable — jsdom (the vitest harness)
-// never computes layout — so the walk reads computed style per ancestor.
+// Browser-faithful enough for a dialog (sol diff R1/R2): a hidden/inert
+// ancestor, a disabling `<fieldset disabled>` (its first `<legend>` exempt),
+// a closed `<details>` (its `<summary>` exempt), a negative tabindex, or
+// `display:none`/`visibility:hidden` anywhere up the chain excludes the
+// element; `aria-hidden` does NOT (browsers still Tab to it). Layout
+// geometry (`offsetParent`, `getClientRects`) is unusable — jsdom (the vitest
+// harness) never computes layout — so the walk reads computed style per
+// ancestor. ponytail: radio groups (only the checked radio is a stop) are not
+// modelled; add when a dialog hosts one.
 function isTabbable(element: HTMLElement, root: HTMLElement): boolean {
   if (element.tabIndex < 0) return false;
-  if (element.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
+  if (element.closest("[hidden], [inert]")) return false;
   for (let node: HTMLElement | null = element; node && node !== root.parentElement; node = node.parentElement) {
     const style = getComputedStyle(node);
     if (style.display === "none" || style.visibility === "hidden") return false;
+    if (node instanceof HTMLFieldSetElement && node.disabled && node !== element) {
+      const legend: Element | null = node.querySelector(":scope > legend");
+      if (!legend || !legend.contains(element)) return false;
+    }
+    if (node instanceof HTMLDetailsElement && !node.open && node !== element) {
+      const summary: Element | null = node.querySelector(":scope > summary");
+      if (!summary || !summary.contains(element)) return false;
+    }
   }
   return true;
 }

@@ -131,7 +131,7 @@ A screen rendered in more than one host (a standalone route **and** a Spółka w
 | A figure/date/percent/money/badge value | `Figure` (`kind="count" \| "percent" \| "date" \| "datetime" \| "money" \| "badge"`) — always the UI face via `.num-tabular`, never mono (ADR 0104 dec. 2 amendment); `badge` caps at "99+" for fixed-width chips, `count` never caps | hand-formatting a number/date inline, or wrapping it in mono |
 | Key/value metadata block | `InfoGrid` | ad-hoc definition grids |
 | Inline confirm (delete etc.) | `InlineConfirm` | bespoke confirm toggles |
-| A dialog | `Modal` — owns initial focus (`initialFocusRef`, else the container), Tab containment and restore to a still-connected invoker; never put `autoFocus` on a child (it wins the race and becomes the restore target) | a hand-built overlay |
+| A dialog | `Modal` — owns initial focus (`initialFocusRef`, else the container), Tab containment (browser-faithful: skips hidden/inert subtrees, disabled fieldsets, closed details, negative tabindex — not `aria-hidden`, which browsers still Tab to) and restore to a still-connected invoker; never put `autoFocus` on a child (it wins the race and becomes the restore target — lint-banned app-wide) | a hand-built overlay |
 | A full-screen distraction-free surface (reader/writer Focus mode) | `FocusOverlay` | a hand-built full-screen overlay |
 | Tabs / segmented views | `SegmentedControl` + `SegmentedControlOption` | bespoke tab bars |
 | Sub-navigation | `Subnav` | bespoke nav rows |

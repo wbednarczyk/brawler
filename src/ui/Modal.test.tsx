@@ -191,7 +191,7 @@ describe("Modal", () => {
     expect(last).toHaveFocus();
   });
 
-  it("containment skips what a browser would never Tab to: hidden inputs, hidden/inert/aria-hidden subtrees, negative tabindex", () => {
+  it("containment skips what a browser would never Tab to: hidden inputs, hidden/inert subtrees, disabled fieldsets, closed details, negative tabindex — but not aria-hidden", () => {
     render(
       <Modal
         open
@@ -205,6 +205,16 @@ describe("Modal", () => {
             <div hidden>
               <button type="button">Under hidden</button>
             </div>
+            <fieldset disabled>
+              <legend>
+                <button type="button">In legend</button>
+              </legend>
+              <button type="button">Under disabled fieldset</button>
+            </fieldset>
+            <details>
+              <summary>Summary</summary>
+              <button type="button">Under closed details</button>
+            </details>
             <div aria-hidden="true">
               <button type="button">Under aria-hidden</button>
             </div>
@@ -220,15 +230,15 @@ describe("Modal", () => {
         <button type="button">Middle</button>
       </Modal>,
     );
-    const visibleLast = screen.getByRole("button", { name: "Visible last" });
     const close = screen.getByRole("button", { name: "Close dialog" });
-    // Forward wrap from the last REAL tabbable lands on the × button — none of
-    // the decoys is chosen as "last".
-    visibleLast.focus();
-    fireEvent.keyDown(visibleLast, { key: "Tab" });
+    // The aria-hidden button IS a browser tab stop (aria-hidden hides from
+    // the accessibility tree, not from Tab), so it is the real last tabbable;
+    // the legend's button is reachable inside a disabled fieldset.
+    const realLast = screen.getByRole("button", { name: "Under aria-hidden", hidden: true });
+    realLast.focus();
+    fireEvent.keyDown(realLast, { key: "Tab" });
     expect(close).toHaveFocus();
-    // Backward wrap from the first lands on the last REAL tabbable.
     fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
-    expect(visibleLast).toHaveFocus();
+    expect(realLast).toHaveFocus();
   });
 });
