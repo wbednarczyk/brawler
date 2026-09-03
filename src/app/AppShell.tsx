@@ -275,6 +275,17 @@ export function AppShell({
         document.querySelector<HTMLInputElement>("[data-global-search-input]")?.focus();
       }, 0);
     },
+    // F3c S1 (plan § Design 5): jumps to the Spółka workshop bar's current
+    // tab stop. A no-op off Spółka (no bar mounted) or with any modal open —
+    // this shortcut runs in the document CAPTURE phase, so without the
+    // `aria-modal` guard it would steal focus to the background bar out from
+    // under an open dialog.
+    "app.focusWorkshop": () => {
+      if (document.querySelector('[aria-modal="true"]')) return false;
+      const bar = document.querySelector<HTMLElement>("[data-workshop-bar]");
+      if (!bar) return false;
+      bar.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
+    },
     "app.refreshSources": () => {
       if (sourceRefreshState !== "refreshing") {
         void refreshSources("manual");

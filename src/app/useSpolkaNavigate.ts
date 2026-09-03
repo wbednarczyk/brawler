@@ -38,7 +38,13 @@ export function useSpolkaNavigate(input: SpolkaNavigateInput) {
         if (transition.highlightClaimId !== undefined) {
           setHighlightClaimId(transition.highlightClaimId);
         }
-        input.spolkaTool.commitTool(transition.companyId, transition.tool ?? null);
+        // Focus intent (F3c S1, plan § Design 3): `tool` omitted = a plain
+        // company switch ("company", e.g. Shift+J/K — ADR 0107 dec. 6 closes
+        // the tool with no retarget); `tool: null` = explicitly land on
+        // Overview (the H/L tool cycle wrapping past the last tool,
+        // "overview"); a `Tool` = open it ("heading").
+        const focusIntent = transition.tool === undefined ? "company" : transition.tool === null ? "overview" : "heading";
+        input.spolkaTool.commitTool(transition.companyId, transition.tool ?? null, focusIntent);
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- input is a fresh object every render; guardNavigation/commitTool are its only stable (useCallback) pieces read here, and listing the whole object would make navigate's identity churn every render

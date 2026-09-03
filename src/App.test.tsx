@@ -515,3 +515,86 @@ describe("Spółka atomic company transitions (sol R1 finding 3)", () => {
   });
 });
 
+// F3c S1 (plan § Design 5): Ctrl+. jumps to the workshop bar's current tab
+// stop; H/L cycle the workshop tools (wrap, Overview included); Shift+J/K
+// move to the adjacent company (ADR 0107 dec. 6 — no tool retarget).
+describe("Spółka keyboard shortcuts (F3c S1)", () => {
+  async function openSpolka(user: ReturnType<typeof userEvent.setup>) {
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "CDR" }));
+    return screen.findByRole("region", { name: "Company view" });
+  }
+
+  it("Ctrl+. focuses the workshop bar's tab stop on Spółka", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const spolka = await openSpolka(user);
+
+    fireEvent.keyDown(document, { key: ".", ctrlKey: true });
+    expect(within(spolka).getByRole("button", { name: "Overview" })).toHaveFocus();
+  });
+
+  it("Ctrl+. is a no-op off Spółka (no workshop bar mounted)", async () => {
+    renderApp();
+    await screen.findByRole("heading", { name: "Inbox" });
+
+    fireEvent.keyDown(document, { key: ".", ctrlKey: true });
+    expect(screen.getByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+  });
+
+  it("Ctrl+. is a no-op while a modal is open (never steals focus to the background bar)", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const spolka = await openSpolka(user);
+    const overview = within(within(spolka).getByRole("toolbar", { name: "Workshop" })).getByRole("button", { name: "Overview" });
+
+    fireEvent.keyDown(document, { key: "K", code: "KeyK", ctrlKey: true });
+    await screen.findByRole("dialog", { name: "Command palette" });
+    // Whatever the palette's own initial focus is (its `autoFocus` input stays
+    // a known S2 follow-up — contract § item 5), Ctrl+. must not move it to
+    // the background workshop bar while the modal is open.
+    const focusedInModal = document.activeElement;
+
+    fireEvent.keyDown(document, { key: ".", ctrlKey: true });
+    expect(document.activeElement).toBe(focusedInModal);
+    expect(overview).not.toHaveFocus();
+  });
+
+  it("H/L cycle workshop tools, wrapping to Overview, focusing the Overview entry", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const spolka = await openSpolka(user);
+    const bar = within(spolka).getByRole("toolbar", { name: "Workshop" });
+
+    fireEvent.keyDown(document, { key: "L", code: "KeyL" });
+    await waitFor(() => expect(spolka).toContainElement(screen.getByRole("group", { name: "Workshop tool" })));
+    const firstTool = screen.getByRole("group", { name: "Workshop tool" }).getAttribute("data-tool");
+    expect(firstTool).toBe("fundamenty");
+
+    fireEvent.keyDown(document, { key: "H", code: "KeyH" });
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
+    expect(within(bar).getByRole("button", { name: "Overview" })).toHaveFocus();
+  });
+
+  it("Shift+J/K move to the adjacent company on Spółka, closing the tool and focusing the company picker", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      pinnedCompanyIds: ["company_gpw_cdr", "company_gpw_kgh"],
+    };
+    const user = userEvent.setup();
+    renderApp();
+    const spolka = await openSpolka(user);
+    const startingCompanyId = spolka.getAttribute("data-company-id");
+
+    const bar = within(spolka).getByRole("toolbar", { name: "Workshop" });
+    await user.click(within(bar).getByRole("button", { name: "Claims" }));
+    await screen.findByRole("group", { name: "Workshop tool" });
+
+    fireEvent.keyDown(document, { key: "J", code: "KeyJ", shiftKey: true });
+
+    await waitFor(() => expect(screen.getByRole("region", { name: "Company view" }).getAttribute("data-company-id")).not.toBe(startingCompanyId));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Company")).toHaveFocus();
+  });
+});
+

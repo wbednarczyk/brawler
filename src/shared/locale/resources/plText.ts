@@ -1077,8 +1077,6 @@ export const plText: Record<string, string> = {
   "Add note from inbox item": "Dodaj notatkę z elementu inboxu",
   "Open next company": "Otwórz następną spółkę",
   "Open previous company": "Otwórz poprzednią spółkę",
-  "Open next company tab": "Otwórz następną zakładkę spółki",
-  "Open previous company tab": "Otwórz poprzednią zakładkę spółki",
   "Companies": "Spółki",
   "Configure shortcut": "Konfiguruj skrót",
   "Key": "Klawisz",
@@ -2239,4 +2237,9 @@ export const plText: Record<string, string> = {
   "No sources configured": "Brak skonfigurowanych źródeł",
   "open Sources": "otwórz Źródła",
   // ---- /F4c Settings ----
+  // ---- F3c S1 ----
+  "Open workshop bar": "Otwórz pasek warsztatu",
+  "Open next workshop tool": "Otwórz następne narzędzie warsztatu",
+  "Open previous workshop tool": "Otwórz poprzednie narzędzie warsztatu",
+  // ---- /F3c S1 ----
 };

@@ -3,7 +3,7 @@ import { createRef, type ReactElement } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { ActionButton, Button, CandlestickChart, Checkbox, DateField, EmptyState, ErrorText, ExpandableRow, Figure, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SectionHeader, SegmentedControl, SegmentedControlOption, StatusChip, StatusPill, TextareaField } from "./index";
+import { ActionButton, Button, CandlestickChart, Checkbox, DateField, EmptyState, ErrorText, ExpandableRow, Figure, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SearchField, SectionHeader, SegmentedControl, SegmentedControlOption, StatusChip, StatusPill, TextareaField } from "./index";
 import { PrimitiveGallery } from "./PrimitiveGallery";
 
 // ADR 0081 Q4: Button emits stable data-ui-button-variant metadata so scoped
@@ -192,6 +192,25 @@ describe("SectionHeader", () => {
     const { container } = render(<SectionHeader title="Quality" />);
     expect(container.querySelector(".ui-section-eyebrow")).toBeNull();
   });
+
+  // F3c S1 (plan § Design 3): the workshop tool frame focuses its heading on
+  // open via this ref — a heading is not natively focusable, so it needs
+  // `tabIndex={-1}` (programmatically focusable, out of the Tab order) too.
+  it("forwards titleRef to the heading element and renders titleTabIndex", () => {
+    let headingNode: HTMLHeadingElement | null = null;
+    render(
+      <SectionHeader
+        title="Claims"
+        titleRef={(node) => {
+          headingNode = node;
+        }}
+        titleTabIndex={-1}
+      />,
+    );
+    const heading = screen.getByRole("heading", { level: 2, name: "Claims" });
+    expect(headingNode).toBe(heading);
+    expect(heading).toHaveAttribute("tabindex", "-1");
+  });
 });
 
 describe("PanelHeader", () => {
@@ -240,6 +259,65 @@ describe("TextareaField", () => {
   it("renders a labelled field when given a label", () => {
     const { container } = render(<TextareaField label="Body" />);
     expect(container.querySelector("label.ui-text-field")).not.toBeNull();
+  });
+});
+
+// F3c S1 (plan § Design 2): Escape inside a hosted tool's search field is
+// consumed HERE (clears the query) rather than bubbling to the tool frame's
+// Escape-to-close handler — only when the field is non-empty; an empty field
+// lets Escape bubble (e.g. to close the tool).
+describe("SearchField", () => {
+  it("Escape with a non-empty value calls onClear and consumes the event", () => {
+    const onClear = vi.fn();
+    const onChange = vi.fn();
+    render(
+      <SearchField
+        ariaLabel="Search"
+        placeholder="Search…"
+        value="claims"
+        onChange={onChange}
+        onClear={onClear}
+        clearLabel="Clear"
+      />,
+    );
+    const input = screen.getByLabelText("Search");
+    const event = fireEvent.keyDown(input, { key: "Escape" });
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+    // jsdom's fireEvent returns `false` when preventDefault() was called.
+    expect(event).toBe(false);
+  });
+
+  it("Escape with a non-empty value falls back to onChange('') when no onClear is given", () => {
+    const onChange = vi.fn();
+    render(<SearchField ariaLabel="Search" placeholder="Search…" value="claims" onChange={onChange} />);
+    fireEvent.keyDown(screen.getByLabelText("Search"), { key: "Escape" });
+    expect(onChange).toHaveBeenCalledWith("");
+  });
+
+  it("Escape with an empty value does not consume the event (lets it bubble)", () => {
+    const onClear = vi.fn();
+    render(
+      <SearchField ariaLabel="Search" placeholder="Search…" value="" onChange={() => {}} onClear={onClear} clearLabel="Clear" />,
+    );
+    const event = fireEvent.keyDown(screen.getByLabelText("Search"), { key: "Escape" });
+    expect(onClear).not.toHaveBeenCalled();
+    expect(event).toBe(true);
+  });
+
+  it("still calls a caller-provided inputProps.onKeyDown for non-Escape keys (CommandPalette's arrow-key nav)", () => {
+    const onKeyDown = vi.fn();
+    render(
+      <SearchField
+        ariaLabel="Search"
+        placeholder="Search…"
+        value=""
+        onChange={() => {}}
+        inputProps={{ onKeyDown }}
+      />,
+    );
+    fireEvent.keyDown(screen.getByLabelText("Search"), { key: "ArrowDown" });
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
   });
 });
 

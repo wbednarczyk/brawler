@@ -25,7 +25,12 @@ import { openExternalUrl } from "./openExternalUrl";
 export type SpolkaTransition = {
   companyId: string;
   section: Section;
-  tool?: Tool;
+  /** Omitted (undefined) = leave the tool as-is / no tool intent (a plain
+   * company switch — `useSpolkaNavigate` reads this as the "company" focus
+   * intent); `null` = explicitly land on Overview (the workshop-tool cycle
+   * wrapping past the last tool, F3c S1 — reads as the "overview" intent);
+   * a `Tool` = open it (reads as the "heading" intent). */
+  tool?: Tool | null;
   highlightClaimId?: string;
 };
 

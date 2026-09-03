@@ -37,7 +37,7 @@ test.describe("Spółka density", { tag: "@clickable" }, () => {
     // (spolka.css) — the inner scroll region every hosted tool resolves against.
     await assertContained(page.locator(".spolka-layout"), ".spolka-layout");
 
-    const workshop = spolka.getByRole("group", { name: "Workshop" });
+    const workshop = spolka.getByRole("toolbar", { name: "Workshop" });
     const buttons = workshop.getByRole("button");
     const count = await buttons.count();
     for (let i = 0; i < count; i += 1) {
@@ -49,7 +49,7 @@ test.describe("Spółka density", { tag: "@clickable" }, () => {
   test("with the claims tool open: no overflow, inner container contained", async ({ page }) => {
     await openApp(page);
     const spolka = await openSpolka(page);
-    await spolka.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Claims", exact: true }).click();
+    await spolka.getByRole("toolbar", { name: "Workshop" }).getByRole("button", { name: "Claims", exact: true }).click();
     await expect(spolka.getByLabel("Workshop tool")).toBeVisible();
     await expectNoPageOverflow(page);
     await assertContained(page.locator(".spolka-layout"), ".spolka-layout (claims tool open)");
@@ -66,7 +66,7 @@ test.describe("Spółka density", { tag: "@clickable" }, () => {
     expect(columns, "core grid collapses to one column below the 1100px breakpoint").toBe(1);
     await expectNoPageOverflow(page);
 
-    const workshop = spolka.getByRole("group", { name: "Workshop" });
+    const workshop = spolka.getByRole("toolbar", { name: "Workshop" });
     const panelBox = await spolka.boundingBox();
     const workshopBox = await workshop.boundingBox();
     const restDelta = Math.abs(workshopBox!.y + workshopBox!.height - (panelBox!.y + panelBox!.height));
@@ -97,7 +97,7 @@ test.describe("Spółka density", { tag: "@clickable" }, () => {
     await openApp(page);
     const spolka = await openSpolka(page);
     const layout = page.locator(".spolka-layout");
-    const workshop = spolka.getByRole("group", { name: "Workshop" });
+    const workshop = spolka.getByRole("toolbar", { name: "Workshop" });
 
     for (const viewport of [
       { width: 1366, height: 768 },

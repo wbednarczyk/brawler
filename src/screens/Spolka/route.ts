@@ -56,3 +56,39 @@ export const TOOL_KINDS = [
   "rekomendacje",
   "wydarzenia",
 ] as const satisfies readonly Tool["t"][];
+
+// The workshop bar's destination entries (F3a, moved here in F3c S1 so the
+// bar, the keyboard cycle (`useSpolkaKeyboard`) and `workshopIndexOf` share
+// ONE order). Destination labels are nouns, not verbs (ADR 0104 dec. 3
+// amendment) — see `SPOLKA_TOOL_COMMANDS` in `SpolkaScreen.tsx` for the
+// palette's verb-prefixed twin.
+export const WORKSHOP_TOOLS: Array<{ tool: Tool; label: string }> = [
+  { tool: { t: "fundamenty" }, label: "Fundamentals" },
+  { tool: { t: "feed" }, label: "Feed" },
+  { tool: { t: "pokrycie" }, label: "Coverage" },
+  { tool: { t: "rekomendacje" }, label: "Recommendations" },
+  { tool: { t: "tezy" }, label: "Claims" },
+  { tool: { t: "notatnik" }, label: "Notebook" },
+  { tool: { t: "dziennik" }, label: "Decision journal" },
+  { tool: { t: "jakosc" }, label: "Quality" },
+  { tool: { t: "diff" }, label: "Report diff" },
+  { tool: { t: "research" }, label: "Research" },
+  { tool: { t: "akcjonariat" }, label: "Ownership" },
+  { tool: { t: "sygnaly" }, label: "Signals" },
+  { tool: { t: "dokumenty" }, label: "Documents" },
+  { tool: { t: "wydarzenia" }, label: "Events" },
+];
+
+// The workshop bar's roving-tabindex/selection index for a committed tool
+// (F3c S1, plan § Design 1): Overview = 0, WORKSHOP_TOOLS = 1..14. `feedItem`
+// has no bar entry of its own (opened only from the Inbox) — it maps to
+// Feed's index, so closing it returns focus to a real, visible entry. Accepts
+// either the full `Tool` or just its discriminant (`focus.closedKind` on
+// `SpolkaToolHostApi` carries only the kind, not the whole tool).
+export function workshopIndexOf(toolOrKind: Tool | Tool["t"] | null): number {
+  if (toolOrKind === null) return 0;
+  const kind = typeof toolOrKind === "string" ? toolOrKind : toolOrKind.t;
+  const effectiveKind = kind === "feedItem" ? "feed" : kind;
+  const index = WORKSHOP_TOOLS.findIndex((entry) => entry.tool.t === effectiveKind);
+  return index === -1 ? 0 : index + 1;
+}

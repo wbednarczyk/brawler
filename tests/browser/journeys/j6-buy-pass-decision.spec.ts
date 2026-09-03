@@ -44,7 +44,7 @@ test.describe("J6 — buy / pass decision", { tag: "@journey" }, () => {
     await j.markScreen("Spółka");
 
     // Synthesis: the quality scorecard.
-    await j.click(spolka.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Quality", exact: true }));
+    await j.click(spolka.getByRole("toolbar", { name: "Workshop" }).getByRole("button", { name: "Quality", exact: true }));
     const qualityTool = spolka.getByLabel("Workshop tool");
     await expect(qualityTool).toBeVisible();
     await expect(qualityTool).toHaveAttribute("data-tool", "jakosc");
@@ -57,7 +57,7 @@ test.describe("J6 — buy / pass decision", { tag: "@journey" }, () => {
     // Record the decision (ADR 0071): switch tools via the workshop bar —
     // stays visible whether or not a tool is open, so it's a single click.
     await j.click(
-      spolka.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Decision journal", exact: true }),
+      spolka.getByRole("toolbar", { name: "Workshop" }).getByRole("button", { name: "Decision journal", exact: true }),
     );
     const journalTool = spolka.getByLabel("Workshop tool");
     await expect(journalTool).toBeVisible();
