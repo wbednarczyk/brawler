@@ -299,7 +299,6 @@
   border: 0;
   color: var(--text);
   background: transparent;
-  outline: none;
 }
 
 .global-search-input::placeholder {
@@ -404,7 +403,6 @@
   border: 0;
   color: var(--text);
   background: transparent;
-  outline: none;
 }
 
 .search-box input::placeholder {
@@ -497,7 +495,6 @@
   border: 0;
   color: var(--text);
   background: transparent;
-  outline: none;
 }
 
 .content-grid {

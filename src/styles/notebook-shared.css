@@ -42,7 +42,6 @@
   border-radius: 8px;
   color: var(--text);
   background: var(--surface-raised);
-  outline: none;
 }
 
 .notebook-form textarea {

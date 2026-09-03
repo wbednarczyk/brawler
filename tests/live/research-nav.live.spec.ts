@@ -52,7 +52,7 @@ test("the Company mode nav entry opens the Spółka screen scoped to a company o
   const palette = page.getByRole("dialog", { name: /Command palette|Paleta poleceń/ });
   await palette.getByLabel(/Search commands|Szukaj poleceń/).fill("Research");
   await expect(
-    palette.getByRole("button", { name: /^(Open screen|Otwórz ekran): Research/ }).first(),
+    palette.getByRole("option", { name: /^(Open screen|Otwórz ekran): Research/ }).first(),
   ).toBeVisible();
   await page.keyboard.press("Escape");
 });

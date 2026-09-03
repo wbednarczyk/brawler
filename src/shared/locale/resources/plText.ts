@@ -2242,4 +2242,8 @@ export const plText: Record<string, string> = {
   "Open next workshop tool": "Otwórz następne narzędzie warsztatu",
   "Open previous workshop tool": "Otwórz poprzednie narzędzie warsztatu",
   // ---- /F3c S1 ----
+  // ---- F3c S2 ----
+  // Palette listbox aria-label (docs/plans/f3c-contracts/s2-palette-focus-ring.md).
+  "Commands": "Polecenia",
+  // ---- /F3c S2 ----
 };

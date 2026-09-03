@@ -21,10 +21,10 @@
   scroll-margin-top: 12px;
 }
 
-/* Focus is moved here programmatically on open (scroll into view); don't paint a
-   focus ring around the whole card for that. */
+/* Focus is moved here programmatically on open (scroll into view); the global
+   :focus-visible ring (ui.css, F3c S2 #197) still shows so keyboard users can
+   see where focus landed. */
 .company-workspace:focus {
-  outline: none;
   background:
     linear-gradient(
       135deg,

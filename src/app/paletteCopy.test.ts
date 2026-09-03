@@ -67,6 +67,18 @@ describe("palette copy gate (ADR 0104 dec. 3, F3a S3)", () => {
     });
   }
 
+  // F3c S2 (#197): "Today" joins the global-screen palette entries
+  // (SCREEN_PALETTE_ENTRIES) alongside Research/Events/Report Season.
+  for (const locale of ["en", "pl"] as const) {
+    it(`lists the Today screen entry (${locale})`, () => {
+      const text = makeTextTranslator(locale);
+      const commands = collectCommands(locale);
+      const today = commands.find((command) => command.actionKey === "screen.open.today");
+      expect(today).toBeDefined();
+      expect(today!.label).toBe(`${text("Open screen")}: ${text("Today")}`);
+    });
+  }
+
   it("no two distinct verbs share one actionKey", () => {
     const byActionKey = new Map<string, Verb>();
     const collisions: string[] = [];

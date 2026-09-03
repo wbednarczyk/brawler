@@ -131,8 +131,10 @@ const ATTENTION_BADGE_FORMS: PluralForms = {
 // path used by J4/J7 (F4b S4, contract § Decisions #1 — Events and Report
 // Season joined the Library nav but their `Open screen: …` command stays);
 // the rest still have no top-level nav item and need this as their only
-// entry point.
+// entry point. Today joins them (F3c S2, #197): every screen the keyboard-only
+// journey lands on stays reachable by name through Ctrl+K.
 const SCREEN_PALETTE_ENTRIES: ReadonlyArray<{ section: Section; labelText: string; actionKey: string }> = [
+  { section: "Today", labelText: "Today", actionKey: "screen.open.today" },
   { section: "Research", labelText: "Research", actionKey: "screen.open.research" },
   { section: "Events", labelText: "Events", actionKey: "screen.open.events" },
   { section: "ReportSeason", labelText: "Report Season", actionKey: "screen.open.reportSeason" },

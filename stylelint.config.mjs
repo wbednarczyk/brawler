@@ -42,6 +42,11 @@ export default {
     "declaration-block-no-duplicate-properties": true,
     "no-invalid-double-slash-comments": true,
     "declaration-property-value-allowed-list": allowedList,
+    // Global focus ring (F3c S2, #197, plan § Design 7): a suppressed outline
+    // hides keyboard focus. `:focus-visible { outline: 2px solid var(--primary) }`
+    // in ui.css is the one ring; a wrapper that needs a `:focus-within` ring
+    // instead still must not disable the input's own outline (ui-authoring.md).
+    "declaration-property-value-disallowed-list": { outline: ["none", "0"] },
   },
   overrides: [
     {

@@ -375,7 +375,6 @@
   border-color: var(--border);
   color: var(--text);
   background: color-mix(in srgb, var(--surface) 72%, transparent);
-  outline: none;
 }
 
 .ui-status-chip {
@@ -396,6 +395,16 @@
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* One global keyboard focus ring (F3c S2, #197, plan § Design 7, ADR 0104
+   dec. 1 — filled cyan = interaction incl. focus). No `:focus:not(:focus-visible)`
+   suppressor: the UA already limits `:focus-visible` to keyboard focus, and a
+   suppressor would violate the stylelint guard on `outline: none`. Per-variant
+   `:focus-visible` tints below stay — they layer on top of this ring. */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .primary-button,
@@ -1081,7 +1090,6 @@ button.ui-provenance-figure-ticket:focus-visible {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   background: var(--bg);
-  outline: none;
 }
 
 .ui-focus-overlay-header {
@@ -1146,7 +1154,6 @@ button.ui-provenance-figure-ticket:focus-visible {
   border-radius: 10px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  outline: none;
 }
 
 .ui-modal-header {

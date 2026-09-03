@@ -23,7 +23,7 @@ test.describe("fundamentals visual harness", () => {
     await page.keyboard.press("Control+K");
     const palette = page.getByRole("dialog", { name: "Command palette" });
     await palette.getByLabel("Search commands").fill("Open fundamentals");
-    await palette.getByRole("button", { name: "Open fundamentals", exact: true }).first().click();
+    await palette.getByRole("option", { name: "Open fundamentals", exact: true }).first().click();
 
     const panel = page.getByLabel("Company fundamentals");
     await expect(panel).toBeVisible();
@@ -51,7 +51,7 @@ test.describe("fundamentals visual harness", () => {
     await page.keyboard.press("Control+K");
     const palette = page.getByRole("dialog", { name: "Paleta poleceń" });
     await palette.getByLabel("Szukaj poleceń").fill("Otwórz fundamenty");
-    await palette.getByRole("button", { name: "Otwórz fundamenty", exact: true }).first().click();
+    await palette.getByRole("option", { name: "Otwórz fundamenty", exact: true }).first().click();
 
     const panel = page.getByLabel("Wskaźniki finansowe spółki");
     await expect(panel).toBeVisible();

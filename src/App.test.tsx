@@ -256,10 +256,10 @@ describe("App shell", () => {
     fireEvent.keyDown(document, { key: "K", code: "KeyK", ctrlKey: true });
     const palette = await screen.findByRole("dialog", { name: "Command palette" });
     // App-level commands (derived from the shortcut registry) are listed.
-    expect(within(palette).getByRole("button", { name: "Open Settings" })).toBeInTheDocument();
+    expect(within(palette).getByRole("option", { name: "Open Settings" })).toBeInTheDocument();
 
     // Running a listed command navigates and closes the palette.
-    await userEvent.click(within(palette).getByRole("button", { name: "Open Settings" }));
+    await userEvent.click(within(palette).getByRole("option", { name: "Open Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
   });

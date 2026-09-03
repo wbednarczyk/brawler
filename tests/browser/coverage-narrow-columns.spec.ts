@@ -28,7 +28,7 @@ async function openCoveragePanel(page: import("@playwright/test").Page, companyI
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByLabel("Search commands").fill("Open coverage");
-  await palette.getByRole("button", { name: "Open coverage", exact: true }).first().click();
+  await palette.getByRole("option", { name: "Open coverage", exact: true }).first().click();
 }
 
 test("the compact-tier pane keeps the Data and Flagged counts under the period label", async ({
