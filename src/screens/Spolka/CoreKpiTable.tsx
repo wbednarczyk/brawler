@@ -65,7 +65,7 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExt
   // its own overflow instead of the whole screen (owner dogfooding v0.74,
   // item 1).
   return (
-    <div role="group" aria-label={text("Annual KPI table")} className="spolka-section spolka-kpi" tabIndex={0}>
+    <article aria-label={text("Annual KPI table")} className="spolka-section spolka-kpi" tabIndex={0}>
       <SectionHeader level="h2" title={text("Annual results")} eyebrow={text("PLN million · consolidated")} />
 
       {error ? (
@@ -136,6 +136,6 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExt
       <Button variant="secondary" onClick={() => onOpenTool({ t: "fundamenty" })}>
         {text("Fundamentals")}
       </Button>
-    </div>
+    </article>
   );
 }

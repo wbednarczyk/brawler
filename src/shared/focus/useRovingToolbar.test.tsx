@@ -7,8 +7,8 @@ import { useRovingToolbar } from "./useRovingToolbar";
 // Home/End jump to the ends, and `focusItem` lets an owner (SpolkaScreen)
 // move focus programmatically (the "entry"/"overview" focus intents).
 
-function Toolbar({ count, initialIndex }: { count: number; initialIndex: number }) {
-  const roving = useRovingToolbar({ count, initialIndex });
+function Toolbar({ count, initialIndex, selectedIndex }: { count: number; initialIndex: number; selectedIndex?: number }) {
+  const roving = useRovingToolbar({ count, initialIndex, selectedIndex });
   return (
     <div role="toolbar" aria-label="Test toolbar">
       {Array.from({ length: count }, (_, i) => (
@@ -21,6 +21,27 @@ function Toolbar({ count, initialIndex }: { count: number; initialIndex: number 
 }
 
 describe("useRovingToolbar", () => {
+  // The tab stop follows the SELECTION when the toolbar itself holds no focus
+  // (a tool opened from the palette or H/L must make Tab-from-the-tool land
+  // on the pressed entry), but never yanks the tab stop from under a focused
+  // item (APG: the stop follows the last-focused entry while inside the bar).
+  it("moves the tab stop to a new selectedIndex while the toolbar is unfocused", () => {
+    const { rerender } = render(<Toolbar count={3} initialIndex={0} selectedIndex={0} />);
+    rerender(<Toolbar count={3} initialIndex={0} selectedIndex={2} />);
+    const items = screen.getAllByRole("button");
+    expect(items.map((el) => el.getAttribute("tabindex"))).toEqual(["-1", "-1", "0"]);
+    expect(document.body).toHaveFocus();
+  });
+
+  it("keeps the focused item as the tab stop when selectedIndex changes under it", () => {
+    const { rerender } = render(<Toolbar count={3} initialIndex={0} selectedIndex={0} />);
+    const items = screen.getAllByRole("button");
+    items[1].focus();
+    rerender(<Toolbar count={3} initialIndex={0} selectedIndex={2} />);
+    expect(items[1]).toHaveAttribute("tabindex", "0");
+    expect(items[1]).toHaveFocus();
+  });
+
   it("gives exactly one item tabIndex=0, at the initial index", () => {
     render(<Toolbar count={3} initialIndex={1} />);
     const items = screen.getAllByRole("button");

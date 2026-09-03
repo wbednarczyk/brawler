@@ -349,14 +349,14 @@ describe("SpolkaScreen", () => {
   it.each(sections)("no core section ever renders blank: $name (data)", async ({ name, data }) => {
     getCompanyViewMock.mockResolvedValue(data as CompanyView);
     renderScreen();
-    const group = await screen.findByRole("group", { name });
+    const group = await screen.findByRole("article", { name });
     expect(group.textContent?.trim().length).toBeGreaterThan(0);
   });
 
   it.each(sections)("no core section ever renders blank: $name (empty)", async ({ name, empty }) => {
     getCompanyViewMock.mockResolvedValue(emptyView(empty));
     renderScreen();
-    const group = await screen.findByRole("group", { name });
+    const group = await screen.findByRole("article", { name });
     expect(group.textContent?.trim().length).toBeGreaterThan(0);
   });
 
@@ -365,7 +365,7 @@ describe("SpolkaScreen", () => {
       emptyView({ sectionErrors: { [errorKey]: "unavailable" } }),
     );
     renderScreen();
-    const group = await screen.findByRole("group", { name });
+    const group = await screen.findByRole("article", { name });
     expect(group.textContent?.trim().length).toBeGreaterThan(0);
   });
 
@@ -474,9 +474,9 @@ describe("SpolkaScreen", () => {
   it("kurs and coverage carry as-of dates", async () => {
     getCompanyViewMock.mockResolvedValue(fullView());
     renderScreen();
-    const priceGroup = await screen.findByRole("group", { name: "Price chart" });
+    const priceGroup = await screen.findByRole("article", { name: "Price chart" });
     expect(within(priceGroup).getByText(/18\.08\.2026/)).toBeInTheDocument();
-    const coverageGroup = screen.getByRole("group", { name: "Report coverage" });
+    const coverageGroup = screen.getByRole("article", { name: "Report coverage" });
     expect(within(coverageGroup).getByText(/FY ?2025/)).toBeInTheDocument();
     expect(within(coverageGroup).getByText(/Q3 ?2026/)).toBeInTheDocument();
   });
@@ -532,7 +532,7 @@ describe("SpolkaScreen", () => {
     renderScreen();
     await screen.findByText("CD Projekt");
     expect(screen.getByRole("button", { name: /Signals counter/ }).textContent).toContain("99+");
-    const feedGroup = screen.getByRole("group", { name: "Company feed" });
+    const feedGroup = screen.getByRole("article", { name: "Company feed" });
     expect(within(feedGroup).getAllByRole("button", { name: /Report \d/ })).toHaveLength(6);
   });
 
@@ -551,7 +551,7 @@ describe("SpolkaScreen", () => {
     getCompanyViewMock.mockResolvedValue(fullView({ coverage }));
     renderScreen();
     await screen.findByText("CD Projekt");
-    const coverageGroup = screen.getByRole("group", { name: "Report coverage" });
+    const coverageGroup = screen.getByRole("article", { name: "Report coverage" });
     // A compact table now (wave 2, item 2), not a bare list — one row per
     // period, excluding the header row.
     expect(within(coverageGroup).getAllByRole("row")).toHaveLength(9);
@@ -564,7 +564,7 @@ describe("SpolkaScreen", () => {
     getCompanyViewMock.mockResolvedValue(fullView());
     renderScreen();
     await screen.findByText("CD Projekt");
-    const coverageGroup = screen.getByRole("group", { name: "Report coverage" });
+    const coverageGroup = screen.getByRole("article", { name: "Report coverage" });
 
     const readRow = within(coverageGroup).getByText(/FY ?2025/).closest("tr")!;
     expect(within(readRow).getByText("read")).toBeInTheDocument();

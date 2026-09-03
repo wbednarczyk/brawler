@@ -86,6 +86,7 @@ A landmark (`<section>`/`<aside>` **with an accessible name**, `role="region"`, 
 - The **screen root** owns the landmark (`<section className="feed-panel" aria-labelledby=…>`), including the Spółka screen root.
 - **Inside a panel, a titled block is a group, not a landmark**: `<div role="group" aria-label={text("…")}>`. The name is still announced; the landmark list stays short and unambiguous. `<section role="group">` does **not** work — axe still counts a named `<section>` as a landmark.
 - A workshop-tool pane needs no landmark of its own: the workshop bar button names it, and tool ids are unique by construction.
+- **A scrollable, Tab-reachable card is an `<article aria-label>`**, never `role="group"` + `tabIndex=0`: axe's `scrollable-region-focusable` wants it focusable, and `focus-order-semantics` then wants a scrollable-region role — `article`/`section` pass without adding a landmark (the five Spółka core cards; guarded by `tests/browser/spolka-keyboard.spec.ts` axe pass, F3c).
 - Never label a block with a **fixed** `aria-labelledby` id (`aria-labelledby="ownership-title"`) — a second instance duplicates the id. Use `aria-label` directly.
 
 Guarded by `src/screens/Spolka/paneLandmarks.test.tsx`, which opens every Spółka workshop tool and fails if its pane contributes a landmark.

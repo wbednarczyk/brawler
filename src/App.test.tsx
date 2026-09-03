@@ -534,6 +534,21 @@ describe("Spółka keyboard shortcuts (F3c S1)", () => {
     expect(within(spolka).getByRole("button", { name: "Overview" })).toHaveFocus();
   });
 
+  it("Ctrl+. works while focus sits in the company picker (a company switch lands there)", async () => {
+    // J8 in the real browser: `Open company: X` puts focus on the company
+    // picker `<select>` (intent `company`), and an editable-suppressed
+    // shortcut would then ignore Ctrl+. — the chord has no editing meaning.
+    const user = userEvent.setup();
+    renderApp();
+    const spolka = await openSpolka(user);
+    const picker = within(spolka).getByRole("combobox", { name: "Company" });
+    picker.focus();
+    expect(picker).toHaveFocus();
+
+    fireEvent.keyDown(picker, { key: ".", ctrlKey: true });
+    expect(within(spolka).getByRole("button", { name: "Overview" })).toHaveFocus();
+  });
+
   it("Ctrl+. is a no-op off Spółka (no workshop bar mounted)", async () => {
     renderApp();
     await screen.findByRole("heading", { name: "Inbox" });

@@ -109,7 +109,11 @@ export function SpolkaScreen({
   // The workshop bar's roving tabindex (F3c S1, plan § Design 1): Overview +
   // WORKSHOP_TOOLS, one shared instance so both the bar and the focus-intent
   // effect below can move the ACTUAL tab stop, not just render one.
-  const roving = useRovingToolbar({ count: WORKSHOP_TOOLS.length + 1, initialIndex: workshopIndexOf(activeTool) });
+  const roving = useRovingToolbar({
+    count: WORKSHOP_TOOLS.length + 1,
+    initialIndex: workshopIndexOf(activeTool),
+    selectedIndex: workshopIndexOf(activeTool),
+  });
 
   // Focus on a close/company-switch transition (plan § Design 3) — the ONE
   // owner of the "entry"/"overview"/"company" intents (`ToolFrame` owns
@@ -363,7 +367,7 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, onOpenExternalUrl, text,
           {/* tabIndex on every card (item 1): each now scrolls its own
               overflow, so axe's scrollable-region-focusable needs it
               keyboard-reachable even before it has any focusable child. */}
-          <div role="group" aria-label={text("Company feed")} className="spolka-section spolka-feed" tabIndex={0}>
+          <article aria-label={text("Company feed")} className="spolka-section spolka-feed" tabIndex={0}>
             <SectionHeader level="h2" title={text("Company feed")} />
             {sectionErrors.feed ? (
               <ErrorText>{text("Couldn't load the feed. The rest of the view is up to date.")}</ErrorText>
@@ -383,9 +387,9 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, onOpenExternalUrl, text,
             <Button variant="secondary" onClick={() => onOpenTool({ t: "feed" })}>
               {text("Feed")}
             </Button>
-          </div>
+          </article>
 
-          <div role="group" aria-label={text("Price chart")} className="spolka-section spolka-price" tabIndex={0}>
+          <article aria-label={text("Price chart")} className="spolka-section spolka-price" tabIndex={0}>
             <SectionHeader level="h2" title={text("Price chart")} />
             {sectionErrors.price ? (
               <ErrorText>{text("Couldn't load the price chart. The rest of the view is up to date.")}</ErrorText>
@@ -436,9 +440,9 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, onOpenExternalUrl, text,
                 );
               })()
             )}
-          </div>
+          </article>
 
-          <div role="group" aria-label={text("Report coverage")} className="spolka-section spolka-coverage" tabIndex={0}>
+          <article aria-label={text("Report coverage")} className="spolka-section spolka-coverage" tabIndex={0}>
             <SectionHeader level="h2" title={text("Report coverage")} />
             {sectionErrors.coverage ? (
               <ErrorText>{text("Couldn't load report coverage. The rest of the view is up to date.")}</ErrorText>
@@ -481,9 +485,9 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, onOpenExternalUrl, text,
             <Button variant="secondary" onClick={() => onOpenTool({ t: "pokrycie" })}>
               {text("Coverage")}
             </Button>
-          </div>
+          </article>
 
-          <div role="group" aria-label={text("Recommendations")} className="spolka-section spolka-recommendations" tabIndex={0}>
+          <article aria-label={text("Recommendations")} className="spolka-section spolka-recommendations" tabIndex={0}>
             <SectionHeader level="h2" title={text("Recommendations")} />
             {sectionErrors.recommendations ? (
               <ErrorText>{text("Couldn't load recommendations. The rest of the view is up to date.")}</ErrorText>
@@ -501,7 +505,7 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, onOpenExternalUrl, text,
             <Button variant="secondary" onClick={() => onOpenTool({ t: "rekomendacje" })}>
               {text("Recommendations")}
             </Button>
-          </div>
+          </article>
         </div>
       </div>
   );

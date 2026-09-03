@@ -116,6 +116,9 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     group: "Global actions",
     scope: "app",
     verb: "open",
+    // A company switch lands focus on the company picker (`<select>`); the
+    // chord has no editing meaning, so it must fire from editables too (J8).
+    suppressWhenEditable: false,
     binding: {
       ctrlKey: true,
       key: ".",

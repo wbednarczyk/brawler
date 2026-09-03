@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 export type RovingToolbarItemProps = {
   tabIndex: 0 | -1;
@@ -18,15 +18,26 @@ export type UseRovingToolbarResult = {
 // entry (not the pressed/active one), per the APG pattern. ArrowRight/Left
 // move it with wraparound, Home/End jump to the ends; Enter/Space are the
 // item's own (a `Button`) activation, not this hook's concern.
+// `selectedIndex` (optional): while the toolbar holds no focus, the tab stop
+// follows the selection — a tool opened from the palette or H/L makes
+// Tab-from-the-tool land on the pressed entry, never on a stale one.
 export function useRovingToolbar({
   count,
   initialIndex,
+  selectedIndex,
 }: {
   count: number;
   initialIndex: number;
+  selectedIndex?: number;
 }): UseRovingToolbarResult {
   const [focusedIndex, setFocusedIndex] = useState(initialIndex);
   const itemRefs = useRef<Array<HTMLElement | null>>([]);
+
+  useEffect(() => {
+    if (selectedIndex === undefined || selectedIndex < 0) return;
+    const inside = itemRefs.current.some((node) => node !== null && node === document.activeElement);
+    if (!inside) setFocusedIndex(selectedIndex);
+  }, [selectedIndex]);
 
   const focusItem = useCallback(
     (index: number) => {
