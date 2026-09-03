@@ -26,7 +26,7 @@ export type ModalProps = {
 };
 
 const TABBABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
 
 // Browser-faithful enough for a dialog (sol diff R1/R2): a hidden/inert
 // ancestor, a disabling `<fieldset disabled>` (its first `<legend>` exempt),

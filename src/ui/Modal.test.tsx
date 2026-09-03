@@ -241,4 +241,56 @@ describe("Modal", () => {
     fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
     expect(realLast).toHaveFocus();
   });
+
+  it("a <summary> is a real tab stop and can be the dialog's last one; its closed details' content is not", () => {
+    render(
+      <Modal
+        open
+        onClose={() => {}}
+        title="Dialog"
+        ariaLabel="Dialog"
+        footer={
+          <details>
+            <summary>Summary last</summary>
+            <button type="button">Under closed details</button>
+          </details>
+        }
+      >
+        <button type="button">Middle</button>
+      </Modal>,
+    );
+    const summary = screen.getByText("Summary last");
+    const close = screen.getByRole("button", { name: "Close dialog" });
+    summary.focus();
+    fireEvent.keyDown(summary, { key: "Tab" });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(summary).toHaveFocus();
+  });
+
+  it("a disabled fieldset's controls never form the containment boundary", () => {
+    render(
+      <Modal
+        open
+        onClose={() => {}}
+        title="Dialog"
+        ariaLabel="Dialog"
+        footer={
+          <>
+            <button type="button">Real last</button>
+            <fieldset disabled>
+              <button type="button">Disabled by fieldset</button>
+            </fieldset>
+          </>
+        }
+      >
+        <button type="button">Middle</button>
+      </Modal>,
+    );
+    const realLast = screen.getByRole("button", { name: "Real last" });
+    const close = screen.getByRole("button", { name: "Close dialog" });
+    close.focus();
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(realLast).toHaveFocus();
+  });
 });
