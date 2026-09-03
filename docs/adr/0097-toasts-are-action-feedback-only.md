@@ -94,3 +94,8 @@ for the same reason.
   §Attention Routing drops the toast column.
 - `retired-surface` guards the deleted identifiers (`useAttentionToasts`,
   `PERSISTENT_VISIBLE_CAP`, `onPersistentOverflowClick`) against doc resurrection.
+
+**Amendment (2026-09-03, [ADR 0109](0109-activity-center-occurrence-ledger.md), #133).** Decision 4
+stays the only ambient *attention* channel. The topbar Activity control added by ADR 0109 is a
+work-in-progress signal (active/queued counts, last finished time) and never carries a failure
+count or an unseen counter — nothing about it re-announces an attention event.

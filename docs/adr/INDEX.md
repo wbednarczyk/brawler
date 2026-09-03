@@ -108,3 +108,4 @@
 - [0106](0106-screen-data-layer-posture.md) — Screen Data Layer — Thin Self-Fetch Hooks + Composed Read Models, No Query-Cache Library — Accepted (2026-08-20, owner verdict on the F1-pre study #415; gates F1 implement
 - [0107](0107-company-view-paradigm.md) — Company View Paradigm — Engine-Free Main Surface — Accepted (2026-08-25, owner approval of the F3a experience contract after
 - [0108](0108-retire-docking-engine.md) — Retire the Docking Engine — No dockview, No Cockpit, No Named Views — Accepted (2026-08-28)
+- [0109](0109-activity-center-occurrence-ledger.md) — Activity Center — Occurrence Ledger Over Existing Background Work, Topbar Placement — Accepted (2026-09-03, owner approval of the F3d plan; epic #410 / #133)

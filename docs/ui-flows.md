@@ -353,6 +353,41 @@ Acceptance criteria:
 - The per-workspace search/filter inputs (Inbox, Companies) still work independently.
 - Search copy is available in English and Polish.
 
+## Journey: See What The App Is Doing (Activity)
+
+Status: planned (v0.81.0, [ADR 0109](adr/0109-activity-center-occurrence-ledger.md), #133)
+
+Intent: from anywhere, learn what background work runs now and what just finished, and jump to the place where its result (or failure) can be acted on.
+
+Flow:
+
+1. The top toolbar Activity icon shows `N w toku` while tasks execute (a spinner), `N w kolejce` while tasks wait, or a quiet icon with the last finished time.
+2. User opens the panel (click, `Enter`, or `Ctrl+K` → `Otwórz aktywność`); focus lands on the dialog heading.
+3. App shows **W toku** (active, queued, stalled tasks with progress) and **Ostatnio** (last 7 days, newest first), grouped per company; a row expands in place to its raw error / attempt count / members.
+4. User chooses the row's single destination action; the panel closes and the app lands on the item itself (a dirty draft elsewhere first raises the one stay/discard dialog).
+5. `Escape` closes the panel and returns focus to the control that opened it.
+
+Destinations (exact):
+
+| Task family | Destination |
+| --- | --- |
+| Source refresh · registry refresh · FX pull · fundamentals pull | Sources screen |
+| Company feed refresh | Spółka › Feed |
+| History fetch · report sweep · re-extraction · KPI ingest | Spółka › Coverage (KPI ingest: Documents with the document highlighted) |
+| Report reading · shareholder / management reading | Spółka › Documents, the document highlighted |
+| Price history | Spółka Overview |
+| Morning briefing | Today |
+| Transcript | Transcripts screen |
+
+Acceptance criteria:
+
+- A running queue job, an awaited manual refresh (Tauri or MCP) and a live KPI ingest each show as active; a job in retry backoff shows as queued, never as running.
+- A report reading appears once per document (never once per stage or per attempt); a sweep appears once with `done/total`.
+- Every failed task shows its raw error in the expanded row and lands on the item the error is about.
+- A stale non-terminal row after a crash shows as `zatrzymane`/`przerwane`, never as perpetual `w toku`.
+- The icon never shows a failure count; failures are announced once on their ADR 0091 surface.
+- Copy is available in English and Polish; the panel stays usable at 960 px with no horizontal scroll inside the dialog.
+
 ## Journey: Restore From Backup
 
 Intent: recover the local data from an automatic backup after loss or a bad upgrade.

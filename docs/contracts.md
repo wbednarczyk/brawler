@@ -1556,6 +1556,59 @@ Allowed statuses:
 }
 ```
 
+## Activity
+
+Status: planned (v0.81.0, ADR 0109)
+
+The activity read model ([ADR 0109](adr/0109-activity-center-occurrence-ledger.md), #133): one composed view over the durable queue, the `job_runs` occurrence history (data-model § Job runs), the direct-activity registry (awaited refresh/backfill/aggregator/registry/transcript work), and the domain run tables (report-reading runs, history sweeps, re-extraction batches, KPI ingest runs, transcript jobs). Identity is the domain task, never a company bucket; the frontend groups items per company for display only. UI-only reads (`read` classification, not exposed as MCP tools). Both commands run off the UI thread on one pool checkout.
+
+`list_activity()` → `ActivityView`:
+
+```json
+{
+  "active": [ { "…": "ActivityItem" } ],
+  "queued": [ { "…": "ActivityItem" } ],
+  "recent": [ { "…": "ActivityItem" } ],
+  "generatedAt": "2026-09-03T12:07:00Z"
+}
+```
+
+`active` = work executing now (a queue row literally `running` with an open occurrence, a registry entry, a leased KPI run); `queued` = waiting (queue `pending` incl. retry backoff, an unleased KPI run); `stalled` items (a non-terminal domain row with no live backing job) ride in `active` with their own status. `recent` = the latest occurrence per `activityKey` among terminal occurrences of the last **7 days**, newest first, **40 after the per-key collapse**.
+
+`ActivityItem`:
+
+```json
+{
+  "id": "job_runs:4711",
+  "activityKey": "report-reading:autopilot_run:company_gpw_pas:doc_…",
+  "family": "reportReading",
+  "status": "failed",
+  "subject": "2410_Passus_2023_PSF_MSSF_skrócone_PL-sig.pdf",
+  "companyId": "company_gpw_pas",
+  "qualifiedTicker": "GPW:PAS",
+  "progress": { "done": 7, "total": 12, "failed": 1 },
+  "inFlight": 2,
+  "attempt": 3,
+  "startedAt": "2026-09-03T11:58:02Z",
+  "finishedAt": "2026-09-03T12:01:11Z",
+  "error": "HTTP request failed: error sending request for url (…)",
+  "target": { "kind": "company", "companyId": "company_gpw_pas", "tool": { "t": "dokumenty", "documentId": "doc_…" } }
+}
+```
+
+- `family` ∈ `sourceRefresh | companyRefresh | registryRefresh | fxPull | fundamentalsPull | briefing | historyFetch | reportSweep | reextraction | reportReading | ownershipReading | managementReading | priceHistory | kpiIngest | transcript | corrupted` — exhaustive; every registered queue kind and every instrumented awaited path maps to exactly one family (gate-enforced), a registered kind with an unparseable payload yields `corrupted` (subject = the job id), rows of unregistered kinds are excluded.
+- `status` ∈ `queued | running | stalled | succeeded | failed | partial | interrupted`. `partial` only when the domain task says so (a run finalized `partial`, a sweep/batch with mixed member outcomes).
+- `subject` is raw source data (document title, adapter display name, video title/URL) — never composed prose. `progress` only for parents (sweep, batch, backfill) with real counters; `inFlight` = non-terminal members of a running parent.
+- `target` ∈ `{ kind: "company", companyId, tool }` (`tool` = a Spółka `Tool` value — `{t:"feed"}`, `{t:"pokrycie"}`, `{t:"dokumenty", documentId}` — or `null` for the core Overview) · `{ kind: "sources" }` · `{ kind: "today" }` · `{ kind: "transcripts" }`.
+
+`get_activity_summary()` → `ActivitySummary` (two indexed counts + one max, polled every 15 s by the shell):
+
+```json
+{ "active": 3, "queued": 1, "lastFinishedAt": "2026-09-03T12:01:11Z" }
+```
+
+No failure count by design (ADR 0097 amendment): the topbar control signals work in progress only.
+
 ## Diagnostic Event
 
 Diagnostic events are local developer-mode records that explain what a module did at a meaningful stage. They are not user-facing errors, runtime logs, metrics, telemetry, traces, or analytics.
