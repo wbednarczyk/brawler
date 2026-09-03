@@ -22,7 +22,7 @@ async function openTool(page: Page, label: string): Promise<Locator> {
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByLabel("Search commands").fill(label);
-  await palette.getByRole("button", { name: label, exact: true }).first().click();
+  await palette.getByRole("option", { name: label, exact: true }).first().click();
   // `.spolka-layout`, not the tool group itself, carries the density
   // contracts' `container: pane / size` (spolka.css).
   await expect(page.getByRole("group", { name: "Workshop tool" })).toBeVisible();

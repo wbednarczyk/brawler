@@ -20,7 +20,7 @@ async function openFundamentals(page: Page) {
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByLabel("Search commands").fill("Open fundamentals");
-  await palette.getByRole("button", { name: "Open fundamentals", exact: true }).first().click();
+  await palette.getByRole("option", { name: "Open fundamentals", exact: true }).first().click();
   await expect(page.getByLabel("Company fundamentals")).toBeVisible();
 }
 

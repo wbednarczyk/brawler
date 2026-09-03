@@ -2239,4 +2239,8 @@ export const plText: Record<string, string> = {
   "No sources configured": "Brak skonfigurowanych źródeł",
   "open Sources": "otwórz Źródła",
   // ---- /F4c Settings ----
+  // ---- F3c S2 ----
+  // Palette listbox aria-label (docs/plans/f3c-contracts/s2-palette-focus-ring.md).
+  "Commands": "Polecenia",
+  // ---- /F3c S2 ----
 };

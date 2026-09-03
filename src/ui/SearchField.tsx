@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from "react";
+import type { InputHTMLAttributes, Ref } from "react";
 import { Search } from "lucide-react";
 import { ClearButton } from "./ClearButton";
 
@@ -6,7 +6,12 @@ type SearchFieldInputProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
   "aria-label" | "className" | "onChange" | "placeholder" | "type" | "value"
 > &
-  Record<`data-${string}`, string | number | boolean | undefined>;
+  Record<`data-${string}`, string | number | boolean | undefined> & {
+    // Additive (F3c S2, #197): lets a caller (the command palette) obtain an
+    // imperative handle for Modal's initialFocusRef — plain InputHTMLAttributes
+    // has no `ref` field.
+    ref?: Ref<HTMLInputElement>;
+  };
 
 export type SearchFieldProps = {
   ariaLabel: string;

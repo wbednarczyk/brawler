@@ -128,7 +128,6 @@
   border-radius: 8px;
   color: var(--text);
   background: var(--surface-raised);
-  outline: none;
 }
 
 .company-form input:focus {
@@ -177,7 +176,6 @@
 .company-registry-suggestion-selected {
   border-color: var(--primary);
   background: color-mix(in srgb, var(--primary) 10%, var(--surface-raised));
-  outline: none;
 }
 
 .company-registry-suggestion span,

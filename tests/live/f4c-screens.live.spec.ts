@@ -121,10 +121,10 @@ test("No path to the retired global Notebooks/Journal screens remains", async ({
   const search = palette.getByLabel(/Search commands|Szukaj poleceń/);
   for (const needle of ["Notebook", "Notatnik", "Journal", "Dziennik"]) {
     await search.fill(needle);
-    await expect(palette.getByRole("button", { name: /(Open screen|Otwórz ekran): / })).toHaveCount(0);
+    await expect(palette.getByRole("option", { name: /(Open screen|Otwórz ekran): / })).toHaveCount(0);
   }
   await search.fill("Research");
-  await expect(palette.getByRole("button", { name: /(Open screen|Otwórz ekran): Research/ })).toHaveCount(1);
+  await expect(palette.getByRole("option", { name: /(Open screen|Otwórz ekran): Research/ })).toHaveCount(1);
   await page.keyboard.press("Escape");
   expect(await page.getByRole("button", { name: /^(Notatniki|Notebooks|Dziennik|Journal)$/ }).count()).toBe(0);
 });

@@ -35,9 +35,13 @@ function Contributor({ commands }: { commands: PaletteCommand[] }) {
 function paletteLabels() {
   const dialog = screen.getByRole("dialog", { name: "Command palette" });
   return within(dialog)
-    .getAllByRole("button")
-    .map((button) => button.textContent)
+    .getAllByRole("option")
+    .map((option) => option.textContent)
     .filter((label) => label && label !== "×");
+}
+
+function paletteInput() {
+  return screen.getByRole("combobox", { name: "Search commands" });
 }
 
 describe("CommandPaletteProvider", () => {
@@ -66,7 +70,7 @@ describe("CommandPaletteProvider", () => {
     // position; remaining contextual "Charlie" appended.
     expect(paletteLabels()).toEqual(["Alpha", "Bravo CTX", "Charlie"]);
 
-    await user.click(screen.getByRole("button", { name: "Charlie" }));
+    await user.click(screen.getByRole("option", { name: "Charlie" }));
     expect(charlie).toHaveBeenCalledTimes(1);
     // Running a command closes the palette.
     expect(screen.getByText("state:closed")).toBeInTheDocument();
@@ -120,5 +124,116 @@ describe("CommandPaletteProvider", () => {
     await user.click(screen.getByRole("button", { name: "dismiss" }));
     expect(screen.getByText("state:closed")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
+  });
+});
+
+// S2 (#197 F3c) — APG combobox + listbox semantics (plan § Design 6, contract
+// § 7 palette recovery). The input is the combobox; the list is a listbox of
+// options; aria-activedescendant tracks the active option so a screen reader
+// announces it without moving DOM focus off the input.
+describe("CommandPaletteProvider — combobox/listbox semantics", () => {
+  const commands: PaletteCommand[] = [
+    { id: "a", label: "Alpha", run: vi.fn(), actionKey: "test.a", verb: "open" },
+    { id: "b", label: "Bravo", run: vi.fn(), actionKey: "test.b", verb: "open" },
+    { id: "c", label: "Charlie", run: vi.fn(), actionKey: "test.c", verb: "open" },
+  ];
+
+  function renderPalette(cmds: PaletteCommand[] = commands) {
+    render(
+      <CommandPaletteProvider appCommands={cmds} text={identity}>
+        <OpenButton />
+      </CommandPaletteProvider>,
+    );
+  }
+
+  it("input is a combobox wired to the listbox, each option carries a stable id", async () => {
+    const user = userEvent.setup();
+    renderPalette();
+    await user.click(screen.getByRole("button", { name: "launch" }));
+
+    const input = paletteInput();
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(input).toHaveAttribute("aria-autocomplete", "list");
+    const listbox = screen.getByRole("listbox", { name: "Commands" });
+    expect(input).toHaveAttribute("aria-controls", listbox.id);
+
+    const options = within(listbox).getAllByRole("option");
+    expect(options).toHaveLength(3);
+    for (const option of options) {
+      expect(option.id).toBeTruthy();
+    }
+    // The active option (first, at rest) is announced via aria-activedescendant
+    // and always resolves to a rendered option.
+    expect(input).toHaveAttribute("aria-activedescendant", options[0]!.id);
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("aria-activedescendant follows ArrowDown/ArrowUp/Home/End and always resolves", async () => {
+    const user = userEvent.setup();
+    renderPalette();
+    await user.click(screen.getByRole("button", { name: "launch" }));
+
+    const input = paletteInput();
+    const optionIds = () => within(screen.getByRole("listbox")).getAllByRole("option").map((o) => o.id);
+
+    await user.keyboard("{ArrowDown}");
+    expect(input).toHaveAttribute("aria-activedescendant", optionIds()[1]);
+    await user.keyboard("{ArrowDown}");
+    expect(input).toHaveAttribute("aria-activedescendant", optionIds()[2]);
+    // Clamped at the end.
+    await user.keyboard("{ArrowDown}");
+    expect(input).toHaveAttribute("aria-activedescendant", optionIds()[2]);
+
+    await user.keyboard("{Home}");
+    expect(input).toHaveAttribute("aria-activedescendant", optionIds()[0]);
+    await user.keyboard("{End}");
+    expect(input).toHaveAttribute("aria-activedescendant", optionIds()[2]);
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", optionIds()[1]);
+  });
+
+  it("Enter runs the active command and closes the palette", async () => {
+    const user = userEvent.setup();
+    const run = vi.fn();
+    renderPalette([{ id: "a", label: "Alpha", run, actionKey: "test.a", verb: "open" }]);
+    await user.click(screen.getByRole("button", { name: "launch" }));
+
+    await user.keyboard("{Enter}");
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("state:closed")).toBeInTheDocument();
+  });
+
+  it("clicking an option runs it", async () => {
+    const user = userEvent.setup();
+    const run = vi.fn();
+    renderPalette([{ id: "a", label: "Alpha", run, actionKey: "test.a", verb: "open" }]);
+    await user.click(screen.getByRole("button", { name: "launch" }));
+
+    await user.click(screen.getByRole("option", { name: "Alpha" }));
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows 'No matching commands.' when nothing matches", async () => {
+    const user = userEvent.setup();
+    renderPalette();
+    await user.click(screen.getByRole("button", { name: "launch" }));
+
+    await user.type(paletteInput(), "zzz-no-match");
+    expect(screen.getByText("No matching commands.")).toBeInTheDocument();
+    expect(within(screen.getByRole("listbox")).queryAllByRole("option")).toHaveLength(0);
+  });
+
+  it("Escape closes the palette and returns focus to the button that opened it", async () => {
+    const user = userEvent.setup();
+    renderPalette();
+
+    const trigger = screen.getByRole("button", { name: "launch" });
+    trigger.focus();
+    await user.click(trigger);
+    expect(paletteInput()).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.getByText("state:closed")).toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 });

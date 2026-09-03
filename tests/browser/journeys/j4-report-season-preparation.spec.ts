@@ -34,7 +34,7 @@ async function openScreenViaJourney(j: Journey, page: Page, label: string): Prom
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await j.markModal("Command palette");
   await j.fill(palette.getByLabel("Search commands"), `Open screen: ${label}`);
-  await j.click(palette.getByRole("button", { name: `Open screen: ${label}`, exact: true }).first());
+  await j.click(palette.getByRole("option", { name: `Open screen: ${label}`, exact: true }).first());
 }
 
 test.describe("J4 — report-season preparation", { tag: "@journey" }, () => {

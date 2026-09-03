@@ -23,7 +23,7 @@ async function addRecommendationsPanel(
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByLabel("Search commands").fill("Open recommendations");
-  await palette.getByRole("button", { name: "Open recommendations", exact: true }).first().click();
+  await palette.getByRole("option", { name: "Open recommendations", exact: true }).first().click();
 }
 
 test("pinned panel lists attributed recommendations for the selected company", async ({ page }) => {

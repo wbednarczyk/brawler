@@ -104,7 +104,7 @@ export async function openPalette(page: Page): Promise<Locator> {
 export async function openScreen(page: Page, label: string) {
   const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill(`Open screen: ${label}`);
-  await palette.getByRole("button", { name: `Open screen: ${label}`, exact: true }).first().click();
+  await palette.getByRole("option", { name: `Open screen: ${label}`, exact: true }).first().click();
 }
 
 // No element whose content escapes its box (overflow-x visible) is wider than its

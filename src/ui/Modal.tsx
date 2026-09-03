@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 // Centered overlay dialog. Dependency-free: backdrop click and Esc close it,
@@ -18,9 +18,12 @@ export type ModalProps = {
   footer?: ReactNode;
   ariaLabel?: string;
   className?: string;
+  // S2 (#197): an element to focus on open instead of the dialog container
+  // itself (e.g. the palette's combobox input). Falls back to the dialog.
+  initialFocusRef?: RefObject<HTMLElement | null>;
 };
 
-export function Modal({ open, onClose, title, children, footer, ariaLabel, className }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, ariaLabel, className, initialFocusRef }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
@@ -35,7 +38,7 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
     if (!open) return;
 
     previouslyFocused.current = document.activeElement as HTMLElement | null;
-    dialogRef.current?.focus();
+    (initialFocusRef?.current ?? dialogRef.current)?.focus();
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -49,7 +52,7 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
       document.removeEventListener("keydown", onKeyDown);
       previouslyFocused.current?.focus?.();
     };
-  }, [open]);
+  }, [open, initialFocusRef]);
 
   if (!open) return null;
 

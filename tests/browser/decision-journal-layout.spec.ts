@@ -20,7 +20,7 @@ test("decision journal panel does not horizontally overflow at a narrow window",
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByLabel("Search commands").fill("Open decision journal");
-  await palette.getByRole("button", { name: "Open decision journal", exact: true }).first().click();
+  await palette.getByRole("option", { name: "Open decision journal", exact: true }).first().click();
 
   // Open the composer.
   const journalPanel = page.locator(".decision-journal-panel");

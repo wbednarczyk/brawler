@@ -379,7 +379,6 @@
 .source-page-link:focus-visible {
   color: var(--accent-strong);
   text-decoration: underline;
-  outline: none;
 }
 
 .source-registry-actions {
@@ -431,7 +430,6 @@
 .source-unmatched-header:hover,
 .source-unmatched-header:focus-visible {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
-  outline: none;
 }
 
 .source-collapsible-header-meta,
@@ -495,7 +493,6 @@
   color: var(--text);
   font: inherit;
   font-size: var(--font-sm);
-  outline: none;
 }
 
 .registry-search-field .field-clear-button {

@@ -22,7 +22,7 @@ async function openBasicInfo(page: Page) {
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByLabel("Search commands").fill("Open ownership");
-  await palette.getByRole("button", { name: "Open ownership", exact: true }).first().click();
+  await palette.getByRole("option", { name: "Open ownership", exact: true }).first().click();
   const pane = page.getByRole("group", { name: "Workshop tool" });
   await expect(pane).toBeVisible();
   return pane;

@@ -21,7 +21,7 @@ test.describe("command palette", { tag: "@clickable" }, () => {
 
     // App-level commands come from the shortcut registry; running one navigates.
     await palette.getByLabel("Search commands").fill("Open Settings");
-    await palette.getByRole("button", { name: "Open Settings", exact: true }).click();
+    await palette.getByRole("option", { name: "Open Settings", exact: true }).click();
 
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
     await expect(palette).toBeHidden();
@@ -51,20 +51,20 @@ test.describe("command palette", { tag: "@clickable" }, () => {
     await expect(palette).toBeVisible();
 
     await palette.getByLabel("Search commands").fill("Open screen");
-    await expect(palette.getByRole("button", { name: "Open screen: Research", exact: true })).toBeVisible();
-    await expect(palette.getByRole("button", { name: /^Open screen: Notebooks/ })).toHaveCount(0);
-    await expect(palette.getByRole("button", { name: /^Open screen: Decision journal/ })).toHaveCount(0);
+    await expect(palette.getByRole("option", { name: "Open screen: Research", exact: true })).toBeVisible();
+    await expect(palette.getByRole("option", { name: /^Open screen: Notebooks/ })).toHaveCount(0);
+    await expect(palette.getByRole("option", { name: /^Open screen: Decision journal/ })).toHaveCount(0);
 
     await palette.getByLabel("Search commands").fill("Open company: CDR");
     await expect(
-      palette.getByRole("button", { name: "Open company: CDR", exact: true }),
+      palette.getByRole("option", { name: "Open company: CDR", exact: true }),
     ).toBeVisible();
 
     await palette.getByLabel("Search commands").fill("Open view");
-    await expect(palette.getByRole("button", { name: /^Open view:/ })).toHaveCount(0);
+    await expect(palette.getByRole("option", { name: /^Open view:/ })).toHaveCount(0);
 
     await palette.getByLabel("Search commands").fill("");
-    await expect(palette.getByRole("button", { name: /^Open panel:/ })).toHaveCount(0);
+    await expect(palette.getByRole("option", { name: /^Open panel:/ })).toHaveCount(0);
   });
 
   test("inside Spółka the palette also lists the workshop tool commands", async ({ page }) => {
@@ -78,8 +78,8 @@ test.describe("command palette", { tag: "@clickable" }, () => {
     await expect(palette).toBeVisible();
 
     await palette.getByLabel("Search commands").fill("Open notebook");
-    await expect(palette.getByRole("button", { name: "Open notebook", exact: true })).toBeVisible();
+    await expect(palette.getByRole("option", { name: "Open notebook", exact: true })).toBeVisible();
 
-    await expect(palette.getByRole("button", { name: /^Open panel:/ })).toHaveCount(0);
+    await expect(palette.getByRole("option", { name: /^Open panel:/ })).toHaveCount(0);
   });
 });
