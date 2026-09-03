@@ -118,7 +118,7 @@ Intent: answer "what do I know about this company and what should I check later?
 Flow:
 
 1. User opens a company (from the Companies library, a pinned sidebar entry, a feed item, or global search), landing the **Spółka** company screen ([ADR 0107](adr/0107-company-view-paradigm.md)).
-2. The co-visible core (KPI table, feed, price chart, coverage, recommendations) sits above a workshop bar of typed tools; the `Notebook` tool opens the company's notes in place of the core.
+2. The co-visible core (KPI table, feed, price chart, coverage, recommendations) sits above a workshop bar of typed tools; the `Notebook` tool opens the company's notes in place of the core. Keyboard path (F3c, #197): `Ctrl+.` focuses the bar, `←`/`→` pick a tool, `Enter` opens it with focus on its heading, `H`/`L` step to the previous/next tool, `Escape` returns to Overview with focus on the closed tool's entry (a draft in progress asks stay/discard first).
 3. Notebook panel lists notes newest first, with filters by tag, kind, claim status, and follow-up period.
 4. User opens a note in the detail pane.
 5. User edits note content, changes claim status, or opens linked source material.

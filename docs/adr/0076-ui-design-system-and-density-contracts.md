@@ -170,6 +170,19 @@ destructive action moves to the next sibling row (shared helper). Everything cli
 clickable (cursor + hover state); the audit (U0c) enumerates violations. **Gate:** RTL keyboard
 tests per pattern + primitives contract test for the chevron.
 
+**Amendment (2026-09-03, F3c #197, owner decision).** Keyboard focus is shown by **one global
+ring** — `:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px }` (filled cyan =
+interaction, ADR 0104 dec. 1) — on top of any per-variant tint; `outline: none`/`0` is banned in
+`src/**/*.css` (stylelint `declaration-property-value-disallowed-list`; a wrapper that paints an
+equivalent `:focus-within` ring may opt out with a `stylelint-disable-next-line … -- reason`). A
+surface that hosts several same-level destinations (the Spółka workshop bar) is an APG toolbar with
+roving tabindex, never N Tab stops; a screen change made by keyboard moves focus by an explicit
+intent (heading on open, invoking entry on close, invoker after a dialog) — focus never falls to
+`<body>`. `Modal` owns initial focus (`initialFocusRef`), Tab containment and restore-to-a-connected
+invoker; descendant `autoFocus` inside a `Modal` is a defect (it wins the race and becomes the restore
+target). **Gates:** the gallery focus-ring browser test, `Modal.test.tsx`, `SpolkaScreen.test.tsx`
+keyboard cases, `tests/browser/spolka-keyboard.spec.ts`, J8.
+
 ## Consequences
 
 - Implementation tasks (U1–U11) execute tables from this ADR; a divergence is a bug, not a choice.

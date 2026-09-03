@@ -83,6 +83,23 @@ ticker, or the tool's ✕) brings back the untouched core in one click.
 Opening a feed item from the Inbox ("Open company") lands you straight on
 that item's detail, with the rest of the feed reachable below it.
 
+## Keyboard
+
+The whole screen works without the mouse. Every binding below is rebindable
+in Settings → Keyboard shortcuts.
+
+| Keys | Does |
+|---|---|
+| `Ctrl+.` | Jump to the workshop bar (focus lands on the entry that last had focus — at first, the open one). Does nothing while a dialog is open. |
+| `←` `→` · `Home` `End` | Move along the bar (wraps); `Enter` or `Space` opens the focused entry. The bar is one Tab stop — `Tab` leaves it. |
+| `H` / `L` | Previous / next workshop tool, cycling through Overview. |
+| `Shift+J` / `Shift+K` | Next / previous company (the open tool closes first — a draft asks stay/discard). |
+| `Esc` (inside a tool) | Back to Overview; focus returns to that tool's bar entry. A draft in progress asks stay/discard first. In a search box, the first `Esc` clears the text; in a drop-down it closes the list. |
+| `Ctrl+K` | Command palette: type, `↑`/`↓`/`Home`/`End`, `Enter`. `Esc` closes it and puts focus back where it was. |
+
+When a tool opens, focus lands on its heading; the cyan outline always shows
+where focus is.
+
 ## Unsaved work: stay or discard
 
 If a tool has a draft in progress (an unsaved note, an open composer) and you

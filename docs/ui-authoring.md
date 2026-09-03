@@ -90,6 +90,14 @@ A landmark (`<section>`/`<aside>` **with an accessible name**, `role="region"`, 
 
 Guarded by `src/screens/Spolka/paneLandmarks.test.tsx`, which opens every Spółka workshop tool and fails if its pane contributes a landmark.
 
+### Keyboard model (F3c, #197; ADR 0076 dec. 9 amendment)
+
+- **Several same-level destinations in one bar = an APG toolbar** (`role="toolbar"`, roving tabindex through `useRovingToolbar` in `src/shared/focus/`): one Tab stop that follows the last-focused entry, `←`/`→` wrap, `Home`/`End`, the `Button`'s own `Enter`/`Space`. Never N Tab stops of plain buttons. The Spółka workshop bar is the reference (`WorkshopBar`, `SpolkaScreen.tsx`).
+- **A keyboard-driven screen change moves focus by an explicit intent**, never by guessing from `document.activeElement`: ToolHost records `focusIntent` (`heading` on open, `entry` on close, `overview`, `company`, `none`) with every commit and exactly one owner consumes each intent. Focus never lands on `<body>`.
+- **`Escape` in a hosted tool returns to Overview through the dirty seam.** The frame handler fires only for DOM descendants (`frame.contains(event.target)` — portal dialogs are React-tree children but not DOM children), skips `defaultPrevented` events and native pickers (`select`, date/time inputs); any widget that consumes `Escape` itself calls `preventDefault()` (`SearchField`: only while it has a query).
+- **Listbox pickers (the ⌘K palette) are APG combobox + listbox**: input `role="combobox"` with `aria-activedescendant`, `role="listbox"` list, `role="option"` rows — no nested buttons inside an option.
+- **One focus ring**: `:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px }` in `ui.css` is the ring for every control; per-variant tints may add to it, never replace it. `outline: none`/`0` is lint-banned (see Enforcement).
+
 ### Multi-host screens load on mount, never on the section
 
 A screen rendered in more than one host (a standalone route **and** a Spółka workshop tool — today `ResearchScreen`) keys its data effects on **"the screen is on screen"** (`researchVisible` in `useResearchController`), never on `activeSection === "<its route>"` — a section gate silently renders every other host empty (ADR 0053 fixed this for the cockpit, F3a reintroduced it for the workshop tool, #450). Every host gets a workflow test that its data commands fire (`src/App.test.tsx` "hosted Research tool loads its data").
@@ -122,7 +130,7 @@ A screen rendered in more than one host (a standalone route **and** a Spółka w
 | A figure/date/percent/money/badge value | `Figure` (`kind="count" \| "percent" \| "date" \| "datetime" \| "money" \| "badge"`) — always the UI face via `.num-tabular`, never mono (ADR 0104 dec. 2 amendment); `badge` caps at "99+" for fixed-width chips, `count` never caps | hand-formatting a number/date inline, or wrapping it in mono |
 | Key/value metadata block | `InfoGrid` | ad-hoc definition grids |
 | Inline confirm (delete etc.) | `InlineConfirm` | bespoke confirm toggles |
-| A dialog | `Modal` | a hand-built overlay |
+| A dialog | `Modal` — owns initial focus (`initialFocusRef`, else the container), Tab containment and restore to a still-connected invoker; never put `autoFocus` on a child (it wins the race and becomes the restore target) | a hand-built overlay |
 | A full-screen distraction-free surface (reader/writer Focus mode) | `FocusOverlay` | a hand-built full-screen overlay |
 | Tabs / segmented views | `SegmentedControl` + `SegmentedControlOption` | bespoke tab bars |
 | Sub-navigation | `Subnav` | bespoke nav rows |
@@ -260,6 +268,8 @@ Primitive-first authoring is policy ([ADR 0037](adr/0037-ui-component-framework-
 - **Pluralization** — counts render their noun through `pluralNoun(locale, n, forms)` (`src/shared/locale/plural.ts`); a `n === 1 ? a : b` ternary is wrong for Polish (3 forms).
 - **Layout/containment** — `src/styles/layoutContracts.test.ts` and the browser-smoke viewport matrix in `playwright.config.ts`. `expectNoPageOverflow` additionally fails on any *panel-internal* horizontal scrollbar not marked `data-hscroll` (see Styling rules above). Add a sample there when introducing a new layout shape; sample data must include realistic long content (the Kroeze-length guidance seed exists precisely so the gate has something to bite on).
 - **Primitive contracts + a11y** — `src/ui/primitives.test.tsx` covers each primitive's render/behavior contract (e.g. `SectionHeader`'s `level` prop renders the right heading, `Checkbox` fires `onChange`), and `src/ui/primitives.a11y.test.tsx` runs `jest-axe` over the whole `PrimitiveGallery` so the library keeps a clean accessibility baseline (this caught a real `aria-selected`-on-`<article>` bug in `DenseRow`). Add the primitive to the gallery + the contract test when you add one. `tests/browser/gallery.spec.ts` additionally checks the gallery for horizontal overflow across the viewport matrix.
+- **Focus ring never disappears** — `stylelint.config.mjs` bans `outline: none`/`0` in `src/**/*.css` (`declaration-property-value-disallowed-list`); a wrapper that paints an equivalent `:focus-within` ring may opt out with `/* stylelint-disable-next-line declaration-property-value-disallowed-list -- <reason> */`. `tests/browser/gallery.spec.ts` Tabs through every focusable in the gallery and fails on the first one whose computed outline is `none` or thinner than 2 px, dark and light.
+- **Keyboard reachability + no traps** — `tests/browser/spolka-keyboard.spec.ts` keyboard-activates every workshop entry and every palette screen/tool command, and Tabs through Research/Documents/Events bounded by the tabbable count; `tests/browser/journeys/j8-keyboard-only-company-review.spec.ts` counts pointer events (must be 0).
 - **Pane landmarks** — `src/screens/Spolka/paneLandmarks.test.tsx` walks every Spółka workshop tool and fails if its pane contributes a landmark of its own (see [Landmarks](#landmarks-one-per-screen-none-inside-a-panel)).
 - **Barrel imports** — `no-restricted-imports` (in `eslint.config.js`) requires consumers to import primitives from the `…/ui` barrel, never a deep `…/ui/Button` path, so the public surface stays in `src/ui/index.ts`.
 - **CSS hygiene (`npm run stylelint`)** — bans hardcoded hex colors outside `tokens.css`/`themes.css` (use design tokens), and flags duplicate selectors, duplicate properties, and empty rules. Runs in the gate.
