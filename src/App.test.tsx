@@ -1,5 +1,5 @@
 import { fireEvent } from "@testing-library/react";
-import { beforeEach, describe, it } from "vitest";
+import { beforeEach, describe, it, vi } from "vitest";
 import packageJson from "../package.json";
 import {
   appTestState,
@@ -487,6 +487,30 @@ describe("Spółka atomic company transitions (sol R1 finding 3)", () => {
         "data-document-highlighted",
         "true",
       );
+    });
+  });
+
+  it("hosted Research tool loads its data like the standalone route (#450)", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      pinnedCompanyIds: ["company_gpw_kgh"],
+    };
+    const user = userEvent.setup();
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "KGH" }));
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    (invoke as ReturnType<typeof vi.fn>).mockClear();
+
+    await user.click(within(spolka).getByRole("button", { name: "Research" }));
+    expect(await within(spolka).findByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "research");
+
+    // The refresh effects fire on "Research is mounted", not on the section.
+    await waitFor(() => {
+      for (const command of ["list_research_questions", "list_research_reminders", "list_research_evidence"]) {
+        expect(invoke).toHaveBeenCalledWith(command, expect.anything());
+      }
     });
   });
 });

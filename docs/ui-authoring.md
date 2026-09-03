@@ -90,6 +90,10 @@ A landmark (`<section>`/`<aside>` **with an accessible name**, `role="region"`, 
 
 Guarded by `src/screens/Spolka/paneLandmarks.test.tsx`, which opens every Spółka workshop tool and fails if its pane contributes a landmark.
 
+### Multi-host screens load on mount, never on the section
+
+A screen rendered in more than one host (a standalone route **and** a Spółka workshop tool — today `ResearchScreen`) keys its data effects on **"the screen is on screen"** (`researchVisible` in `useResearchController`), never on `activeSection === "<its route>"` — a section gate silently renders every other host empty (ADR 0053 fixed this for the cockpit, F3a reintroduced it for the workshop tool, #450). Every host gets a workflow test that its data commands fire (`src/App.test.tsx` "hosted Research tool loads its data").
+
 ## Primitive catalog (what to use instead of hand-rolling)
 
 | You are building… | Use | Do NOT hand-roll |

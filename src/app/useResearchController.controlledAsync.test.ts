@@ -63,7 +63,7 @@ describe("useResearchController request-version seam (last-intent-wins)", () => 
   it("suppresses a stale evidence response so it cannot replace the newer state", async () => {
     const { result } = renderHook(() =>
       useResearchController({
-        activeSection: "Research",
+        researchVisible: true,
         companies: [COMPANY_A, COMPANY_B],
         watchlists: [],
         watchlistMemberships: [],

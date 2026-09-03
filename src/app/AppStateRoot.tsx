@@ -519,7 +519,7 @@ export function AppStateRoot({
     reopenResearchReminder,
     deleteResearchReminder,
   } = useResearchController({
-    activeSection,
+    researchVisible: activeSection === "Research" || (activeSection === "Spolka" && spolkaTool.tool?.t === "research"),
     companies,
     watchlists,
     watchlistMemberships,
@@ -1687,7 +1687,6 @@ export function AppStateRoot({
               {activeSection === "Alerts" ? (
                 <AlertsScreenHost attention={attention} openCompanyWorkspaceById={openCompanyWorkspaceById} setActiveSection={setActiveSection} />
               ) : null}
-              {/* Research: palette/deep-link route until F4c adds its nav entry (#94). */}
               {activeSection === "Research" ? (
                 <ResearchProvider value={researchViewModel}>
                   <ResearchScreen />
