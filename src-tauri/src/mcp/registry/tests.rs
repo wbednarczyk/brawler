@@ -200,6 +200,25 @@ fn capability_manifest_is_the_frozen_contract() {
     );
 }
 
+/// MCP `inputSchema` MUST be a JSON Schema of `type: "object"` (spec
+/// `Tool.inputSchema`); a strict client (Claude Code) rejects the whole
+/// `tools/list` when one tool advertises an `anyOf`-only root without it —
+/// the 2026-09-03 owner report: `stage_kpi_observations` (an untagged input
+/// enum) broke every Brawler tool at once.
+#[test]
+fn every_advertised_tool_input_schema_is_an_object() {
+    for scope in [McpScope::Full, McpScope::KpiAcquisition] {
+        for tool in descriptors(scope).as_array().expect("tools array") {
+            assert_eq!(
+                tool["inputSchema"]["type"],
+                json!("object"),
+                "{}: inputSchema.type must be \"object\" (MCP Tool.inputSchema)",
+                tool["name"]
+            );
+        }
+    }
+}
+
 /// The read wave's umbrella proof (ADR 0088 dec. 2): every exposed `read`
 /// tool is listed in `tools/list` AND callable against a seeded DB with a
 /// minimal valid input — none may `500`/panic or reject its own minimal
