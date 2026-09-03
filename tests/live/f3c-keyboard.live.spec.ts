@@ -51,8 +51,10 @@ test("keyboard-only company review on the real app", async ({}, testInfo) => {
   await expect(palette).toBeVisible({ timeout: 10_000 });
   const combobox = palette.getByRole("combobox");
   await expect(combobox).toBeFocused();
-  await combobox.pressSequentially("spółk");
-  await expect(palette.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
+  // "Otwórz spółkę: " narrows to the company commands (a bare "spółk" also
+  // matches "Otwórz Spółki" — the Companies screen).
+  await combobox.pressSequentially("Otwórz spółkę: ");
+  await expect(palette.getByRole("option", { name: /^(Otwórz spółkę|Open company): / }).first()).toHaveAttribute("aria-selected", "true");
   await shoot(page, "palette-listbox", testInfo);
   await page.keyboard.press("Enter");
   const spolka = page.getByRole("region", { name: /Widok spółki|Company view/ });
