@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.79.1 - 2026-09-03
+
+
+### Bug Fixes
+
+- **mcp**: every advertised inputSchema root is type object — stage_kpi_observations broke strict clients' tools/list (#453)
+
+## v0.79.0 - 2026-09-02
+
+
+### Features
+
+- **frontend**: F4c — Settings + Research in product language, Research in the Library nav, global Notebooks/Journal screens retired (#410) (#452)
+
 ## v0.78.0 - 2026-09-01
 
 

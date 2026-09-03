@@ -1,5 +1,6 @@
 ---
 source: src/mcp/protocol.rs
+assertion_line: 333
 expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
 ---
 {
@@ -3074,7 +3075,8 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
               ],
               "type": "string"
             }
-          }
+          },
+          "type": "object"
         },
         "name": "stage_kpi_observations"
       },
