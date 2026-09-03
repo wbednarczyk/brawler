@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.80.0 - 2026-09-03
+
+
+### Features
+
+- **spolka**: F3c — keyboard model for the workshop bar and palette, one focus ring, Modal focus contract; hosted Research refresh (#197, #450) (#456)
+
 ## v0.79.1 - 2026-09-03
 
 
