@@ -90,6 +90,14 @@ pub fn tool_schema<T: JsonSchema>() -> Value {
         // already carries a top-level description in `tools/list`, so drop the
         // duplicate at the schema root (nested field descriptions are kept).
         object.remove("description");
+        // MCP `Tool.inputSchema` MUST be `type: "object"`. An untagged input
+        // enum (e.g. `stage_kpi_observations`) generates an `anyOf`-only root
+        // with no `type`, and a strict client rejects the whole `tools/list`
+        // for it (owner report 2026-09-03). Every branch is an object, so the
+        // pin is sound; the registry test asserts it for every advertised tool.
+        object
+            .entry("type")
+            .or_insert_with(|| Value::String("object".into()));
     }
     normalize_generated_schema(&mut value);
     value
