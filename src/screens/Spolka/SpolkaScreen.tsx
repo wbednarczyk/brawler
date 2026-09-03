@@ -9,12 +9,13 @@ import { CALENDAR_EVENT_FORMS, CLAIM_FORMS, SIGNAL_FORMS, pluralNoun } from "../
 import { deltaToneClass, formatFinancialValue } from "../../shared/format/financialValue";
 import { formatLocalIsoDate } from "../../shared/format/datetime";
 import { Button, CandlestickChart, DenseRow, EmptyState, ErrorText, PanelHeader, SectionHeader, SelectField, Skeleton, StatusChip } from "../../ui";
+import { useRovingToolbar, type RovingToolbarItemProps } from "../../shared/focus/useRovingToolbar";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { GlanceBar, formatCount } from "./GlanceBar";
 import { CoreKpiTable } from "./CoreKpiTable";
 import { renderTool } from "./toolRegistry";
 import { SpolkaToolHostProvider, ToolHostConfirmModal, type SpolkaToolHostApi } from "./ToolHost";
-import type { Tool } from "./route";
+import { WORKSHOP_TOOLS, workshopIndexOf, type Tool } from "./route";
 import { useCommandPaletteCommands } from "../../app/commandPalette";
 import type { PaletteCommand } from "../../shared/components/CommandPalette";
 
@@ -95,11 +96,36 @@ export function SpolkaScreen({
   // can never scroll out of view with it.
   const bodyScrollRef = useRef<HTMLDivElement>(null);
   const lastCoreScrollTopRef = useRef(0);
+  // The header company picker (F3c S1, plan § Design 3) — the "company"
+  // focus intent's target after a Shift+J/K company switch.
+  const companyPickerRef = useRef<HTMLSelectElement>(null);
 
   // A tool only belongs to THIS render if it was opened for THIS company — a
   // late `get_company_view` response, or a tool left open from a prior
   // company, can never reopen/leak across companies (plan §11).
   const isToolActive = spolkaTool.tool !== null && spolkaTool.toolCompanyId === companyId;
+  const activeTool = isToolActive ? spolkaTool.tool : null;
+
+  // The workshop bar's roving tabindex (F3c S1, plan § Design 1): Overview +
+  // WORKSHOP_TOOLS, one shared instance so both the bar and the focus-intent
+  // effect below can move the ACTUAL tab stop, not just render one.
+  const roving = useRovingToolbar({ count: WORKSHOP_TOOLS.length + 1, initialIndex: workshopIndexOf(activeTool) });
+
+  // Focus on a close/company-switch transition (plan § Design 3) — the ONE
+  // owner of the "entry"/"overview"/"company" intents (`ToolFrame` owns
+  // "heading"; "none" moves nothing). Keyed on `focus.seq`, which increments
+  // on EVERY commit, so a close-to-Overview and a close-to-entry both fire
+  // even though they don't change `openSeq`.
+  useEffect(() => {
+    if (spolkaTool.focus.intent === "entry") {
+      roving.focusItem(workshopIndexOf(spolkaTool.focus.closedKind));
+    } else if (spolkaTool.focus.intent === "overview") {
+      roving.focusItem(0);
+    } else if (spolkaTool.focus.intent === "company") {
+      companyPickerRef.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on focus.seq only; roving.focusItem is stable (useCallback) and closedKind is read from the same commit that bumped seq
+  }, [spolkaTool.focus.seq]);
 
   // Closing a tool restores `.spolka-layout`'s scroll position exactly (plan
   // §8 "closing a tool restores core scroll and selection") — the core stays
@@ -110,6 +136,14 @@ export function SpolkaScreen({
       bodyScrollRef.current.scrollTop = lastCoreScrollTopRef.current;
     }
   }, [isToolActive]);
+
+  // The summary ticker / Overview bar tab / palette "Open overview" all
+  // return to the SAME untouched core, focusing the Overview entry (plan §
+  // Design 3) — distinct from ✕/Escape, which return to the CLOSED tool's
+  // own entry ("entry", `closeTool`'s default).
+  function overview() {
+    spolkaTool.closeTool("overview");
+  }
 
   function openTool(tool: Tool) {
     // Capture the core's scroll position at the moment it's about to be
@@ -130,7 +164,7 @@ export function SpolkaScreen({
     label: text(label),
     verb: "open",
     actionKey,
-    run: () => (tool ? openTool(tool) : spolkaTool.closeTool()),
+    run: () => (tool ? openTool(tool) : overview()),
   }));
   useCommandPaletteCommands("spolka", spolkaToolCommands);
 
@@ -148,6 +182,7 @@ export function SpolkaScreen({
         actions={
           companies.length > 1 ? (
             <SelectField
+              ref={companyPickerRef}
               label={text("Company")}
               value={companyId}
               onChange={(event) => onSwitchCompany(event.target.value)}
@@ -166,7 +201,7 @@ export function SpolkaScreen({
         <div className="spolka-layout">
           <div className="spolka-body-scroll" ref={bodyScrollRef}>
             {isToolActive && query.status === "success" ? (
-              <SummaryStrip data={query.data} locale={locale} text={text} onOverview={spolkaTool.closeTool} />
+              <SummaryStrip data={query.data} locale={locale} text={text} onOverview={overview} />
             ) : null}
 
             {query.status === "loading" && !isToolActive ? (
@@ -209,16 +244,13 @@ export function SpolkaScreen({
                 onOpenDocument,
                 onOpenFeedItem,
                 onCloseTool: spolkaTool.closeTool,
+                openSeq: spolkaTool.openSeq,
+                focusIntent: spolkaTool.focus.intent,
               })
             ) : null}
           </div>
 
-          <WorkshopBar
-            onOpenTool={openTool}
-            onOverview={spolkaTool.closeTool}
-            text={text}
-            activeToolKind={isToolActive ? spolkaTool.tool?.t ?? null : null}
-          />
+          <WorkshopBar onOpenTool={openTool} onOverview={overview} text={text} activeTool={activeTool} roving={roving} />
         </div>
         <ToolHostConfirmModal host={spolkaTool} />
       </SpolkaToolHostProvider>
@@ -475,58 +507,52 @@ function SpolkaBody({ data, onOpenTool, onOpenDocument, onOpenExternalUrl, text,
   );
 }
 
-// Destination labels (owner dogfooding v0.74, item 4; ADR 0104 dec. 3
-// amendment): nouns, not verbs — "Otwórz X" is reserved for the ⌘K palette
-// command that performs the same open (`SPOLKA_TOOL_COMMANDS` above). Every
-// tool the screen hosts, in one bar (owner dogfooding v0.74 wave 2, item 1) —
-// the card buttons for fundamenty/feed/pokrycie/rekomendacje/wydarzenia stay
-// as ADDITIONAL entry points, this is the exhaustive one.
-const WORKSHOP_TOOLS: Array<{ tool: Tool; label: string }> = [
-  { tool: { t: "fundamenty" }, label: "Fundamentals" },
-  { tool: { t: "feed" }, label: "Feed" },
-  { tool: { t: "pokrycie" }, label: "Coverage" },
-  { tool: { t: "rekomendacje" }, label: "Recommendations" },
-  { tool: { t: "tezy" }, label: "Claims" },
-  { tool: { t: "notatnik" }, label: "Notebook" },
-  { tool: { t: "dziennik" }, label: "Decision journal" },
-  { tool: { t: "jakosc" }, label: "Quality" },
-  { tool: { t: "diff" }, label: "Report diff" },
-  { tool: { t: "research" }, label: "Research" },
-  { tool: { t: "akcjonariat" }, label: "Ownership" },
-  { tool: { t: "sygnaly" }, label: "Signals" },
-  { tool: { t: "dokumenty" }, label: "Documents" },
-  { tool: { t: "wydarzenia" }, label: "Events" },
-];
-
 // Stays visible whether or not a tool is open (deliverable 3, now rendered as
 // a FIXED sibling of the scrolling body — owner dogfooding v0.74, item 1) and
 // marks the active tab (`aria-pressed`) with a filled/accent-bordered tab
 // look (wave 2, item 1) — selection is a sanctioned filled-cyan use (ADR 0104
 // dec. 1). "Overview" leads the bar — the main (no-tool) view, active
 // whenever no tool is open — mirroring the mockup's "Warsztat" eyebrow.
+//
+// APG toolbar (F3c S1, plan § Design 1): `role="toolbar"`, roving tabindex
+// via the shared `useRovingToolbar` hook (owned by `SpolkaScreen`, so its
+// `focusItem` is also reachable from the "entry"/"overview" focus-intent
+// effect). The pressed entry and the roving tab stop are deliberately
+// independent state (APG: the tab stop follows the LAST FOCUSED entry, not
+// the active one) — `pressedIndex` only drives `aria-pressed`.
 function WorkshopBar({
   onOpenTool,
   onOverview,
   text,
-  activeToolKind,
+  activeTool,
+  roving,
 }: {
   onOpenTool: (tool: Tool) => void;
   onOverview: () => void;
   text: (value: string) => string;
-  activeToolKind: Tool["t"] | null;
+  activeTool: Tool | null;
+  roving: { itemProps: (index: number) => RovingToolbarItemProps };
 }) {
+  const pressedIndex = workshopIndexOf(activeTool);
   return (
-    <div role="group" aria-label={text("Workshop")} className="spolka-workshop">
+    <div
+      role="toolbar"
+      aria-orientation="horizontal"
+      aria-label={text("Workshop")}
+      className="spolka-workshop"
+      data-workshop-bar
+    >
       <span className="ui-section-eyebrow spolka-workshop-eyebrow">{text("Workshop")}</span>
-      <Button variant="ghost" aria-pressed={activeToolKind === null} onClick={onOverview}>
+      <Button variant="ghost" aria-pressed={pressedIndex === 0} onClick={onOverview} {...roving.itemProps(0)}>
         {text("Overview")}
       </Button>
-      {WORKSHOP_TOOLS.map(({ tool, label }) => (
+      {WORKSHOP_TOOLS.map(({ tool, label }, index) => (
         <Button
           key={tool.t}
           variant="ghost"
-          aria-pressed={tool.t === activeToolKind}
+          aria-pressed={pressedIndex === index + 1}
           onClick={() => onOpenTool(tool)}
+          {...roving.itemProps(index + 1)}
         >
           {text(label)}
         </Button>

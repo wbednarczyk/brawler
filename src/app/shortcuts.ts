@@ -15,6 +15,7 @@ export type AppShortcutId =
   | "app.openSettings"
   | "app.commandPalette"
   | "app.focusSearch"
+  | "app.focusWorkshop"
   | "app.refreshSources"
   | "app.refreshDatabase"
   | "inbox.nextItem"
@@ -105,6 +106,23 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     defaultBinding: {
       ctrlKey: true,
       key: "F",
+    },
+    disabled: false,
+    hasCustomBinding: false,
+  },
+  {
+    id: "app.focusWorkshop",
+    label: "Open workshop bar",
+    group: "Global actions",
+    scope: "app",
+    verb: "open",
+    binding: {
+      ctrlKey: true,
+      key: ".",
+    },
+    defaultBinding: {
+      ctrlKey: true,
+      key: ".",
     },
     disabled: false,
     hasCustomBinding: false,
@@ -269,8 +287,10 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "company.nextTab",
-    label: "Open next company tab",
-    group: "Companies",
+    // Relabeled F3c S1 (ids/bindings unchanged): the docking-engine "tab" was
+    // retired with ADR 0107 — H/L now cycle the Spółka workshop bar's tools.
+    label: "Open next workshop tool",
+    group: "Spółka",
     scope: "screen",
     verb: "open",
     binding: {
@@ -284,8 +304,8 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "company.previousTab",
-    label: "Open previous company tab",
-    group: "Companies",
+    label: "Open previous workshop tool",
+    group: "Spółka",
     scope: "screen",
     verb: "open",
     binding: {

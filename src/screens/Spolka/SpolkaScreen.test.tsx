@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -229,8 +229,12 @@ function baseProps(overrides: Partial<SpolkaScreenProps> = {}): SpolkaScreenProp
 // A real, running tool-host instance (not a mock) so the dirty-guard seam
 // behaves exactly as it does in the app — `renderScreen`'s overrides can be
 // re-applied via `rerender` while the SAME host instance keeps its state.
-function Harness(overrides: Partial<SpolkaScreenProps>) {
+// `onHost` (F3c S1) exposes the live instance for tests that drive
+// `commitTool`/`openTool` directly (payload-only re-commits have no UI path
+// in this isolated harness).
+function Harness(overrides: Partial<SpolkaScreenProps> & { onHost?: (host: SpolkaScreenProps["spolkaTool"]) => void }) {
   const spolkaTool = useSpolkaToolHost();
+  overrides.onHost?.(spolkaTool);
   return (
     <CommandPaletteProvider appCommands={[]} text={(s) => s}>
       <ToastProvider>
@@ -374,7 +378,7 @@ describe("SpolkaScreen", () => {
     // (wave 2, item 1) — the same noun label as those tools' card buttons, so
     // those four are scoped to the workshop bar to disambiguate from the
     // card's own copy of the button.
-    const workshopBar = screen.getByRole("group", { name: "Workshop" });
+    const workshopBar = screen.getByRole("toolbar", { name: "Workshop" });
 
     const expectations: Array<{ label: string; tool: Tool; scopeToWorkshopBar?: boolean }> = [
       { label: "Signals counter", tool: { t: "sygnaly" } },
@@ -430,7 +434,7 @@ describe("SpolkaScreen", () => {
     renderScreen();
     await screen.findByText("CD Projekt");
 
-    const workshopBar = screen.getByRole("group", { name: "Workshop" });
+    const workshopBar = screen.getByRole("toolbar", { name: "Workshop" });
     const labels = within(workshopBar).getAllByRole("button").map((b) => b.textContent);
     expect(labels).toEqual([
       "Overview",
@@ -585,7 +589,7 @@ describe("SpolkaScreen", () => {
     const frame = await screen.findByRole("group", { name: "Workshop tool" });
 
     expect(within(frame).queryByRole("button", { name: "Overview" })).not.toBeInTheDocument();
-    await user.click(within(screen.getByRole("group", { name: "Workshop" })).getByRole("button", { name: "Overview" }));
+    await user.click(within(screen.getByRole("toolbar", { name: "Workshop" })).getByRole("button", { name: "Overview" }));
     await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
     expect(screen.getByRole("group", { name: "Company core" })).toBeVisible();
     expect(layout.scrollTop).toBe(240);
@@ -673,5 +677,173 @@ describe("SpolkaScreen", () => {
     expect(
       within(notatnikFrame).getByLabelText<HTMLInputElement>("Notebook note title").value,
     ).toBe("Report 0");
+  });
+});
+
+// F3c S1 (plan § Design 1–3): the workshop bar as an APG toolbar (roving
+// tabindex), tool-frame focus on open/close, and the Escape → Overview
+// contract.
+describe("SpolkaScreen keyboard model (F3c S1)", () => {
+  it("is an APG toolbar with exactly one tabindex=0 among the 15 entries", async () => {
+    getCompanyViewMock.mockResolvedValue(fullView());
+    renderScreen();
+    await screen.findByText("CD Projekt");
+
+    const bar = screen.getByRole("toolbar", { name: "Workshop" });
+    expect(bar).toHaveAttribute("aria-orientation", "horizontal");
+    const entries = within(bar).getAllByRole("button");
+    expect(entries).toHaveLength(15);
+    const zeroStops = entries.filter((entry) => entry.getAttribute("tabindex") === "0");
+    expect(zeroStops).toHaveLength(1);
+    expect(zeroStops[0]).toHaveAccessibleName("Overview");
+  });
+
+  it("ArrowRight/ArrowLeft move the tab stop with wraparound; Home/End jump to the ends", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    renderScreen();
+    await screen.findByText("CD Projekt");
+    const bar = screen.getByRole("toolbar", { name: "Workshop" });
+    const overview = within(bar).getByRole("button", { name: "Overview" });
+    const fundamentals = within(bar).getByRole("button", { name: "Fundamentals" });
+    const events = within(bar).getByRole("button", { name: "Events" });
+
+    overview.focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(events).toHaveFocus();
+    await user.keyboard("{ArrowRight}");
+    expect(overview).toHaveFocus();
+    await user.keyboard("{ArrowRight}");
+    expect(fundamentals).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(events).toHaveFocus();
+    await user.keyboard("{Home}");
+    expect(overview).toHaveFocus();
+  });
+
+  it("Enter opens the focused entry's tool", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    renderScreen();
+    await screen.findByText("CD Projekt");
+    within(screen.getByRole("toolbar", { name: "Workshop" })).getByRole("button", { name: "Claims" }).focus();
+    await user.keyboard("{Enter}");
+    const frame = await screen.findByRole("group", { name: "Workshop tool" });
+    expect(frame).toHaveAttribute("data-tool", "tezy");
+  });
+
+  it("focuses the tool heading on open, and again on a same-kind payload change", async () => {
+    getCompanyViewMock.mockResolvedValue(fullView());
+    let host: SpolkaScreenProps["spolkaTool"] | undefined;
+    render(<Harness onHost={(h) => { host = h; }} />);
+    await screen.findByText("CD Projekt");
+
+    host!.openTool(company.id, { t: "dokumenty", documentId: "doc_1" });
+    const frame = await screen.findByRole("group", { name: "Workshop tool" });
+    const heading = within(frame).getByRole("heading", { level: 2, name: "Documents" });
+    await waitFor(() => expect(heading).toHaveFocus());
+
+    // Move focus away, then re-commit the SAME kind with a DIFFERENT payload
+    // — the heading must be re-focused (keyed on `openSeq`, not tool kind).
+    heading.blur();
+    document.body.focus();
+    host!.openTool(company.id, { t: "dokumenty", documentId: "doc_2" });
+    await waitFor(() => expect(within(frame).getByRole("heading", { level: 2, name: "Documents" })).toHaveFocus());
+  });
+
+  it("Escape closes the tool and focuses the closed entry", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    renderScreen();
+    await screen.findByText("CD Projekt");
+
+    await user.click(within(screen.getByRole("toolbar", { name: "Workshop" })).getByRole("button", { name: "Notebook" }));
+    const frame = await screen.findByRole("group", { name: "Workshop tool" });
+    await waitFor(() => expect(within(frame).getByRole("heading", { level: 2, name: "Notebook" })).toHaveFocus());
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
+    expect(within(screen.getByRole("toolbar", { name: "Workshop" })).getByRole("button", { name: "Notebook" })).toHaveFocus();
+  });
+
+  it("Overview tab click focuses the Overview entry (the 'overview' intent)", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    renderScreen();
+    await screen.findByText("CD Projekt");
+
+    const bar = screen.getByRole("toolbar", { name: "Workshop" });
+    await user.click(within(bar).getByRole("button", { name: "Claims" }));
+    await screen.findByRole("group", { name: "Workshop tool" });
+    await user.click(within(bar).getByRole("button", { name: "Overview" }));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
+    expect(within(bar).getByRole("button", { name: "Overview" })).toHaveFocus();
+  });
+
+  it("feedItem open marks and, on close, focuses the Feed entry (no bar entry of its own)", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    renderScreen();
+    await screen.findByText("CD Projekt");
+
+    await user.click(screen.getAllByRole("button", { name: /Report \d/ })[0]);
+    const frame = await screen.findByRole("group", { name: "Workshop tool" });
+    expect(frame).toHaveAttribute("data-tool", "feedItem");
+    const bar = screen.getByRole("toolbar", { name: "Workshop" });
+    expect(within(bar).getByRole("button", { name: "Feed" })).toHaveAttribute("aria-pressed", "true");
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
+    expect(within(bar).getByRole("button", { name: "Feed" })).toHaveFocus();
+  });
+
+  it("Escape on a hosted native <select> leaves the tool open", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    renderScreen();
+    await screen.findByText("CD Projekt");
+
+    await user.click(within(screen.getByRole("toolbar", { name: "Workshop" })).getByRole("button", { name: "Decision journal" }));
+    const frame = await screen.findByRole("group", { name: "Workshop tool" });
+    await user.click(within(frame).getByRole("button", { name: "New entry" }));
+    const decisionKind = within(frame).getByRole("combobox", { name: "Decision kind" });
+    decisionKind.focus();
+
+    fireEvent.keyDown(decisionKind, { key: "Escape" });
+    expect(screen.getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "dziennik");
+  });
+
+  it("Escape from a dirty notebook composer opens stay/discard; Discard lands focus on the closed entry", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    renderScreen();
+    await screen.findByText("CD Projekt");
+
+    const bar = screen.getByRole("toolbar", { name: "Workshop" });
+    await user.click(within(bar).getByRole("button", { name: "Notebook" }));
+    const frame = await screen.findByRole("group", { name: "Workshop tool" });
+    await user.click(within(frame).getByRole("button", { name: "New note" }));
+    const titleField = within(frame).getByRole("textbox", { name: "Notebook note title" });
+    await user.type(titleField, "Draft in progress");
+
+    await user.keyboard("{Escape}");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Stay" })).toBeInTheDocument();
+    // The tool is still open behind the dialog — Escape did NOT close it.
+    expect(screen.getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "notatnik");
+
+    // A second Escape (dialog open) closes only the dialog (Modal's own
+    // Escape → Stay), never the tool.
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "notatnik");
+
+    // Re-open the dialog and Discard this time — focus lands on the closed
+    // entry (Notebook), the transition Escape originally intended.
+    await user.keyboard("{Escape}");
+    const dialogAgain = await screen.findByRole("dialog");
+    await user.click(within(dialogAgain).getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
+    expect(within(bar).getByRole("button", { name: "Notebook" })).toHaveFocus();
   });
 });

@@ -34,7 +34,7 @@ test.describe("visual — Spółka screen", () => {
     await openApp(page);
     await openSpolka(page);
     const spolka = page.getByRole("region", { name: "Company view", exact: true });
-    await spolka.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Claims", exact: true }).click();
+    await spolka.getByRole("toolbar", { name: "Workshop" }).getByRole("button", { name: "Claims", exact: true }).click();
     await expect(spolka.getByLabel("Workshop tool")).toBeVisible();
     await shootScreen(page, "spolka-tool-claims");
   });

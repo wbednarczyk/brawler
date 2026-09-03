@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from "react";
+import type { InputHTMLAttributes, KeyboardEvent } from "react";
 import { Search } from "lucide-react";
 import { ClearButton } from "./ClearButton";
 
@@ -36,6 +36,26 @@ export function SearchField({
   value,
 }: SearchFieldProps) {
   const Component = as;
+
+  // Escape contract (F3c S1, plan § Design 2): a non-empty query is cleared
+  // and the event consumed (so it doesn't ALSO reach the Spółka tool frame's
+  // Escape-to-close handler); an empty query lets Escape bubble untouched —
+  // e.g. to close the hosted tool. `inputProps.onKeyDown` (CommandPalette's
+  // arrow-key/Enter nav) runs first and is always respected.
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    inputProps?.onKeyDown?.(event);
+    if (event.defaultPrevented) return;
+    if (event.key !== "Escape") return;
+    if (value.trim().length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (onClear) {
+      onClear();
+    } else {
+      onChange("");
+    }
+  }
+
   return (
     <Component className={className}>
       <Search aria-hidden="true" size={iconSize} />
@@ -43,6 +63,7 @@ export function SearchField({
         {...inputProps}
         aria-label={ariaLabel}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         type={type}
         value={value}

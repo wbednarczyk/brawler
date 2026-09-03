@@ -18,7 +18,7 @@ test.describe("notebooks", { tag: "@clickable" }, () => {
     await nav(page).getByRole("button", { name: "Companies" }).click();
     await page.getByRole("button", { name: "Open GPW:CDR" }).click();
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
-    await page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Notebook", exact: true }).click();
+    await page.getByRole("toolbar", { name: "Workshop" }).getByRole("button", { name: "Notebook", exact: true }).click();
 
     const notebookPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(notebookPane).toHaveAttribute("data-tool", "notatnik");

@@ -130,7 +130,7 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     // tool) and raises the claims tool — at the real pane size the current
     // project viewport gives it, no forced 900×700 shortcut (Q3, ADR 0081).
     // The manual claims path survives ADR 0084.
-    await j.click(page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Claims", exact: true }));
+    await j.click(page.getByRole("toolbar", { name: "Workshop" }).getByRole("button", { name: "Claims", exact: true }));
     const claimsPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(claimsPane).toBeVisible();
     await expect(claimsPane).toHaveAttribute("data-tool", "tezy");
@@ -156,7 +156,7 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     // Capture the judgment as a note in the company Notebook: the workshop
     // bar's "Notebook" button raises the notebook tool — again at the real
     // pane size (no forced 900×700 shortcut).
-    await j.click(page.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Notebook", exact: true }));
+    await j.click(page.getByRole("toolbar", { name: "Workshop" }).getByRole("button", { name: "Notebook", exact: true }));
     const notebookPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(notebookPane).toBeVisible();
     await expect(notebookPane).toHaveAttribute("data-tool", "notatnik");
@@ -283,7 +283,7 @@ test.describe("J2 — a company published a report", { tag: "@journey" }, () => 
     // (Claims) workshop tool, the surviving linked workflow.
     const spolka = page.getByRole("region", { name: "Company view", exact: true });
     await expect(spolka).toBeVisible();
-    await spolka.getByRole("group", { name: "Workshop" }).getByRole("button", { name: "Claims", exact: true }).click();
+    await spolka.getByRole("toolbar", { name: "Workshop" }).getByRole("button", { name: "Claims", exact: true }).click();
     const claimsPane = page.getByRole("group", { name: "Workshop tool" });
     await expect(claimsPane).toBeVisible();
     await expect(claimsPane).toHaveAttribute("data-tool", "tezy");
