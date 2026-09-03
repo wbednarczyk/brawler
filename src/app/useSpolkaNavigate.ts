@@ -38,12 +38,13 @@ export function useSpolkaNavigate(input: SpolkaNavigateInput) {
         if (transition.highlightClaimId !== undefined) {
           setHighlightClaimId(transition.highlightClaimId);
         }
-        // Focus intent (F3c S1, plan § Design 3): `tool` omitted = a plain
-        // company switch ("company", e.g. Shift+J/K — ADR 0107 dec. 6 closes
-        // the tool with no retarget); `tool: null` = explicitly land on
-        // Overview (the H/L tool cycle wrapping past the last tool,
-        // "overview"); a `Tool` = open it ("heading").
-        const focusIntent = transition.tool === undefined ? "company" : transition.tool === null ? "overview" : "heading";
+        // Focus intent (F3c, plan § Design 3): an explicit `focusIntent` wins
+        // (Shift+J/K pass "company"); else `tool: null` = land on Overview
+        // ("overview", the H/L cycle wrapping past the last tool), a `Tool` =
+        // open it ("heading"), and a plain company switch moves nothing
+        // ("none" — see `SpolkaTransition.focusIntent`).
+        const focusIntent =
+          transition.focusIntent ?? (transition.tool === undefined ? "none" : transition.tool === null ? "overview" : "heading");
         input.spolkaTool.commitTool(transition.companyId, transition.tool ?? null, focusIntent);
       });
     },

@@ -549,6 +549,20 @@ describe("Spółka keyboard shortcuts (F3c S1)", () => {
     expect(within(spolka).getByRole("button", { name: "Overview" })).toHaveFocus();
   });
 
+  it("Ctrl+K opens the palette while focus sits in the company picker", async () => {
+    // Same class as Ctrl+. above: the pinned-renderer visual specs open a
+    // company (focus → picker) and then press Ctrl+K — a chord with no
+    // editing meaning must not be swallowed by an editable target.
+    const user = userEvent.setup();
+    renderApp();
+    const spolka = await openSpolka(user);
+    const picker = within(spolka).getByRole("combobox", { name: "Company" });
+    picker.focus();
+
+    fireEvent.keyDown(picker, { key: "K", code: "KeyK", ctrlKey: true });
+    expect(await screen.findByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+  });
+
   it("Ctrl+. is a no-op off Spółka (no workshop bar mounted)", async () => {
     renderApp();
     await screen.findByRole("heading", { name: "Inbox" });
@@ -589,6 +603,17 @@ describe("Spółka keyboard shortcuts (F3c S1)", () => {
     fireEvent.keyDown(document, { key: "H", code: "KeyH" });
     await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
     expect(within(bar).getByRole("button", { name: "Overview" })).toHaveFocus();
+  });
+
+  it("opening a company from the sidebar leaves the company picker unfocused (no ring for mouse users)", async () => {
+    // Only the keyboard adjacent-company shortcuts carry the `company` focus
+    // intent; a row/pinned click or a palette hop is `none` — Chromium shows
+    // `:focus-visible` on any programmatically focused `<select>`, which put a
+    // ring into the at-rest visual baseline (F3c integration).
+    const user = userEvent.setup();
+    renderApp();
+    const spolka = await openSpolka(user);
+    expect(within(spolka).getByRole("combobox", { name: "Company" })).not.toHaveFocus();
   });
 
   it("Shift+J/K move to the adjacent company on Spółka, closing the tool and focusing the company picker", async () => {

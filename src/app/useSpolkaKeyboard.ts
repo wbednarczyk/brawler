@@ -73,7 +73,7 @@ export function useSpolkaKeyboard(input: UseSpolkaKeyboardInput) {
         if (!next) return false;
         // No `tool` key (ADR 0107 dec. 6): the guarded transition closes
         // whatever tool was open and focuses the company picker.
-        navigate({ companyId: next.id, section: "Spolka" });
+        navigate({ companyId: next.id, section: "Spolka", focusIntent: "company" });
         return true;
       }
 
