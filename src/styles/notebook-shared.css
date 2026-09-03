@@ -42,7 +42,6 @@
   border-radius: 8px;
   color: var(--text);
   background: var(--surface-raised);
-  outline: none;
 }
 
 .notebook-form textarea {
@@ -58,7 +57,6 @@
 .notebook-detail select:focus,
 .notebook-detail textarea:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .notebook-submit-button {

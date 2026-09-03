@@ -15,6 +15,7 @@ export type AppShortcutId =
   | "app.openSettings"
   | "app.commandPalette"
   | "app.focusSearch"
+  | "app.focusWorkshop"
   | "app.refreshSources"
   | "app.refreshDatabase"
   | "inbox.nextItem"
@@ -79,6 +80,9 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     group: "Global actions",
     scope: "app",
     verb: "open",
+    // Ctrl+K has no editing meaning; a focused company picker (`<select>`,
+    // where a company switch lands focus) must not swallow it (F3c).
+    suppressWhenEditable: false,
     binding: {
       ctrlKey: true,
       key: "K",
@@ -105,6 +109,26 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     defaultBinding: {
       ctrlKey: true,
       key: "F",
+    },
+    disabled: false,
+    hasCustomBinding: false,
+  },
+  {
+    id: "app.focusWorkshop",
+    label: "Open workshop bar",
+    group: "Global actions",
+    scope: "app",
+    verb: "open",
+    // A company switch lands focus on the company picker (`<select>`); the
+    // chord has no editing meaning, so it must fire from editables too (J8).
+    suppressWhenEditable: false,
+    binding: {
+      ctrlKey: true,
+      key: ".",
+    },
+    defaultBinding: {
+      ctrlKey: true,
+      key: ".",
     },
     disabled: false,
     hasCustomBinding: false,
@@ -269,8 +293,10 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "company.nextTab",
-    label: "Open next company tab",
-    group: "Companies",
+    // Relabeled F3c S1 (ids/bindings unchanged): the docking-engine "tab" was
+    // retired with ADR 0107 — H/L now cycle the Spółka workshop bar's tools.
+    label: "Open next workshop tool",
+    group: "Spółka",
     scope: "screen",
     verb: "open",
     binding: {
@@ -284,8 +310,8 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "company.previousTab",
-    label: "Open previous company tab",
-    group: "Companies",
+    label: "Open previous workshop tool",
+    group: "Spółka",
     scope: "screen",
     verb: "open",
     binding: {

@@ -27,7 +27,7 @@ async function openCoveragePanel(page: import("@playwright/test").Page, companyI
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByLabel("Search commands").fill("Open coverage");
-  await palette.getByRole("button", { name: "Open coverage", exact: true }).first().click();
+  await palette.getByRole("option", { name: "Open coverage", exact: true }).first().click();
 }
 
 test("flagged periods render with translated reasons and do not overflow — populated", async ({

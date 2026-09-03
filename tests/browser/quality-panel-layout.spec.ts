@@ -21,7 +21,7 @@ async function openQualityTool(page: import("@playwright/test").Page) {
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByLabel("Search commands").fill("Open quality");
-  await palette.getByRole("button", { name: "Open quality", exact: true }).first().click();
+  await palette.getByRole("option", { name: "Open quality", exact: true }).first().click();
 }
 
 test("quality panel qualitative form does not horizontally overflow at a narrow window", async ({

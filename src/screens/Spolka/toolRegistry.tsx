@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import { X } from "lucide-react";
 import type { Company, FeedItem } from "../../api/types";
 import { listClaimsToVerify } from "../../api/managementClaims";
@@ -22,7 +22,13 @@ import {
   RedFlagsPanel,
   ShortPositionsPanel,
 } from "./panels/companyPanels";
+import type { FocusIntent } from "./ToolHost";
 import type { Tool } from "./route";
+
+// Native pickers whose OWN Escape closes their popup — the frame's
+// Escape-to-close must not also fire underneath them (plan § Design 2).
+const NATIVE_PICKER_SELECTOR =
+  "select, [role=listbox], [role=combobox], input[type=date], input[type=time], input[type=datetime-local], input[type=month], input[type=week]";
 
 // Maps every `Tool` variant to its hosted component (F3a S2, ADR 0107) —
 // reused verbatim via `./panels/companyPanels`, never re-implemented.
@@ -38,6 +44,11 @@ export type ToolRenderContext = {
   onOpenDocument: (documentRef: string) => void;
   onOpenFeedItem: (feedItemId: string) => void;
   onCloseTool: () => void;
+  /** `SpolkaToolHostApi.openSeq`/`.focus.intent` (F3c S1) — `ToolFrame` owns
+   * the "heading" focus intent, keyed on `openSeq` so a same-kind payload
+   * change (e.g. a different `documentId`) re-focuses the heading too. */
+  openSeq: number;
+  focusIntent: FocusIntent;
 };
 
 const TOOL_TITLES: Record<Tool["t"], string> = {
@@ -64,8 +75,42 @@ export function renderTool(tool: Tool, ctx: ToolRenderContext): ReactElement {
 
 function ToolFrame({ tool, ctx }: { tool: Tool; ctx: ToolRenderContext }) {
   const { text } = useLocale();
+  const frameRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // Focus the heading on open (plan § Design 3) — owned here, the ONE
+  // consumer of the "heading" intent. Keyed on `openSeq` (not `focusIntent`,
+  // which is read at commit time and is current by construction: the SAME
+  // commit that bumps `openSeq` sets `focusIntent`) so a same-kind payload
+  // change (`{t:"dokumenty", documentId}` → another id) re-focuses too.
+  // Authoritative (sol diff R1): H/L from the persistent ✕ button must land
+  // on the NEW heading, so no "focus already inside the frame" yield —
+  // `autoFocus` descendants are banned app-wide (uiGuardrails), so nothing
+  // competes.
+  useEffect(() => {
+    if (ctx.focusIntent !== "heading") return;
+    headingRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on openSeq only; see the comment above
+  }, [ctx.openSeq]);
+
+  function handleFrameKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    const target = event.target;
+    if (!(target instanceof Node) || !frameRef.current?.contains(target)) return;
+    if (target instanceof Element && target.closest(NATIVE_PICKER_SELECTOR)) return;
+    event.preventDefault();
+    ctx.onCloseTool();
+  }
+
   return (
-    <div role="group" aria-label={text("Workshop tool")} data-tool={tool.t} className="spolka-tool">
+    <div
+      role="group"
+      aria-label={text("Workshop tool")}
+      data-tool={tool.t}
+      className="spolka-tool"
+      ref={frameRef}
+      onKeyDown={handleFrameKeyDown}
+    >
       <div className="spolka-tool-header">
         {/* No leading back button: the workshop bar's Overview tab is the way
             back (owner dogfooding v0.74 wave 3); ✕ stays for close. */}
@@ -73,6 +118,8 @@ function ToolFrame({ tool, ctx }: { tool: Tool; ctx: ToolRenderContext }) {
           level="h2"
           eyebrow={text("Workshop")}
           title={text(TOOL_TITLES[tool.t])}
+          titleRef={headingRef}
+          titleTabIndex={-1}
           actions={
             <Button variant="icon" aria-label={text("Close tool")} onClick={ctx.onCloseTool}>
               <X size={16} aria-hidden="true" />

@@ -1,5 +1,5 @@
 {
-  "_comment": "Journey friction budgets (ADR 0074 pt 3 / ADR 0081 Q3), schema v2. Each journey has FOUR hard/ratcheted metrics — interactions, screenTransitions, modalOpens, contextLosses — evaluated by src/test/journeyMetrics.ts via tests/browser/helpers/journey.ts. Values are the FIRST MEASURED count rounded up by 1 (the ratchet FLOOR) and are the SAME across the whole Playwright viewport matrix unless a real narrow-pane flow genuinely needs MORE user actions on some project, recorded in that journey's byProject (never used to hide a common regression). A project that needs FEWER actions is simply absorbed by the shared floor. interactions must never exceed the documented ceilings in docs/ux-journeys.md (J1 15, J1b 8, J2 25, J3 12, J4 13, J5 6, J6 15, J7 20); screenTransitions/modalOpens/contextLosses have no separate ceiling doc yet — they are new with Q3 and start at their first-measured floor. assertBudget() reddens when a journey grows past its floor (a UX regression) and logs a tighten suggestion per metric when it shrinks well below it.",
+  "_comment": "Journey friction budgets (ADR 0074 pt 3 / ADR 0081 Q3), schema v2. Each journey has FOUR hard/ratcheted metrics — interactions, screenTransitions, modalOpens, contextLosses — evaluated by src/test/journeyMetrics.ts via tests/browser/helpers/journey.ts. Values are the FIRST MEASURED count rounded up by 1 (the ratchet FLOOR) and are the SAME across the whole Playwright viewport matrix unless a real narrow-pane flow genuinely needs MORE user actions on some project, recorded in that journey's byProject (never used to hide a common regression). A project that needs FEWER actions is simply absorbed by the shared floor. interactions must never exceed the documented ceilings in docs/ux-journeys.md (J1 15, J1b 8, J2 25, J3 12, J4 13, J5 6, J6 15, J7 20, J8 14); screenTransitions/modalOpens/contextLosses have no separate ceiling doc yet — they are new with Q3 and start at their first-measured floor. assertBudget() reddens when a journey grows past its floor (a UX regression) and logs a tighten suggestion per metric when it shrinks well below it.",
   "schemaVersion": 2,
   "journeys": {
     "J1": {
@@ -59,6 +59,14 @@
       "screenTransitions": 5,
       "modalOpens": 3,
       "contextLosses": 1,
+      "byProject": {}
+    },
+    "J8": {
+      "_comment": "F3c (#197): keyboard-only company review — palette → company → Ctrl+. → 5× ArrowRight → Enter → L → Escape. Floor = first honest measurement + 1, to be re-based by S3 after S1/S2 land; the ceiling in docs/ux-journeys.md is 14.",
+      "interactions": 13,
+      "screenTransitions": 2,
+      "modalOpens": 1,
+      "contextLosses": 0,
       "byProject": {}
     }
   }

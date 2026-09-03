@@ -68,6 +68,14 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 - **Budget:** floor re-based 2026-08-26 at first measurement +1 (consent 5, ADR 0107) — the view-creation leg the old ≤9 measured was frozen, then retired ([ADR 0108](adr/0108-retire-docking-engine.md)); all four task legs stay, now entered through their own screens. Re-measured 2026-08-27: the deepening leg's row-level "Open company" action (watchlist and research rows, owner decision 2026-08-26) replaced the ⌘K palette round-trip, dropping a modal open; floor tightened to the new measurement +1. Re-measured 2026-09-02 (F4c S3, #94): the Research leg opens from the Library nav instead of the ⌘K palette hop — measured **8** interactions (chromium-compact), floor **9**.
 - **Done well:** next week's dates are known; the backlog of research debts is explicit, not vague guilt.
 
+## J8 — Keyboard-only company review (F3c, #197)
+
+- **Trigger:** hands on the keyboard — a company opened by name, then its workshop walked without the mouse.
+- **Steps:** `Ctrl+K` → `Open company: X` → `Ctrl+.` (focus the workshop toolbar, one Tab stop) → `→` to Claims → `Enter` (focus lands on the tool heading) → `L` (next tool, Notebook) → `Escape` (Overview; focus returns to the closed tool's entry). Contract: `docs/plans/frontend-v2-f3c.md` (local, ADR 0081).
+- **Screens:** Today (entry), Spółka.
+- **Budget:** ≤14 interactions; floor = first measurement +1 (2026-09-03, `tests/browser/journeys/budgets.json` J8), measured with **zero pointer events** (the spec counts `pointerdown`/`mousedown`). Runs on the 5 browser projects — the two `chromium-visual*` projects are pixel-compare only (#448).
+- **Done well:** focus is never lost (heading on open, entry on close, invoker after a dialog); every tool and every screen is reachable by name (`tests/browser/spolka-keyboard.spec.ts` matrix).
+
 ## Journey-independent utilities
 
 Settings, Diagnostics, Sources administration, import/export, the **MCP server** section (ADR 0078 — enable/port/token + connection snippets), and global search serve all journeys; capabilities there are declared `utility` in the DoD check rather than forced into a journey.

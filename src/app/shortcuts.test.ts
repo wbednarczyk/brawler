@@ -18,6 +18,31 @@ describe("app.openResearch — default binding", () => {
   });
 });
 
+// F3c S1 (plan § Design 5): a new `Open workshop bar` global shortcut
+// (default Ctrl+.), and the dead `company.nextTab/previousTab` H/L relabeled
+// to the Spółka workshop-tool cycle (ids and bindings unchanged so a
+// persisted custom binding stays valid).
+describe("app.focusWorkshop — new shortcut (F3c S1)", () => {
+  it("defaults to Ctrl+.", () => {
+    const item = appShortcutReferenceItems.find((entry) => entry.id === "app.focusWorkshop");
+    expect(item?.defaultBinding).toEqual({ ctrlKey: true, key: "." });
+    expect(item?.group).toBe("Global actions");
+  });
+});
+
+describe("company.nextTab/previousTab — relabeled to the workshop-tool cycle (F3c S1)", () => {
+  it("keeps the H/L bindings but relabels to 'Open next/previous workshop tool' under the Spółka group", () => {
+    const next = appShortcutReferenceItems.find((entry) => entry.id === "company.nextTab");
+    const previous = appShortcutReferenceItems.find((entry) => entry.id === "company.previousTab");
+    expect(next?.label).toBe("Open next workshop tool");
+    expect(next?.defaultBinding).toEqual({ key: "L" });
+    expect(next?.group).toBe("Spółka");
+    expect(previous?.label).toBe("Open previous workshop tool");
+    expect(previous?.defaultBinding).toEqual({ key: "H" });
+    expect(previous?.group).toBe("Spółka");
+  });
+});
+
 describe("resolveAppShortcutReferenceItems — unknown persisted ids", () => {
   it("ignores a persisted binding for a retired shortcut id", () => {
     const shortcutBindings = {

@@ -104,7 +104,7 @@ export async function openPalette(page: Page): Promise<Locator> {
 export async function openScreen(page: Page, label: string) {
   const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill(`Open screen: ${label}`);
-  await palette.getByRole("button", { name: `Open screen: ${label}`, exact: true }).first().click();
+  await palette.getByRole("option", { name: `Open screen: ${label}`, exact: true }).first().click();
 }
 
 // No element whose content escapes its box (overflow-x visible) is wider than its
@@ -190,8 +190,20 @@ export async function expectNoPageOverflow(page: Page) {
 // multi-pane desktop workspace, not conformance failures, and stay out of the gate.
 const A11Y_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
-export async function expectNoA11yViolations(page: Page, context: string) {
-  const results = await new AxeBuilder({ page }).withTags(A11Y_TAGS).analyze();
+// `extraRules` runs a SECOND analysis: AxeBuilder's `withRules` and `withTags`
+// both set `runOnly` and overwrite each other (sol R2, F3c), so best-practice
+// rules outside the WCAG tag set (`focus-order-semantics`, `tabindex`) need
+// their own pass, merged here.
+export async function expectNoA11yViolations(
+  page: Page,
+  context: string,
+  options: { extraRules?: string[] } = {},
+) {
+  const tagged = await new AxeBuilder({ page }).withTags(A11Y_TAGS).analyze();
+  const extra = options.extraRules?.length
+    ? await new AxeBuilder({ page }).withRules(options.extraRules).analyze()
+    : null;
+  const results = { violations: [...tagged.violations, ...(extra?.violations ?? [])] };
   const summary = results.violations
     .map(
       (violation) =>

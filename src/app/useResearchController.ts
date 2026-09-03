@@ -11,14 +11,16 @@ import type {
   ResearchReminder,
   ResearchTimelineResult,
 } from "../api/researchTypes";
-import type { Section } from "./navigation";
 import type { NewResearchReminder } from "../api/researchTypes";
 import type { UndoableDeleteConfig } from "../ui";
 
 export type ResearchMode = "company" | "watchlist";
 
 type UseResearchControllerInput = {
-  activeSection: Section;
+  /** ResearchScreen is on screen — the standalone route or the Spółka
+   * `research` workshop tool (#450); refresh effects key on this, never on
+   * the section. */
+  researchVisible: boolean;
   companies: Company[];
   watchlists: Watchlist[];
   watchlistMemberships: WatchlistMembership[];
@@ -43,7 +45,7 @@ function reminderRestoreInput(reminder: ResearchReminder): NewResearchReminder {
 }
 
 export function useResearchController({
-  activeSection,
+  researchVisible,
   companies,
   watchlists,
   watchlistMemberships,
@@ -199,12 +201,12 @@ export function useResearchController({
   }, [researchMode, selectedResearchCompanyId]);
 
   useEffect(() => {
-    if (activeSection !== "Research") {
+    if (!researchVisible) {
       return;
     }
 
     void refreshResearchQuestions();
-  }, [activeSection, refreshResearchQuestions]);
+  }, [researchVisible, refreshResearchQuestions]);
 
   useEffect(() => {
     if (!selectedResearchQuestionId) {
@@ -254,20 +256,20 @@ export function useResearchController({
   }, [researchMode, selectedResearchCompanyId, selectedResearchWatchlistId]);
 
   useEffect(() => {
-    if (activeSection !== "Research") {
+    if (!researchVisible) {
       return;
     }
 
     void refreshResearchTimeline();
-  }, [activeSection, refreshResearchTimeline]);
+  }, [researchVisible, refreshResearchTimeline]);
 
   useEffect(() => {
-    if (activeSection !== "Research") {
+    if (!researchVisible) {
       return;
     }
 
     void refreshResearchReminders();
-  }, [activeSection, refreshResearchReminders]);
+  }, [researchVisible, refreshResearchReminders]);
 
   function toggleResearchEvidenceType(evidenceType: ResearchEvidenceType) {
     setResearchEvidenceTypes((current) =>

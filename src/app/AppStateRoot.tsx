@@ -56,6 +56,7 @@ import { TodayScreen } from "../screens/Today/TodayScreen";
 import { SpolkaScreenHost, useSpolkaToolHost } from "./useSpolkaScreenWiring";
 import { useCompanyEntryActions } from "./useCompanyEntryActions";
 import { useSpolkaNavigate } from "./useSpolkaNavigate";
+import { useSpolkaKeyboard } from "./useSpolkaKeyboard";
 import type { NotebookToolIntent } from "../screens/Spolka/route";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { AppContentErrorFallback } from "./AppErrorFallback";
@@ -519,7 +520,7 @@ export function AppStateRoot({
     reopenResearchReminder,
     deleteResearchReminder,
   } = useResearchController({
-    activeSection,
+    researchVisible: activeSection === "Research" || (activeSection === "Spolka" && spolkaTool.tool?.t === "research"),
     companies,
     watchlists,
     watchlistMemberships,
@@ -1208,32 +1209,19 @@ export function AppStateRoot({
     return true;
   }
 
-  function selectAdjacentCompany(direction: 1 | -1) {
-    if (activeSection !== "Companies" || filteredCompanies.length === 0) {
-      return false;
-    }
-
-    const currentIndex = selectedCompany
-      ? filteredCompanies.findIndex(
-          (company) => company.id === selectedCompany.id,
-        )
-      : -1;
-    const nextIndex =
-      currentIndex === -1
-        ? 0
-        : Math.min(
-            Math.max(currentIndex + direction, 0),
-            filteredCompanies.length - 1,
-          );
-    const nextCompany = filteredCompanies[nextIndex];
-
-    if (!nextCompany) {
-      return false;
-    }
-
-    setSelectedCompanyId(nextCompany.id);
-    return true;
-  }
+  // H/L (workshop-tool cycle) + Shift+J/K (adjacent company, both screens) —
+  // moved out of this file (F3c S1, file-size ratchet: pinned at 1870) so it
+  // does not grow; `selectAdjacentCompany`'s ORIGINAL Companies-screen
+  // behavior lives on inside the hook, unchanged.
+  const spolkaKeyboard = useSpolkaKeyboard({
+    activeSection,
+    selectedCompanyId,
+    companies,
+    filteredCompanies,
+    spolkaTool,
+    navigate,
+    setSelectedCompanyId,
+  });
 
   const shortcutActions = useMemo<AppShortcutActionMap>(
     () => ({
@@ -1247,6 +1235,7 @@ export function AppStateRoot({
       "app.openAlerts": () => undefined,
       "app.commandPalette": () => undefined,
       "app.focusSearch": () => undefined,
+      "app.focusWorkshop": () => undefined,
       "app.refreshSources": () => undefined,
       "app.refreshDatabase": () => undefined,
       "inbox.nextItem": () => selectAdjacentInboxItem(1),
@@ -1284,19 +1273,19 @@ export function AppStateRoot({
         openFeedItemNoteDraft(selectedFeedItem);
         return true;
       },
-      "company.nextCompany": () => selectAdjacentCompany(1),
-      "company.previousCompany": () => selectAdjacentCompany(-1),
-      // The company deep-dive is the Spółka screen (ADR 0107); there is no
-      // tabbed workspace to cycle. The shortcuts are kept as no-ops so existing
-      // bindings/config stay valid.
-      "company.nextTab": () => false,
-      "company.previousTab": () => false,
+      // Shift+J/K (adjacent company, both Companies and Spółka) and H/L (the
+      // Spółka workshop-tool cycle) — logic in `useSpolkaKeyboard` (F3c S1).
+      "company.nextCompany": spolkaKeyboard.nextCompany,
+      "company.previousCompany": spolkaKeyboard.previousCompany,
+      "company.nextTab": spolkaKeyboard.nextTool,
+      "company.previousTab": spolkaKeyboard.previousTool,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- view-model memo keyed on the listed UI state; the plain keyboard-navigation helpers (selectAdjacentCompany/selectAdjacentInboxItem/switchCompanyWorkspaceTab) are excluded to keep it from recomputing every render — they read the same state already in the dep list
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- view-model memo keyed on the listed UI state; the plain keyboard-navigation helpers (selectAdjacentInboxItem/switchCompanyWorkspaceTab/spolkaKeyboard's own actions) are excluded to keep it from recomputing every render — they read the same state already in the dep list
     [
       activeSection,
       filteredCompanies,
       filteredFeedItems,
+      spolkaKeyboard,
       openFeedItemNoteDraft,
       selectedCompany,
       selectedFeedItem,
@@ -1687,7 +1676,6 @@ export function AppStateRoot({
               {activeSection === "Alerts" ? (
                 <AlertsScreenHost attention={attention} openCompanyWorkspaceById={openCompanyWorkspaceById} setActiveSection={setActiveSection} />
               ) : null}
-              {/* Research: palette/deep-link route until F4c adds its nav entry (#94). */}
               {activeSection === "Research" ? (
                 <ResearchProvider value={researchViewModel}>
                   <ResearchScreen />

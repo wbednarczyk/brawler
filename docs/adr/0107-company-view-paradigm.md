@@ -60,6 +60,12 @@ four vocabularies over an unguessable preset↔save↔reset model.
   metadata and a copy gate; the frozen cockpit's palette is navigation-only.
 - The `PriceContextSection` chart migrates to the log axis (decision 4 is
   global for price charts).
+- **Amendment (2026-09-03, F3c #197):** the workshop bar is an APG toolbar (one
+  Tab stop, arrow traversal), `Ctrl+.` focuses it, `H`/`L` cycle tools, `Escape`
+  returns to Overview through the dirty seam (dec. 6), and adjacent-company
+  shortcuts close the tool (dec. 6, never retarget). Keyboard contract:
+  `docs/plans/frontend-v2-f3c.md`; ADR 0076 dec. 9 amendment carries the
+  focus-ring rule.
 - Details, slices, state matrix and proofs: `docs/plans/frontend-v2-f3a.md`
   (approved experience contract); mockups:
   `docs/mockups/frontend-v2-widok-spolki/`.

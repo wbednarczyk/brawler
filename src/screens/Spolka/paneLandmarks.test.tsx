@@ -130,6 +130,8 @@ const ctx: ToolRenderContext = {
   onOpenDocument: () => {},
   onOpenFeedItem: () => {},
   onCloseTool: () => {},
+  openSeq: 1,
+  focusIntent: "heading",
 };
 
 beforeEach(() => {

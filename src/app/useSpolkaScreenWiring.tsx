@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Company, FeedItem } from "../api/types";
 import { SpolkaScreen } from "../screens/Spolka/SpolkaScreen";
-import type { SpolkaToolHostApi } from "../screens/Spolka/ToolHost";
+import type { FocusIntent, SpolkaToolHostApi } from "../screens/Spolka/ToolHost";
 export { useSpolkaToolHost } from "../screens/Spolka/ToolHost";
 import type { Tool } from "../screens/Spolka/route";
 import type { Section } from "./navigation";
@@ -25,7 +25,17 @@ import { openExternalUrl } from "./openExternalUrl";
 export type SpolkaTransition = {
   companyId: string;
   section: Section;
-  tool?: Tool;
+  /** Omitted (undefined) = leave the tool as-is / no tool intent (a plain
+   * company switch); `null` = explicitly land on Overview (the workshop-tool
+   * cycle wrapping past the last tool, F3c S1 — reads as the "overview"
+   * intent); a `Tool` = open it (reads as the "heading" intent). */
+  tool?: Tool | null;
+  /** Where focus lands after the transition (F3c, plan § Design 3). Defaults
+   * to `none` for a plain company switch — a row/pinned click or a palette
+   * hop must NOT focus the company picker (Chromium paints `:focus-visible`
+   * on any programmatically focused `<select>`, mouse or not); only the
+   * keyboard adjacent-company shortcuts pass `"company"`. */
+  focusIntent?: FocusIntent;
   highlightClaimId?: string;
 };
 

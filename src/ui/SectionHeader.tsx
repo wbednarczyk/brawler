@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 export type SectionHeaderProps = {
   actions?: ReactNode;
@@ -20,6 +20,12 @@ export type SectionHeaderProps = {
   paneLead?: boolean;
   title: ReactNode;
   titleId?: string;
+  /** Imperative focus target for the title (F3c S1) — the Spółka workshop
+   * tool frame focuses its heading on open via this ref, since a heading is
+   * not natively focusable. Pair with `titleTabIndex={-1}` (programmatically
+   * focusable, out of the Tab order — a heading is not a real tab stop). */
+  titleRef?: Ref<HTMLHeadingElement>;
+  titleTabIndex?: -1 | 0;
   variant?: "plain" | "accent";
 };
 
@@ -33,6 +39,8 @@ export function SectionHeader({
   paneLead = false,
   title,
   titleId,
+  titleRef,
+  titleTabIndex,
   variant = "plain",
 }: SectionHeaderProps) {
   return (
@@ -48,7 +56,9 @@ export function SectionHeader({
     >
       <div className="ui-section-title">
         {eyebrow ? <span className="ui-section-eyebrow">{eyebrow}</span> : null}
-        <Heading id={titleId}>{title}</Heading>
+        <Heading id={titleId} ref={titleRef} tabIndex={titleTabIndex}>
+          {title}
+        </Heading>
         {description ? <p>{description}</p> : null}
       </div>
       {meta ? <span className="ui-section-header-meta">{meta}</span> : null}

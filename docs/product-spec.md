@@ -104,6 +104,8 @@ unmount. The docking engine, named views, and legacy per-company dashboards
 were retired ([ADR 0108](adr/0108-retire-docking-engine.md)). Contract + state matrix: `docs/plans/frontend-v2-f3a.md`
 (owner-approved 2026-08-25).
 
+The screen is fully operable by keyboard (F3c, #197, contract `docs/plans/frontend-v2-f3c.md`): `Ctrl+.` focuses the workshop bar (one Tab stop; `←`/`→`/`Home`/`End` move, `Enter` opens), `H`/`L` step to the previous/next tool, `Shift+J`/`Shift+K` move to the adjacent company with the tool closed, `Escape` inside a tool returns to Overview (a draft asks stay/discard first). Focus follows the action — the tool heading on open, the closed tool's bar entry on close, the company picker after `Shift+J`/`Shift+K` — and every control shows one visible focus ring. All four shortcuts are rebindable in Settings like every other shortcut.
+
 ## Company Notebooks
 
 Each company has a notebook tied to its canonical company identity. Notes should support manual entry and creation from feed items, reports, and transcripts.

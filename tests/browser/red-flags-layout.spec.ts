@@ -23,7 +23,7 @@ async function addRedFlagsPanel(page: import("@playwright/test").Page, companyId
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByLabel("Search commands").fill("Open signals");
-  await palette.getByRole("button", { name: "Open signals", exact: true }).first().click();
+  await palette.getByRole("option", { name: "Open signals", exact: true }).first().click();
 }
 
 test("red-flags panel renders active flags and does not overflow — populated", async ({ page }) => {
