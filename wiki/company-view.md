@@ -90,7 +90,7 @@ in Settings → Keyboard shortcuts.
 
 | Keys | Does |
 |---|---|
-| `Ctrl+.` | Jump to the workshop bar (focus lands on the entry that last had focus — at first, the open one). Does nothing while a dialog is open. |
+| `Ctrl+.` | Jump to the workshop bar (focus lands on the open tool's entry, or on the entry you last left the bar from). Does nothing while a dialog is open. |
 | `←` `→` · `Home` `End` | Move along the bar (wraps); `Enter` or `Space` opens the focused entry. The bar is one Tab stop — `Tab` leaves it. |
 | `H` / `L` | Previous / next workshop tool, cycling through Overview. |
 | `Shift+J` / `Shift+K` | Next / previous company (the open tool closes first — a draft asks stay/discard). |

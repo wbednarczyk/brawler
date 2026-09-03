@@ -383,7 +383,6 @@ summary.feed-body-heading::before {
 
 .filter-toolbar .inbox-search-field .search-box:focus-within {
   border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .filter-toolbar .inbox-search-field .search-box input {

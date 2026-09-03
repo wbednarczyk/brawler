@@ -33,6 +33,29 @@ describe("useRovingToolbar", () => {
     expect(document.body).toHaveFocus();
   });
 
+  it("a shrinking count clamps the tab stop so exactly one item keeps tabIndex=0", () => {
+    const { rerender } = render(<Toolbar count={3} initialIndex={2} selectedIndex={2} />);
+    rerender(<Toolbar count={2} initialIndex={2} selectedIndex={5} />);
+    const items = screen.getAllByRole("button");
+    expect(items.map((el) => el.getAttribute("tabindex"))).toEqual(["-1", "0"]);
+  });
+
+  it("an out-of-range selectedIndex is ignored", () => {
+    const { rerender } = render(<Toolbar count={3} initialIndex={1} selectedIndex={1} />);
+    rerender(<Toolbar count={3} initialIndex={1} selectedIndex={7} />);
+    expect(screen.getAllByRole("button").map((el) => el.getAttribute("tabindex"))).toEqual(["-1", "0", "-1"]);
+  });
+
+  it("arrows move from the item that received the key, not from stale state", () => {
+    render(<Toolbar count={3} initialIndex={0} />);
+    const items = screen.getAllByRole("button");
+    // Focus the last item directly (a mouse click), then ArrowLeft: the move
+    // originates from that item.
+    items[2].focus();
+    fireEvent.keyDown(items[2], { key: "ArrowLeft" });
+    expect(items[1]).toHaveFocus();
+  });
+
   it("keeps the focused item as the tab stop when selectedIndex changes under it", () => {
     const { rerender } = render(<Toolbar count={3} initialIndex={0} selectedIndex={0} />);
     const items = screen.getAllByRole("button");

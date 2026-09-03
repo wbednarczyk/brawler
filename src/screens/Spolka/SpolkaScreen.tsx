@@ -9,6 +9,7 @@ import { CALENDAR_EVENT_FORMS, CLAIM_FORMS, SIGNAL_FORMS, pluralNoun } from "../
 import { deltaToneClass, formatFinancialValue } from "../../shared/format/financialValue";
 import { formatLocalIsoDate } from "../../shared/format/datetime";
 import { Button, CandlestickChart, DenseRow, EmptyState, ErrorText, PanelHeader, SectionHeader, SelectField, Skeleton, StatusChip } from "../../ui";
+import { focusScreenHeadingIfBody } from "../../shared/focus/focusScreenHeading";
 import { useRovingToolbar, type RovingToolbarItemProps } from "../../shared/focus/useRovingToolbar";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { GlanceBar, formatCount } from "./GlanceBar";
@@ -127,6 +128,10 @@ export function SpolkaScreen({
       roving.focusItem(0);
     } else if (spolkaTool.focus.intent === "company") {
       companyPickerRef.current?.focus();
+    } else if (spolkaTool.focus.intent === "none") {
+      // "Moves nothing" still means "never `<body>`": a delayed Discard or a
+      // palette hop whose invoker is gone would otherwise strand focus.
+      focusScreenHeadingIfBody();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on focus.seq only; roving.focusItem is stable (useCallback) and closedKind is read from the same commit that bumped seq
   }, [spolkaTool.focus.seq]);

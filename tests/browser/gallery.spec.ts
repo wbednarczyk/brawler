@@ -84,10 +84,14 @@ test("every focusable in the gallery shows a visible keyboard focus ring", async
   let current = await readFocused();
 
   // Bound the walk by the tabbable count (+1 slack) — real navigation stops
-  // itself once focus leaves the gallery root.
+  // itself once focus leaves the gallery root. Every visited element is
+  // counted so a walk that leaves the root early (a stray Tab handler, an
+  // element the browser skips) cannot pass vacuously (sol diff R1).
+  const visited = new Set<string>();
   for (let i = 0; i < tabbableCount + 1; i += 1) {
     const insideRoot = await root.evaluate((el) => el.contains(document.activeElement));
     if (!insideRoot) break;
+    visited.add(current.id);
 
     expect(
       current.outlineStyle,
@@ -106,4 +110,11 @@ test("every focusable in the gallery shows a visible keyboard focus ring", async
       current = await readFocused();
     }
   }
+  // Browsers legitimately skip a few "tabbables" the selector counts (e.g. a
+  // disabled-looking control, an element sized to zero); the walk must still
+  // have covered the overwhelming majority — a lone early exit fails here.
+  expect(
+    visited.size,
+    `only ${visited.size} of ${tabbableCount} gallery tabbables were visited before focus left the root`,
+  ).toBeGreaterThanOrEqual(Math.floor(tabbableCount * 0.9));
 });

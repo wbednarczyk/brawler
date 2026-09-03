@@ -30,6 +30,8 @@ export type Journey = {
    */
   clickPrimary(surface: Locator, action: Locator): Promise<void>;
   fill(locator: Locator, value: string): Promise<void>;
+  /** Real key-by-key typing (`pressSequentially`) — one interaction, like `fill`, but through the keyboard (a keyboard-only journey never uses `fill`). */
+  type(locator: Locator, value: string): Promise<void>;
   press(target: Locator | Page, key: string): Promise<void>;
   selectOption(locator: Locator, value: string): Promise<void>;
   /** Declares the screen now on-screen; counts a transition when it differs from the last marked screen. */
@@ -105,6 +107,12 @@ export function journey(page: Page, id: string): Journey {
       const description = await describeLocator(locator);
       await locator.fill(value);
       recorder.recordInteraction(`fill ${description} = "${value}"`);
+    },
+
+    async type(locator, value) {
+      const description = await describeLocator(locator);
+      await locator.pressSequentially(value);
+      recorder.recordInteraction(`type ${description} = "${value}"`);
     },
 
     async press(target, key) {

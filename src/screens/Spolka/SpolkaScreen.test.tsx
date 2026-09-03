@@ -743,12 +743,29 @@ describe("SpolkaScreen keyboard model (F3c S1)", () => {
     const heading = within(frame).getByRole("heading", { level: 2, name: "Documents" });
     await waitFor(() => expect(heading).toHaveFocus());
 
-    // Move focus away, then re-commit the SAME kind with a DIFFERENT payload
-    // — the heading must be re-focused (keyed on `openSeq`, not tool kind).
-    heading.blur();
-    document.body.focus();
+    // Focus a PERSISTENT frame descendant (the ✕ button survives the tool
+    // change), then re-commit the SAME kind with a DIFFERENT payload — the
+    // heading must be re-focused (keyed on `openSeq`, not tool kind; the
+    // "heading" intent is authoritative, sol diff R1: no "focus already
+    // inside the frame" yield).
+    within(frame).getByRole("button", { name: "Close tool" }).focus();
     host!.openTool(company.id, { t: "dokumenty", documentId: "doc_2" });
     await waitFor(() => expect(within(frame).getByRole("heading", { level: 2, name: "Documents" })).toHaveFocus());
+  });
+
+  it("H/L from the persistent Close-tool button focuses the NEW tool's heading", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    let host: SpolkaScreenProps["spolkaTool"] | undefined;
+    render(<Harness onHost={(h) => { host = h; }} />);
+    await screen.findByText("CD Projekt");
+    await user.click(within(screen.getByRole("toolbar", { name: "Workshop" })).getByRole("button", { name: "Claims" }));
+    const frame = await screen.findByRole("group", { name: "Workshop tool" });
+    within(frame).getByRole("button", { name: "Close tool" }).focus();
+
+    host!.openTool(company.id, { t: "notatnik" });
+    await waitFor(() => expect(frame).toHaveAttribute("data-tool", "notatnik"));
+    await waitFor(() => expect(within(frame).getByRole("heading", { level: 2, name: "Notebook" })).toHaveFocus());
   });
 
   it("Escape closes the tool and focuses the closed entry", async () => {
@@ -833,8 +850,12 @@ describe("SpolkaScreen keyboard model (F3c S1)", () => {
     expect(screen.getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "notatnik");
 
     // A second Escape (dialog open) closes only the dialog (Modal's own
-    // Escape → Stay), never the tool.
-    fireEvent.keyDown(document, { key: "Escape" });
+    // Escape → Stay), never the tool — dispatched from the FOCUSED Stay
+    // button, so the portal's React re-dispatch reaches the frame's synthetic
+    // handler on the same keydown (sol diff R1: a document-level dispatch
+    // would skip that path).
+    expect(within(dialog).getByRole("button", { name: "Stay" })).toHaveFocus();
+    fireEvent.keyDown(within(dialog).getByRole("button", { name: "Stay" }), { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "notatnik");
 

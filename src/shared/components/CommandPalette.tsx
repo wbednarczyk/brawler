@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Modal, SearchField } from "../../ui";
+import { focusScreenHeadingIfBody } from "../focus/focusScreenHeading";
 import type { Verb } from "../verbs";
 
 // Shared command palette — the keyboard-first launcher (⌘K). A self-contained,
@@ -49,6 +50,12 @@ export function CommandPalette({
     if (command) {
       command.run();
       onClose();
+      // The Modal restores focus to the invoker on unmount; when that invoker
+      // was `<body>` (Ctrl+K from nowhere) or left with the previous screen,
+      // land on the new screen's heading instead (never `<body>`).
+      requestAnimationFrame(() => {
+        focusScreenHeadingIfBody();
+      });
     }
   }
 

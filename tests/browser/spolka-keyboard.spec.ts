@@ -74,6 +74,20 @@ test.describe("Spółka keyboard reachability", { tag: "@journey" }, () => {
       await expect(tool).toBeHidden();
       await expect(bar.getByRole("button", { name: label, exact: true })).toBeFocused();
     }
+
+    // The 15th entry — Overview — activated by keyboard closes the open tool
+    // and keeps focus on itself.
+    await page.keyboard.press("Control+.");
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await expect(tool).toHaveAttribute("data-tool", "wydarzenia");
+    await page.keyboard.press("Control+.");
+    await page.keyboard.press("Home");
+    await expect(bar.getByRole("button", { name: "Overview" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(tool).toBeHidden();
+    await expect(bar.getByRole("button", { name: "Overview" })).toBeFocused();
+    await expect(bar.getByRole("button", { name: "Overview" })).toHaveAttribute("aria-pressed", "true");
   });
 
   test("every palette tool command and screen command runs from the keyboard", async ({ page }) => {

@@ -28,12 +28,18 @@ test.describe("J8 — keyboard-only company review", { tag: "@journey" }, () => 
     await j.press(page, "Control+K");
     const palette = page.getByRole("dialog", { name: "Command palette" });
     await expect(palette).toBeVisible();
-    await j.fill(palette.getByRole("combobox", { name: "Search commands" }), "Open company: CDR");
+    await j.type(palette.getByRole("combobox", { name: "Search commands" }), "Open company: CDR");
+    await expect(palette.getByRole("option", { name: "Open company: CDR" })).toHaveAttribute("aria-selected", "true");
     await j.press(page, "Enter");
     const spolka = page.getByRole("region", { name: "Company view" });
     await expect(spolka).toBeVisible();
     await j.markScreen("Company workspace");
     await j.preserveContext("company_gpw_cdr");
+    // Focus never falls to <body> after a keyboard screen change (ADR 0076
+    // dec. 9 amendment): the palette's invoker was <body>, so the Spółka
+    // heading takes it.
+    await expect.poll(() => page.evaluate(() => document.activeElement !== document.body)).toBe(true);
+    expect(await spolka.evaluate((el) => el.contains(document.activeElement))).toBe(true);
 
     // Ctrl+. lands on the workshop toolbar's single tab stop (Overview at
     // rest); five ArrowRights reach Claims (Overview, Fundamentals, Feed,

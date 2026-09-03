@@ -83,13 +83,12 @@ function ToolFrame({ tool, ctx }: { tool: Tool; ctx: ToolRenderContext }) {
   // which is read at commit time and is current by construction: the SAME
   // commit that bumps `openSeq` sets `focusIntent`) so a same-kind payload
   // change (`{t:"dokumenty", documentId}` → another id) re-focuses too.
-  // Yields when focus already sits inside the frame (a composer that
-  // autofocuses its own field on mount).
+  // Authoritative (sol diff R1): H/L from the persistent ✕ button must land
+  // on the NEW heading, so no "focus already inside the frame" yield —
+  // `autoFocus` descendants are banned app-wide (uiGuardrails), so nothing
+  // competes.
   useEffect(() => {
     if (ctx.focusIntent !== "heading") return;
-    if (frameRef.current && document.activeElement && frameRef.current.contains(document.activeElement)) {
-      return;
-    }
     headingRef.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on openSeq only; see the comment above
   }, [ctx.openSeq]);

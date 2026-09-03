@@ -190,4 +190,45 @@ describe("Modal", () => {
     fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
     expect(last).toHaveFocus();
   });
+
+  it("containment skips what a browser would never Tab to: hidden inputs, hidden/inert/aria-hidden subtrees, negative tabindex", () => {
+    render(
+      <Modal
+        open
+        onClose={() => {}}
+        title="Dialog"
+        ariaLabel="Dialog"
+        footer={
+          <>
+            <button type="button">Visible last</button>
+            <input type="hidden" />
+            <div hidden>
+              <button type="button">Under hidden</button>
+            </div>
+            <div aria-hidden="true">
+              <button type="button">Under aria-hidden</button>
+            </div>
+            <div style={{ display: "none" }}>
+              <button type="button">Under display none</button>
+            </div>
+            <button type="button" tabIndex={-1}>
+              Negative tabindex
+            </button>
+          </>
+        }
+      >
+        <button type="button">Middle</button>
+      </Modal>,
+    );
+    const visibleLast = screen.getByRole("button", { name: "Visible last" });
+    const close = screen.getByRole("button", { name: "Close dialog" });
+    // Forward wrap from the last REAL tabbable lands on the × button — none of
+    // the decoys is chosen as "last".
+    visibleLast.focus();
+    fireEvent.keyDown(visibleLast, { key: "Tab" });
+    expect(close).toHaveFocus();
+    // Backward wrap from the first lands on the last REAL tabbable.
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(visibleLast).toHaveFocus();
+  });
 });

@@ -482,7 +482,6 @@
 
 .registry-search-field:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 .registry-search-field input {

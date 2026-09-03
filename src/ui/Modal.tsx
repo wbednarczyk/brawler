@@ -26,16 +26,21 @@ export type ModalProps = {
 };
 
 const TABBABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-// Layout-geometry checks (`offsetParent`, `getClientRects`) are unusable here:
-// jsdom (the vitest/browser test harness) never computes layout, so every
-// element would read as invisible. Computed style DOES reflect inline/CSS
-// `display`/`visibility` in jsdom, so that is the filter instead.
-function isVisible(element: HTMLElement): boolean {
-  if (element.hidden) return false;
-  const style = getComputedStyle(element);
-  return style.display !== "none" && style.visibility !== "hidden";
+// Browser-faithful enough for a dialog (sol diff R1): a hidden/inert/
+// aria-hidden ancestor, a negative tabindex, or `display:none`/`visibility:
+// hidden` anywhere up the chain excludes the element. Layout geometry
+// (`offsetParent`, `getClientRects`) is unusable — jsdom (the vitest harness)
+// never computes layout — so the walk reads computed style per ancestor.
+function isTabbable(element: HTMLElement, root: HTMLElement): boolean {
+  if (element.tabIndex < 0) return false;
+  if (element.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
+  for (let node: HTMLElement | null = element; node && node !== root.parentElement; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+  }
+  return true;
 }
 
 export function Modal({ open, onClose, title, children, footer, ariaLabel, className, initialFocusRef }: ModalProps) {
@@ -68,7 +73,7 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
       if (event.key !== "Tab") return;
       const dialog = dialogRef.current;
       if (!dialog) return;
-      const tabbables = Array.from(dialog.querySelectorAll<HTMLElement>(TABBABLE_SELECTOR)).filter(isVisible);
+      const tabbables = Array.from(dialog.querySelectorAll<HTMLElement>(TABBABLE_SELECTOR)).filter((el) => isTabbable(el, dialog));
       if (tabbables.length === 0) return;
       const first = tabbables[0];
       const last = tabbables[tabbables.length - 1];

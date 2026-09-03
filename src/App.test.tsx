@@ -636,5 +636,95 @@ describe("Spółka keyboard shortcuts (F3c S1)", () => {
     await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
     expect(screen.getByLabelText("Company")).toHaveFocus();
   });
+
+  it("Shift+J with a dirty draft asks stay/discard; Stay keeps the company and tool, Discard switches and focuses the picker", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      pinnedCompanyIds: ["company_gpw_cdr", "company_gpw_kgh"],
+    };
+    const user = userEvent.setup();
+    renderApp();
+    const spolka = await openSpolka(user);
+    const startingCompanyId = spolka.getAttribute("data-company-id");
+    await user.click(within(spolka).getByRole("button", { name: "Notebook" }));
+    await screen.findByRole("group", { name: "Workshop tool" });
+    await user.click(await screen.findByRole("button", { name: "New note" }));
+    await user.type(await screen.findByRole("textbox", { name: "Notebook note title" }), "Draft in progress");
+
+    fireEvent.keyDown(document, { key: "J", code: "KeyJ", shiftKey: true });
+    let dialog = await screen.findByRole("dialog", { name: "Unsaved changes in this tool" });
+    await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Unsaved changes in this tool" })).not.toBeInTheDocument());
+    expect(screen.getByRole("region", { name: "Company view" }).getAttribute("data-company-id")).toBe(startingCompanyId);
+    expect(screen.getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "notatnik");
+    expect(document.activeElement).not.toBe(document.body);
+
+    fireEvent.keyDown(document, { key: "J", code: "KeyJ", shiftKey: true });
+    dialog = await screen.findByRole("dialog", { name: "Unsaved changes in this tool" });
+    await user.click(within(dialog).getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Company view" }).getAttribute("data-company-id")).not.toBe(startingCompanyId));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Company")).toHaveFocus();
+  });
+});
+
+// Keyboard navigation never strands focus on <body> (ADR 0076 dec. 9
+// amendment, sol diff R1): a palette command whose invoker was <body> or
+// left with the previous screen lands on the new screen's heading.
+describe("focus never falls to <body> (F3c)", () => {
+  async function runPaletteCommand(user: ReturnType<typeof userEvent.setup>, label: string) {
+    fireEvent.keyDown(document, { key: "K", code: "KeyK", ctrlKey: true });
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    await user.type(within(palette).getByRole("combobox", { name: "Search commands" }), label);
+    const option = within(palette).getByRole("option", { name: label });
+    for (let i = 0; i < 10 && option.getAttribute("aria-selected") !== "true"; i += 1) await user.keyboard("{ArrowDown}");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument());
+  }
+
+  it("Ctrl+K from <body> → Open company: X lands focus on the Spółka heading", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByRole("heading", { name: "Inbox" });
+    (document.activeElement as HTMLElement | null)?.blur?.();
+
+    await runPaletteCommand(user, "Open company: CDR");
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(spolka.contains(document.activeElement)).toBe(true);
+  });
+
+  it("Open screen: Today from the palette lands focus on the Today heading", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByRole("heading", { name: "Inbox" });
+    (document.activeElement as HTMLElement | null)?.blur?.();
+
+    await runPaletteCommand(user, "Open screen: Today");
+    const heading = await screen.findByRole("heading", { name: "Today" });
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+
+  it("a dirty palette company hop + Discard never leaves focus on <body>", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      pinnedCompanyIds: ["company_gpw_cdr", "company_gpw_kgh"],
+    };
+    const user = userEvent.setup();
+    renderApp();
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "CDR" }));
+    const spolka = await screen.findByRole("region", { name: "Company view" });
+    await user.click(within(spolka).getByRole("button", { name: "Notebook" }));
+    await screen.findByRole("group", { name: "Workshop tool" });
+    await user.click(await screen.findByRole("button", { name: "New note" }));
+    await user.type(await screen.findByRole("textbox", { name: "Notebook note title" }), "Draft in progress");
+
+    await runPaletteCommand(user, "Open company: KGH");
+    const dialog = await screen.findByRole("dialog", { name: "Unsaved changes in this tool" });
+    await user.click(within(dialog).getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Company view" }).getAttribute("data-company-id")).toBe("company_gpw_kgh"));
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+  });
 });
 
