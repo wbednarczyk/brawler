@@ -1558,8 +1558,6 @@ Allowed statuses:
 
 ## Activity
 
-Status: planned (v0.81.0, ADR 0109)
-
 The activity read model ([ADR 0109](adr/0109-activity-center-occurrence-ledger.md), #133): one composed view over the durable queue, the `job_runs` occurrence history (data-model § Job runs), the direct-activity registry (awaited refresh/backfill/aggregator/registry/transcript work), and the domain run tables (report-reading runs, history sweeps, re-extraction batches, KPI ingest runs, transcript jobs). Identity is the domain task, never a company bucket; the frontend groups items per company for display only. UI-only reads (`read` classification, not exposed as MCP tools). Both commands run off the UI thread on one pool checkout.
 
 `list_activity()` → `ActivityView`:

@@ -1116,8 +1116,6 @@ Rules:
 
 ### Job runs (activity occurrence history)
 
-Status: planned (v0.81.0, ADR 0109)
-
 `job_runs` (migration `0153`, [ADR 0109](adr/0109-activity-center-occurrence-ledger.md)) records **one occurrence per attempt** of background work — queue jobs and awaited direct work alike — so the Activity panel can state what ran, when, for how long and with what outcome, which the queue cannot (its recurring rows are overwritten in place; `updated_at` is a transition proxy touched by five paths). Distinct from `job_queue` (what must run) and from the dead legacy `jobs` table above.
 
 Fields:
