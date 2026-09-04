@@ -1,7 +1,7 @@
 import { ListChecks } from "lucide-react";
 
 import type { ActivitySummary } from "../../../api/generated/ActivitySummary";
-import { Figure } from "../../../ui";
+import { Button, Figure } from "../../../ui";
 import { useLocale } from "../../locale";
 import { formatListTimestamp } from "../../format/datetime";
 
@@ -29,12 +29,12 @@ export function ActivityIndicator({ summary, onOpen }: ActivityIndicatorProps) {
           : text("Nothing in the background");
 
   return (
-    <button
+    <Button
+      variant="icon"
+      className={active > 0 ? "icon-button-spinning" : undefined}
       aria-label={text("Open activity")}
-      className={["icon-button", active > 0 ? "icon-button-spinning" : ""].filter(Boolean).join(" ")}
       onClick={onOpen}
       title={title}
-      type="button"
     >
       <ListChecks size={18} aria-hidden="true" />
       {active > 0 ? (
@@ -42,6 +42,6 @@ export function ActivityIndicator({ summary, onOpen }: ActivityIndicatorProps) {
       ) : queued > 0 ? (
         <Figure kind="count" value={queued} />
       ) : null}
-    </button>
+    </Button>
   );
 }

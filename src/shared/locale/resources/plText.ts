@@ -2285,8 +2285,10 @@ export const plText: Record<string, string> = {
   "Open transcripts": "Otwórz transkrypcje",
   "Last finished": "Ostatnio zakończone",
   "Attempt": "Próba",
-  "active": "aktywne",
   "in flight": "w toku",
   "7 days": "7 dni",
   // ---- /F3d S2 ----
+  // ---- F3d fixT ----
+  "Close dialog": "Zamknij okno",
+  // ---- /F3d fixT ----
 };

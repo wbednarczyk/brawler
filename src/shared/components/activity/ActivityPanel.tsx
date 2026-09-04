@@ -4,8 +4,9 @@ import type { ActivityItem } from "../../../api/generated/ActivityItem";
 import type { ActivityTarget } from "../../../api/generated/ActivityTarget";
 import type { ActivityView } from "../../../api/generated/ActivityView";
 import { ActionButton, EmptyState, ErrorText, ExpandableRow, Figure, Modal, SectionHeader, Skeleton, StatusChip } from "../../../ui";
-import { useLocale } from "../../locale";
+import { useLocale, type LocaleCode } from "../../locale";
 import { formatListTimestamp } from "../../format/datetime";
+import { ACTIVE_FORMS, FAILED_FORMS, TASK_FORMS, pluralNoun } from "../../locale/plural";
 import { TickerLabel } from "../TickerLabel";
 import { familyLabel, statusLabel } from "./activityLabels";
 
@@ -20,9 +21,16 @@ export type ActivityPanelProps = {
   initialFocusRef?: RefObject<HTMLElement | null>;
 };
 
-// Subject is a document title for these families (D1 table) — rendered mono,
-// never a `[data-figure]` value (it is prose metadata, not a measured figure).
+// Subject is a document reference for these families (D1 table) — but a
+// document's SUBJECT can be a filename ("Raport bieżący Q2 2026.pdf") or a
+// human title ("Poranny przegląd"); only the former is mono (ADR 0104 dec.
+// 2/6, sol diff R1 #15) — a human title renders in the ordinary UI face.
 const DOCUMENT_SUBJECT_FAMILIES = new Set(["reportReading", "ownershipReading", "managementReading", "kpiIngest"]);
+const FILENAME_PATTERN = /\.[a-z0-9]{2,5}$/i;
+
+function isDocumentSubjectMono(item: ActivityItem): boolean {
+  return DOCUMENT_SUBJECT_FAMILIES.has(item.family) && FILENAME_PATTERN.test(item.subject);
+}
 
 function toneForStatus(status: ActivityItem["status"]): "neutral" | "accent" | "ok" | "warn" | "danger" {
   switch (status) {
@@ -107,16 +115,18 @@ function ActivityRow({
   expanded,
   onToggle,
   onNavigate,
+  locale,
   text,
 }: {
   item: ActivityItem;
   expanded: boolean;
   onToggle: () => void;
   onNavigate: (target: ActivityTarget) => void;
+  locale: LocaleCode;
   text: (value: string) => string;
 }) {
   const timestamp = item.finishedAt ?? item.startedAt;
-  const isDocumentSubject = DOCUMENT_SUBJECT_FAMILIES.has(item.family);
+  const isDocumentSubject = isDocumentSubjectMono(item);
 
   return (
     <div className="activity-item" data-activity-target={item.target.kind}>
@@ -132,9 +142,28 @@ function ActivityRow({
         detail={
           <div className="activity-detail">
             {item.error ? <ErrorText as="span">{item.error}</ErrorText> : null}
-            <span className="activity-detail-attempt">
-              {text("Attempt")} <Figure kind="count" value={item.attempt} />
-            </span>
+            {item.progress && item.progress.failed > 0 ? (
+              <span className="activity-detail-failed">
+                <Figure kind="count" value={item.progress.failed} /> {pluralNoun(locale, item.progress.failed, FAILED_FORMS)}
+              </span>
+            ) : null}
+            {item.members.length > 0 ? (
+              <ul className="activity-detail-members">
+                {item.members.map((member, index) => (
+                  <li
+                    key={`${item.id}-member-${index}`}
+                    className={FILENAME_PATTERN.test(member) ? "activity-subject-mono" : undefined}
+                  >
+                    {member}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {item.attempt > 1 ? (
+              <span className="activity-detail-attempt">
+                {text("Attempt")} <Figure kind="count" value={item.attempt} />
+              </span>
+            ) : null}
           </div>
         }
       >
@@ -168,12 +197,14 @@ function ActivityGroups({
   expandedIds,
   toggle,
   onNavigate,
+  locale,
   text,
 }: {
   items: ActivityItem[];
   expandedIds: Set<string>;
   toggle: (id: string) => void;
   onNavigate: (target: ActivityTarget) => void;
+  locale: LocaleCode;
   text: (value: string) => string;
 }) {
   return (
@@ -194,6 +225,7 @@ function ActivityGroups({
               expanded={expandedIds.has(item.id)}
               onToggle={() => toggle(item.id)}
               onNavigate={onNavigate}
+              locale={locale}
               text={text}
             />
           ))}
@@ -277,21 +309,31 @@ export function ActivityPanel({
             <SectionHeader
               level="h3"
               title={text("In progress")}
-              meta={`${activeCount} ${text("active")} · ${queuedCount} ${text("queued")}`}
+              // "active"/"queued" are adjectives (agree with the implicit noun
+              // "zadania"/tasks) — pluralNoun declines "active" (aktywne/aktywnych);
+              // "queued" stays invariant ("w kolejce" needs no declension,
+              // sol diff R1 #15).
+              meta={`${activeCount} ${pluralNoun(locale, activeCount, ACTIVE_FORMS)} · ${queuedCount} ${text("queued")}`}
             />
             <ActivityGroups
               items={inProgress}
               expandedIds={expandedIds}
               toggle={toggle}
               onNavigate={handleNavigate}
+              locale={locale}
               text={text}
             />
-            <SectionHeader level="h3" title={text("Recent")} meta={`${text("7 days")} · ${recent.length}`} />
+            <SectionHeader
+              level="h3"
+              title={text("Recent")}
+              meta={`${text("7 days")} · ${recent.length} ${pluralNoun(locale, recent.length, TASK_FORMS)}`}
+            />
             <ActivityGroups
               items={recent}
               expandedIds={expandedIds}
               toggle={toggle}
               onNavigate={handleNavigate}
+              locale={locale}
               text={text}
             />
           </>

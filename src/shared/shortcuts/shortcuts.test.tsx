@@ -114,24 +114,29 @@ function AppShortcutsHarness({ fired }: { fired: Record<string, number> }) {
 }
 
 describe("one-modal shortcut policy (plan § D4)", () => {
-  it("suppresses every registered app shortcut while a dialog is open; fires normally without one", () => {
+  // sol diff R1 #17: exhaustive over EVERY registered id (not "> 0 fired") —
+  // a single dead binding must redden this, not hide behind an aggregate count.
+  it("every registered app shortcut fires without a dialog, and is inert while one is open", () => {
     const fired: Record<string, number> = {};
     render(<AppShortcutsHarness fired={fired} />);
 
     for (const item of appShortcutReferenceItems) {
       fireEvent.keyDown(document, { ...item.defaultBinding });
     }
-    const firedWithoutModal = { ...fired };
-    expect(Object.keys(firedWithoutModal).length).toBeGreaterThan(0);
+    for (const item of appShortcutReferenceItems) {
+      expect(fired[item.id], `shortcut ${item.id} did not fire without a dialog open`).toBe(1);
+    }
 
-    // Open the modal, reset the tally, replay every binding.
+    // Open the modal, reset the tally, replay every binding — none may fire.
     fireEvent.click(document.querySelector("button")!);
     for (const key of Object.keys(fired)) delete fired[key];
 
     for (const item of appShortcutReferenceItems) {
       fireEvent.keyDown(document, { ...item.defaultBinding });
     }
-    expect(fired).toEqual({});
+    for (const item of appShortcutReferenceItems) {
+      expect(fired[item.id], `shortcut ${item.id} fired while [aria-modal="true"] was present`).toBeUndefined();
+    }
   });
 
   it("does not call preventDefault while a dialog is open (native editing/Escape stay live)", () => {

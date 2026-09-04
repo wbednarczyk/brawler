@@ -48,6 +48,10 @@ function useCoalescedResource<T>(
   const inFlightRef = useRef(false);
   const pendingRef = useRef(false);
   const mountedRef = useRef(true);
+  // Bumped whenever `enabled` goes false — a response tagged with an older
+  // generation is dropped even if it lands after re-enabling (sol R1 #11):
+  // no flash of a stale close-then-reopen response.
+  const generationRef = useRef(0);
   const fetchRef = useRef(fetch);
   fetchRef.current = fetch;
   const onSettledRef = useRef(onSettled);
@@ -60,6 +64,16 @@ function useCoalescedResource<T>(
     };
   }, []);
 
+  // Disabling (panel closed, or the controller disabled) invalidates any
+  // in-flight response's generation and drops a queued coalesced follow-up —
+  // a tick queued just before close cannot fetch-and-apply after close.
+  useEffect(() => {
+    if (!enabled) {
+      generationRef.current += 1;
+      pendingRef.current = false;
+    }
+  }, [enabled]);
+
   const run = useCallback(() => {
     if (!enabled) return;
     if (inFlightRef.current) {
@@ -67,19 +81,24 @@ function useCoalescedResource<T>(
       return;
     }
     inFlightRef.current = true;
+    const generation = generationRef.current;
     fetchRef
       .current()
       .then((value) => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || generation !== generationRef.current) return;
         onSettledRef.current({ value, error: null });
       })
       .catch((cause) => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || generation !== generationRef.current) return;
         onSettledRef.current({ value: undefined, error: String(cause) });
       })
       .finally(() => {
         inFlightRef.current = false;
         if (!mountedRef.current) return;
+        // Note: no generation check here — a coalesced follow-up queued
+        // after close/reopen must still fire (tagged with the CURRENT
+        // generation) even though the settling request's own data (checked
+        // above) belongs to a stale generation and was dropped.
         if (pendingRef.current) {
           pendingRef.current = false;
           run();
@@ -108,7 +127,10 @@ export function useActivityController({ enabled }: { enabled: boolean }): Activi
     setError(result.error);
   });
 
-  const refreshView = useCoalescedResource(enabled, listActivity, (result) => {
+  // Gated by `enabled && open` (sol R1 #11) — closing the panel (or
+  // disabling the controller) mid-flight must invalidate the in-flight
+  // response's generation, not just stop future polling.
+  const refreshView = useCoalescedResource(enabled && open, listActivity, (result) => {
     setLoading(false);
     if (result.error === null) {
       setView(result.value);

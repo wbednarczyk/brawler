@@ -145,6 +145,109 @@ describe("useActivityController — panel view polling", () => {
     expect(mockedView()).toHaveBeenCalledTimes(callsWhileOpen);
   });
 
+  it("closing while a response is in flight drops it — no state update (sol R1 #11)", async () => {
+    let resolveSlow: (value: ActivityView) => void = () => {};
+    mockedView().mockReturnValue(
+      new Promise((resolve) => {
+        resolveSlow = resolve;
+      }),
+    );
+
+    const { result } = renderHook(() => useActivityController({ enabled: true }));
+    act(() => {
+      result.current.setOpen(true);
+    });
+    expect(mockedView()).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.setOpen(false);
+    });
+
+    await act(async () => {
+      resolveSlow({ ...EMPTY_VIEW, generatedAt: "dropped" });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.view).toBeNull();
+    expect(result.current.hydrated).toBe(false);
+  });
+
+  it("close/reopen never flashes the stale (pre-close) generation's response (sol R1 #11)", async () => {
+    let resolveStale: (value: ActivityView) => void = () => {};
+    let resolveFresh: (value: ActivityView) => void = () => {};
+    mockedView()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveStale = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFresh = resolve;
+        }),
+      );
+
+    const { result } = renderHook(() => useActivityController({ enabled: true }));
+    act(() => {
+      result.current.setOpen(true);
+    });
+    expect(mockedView()).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.setOpen(false);
+    });
+    // Reopening while the pre-close request is still in flight only queues
+    // a coalesced follow-up (one in-flight request at a time) — no second
+    // fetch yet.
+    act(() => {
+      result.current.setOpen(true);
+    });
+    expect(mockedView()).toHaveBeenCalledTimes(1);
+
+    // The pre-close (stale-generation) request settles: its data must be
+    // dropped, not applied — the coalesced follow-up (fresh generation)
+    // fires as a result, but hasn't resolved yet.
+    await act(async () => {
+      resolveStale({ ...EMPTY_VIEW, generatedAt: "stale" });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.view).toBeNull();
+    expect(mockedView()).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveFresh({ ...EMPTY_VIEW, generatedAt: "fresh" });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.view?.generatedAt).toBe("fresh");
+  });
+
+  it("disabling the controller mid-flight drops the pending response (sol R1 #11)", async () => {
+    let resolvePending: (value: ActivityView) => void = () => {};
+    mockedView().mockReturnValue(
+      new Promise((resolve) => {
+        resolvePending = resolve;
+      }),
+    );
+
+    const { result, rerender } = renderHook(({ enabled }) => useActivityController({ enabled }), {
+      initialProps: { enabled: true },
+    });
+    act(() => {
+      result.current.setOpen(true);
+    });
+    expect(mockedView()).toHaveBeenCalledTimes(1);
+
+    rerender({ enabled: false });
+
+    await act(async () => {
+      resolvePending({ ...EMPTY_VIEW, generatedAt: "dropped" });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.view).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
+
   it("an error keeps the previous view and sets error", async () => {
     mockedView().mockResolvedValueOnce({ ...EMPTY_VIEW, generatedAt: "first" });
     const { result } = renderHook(() => useActivityController({ enabled: true }));

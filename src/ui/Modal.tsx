@@ -1,6 +1,8 @@
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
+import { useLocale } from "../shared/locale";
+
 // Centered overlay dialog. Dependency-free: backdrop click and Esc close it,
 // focus moves into the dialog on open and is restored on close, and the dialog
 // is marked up as an accessible modal. Renders nothing when closed.
@@ -56,6 +58,7 @@ function isTabbable(element: HTMLElement, root: HTMLElement): boolean {
 }
 
 export function Modal({ open, onClose, title, children, footer, ariaLabel, className, initialFocusRef }: ModalProps) {
+  const { text } = useLocale();
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
@@ -128,7 +131,7 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
       >
         <div className="ui-modal-header">
           <h3>{title}</h3>
-          <button className="ui-modal-close" type="button" aria-label="Close dialog" onClick={onClose}>
+          <button className="ui-modal-close" type="button" aria-label={text("Close dialog")} onClick={onClose}>
             ×
           </button>
         </div>
