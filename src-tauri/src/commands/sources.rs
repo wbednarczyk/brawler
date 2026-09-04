@@ -122,7 +122,7 @@ pub async fn backfill_company_history(
 ) -> Result<storage::BackfillProgress, String> {
     let state = state.inner().clone();
     jobs::scheduler::run_blocking_task(move || {
-        Ok(jobs::backfill::backfill_company_history(
+        Ok(jobs::backfill::backfill_company_history_direct(
             &state,
             &input.company_id,
         ))
@@ -166,12 +166,7 @@ pub async fn refresh_source(
 
     jobs::scheduler::run_blocking_task(move || {
         let trigger = refresh_trigger(trigger);
-        jobs::source_refresh::refresh_source_for_trigger(
-            &state,
-            &adapter_id,
-            &trigger,
-            date.as_deref(),
-        )
+        jobs::source_refresh::refresh_source_direct(&state, &adapter_id, &trigger, date.as_deref())
     })
     .await
 }
@@ -189,7 +184,7 @@ pub async fn refresh_gpw_company_registry(
             .filter(|trigger| trigger == "manual" || trigger == "scheduler" || trigger == "lookup")
             .unwrap_or_else(|| "manual".to_owned());
 
-        jobs::source_refresh::refresh_company_directories_for_trigger(&state, &trigger)
+        jobs::source_refresh::refresh_company_directories_direct(&state, &trigger)
     })
     .await
 }
@@ -219,7 +214,7 @@ pub async fn refresh_gpw_company_registry_if_stale(
             return Ok(None);
         }
 
-        jobs::source_refresh::refresh_company_directories_for_trigger(&state, &trigger).map(Some)
+        jobs::source_refresh::refresh_company_directories_direct(&state, &trigger).map(Some)
     })
     .await
 }

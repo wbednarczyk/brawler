@@ -203,6 +203,12 @@ pub fn run() {
                 }
             };
 
+            // Activity ledger startup reconciliation (ADR 0109 dec. 4): pinned
+            // AFTER the KPI-run reclaim, generic queue reclaim, and KPI queue
+            // reconciliation above, BEFORE any worker lane starts — so no crash
+            // residue is ambiguous once work can resume.
+            jobs::activity_reconcile::reconcile_on_startup(&state);
+
             // Start the durable-queue worker as isolated lanes (ADR 0059): reclaim
             // crash residue, then drain each lane's kinds on its own threads off the
             // UI thread, so a slow source refresh cannot starve autopilot (ADR 0050).
@@ -425,6 +431,8 @@ pub fn run() {
             commands::company_view::get_company_view,
             commands::today::get_today_view,
             commands::today::mark_today_visited,
+            commands::activity::list_activity,
+            commands::activity::get_activity_summary,
             commands::company_health::get_company_health,
             commands::company_health::backfill_company_health_facts,
             commands::company_health::get_red_flags,

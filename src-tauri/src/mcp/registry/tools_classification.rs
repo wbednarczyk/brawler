@@ -81,6 +81,13 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         // agents have parity via list_feed_items/list_company_events/
         // list_claims_due/list_autopilot_runs.
         read("get_today_view"),
+        // Activity composite (ADR 0109, #133): one composed view over the
+        // durable queue, the `job_runs` occurrence history, and the
+        // direct-activity registry — a UI status ledger (topbar + panel), not
+        // a new capability. An agent already has parity/superset access via
+        // MCP KPI-ingest run reads and the domain stores this composes.
+        read("list_activity"),
+        read("get_activity_summary"),
         read("list_watchlist_timeline"), // watchlist-scoped alias of list_research_evidence
         read("list_research_review_state"), // per-scope "reviewed" checkpoints (UI markers)
         read("list_evidence_links"), // internal evidence-graph edges (UI); agent reads the items directly

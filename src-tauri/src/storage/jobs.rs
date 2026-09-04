@@ -336,6 +336,101 @@ impl JobQueueStore {
         }
     }
 
+    /// Settle a claimed job succeeded AND its exact `job_runs` occurrence in ONE
+    /// `BEGIN IMMEDIATE` transaction (ADR 0109 dec. 2), then run retention.
+    /// `run_id` is `None` when [`begin_attempt`](super::job_runs::begin_attempt)
+    /// itself failed or the kind has no resolved identity — the queue row still
+    /// settles normally, just with no occurrence to close.
+    pub fn mark_succeeded_with_run(&self, id: &str, run_id: Option<i64>) -> StorageResult<()> {
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        tx.execute(
+            "
+            UPDATE job_queue
+            SET status = 'succeeded',
+                last_error = NULL,
+                locked_at = NULL,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ?1
+            ",
+            [id],
+        )?;
+        if let Some(run_id) = run_id {
+            super::job_runs::settle(&tx, run_id, &super::job_runs::JobRunOutcome::Succeeded)?;
+            super::job_runs::prune(&tx)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Settle a claimed job's failure AND its exact `job_runs` occurrence in ONE
+    /// `BEGIN IMMEDIATE` transaction (ADR 0109 dec. 2): `Failed` when the queue
+    /// row goes terminally `failed`, `RetryScheduled` when retries remain. Same
+    /// return contract as [`mark_failed`](Self::mark_failed) (`true` = will retry).
+    pub fn mark_failed_with_run(
+        &self,
+        id: &str,
+        error: &str,
+        backoff_seconds: i64,
+        run_id: Option<i64>,
+    ) -> StorageResult<bool> {
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let attempts_and_max: Option<(i64, i64)> = tx
+            .query_row(
+                "SELECT attempts, max_attempts FROM job_queue WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((attempts, max_attempts)) = attempts_and_max else {
+            tx.commit()?;
+            return Ok(false);
+        };
+
+        let will_retry = attempts < max_attempts;
+        if will_retry {
+            tx.execute(
+                "
+                UPDATE job_queue
+                SET status = 'pending',
+                    available_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?2),
+                    last_error = ?3,
+                    locked_at = NULL,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE id = ?1
+                ",
+                params![id, format!("+{} seconds", backoff_seconds.max(0)), error],
+            )?;
+        } else {
+            tx.execute(
+                "
+                UPDATE job_queue
+                SET status = 'failed',
+                    last_error = ?2,
+                    locked_at = NULL,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE id = ?1
+                ",
+                params![id, error],
+            )?;
+        }
+
+        if let Some(run_id) = run_id {
+            let outcome = if will_retry {
+                super::job_runs::JobRunOutcome::RetryScheduled { error }
+            } else {
+                super::job_runs::JobRunOutcome::Failed { error }
+            };
+            super::job_runs::settle(&tx, run_id, &outcome)?;
+            super::job_runs::prune(&tx)?;
+        }
+
+        tx.commit()?;
+        Ok(will_retry)
+    }
+
     /// Requeue crash-residue `running` rows on startup (no worker is alive yet).
     /// A row that already **exhausted its attempts** is dead-lettered instead of
     /// resurrected: it is a job that keeps getting reclaimed and re-run without

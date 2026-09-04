@@ -58,6 +58,11 @@ import type {
   KpiComparisonSeries,
 } from "../../api/comparison";
 import type { ReportDocument } from "../../api/reportDocumentsTypes";
+import type {
+  ActivityItem,
+  ActivitySummary,
+  ActivityView,
+} from "../../api/activity";
 import type { OwnershipOverview } from "../../api/ownership";
 import type { CompanyHealth } from "../../api/companyHealth";
 import type { InsiderOverview } from "../../api/insider";
@@ -1560,6 +1565,198 @@ export function makeBackfillProgress(spec: CompanySpec): BackfillProgress {
     error: null,
     startedAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
+  };
+}
+
+// The Activity center's seeded mock view (ADR 0109, #133) — mirrors the
+// storyboard shape (one active sweep parent with progress, one active report
+// reading, one queued fx pull, two failed readings with a raw error, one
+// succeeded reading, one succeeded source refresh, one briefing) using
+// whatever companies the scenario actually has, so it degrades gracefully
+// under `minimal` (4 companies) as well as `rich`. An `empty` scenario (no
+// companies) returns the honest empty view — the `activity: "empty"` knob.
+export function makeActivityView(companies: readonly Company[]): ActivityView {
+  const generatedAt = SAMPLE_NOW;
+  if (companies.length === 0) {
+    return { active: [], queued: [], recent: [], generatedAt };
+  }
+  const at = (index: number) => companies[index % companies.length];
+  const sweepCompany = at(0);
+  const readingCompany = at(1);
+  const failedCompany = at(2);
+
+  const active: ActivityItem[] = [
+    {
+      id: "job_runs:mock-sweep",
+      activityKey: `report-sweep:mock-${sweepCompany.id}`,
+      family: "reportSweep",
+      status: "running",
+      subject: sweepCompany.ticker,
+      companyId: sweepCompany.id,
+      qualifiedTicker: sweepCompany.qualifiedTicker,
+      progress: { done: 7, total: 12, failed: 0 },
+      inFlight: 5,
+      attempt: 1,
+      startedAt: SAMPLE_NOW,
+      finishedAt: null,
+      error: null,
+      target: {
+        kind: "company",
+        companyId: sweepCompany.id,
+        tool: { t: "pokrycie" },
+      },
+    },
+    {
+      id: "job_runs:mock-reading-active",
+      activityKey: "report-reading:mock-active",
+      family: "reportReading",
+      status: "running",
+      subject: "Raport bieżący Q2 2026.pdf",
+      companyId: readingCompany.id,
+      qualifiedTicker: readingCompany.qualifiedTicker,
+      progress: null,
+      inFlight: null,
+      attempt: 1,
+      startedAt: SAMPLE_NOW,
+      finishedAt: null,
+      error: null,
+      target: {
+        kind: "company",
+        companyId: readingCompany.id,
+        tool: { t: "dokumenty", documentId: "doc_mock_activity_reading_active" },
+      },
+    },
+  ];
+
+  const queued: ActivityItem[] = [
+    {
+      id: "job_queue:mock-fx-pull",
+      activityKey: "fx-pull",
+      family: "fxPull",
+      status: "queued",
+      subject: "NBP – kursy walut",
+      companyId: null,
+      qualifiedTicker: null,
+      progress: null,
+      inFlight: null,
+      attempt: 0,
+      startedAt: SAMPLE_NOW,
+      finishedAt: null,
+      error: null,
+      target: { kind: "sources" },
+    },
+  ];
+
+  const recent: ActivityItem[] = [
+    {
+      id: "job_runs:mock-failed-1",
+      activityKey: "report-reading:mock-failed-1",
+      family: "reportReading",
+      status: "failed",
+      subject: "Raport roczny 2025 skrócony.pdf",
+      companyId: failedCompany.id,
+      qualifiedTicker: failedCompany.qualifiedTicker,
+      progress: null,
+      inFlight: null,
+      attempt: 3,
+      startedAt: SAMPLE_NOW,
+      finishedAt: SAMPLE_NOW,
+      error: "HTTP request failed: error sending request for url (https://example.test/report.pdf)",
+      target: {
+        kind: "company",
+        companyId: failedCompany.id,
+        tool: { t: "dokumenty", documentId: "doc_mock_activity_failed_1" },
+      },
+    },
+    {
+      id: "job_runs:mock-failed-2",
+      activityKey: "report-reading:mock-failed-2",
+      family: "reportReading",
+      status: "failed",
+      subject: "Raport bieżący ESPI 12/2026.pdf",
+      companyId: failedCompany.id,
+      qualifiedTicker: failedCompany.qualifiedTicker,
+      progress: null,
+      inFlight: null,
+      attempt: 3,
+      startedAt: SAMPLE_NOW,
+      finishedAt: SAMPLE_NOW,
+      error: "Parse error: unrecognized document structure",
+      target: {
+        kind: "company",
+        companyId: failedCompany.id,
+        tool: { t: "dokumenty", documentId: "doc_mock_activity_failed_2" },
+      },
+    },
+    {
+      id: "job_runs:mock-succeeded-reading",
+      activityKey: "report-reading:mock-succeeded",
+      family: "reportReading",
+      status: "succeeded",
+      subject: "Raport roczny 2025.pdf",
+      companyId: readingCompany.id,
+      qualifiedTicker: readingCompany.qualifiedTicker,
+      progress: null,
+      inFlight: null,
+      attempt: 1,
+      startedAt: SAMPLE_NOW,
+      finishedAt: SAMPLE_NOW,
+      error: null,
+      target: {
+        kind: "company",
+        companyId: readingCompany.id,
+        tool: { t: "dokumenty", documentId: "doc_mock_activity_succeeded" },
+      },
+    },
+    {
+      id: "job_runs:mock-source-refresh",
+      activityKey: "source-refresh:gpw-espi-ebi",
+      family: "sourceRefresh",
+      status: "succeeded",
+      subject: "GPW ESPI/EBI",
+      companyId: null,
+      qualifiedTicker: null,
+      progress: null,
+      inFlight: null,
+      attempt: 1,
+      startedAt: SAMPLE_NOW,
+      finishedAt: SAMPLE_NOW,
+      error: null,
+      target: { kind: "sources" },
+    },
+    {
+      id: "job_runs:mock-briefing",
+      activityKey: "briefing",
+      family: "briefing",
+      status: "succeeded",
+      subject: "Poranny przegląd",
+      companyId: null,
+      qualifiedTicker: null,
+      progress: null,
+      inFlight: null,
+      attempt: 1,
+      startedAt: SAMPLE_NOW,
+      finishedAt: SAMPLE_NOW,
+      error: null,
+      target: { kind: "today" },
+    },
+  ];
+
+  return { active, queued, recent, generatedAt };
+}
+
+export function makeActivitySummary(view: ActivityView): ActivitySummary {
+  const lastFinishedAt = view.recent.reduce<string | null>(
+    (latest, item) =>
+      item.finishedAt && (!latest || item.finishedAt > latest)
+        ? item.finishedAt
+        : latest,
+    null,
+  );
+  return {
+    active: view.active.length,
+    queued: view.queued.length,
+    lastFinishedAt,
   };
 }
 

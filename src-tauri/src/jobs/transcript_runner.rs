@@ -32,6 +32,14 @@ pub fn run_video_transcript_job(
         .mark_transcript_job_running(job_id)
         .map_err(|error| error.to_string())?;
 
+    // Direct-activity registry (ADR 0109 dec. 3): transcripts are awaited, not
+    // queue jobs — this is the ONE writer for this family, so no double-count
+    // seam exists to guard against.
+    let guard = crate::storage::activity_registry::start(
+        state,
+        crate::jobs::activity_identity::identity_for_transcript(&job),
+    );
+
     match tauri::async_runtime::block_on(provider.transcribe(&job)) {
         Ok(output) => {
             for segment in output.segments {
@@ -52,6 +60,9 @@ pub fn run_video_transcript_job(
                 .mark_transcript_job_completed(job_id)
                 .map_err(|error| error.to_string())?;
             record_transcript_metrics(state, &completed.provider_id, "succeeded", started_at);
+            if let Some(guard) = guard {
+                guard.settle(Ok(()));
+            }
             Ok(completed)
         }
         Err(error) => {
@@ -59,6 +70,9 @@ pub fn run_video_transcript_job(
                 .mark_transcript_job_failed(job_id, error.code(), &error.to_string())
                 .map_err(|storage_error| storage_error.to_string())?;
             record_transcript_metrics(state, &failed.provider_id, "failed", started_at);
+            if let Some(guard) = guard {
+                guard.settle(Err(&error.to_string()));
+            }
             Ok(failed)
         }
     }

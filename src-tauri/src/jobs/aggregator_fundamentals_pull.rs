@@ -210,6 +210,33 @@ pub fn run_aggregator_fundamentals_pull_serialized(
     run_aggregator_fundamentals_pull(state)
 }
 
+/// Direct-activity wrapper for the on-demand entry point (ADR 0109 dec. 3): the
+/// queue's own dispatch calls [`run_aggregator_fundamentals_pull`] directly
+/// (holding the per-adapter lock via `serialization_key`) and writes its own
+/// occurrence via the queue's dispatch seam, so this wrapper — used by the
+/// Tauri command and its MCP twin — is for the awaited command paths only
+/// (going through the locked, serialized entry point so an on-demand run can
+/// never race the daily job) and nothing double-counts.
+pub fn run_aggregator_fundamentals_pull_direct(
+    state: &AppState,
+) -> Result<AggregatorPullSummary, String> {
+    let identity = state.checkout().ok().and_then(|connection| {
+        crate::jobs::activity_identity::identity_for_job(
+            AGGREGATOR_FUNDAMENTALS_PULL_KIND,
+            &format!("direct:{AGGREGATOR_FUNDAMENTALS_PULL_KIND}"),
+            "{}",
+            &connection,
+        )
+    });
+    let guard =
+        identity.and_then(|identity| crate::storage::activity_registry::start(state, identity));
+    let outcome = run_aggregator_fundamentals_pull_serialized(state);
+    if let Some(guard) = guard {
+        guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
+    }
+    outcome
+}
+
 /// Run the full BiznesRadar-primary pull over every tracked company. Synchronous
 /// and offloaded by the caller (the command via `run_blocking_task`, the queue via
 /// a worker thread). Callers other than the queue dispatch (which holds the

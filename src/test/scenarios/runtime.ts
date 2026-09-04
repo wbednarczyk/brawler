@@ -14,6 +14,8 @@ import {
   COMPANY_SPECS,
   SAMPLE_NOW,
   companyId as companyIdFor,
+  makeActivitySummary,
+  makeActivityView,
 } from "./entities";
 import {
   legacyInvalidLicenseStatus,
@@ -313,6 +315,39 @@ function mapReplace<T>(
     return updated;
   });
   return { next, updated };
+}
+
+// ---------------------------------------------------------------------------
+// Activity center (ADR 0109, #133)
+// ---------------------------------------------------------------------------
+
+/** The seeded storyboard view PLUS any `transcript_jobs` still `queued` — a
+ * freshly created transcript job (`create_video_transcript_job`) has no
+ * job_runs/registry entry yet (ADR 0109 dec. 3), so it must project into
+ * `queued`, matching the real backend (`storage::activity_reads`). */
+function deriveActivityView(d: ScenarioData) {
+  const view = makeActivityView(d.companies);
+  const queuedTranscripts = d.transcriptJobs
+    .filter((job) => job.status === "queued")
+    .map((job) => ({
+      id: `transcript_jobs:${job.id}`,
+      activityKey: `transcript:${job.id}`,
+      family: "transcript" as const,
+      status: "queued" as const,
+      subject: job.sourceLabel || job.sourceUrl,
+      companyId: job.companyId,
+      qualifiedTicker:
+        d.companies.find((company) => company.id === job.companyId)
+          ?.qualifiedTicker ?? null,
+      progress: null,
+      inFlight: null,
+      attempt: 0,
+      startedAt: job.createdAt,
+      finishedAt: null,
+      error: null,
+      target: { kind: "transcripts" as const },
+    }));
+  return { ...view, queued: [...view.queued, ...queuedTranscripts] };
 }
 
 // ---------------------------------------------------------------------------
@@ -1612,6 +1647,12 @@ function buildHandlers(): Record<string, Handler> {
         : null;
       return { sourceNextDueMs, registryNextDueMs };
     },
+
+    // Activity center (ADR 0109, #133): a seeded, mirror-the-storyboard view.
+    // Companies-driven, so the `empty` scenario (no companies) reads back the
+    // honest empty view — the `activity: "empty"` knob.
+    list_activity: (d) => deriveActivityView(d),
+    get_activity_summary: (d) => makeActivitySummary(deriveActivityView(d)),
 
     // --- Watchlists ---
     list_watchlists: (d) => d.watchlists,

@@ -19,6 +19,13 @@ interface Step {
   expectContains?: Record<string, unknown>;
   expectAbsent?: Record<string, unknown>;
   /**
+   * When the result is an OBJECT (not itself an array), name the array-valued
+   * field `expectContains`/`expectAbsent` scan (e.g. `"active"` or `"queued"`
+   * on an `ActivityView`). Omitted when the result IS the array (the default,
+   * unchanged behavior).
+   */
+  expectContainsField?: string;
+  /**
    * Dotted-path deep-equality pins (e.g. `"kpi.rows.0.yoyPct"`), for nested
    * fields `expectField`'s shallow `===` can't reach. Read by BOTH replayers
    * (mock_fidelity.rs implements the same dotted-path lookup), so a deep pin
@@ -54,11 +61,35 @@ function getByPath(value: unknown, path: string): unknown {
   }, value);
 }
 
+/** Structural equality (JSON-shaped values only — the DTOs this corpus checks
+ * carry no functions/undefined), mirroring the Rust replayer's
+ * `serde_json::Value` `==`, which is already deep for objects/arrays. Lets
+ * `isSuperset` match nested-object subset values (e.g. `target: { kind: "…" }`),
+ * not just primitives. */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+  }
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const aKeys = Object.keys(a as Record<string, unknown>);
+    const bKeys = Object.keys(b as Record<string, unknown>);
+    if (aKeys.length !== bKeys.length) return false;
+    return aKeys.every((key) =>
+      deepEqual(
+        (a as Record<string, unknown>)[key],
+        (b as Record<string, unknown>)[key],
+      ),
+    );
+  }
+  return false;
+}
+
 /** True when `actual` is an object containing every key/value pair in `subset`. */
 function isSuperset(actual: unknown, subset: Record<string, unknown>): boolean {
   if (!actual || typeof actual !== "object") return false;
   const object = actual as Record<string, unknown>;
-  return Object.entries(subset).every(([key, value]) => object[key] === value);
+  return Object.entries(subset).every(([key, value]) => deepEqual(object[key], value));
 }
 
 describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
@@ -80,17 +111,23 @@ describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
         }
         if (step.expectContains) {
           const subset = step.expectContains;
-          expect(Array.isArray(result), `${step.command} returns array`).toBe(true);
+          const array = step.expectContainsField
+            ? (result as Record<string, unknown>)[step.expectContainsField]
+            : result;
+          expect(Array.isArray(array), `${step.command} returns array`).toBe(true);
           expect(
-            (result as unknown[]).some((item) => isSuperset(item, subset)),
+            (array as unknown[]).some((item) => isSuperset(item, subset)),
             `${step.command} expectContains`,
           ).toBe(true);
         }
         if (step.expectAbsent) {
           const subset = step.expectAbsent;
-          expect(Array.isArray(result), `${step.command} returns array`).toBe(true);
+          const array = step.expectContainsField
+            ? (result as Record<string, unknown>)[step.expectContainsField]
+            : result;
+          expect(Array.isArray(array), `${step.command} returns array`).toBe(true);
           expect(
-            (result as unknown[]).every((item) => !isSuperset(item, subset)),
+            (array as unknown[]).every((item) => !isSuperset(item, subset)),
             `${step.command} expectAbsent`,
           ).toBe(true);
         }

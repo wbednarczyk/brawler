@@ -30,6 +30,8 @@ use serde::{Deserialize, Serialize};
 
 use self::database::{Database, DbGuard};
 
+pub(crate) mod activity_reads;
+pub(crate) mod activity_registry;
 mod analyst_recommendations;
 mod attention;
 mod autopilot;
@@ -54,6 +56,7 @@ mod history_sweeps;
 mod import_export;
 mod ingestion;
 mod insider;
+pub(crate) mod job_runs;
 mod jobs;
 mod kpi_extraction;
 mod kpi_ingest_commit;
@@ -163,6 +166,7 @@ pub use insider::{
     AttachmentConflict, AttachmentMergeOutcome, AttachmentPendingFiling, InsiderOverviewSource,
     InsiderStore, InsiderTransactionRow, SourcedAttachmentUnit,
 };
+pub use job_runs::{JobRunOutcome, JobRunsStore, NewJobRun};
 pub use jobs::{ClaimedJob, JobQueueCounts, JobQueueStore, JobStatusRow};
 pub use kpi_extraction::KpiExtractionStore;
 pub use kpi_extraction::{
@@ -266,44 +270,7 @@ pub use transcripts::{
 pub use types::*;
 pub use watchlists::WatchlistStore;
 
-/// Live progress/diagnostics for an on-track history backfill (ADR 0036). Held in shared
-/// memory (not persisted): backfill is an explicit, app-open-only action, and idempotent
-/// re-runs mean a lost in-flight status is never harmful.
-#[derive(Clone, Debug, Serialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct BackfillProgress {
-    pub company_id: String,
-    /// `running` | `completed` | `failed`.
-    #[cfg_attr(
-        feature = "ts-export",
-        ts(type = "\"running\" | \"completed\" | \"failed\"")
-    )]
-    pub status: String,
-    pub pages_fetched: usize,
-    pub items_ingested: usize,
-    pub documents_stored: usize,
-    pub detail_errors: usize,
-    /// True when the page cap ended the fetch before the configured backfill
-    /// cutoff was reached (ADR 0077 §3) — older filings may be missing. Surfaced
-    /// as an explicit warning in the coverage panel, never silently dropped.
-    pub truncated: bool,
-    /// The chained history sweep's id, when a completed backfill auto-chained one
-    /// (ADR 0077 §3). The sweep row is created **eagerly** at enqueue time, so this
-    /// id is known before the command returns — the coverage panel polls THIS sweep
-    /// specifically (never "the latest sweep", which could be a stale/other one) so
-    /// its status line and AI-budget footer settle on the sweep the backfill
-    /// started, never a false-settle. `None` when nothing was chained (a chain
-    /// failure is best-effort, or the backfill itself failed).
-    pub chained_sweep_id: Option<String>,
-    pub error: Option<String>,
-    pub started_at: String,
-    pub updated_at: String,
-}
+pub use activity_registry::BackfillProgress;
 
 /// Next-due snapshot published by the Rust-side source scheduler (ADR 0055, AV5)
 /// for the UI to render "next refresh at …". Times are epoch milliseconds so they
@@ -353,6 +320,10 @@ pub struct AppState {
     /// concurrently while guaranteeing at most one touches the *same* source —
     /// politeness (no parallel hammering) with no duplicate work.
     sources_in_flight: Arc<Mutex<HashSet<String>>>,
+    /// Live direct-activity entries (ADR 0109 dec. 3): `run_key` -> the open
+    /// `job_runs.id` for awaited (non-queue) work in progress. See
+    /// `storage::activity_registry`.
+    activity_registry: Arc<Mutex<HashMap<String, i64>>>,
     /// The outbound page fetcher for the BiznesRadar fundamentals **witness**
     /// (ADR 0085). Injected rather than constructed inline so the only code that
     /// can reach the network is the code the real app bootstrap installs:
@@ -384,6 +355,7 @@ impl AppState {
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
             scheduler_status: Arc::new(Mutex::new(SchedulerStatus::default())),
             sources_in_flight: Arc::new(Mutex::new(HashSet::new())),
+            activity_registry: Arc::new(Mutex::new(HashMap::new())),
             fundamentals_witness_fetcher: None,
         };
         state.seed_app_data();
@@ -398,6 +370,7 @@ impl AppState {
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
             scheduler_status: Arc::new(Mutex::new(SchedulerStatus::default())),
             sources_in_flight: Arc::new(Mutex::new(HashSet::new())),
+            activity_registry: Arc::new(Mutex::new(HashMap::new())),
             // The one place the live witness fetch is wired: the real app.
             fundamentals_witness_fetcher: Some(Arc::new(
                 crate::source_adapters::biznesradar_fundamentals::HttpFundamentalsWitnessFetcher,
@@ -464,24 +437,6 @@ impl AppState {
         }
     }
 
-    /// Replace the stored backfill progress for a company.
-    pub fn set_backfill_progress(&self, progress: BackfillProgress) {
-        let mut guard = self
-            .backfill_progress
-            .lock()
-            .expect("backfill progress mutex poisoned");
-        guard.insert(progress.company_id.clone(), progress);
-    }
-
-    /// Read the latest backfill progress for a company, if any run has been recorded.
-    pub fn get_backfill_progress(&self, company_id: &str) -> Option<BackfillProgress> {
-        let guard = self
-            .backfill_progress
-            .lock()
-            .expect("backfill progress mutex poisoned");
-        guard.get(company_id).cloned()
-    }
-
     /// Publish the scheduler's next-due snapshot (Rust-side scheduler, ADR 0055).
     pub fn set_scheduler_status(&self, status: SchedulerStatus) {
         let mut guard = self
@@ -543,6 +498,13 @@ impl AppState {
     /// ADR 0050). The in-process worker (`crate::jobs::queue`) drives it.
     pub fn jobs(&self) -> jobs::JobQueueStore {
         jobs::JobQueueStore::new(self.db.clone())
+    }
+
+    /// Activity occurrence-history domain store (ADR 0109 dec. 2): one row per
+    /// attempt of background work. The queue's single dispatch seam and the
+    /// direct-activity registry are the only writers.
+    pub fn job_runs(&self) -> job_runs::JobRunsStore {
+        job_runs::JobRunsStore::new(self.db.clone())
     }
 
     /// Autonomous report pipeline domain store (North Star, v0.49.0 / ADR 0055):

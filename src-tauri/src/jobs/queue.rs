@@ -169,24 +169,82 @@ impl JobWorker {
             None => None,
         };
 
+        // Occurrence ledger (ADR 0109 dec. 2): begin the attempt AFTER the source
+        // lock, before the handler runs. An insert failure (or a kind with no
+        // resolved identity — a wiring gap, never blocking the job itself) skips
+        // to `run_id: None`: the queue row still settles normally, just with no
+        // occurrence to close.
+        // Resolve identity on its own checkout, released before `begin_attempt`
+        // takes its own below — never nested (a nested checkout on the
+        // single-connection pool would deadlock).
+        let identity = self.state.checkout().ok().and_then(|connection| {
+            crate::jobs::activity_identity::identity_for_job(
+                &job.kind,
+                &job.id,
+                &job.payload,
+                &connection,
+            )
+        });
+        let run_id = match identity {
+            Some(identity) => {
+                let new_run = crate::storage::NewJobRun {
+                    activity_key: identity.activity_key,
+                    run_key: job.id.clone(),
+                    kind: job.kind.clone(),
+                    family: identity.family,
+                    company_id: identity.company_id,
+                    subject: identity.subject,
+                    target: identity.target,
+                    attempt: job.attempts,
+                };
+                match self.state.job_runs().begin_attempt(new_run) {
+                    Ok(run_id) => Some(run_id),
+                    Err(error) => {
+                        log::warn!(
+                            "job queue: begin_attempt failed for job {} ({}): {error}; deferring",
+                            job.id,
+                            job.kind
+                        );
+                        store
+                            .defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
+                            .map_err(|error| error.to_string())?;
+                        return Ok(());
+                    }
+                }
+            }
+            None => None,
+        };
+
         // Preflight (id↔payload coherence) composes with the run itself: either
         // failure enters the same settle/retry path, never leaving the row
-        // `running`.
-        let outcome = match handler.as_ref() {
-            Some(handler) => handler
-                .validate_claimed_job(&job)
-                .and_then(|()| handler.run(&job.payload, &self.state)),
-            None => Err(format!("no handler registered for job kind {}", job.kind)),
-        };
+        // `running`. The whole attempt runs under `catch_unwind` (ADR 0109 dec.
+        // 2) so a handler panic is contained: it becomes an ordinary retry/
+        // terminal failure instead of poisoning the worker thread or leaving an
+        // orphan `running` queue row / open occurrence.
+        let outcome =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match handler.as_ref() {
+                Some(handler) => handler
+                    .validate_claimed_job(&job)
+                    .and_then(|()| handler.run(&job.payload, &self.state)),
+                None => Err(format!("no handler registered for job kind {}", job.kind)),
+            }))
+            .unwrap_or_else(|panic_payload| {
+                let message = panic_payload
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| panic_payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "job handler panicked".to_owned());
+                Err(format!("panic: {message}"))
+            });
 
         match outcome {
             Ok(()) => store
-                .mark_succeeded(&job.id)
+                .mark_succeeded_with_run(&job.id, run_id)
                 .map_err(|error| error.to_string())?,
             Err(error) => {
                 let backoff = retry_backoff_seconds(job.attempts);
                 let will_retry = store
-                    .mark_failed(&job.id, &error, backoff)
+                    .mark_failed_with_run(&job.id, &error, backoff, run_id)
                     .map_err(|error| error.to_string())?;
                 if !will_retry {
                     // Event first (deduped, migration 0118), domain transition
@@ -329,349 +387,5 @@ pub fn spawn_pools(worker: Arc<JobWorker>, pools: Vec<WorkerPool>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::storage::open_in_memory_database;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    /// A handler that counts runs and can be told to fail a fixed number of times.
-    struct CountingHandler {
-        kind: &'static str,
-        runs: AtomicUsize,
-        fail_first: usize,
-    }
-
-    impl JobHandler for CountingHandler {
-        fn kind(&self) -> &'static str {
-            self.kind
-        }
-
-        fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
-            let prior = self.runs.fetch_add(1, Ordering::SeqCst);
-            if prior < self.fail_first {
-                Err(format!("transient failure {prior}"))
-            } else {
-                Ok(())
-            }
-        }
-    }
-
-    fn worker_with(handler: Arc<CountingHandler>) -> JobWorker {
-        let state = AppState::new(open_in_memory_database().expect("db"));
-        let mut worker = JobWorker::new(state);
-        worker.register(handler);
-        worker
-    }
-
-    /// A handler that always fails and records hook invocations, to prove the
-    /// terminal hooks fire independent of failure-surface classification.
-    struct HookRecordingHandler {
-        kind: &'static str,
-        preflight_errors: usize,
-        preflights: AtomicUsize,
-        terminal_calls: AtomicUsize,
-    }
-
-    impl JobHandler for HookRecordingHandler {
-        fn kind(&self) -> &'static str {
-            self.kind
-        }
-        fn validate_claimed_job(&self, _job: &ClaimedJob) -> Result<(), String> {
-            let prior = self.preflights.fetch_add(1, Ordering::SeqCst);
-            if prior < self.preflight_errors {
-                Err("preflight rejected".into())
-            } else {
-                Ok(())
-            }
-        }
-        fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
-            Err("always fails".into())
-        }
-        fn on_terminal_failure(&self, _job: &ClaimedJob, _error: &str, _state: &AppState) {
-            self.terminal_calls.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    #[test]
-    fn the_terminal_hook_fires_for_a_kind_with_no_today_surface() {
-        // `on_terminal_failure` runs OUTSIDE the failure-surface classification:
-        // a kind that is not TodayAttention (here: unclassified) still gets its
-        // domain hook exactly once, at the terminal point only.
-        let handler = Arc::new(HookRecordingHandler {
-            kind: "hook-kind",
-            preflight_errors: 0,
-            preflights: AtomicUsize::new(0),
-            terminal_calls: AtomicUsize::new(0),
-        });
-        let worker = {
-            let state = AppState::new(open_in_memory_database().expect("db"));
-            let mut worker = JobWorker::new(state);
-            worker.register(handler.clone());
-            worker
-        };
-        worker
-            .state
-            .jobs()
-            .enqueue("hook-kind:retrying", "hook-kind", "{}", 2)
-            .expect("enqueue retrying");
-        worker.process_one().expect("non-terminal attempt");
-        assert_eq!(
-            handler.terminal_calls.load(Ordering::SeqCst),
-            0,
-            "a non-terminal retry must not fire the hook"
-        );
-        worker
-            .state
-            .jobs()
-            .enqueue("hook-kind:terminal", "hook-kind", "{}", 1)
-            .expect("enqueue terminal");
-        worker.process_one().expect("terminal attempt");
-        assert_eq!(handler.terminal_calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn a_preflight_rejection_settles_the_row_like_a_run_failure() {
-        // `validate_claimed_job` errors enter the ordinary settle/retry path:
-        // the row is retried with backoff, never left `running`, and `run` is
-        // not reached for the rejected attempt.
-        let handler = Arc::new(HookRecordingHandler {
-            kind: "hook-kind",
-            preflight_errors: usize::MAX,
-            preflights: AtomicUsize::new(0),
-            terminal_calls: AtomicUsize::new(0),
-        });
-        let worker = {
-            let state = AppState::new(open_in_memory_database().expect("db"));
-            let mut worker = JobWorker::new(state);
-            worker.register(handler.clone());
-            worker
-        };
-        worker
-            .state
-            .jobs()
-            .enqueue("hook-kind:1", "hook-kind", "{}", 1)
-            .expect("enqueue");
-        worker.process_one().expect("terminal preflight rejection");
-        let status = worker
-            .state
-            .jobs()
-            .status("hook-kind:1")
-            .expect("status")
-            .expect("row");
-        assert_eq!(status.status, "failed");
-        assert_eq!(status.last_error.as_deref(), Some("preflight rejected"));
-        assert_eq!(handler.terminal_calls.load(Ordering::SeqCst), 1);
-    }
-
-    /// A handler that serializes on a fixed source key and counts its runs.
-    struct SerializingHandler {
-        key: &'static str,
-        runs: AtomicUsize,
-    }
-
-    impl JobHandler for SerializingHandler {
-        fn kind(&self) -> &'static str {
-            "serialized-kind"
-        }
-        fn serialization_key(&self, _payload: &str) -> Option<String> {
-            Some(self.key.to_owned())
-        }
-        fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
-            self.runs.fetch_add(1, Ordering::SeqCst);
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn defers_a_job_whose_source_is_already_locked() {
-        // Per-source serialization (ADR 0059): if another worker holds the source
-        // lock, the claimed job is deferred (not run, not failed) and retried later.
-        let handler = Arc::new(SerializingHandler {
-            key: "bankier",
-            runs: AtomicUsize::new(0),
-        });
-        let state = AppState::new(open_in_memory_database().expect("db"));
-        let mut worker = JobWorker::new(state);
-        worker.register(handler.clone());
-        worker
-            .state
-            .jobs()
-            .enqueue("job", "serialized-kind", "{}", 5)
-            .expect("enqueue");
-
-        // Simulate another worker already refreshing this source.
-        let held = worker.state.try_acquire_source("bankier").expect("hold");
-
-        assert!(worker.process_one().expect("process"), "a job was claimed");
-        assert_eq!(
-            handler.runs.load(Ordering::SeqCst),
-            0,
-            "the handler did not run while the source was locked"
-        );
-        let counts = worker.state.jobs().counts().expect("counts");
-        assert_eq!(counts.pending, 1, "deferred back to pending");
-        assert_eq!(counts.failed, 0, "a defer is not a failure");
-
-        // Once the other worker releases the lock, the job runs to success.
-        drop(held);
-        worker
-            .state
-            .jobs()
-            .defer("job", 0)
-            .expect("bring available_at back to now for the test");
-        assert!(worker.process_one().expect("process"));
-        assert_eq!(handler.runs.load(Ordering::SeqCst), 1);
-        assert_eq!(worker.state.jobs().counts().expect("counts").succeeded, 1);
-    }
-
-    #[test]
-    fn process_one_for_kinds_runs_only_its_lane() {
-        // Worker-pool isolation (ADR 0059): the autopilot lane processes its job
-        // even with an older source job waiting — a slow source refresh cannot
-        // starve autopilot the way the single shared worker did.
-        let source = Arc::new(CountingHandler {
-            kind: "scheduled_source_refresh",
-            runs: AtomicUsize::new(0),
-            fail_first: 0,
-        });
-        let autopilot = Arc::new(CountingHandler {
-            kind: "autopilot_stage",
-            runs: AtomicUsize::new(0),
-            fail_first: 0,
-        });
-        let mut worker = JobWorker::new(AppState::new(open_in_memory_database().expect("db")));
-        worker.register(source.clone());
-        worker.register(autopilot.clone());
-
-        // Source enqueued first (older) — the FIFO head — then autopilot.
-        worker
-            .state
-            .jobs()
-            .enqueue("src", "scheduled_source_refresh", "{}", 3)
-            .expect("enqueue src");
-        worker
-            .state
-            .jobs()
-            .enqueue("auto", "autopilot_stage", "{}", 3)
-            .expect("enqueue auto");
-
-        assert!(worker
-            .process_one_for_kinds(&["autopilot_stage"])
-            .expect("process"));
-        assert_eq!(autopilot.runs.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            source.runs.load(Ordering::SeqCst),
-            0,
-            "source lane untouched by the autopilot lane"
-        );
-        let counts = worker.state.jobs().counts().expect("counts");
-        assert_eq!(counts.succeeded, 1);
-        assert_eq!(
-            counts.pending, 1,
-            "the source job stays queued for its lane"
-        );
-    }
-
-    #[test]
-    fn processes_a_registered_job_to_success() {
-        let handler = Arc::new(CountingHandler {
-            kind: "test-ok",
-            runs: AtomicUsize::new(0),
-            fail_first: 0,
-        });
-        let worker = worker_with(handler.clone());
-
-        worker
-            .state
-            .jobs()
-            .enqueue("job-1", "test-ok", "{}", 3)
-            .expect("enqueue");
-
-        assert!(worker.process_one().expect("process"));
-        assert_eq!(handler.runs.load(Ordering::SeqCst), 1);
-
-        let counts = worker.state.jobs().counts().expect("counts");
-        assert_eq!(counts.succeeded, 1);
-        assert_eq!(counts.pending, 0);
-
-        // Nothing left to process.
-        assert!(!worker.process_one().expect("process"));
-    }
-
-    #[test]
-    fn retries_a_transient_failure_then_succeeds() {
-        let handler = Arc::new(CountingHandler {
-            kind: "test-flaky",
-            runs: AtomicUsize::new(0),
-            fail_first: 1,
-        });
-        let worker = worker_with(handler.clone());
-
-        worker
-            .state
-            .jobs()
-            // backoff is in the past on the immediate retry path only via mark_failed's
-            // +N seconds, so use a job that retries with attempts < max and a 0-length
-            // wait is simulated by re-enqueue timing; here we assert it goes back to pending.
-            .enqueue("job-flaky", "test-flaky", "{}", 5)
-            .expect("enqueue");
-
-        // First run fails -> requeued as pending (with backoff in the future).
-        assert!(worker.process_one().expect("process"));
-        let counts = worker.state.jobs().counts().expect("counts");
-        assert_eq!(counts.pending, 1);
-        assert_eq!(counts.failed, 0);
-        assert_eq!(counts.succeeded, 0);
-        assert_eq!(handler.runs.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn exhausts_attempts_into_terminal_failure() {
-        let handler = Arc::new(CountingHandler {
-            kind: "test-broken",
-            runs: AtomicUsize::new(0),
-            fail_first: usize::MAX,
-        });
-        let worker = worker_with(handler.clone());
-
-        // max_attempts = 1: the first failure is terminal.
-        worker
-            .state
-            .jobs()
-            .enqueue("job-broken", "test-broken", "{}", 1)
-            .expect("enqueue");
-
-        assert!(worker.process_one().expect("process"));
-        let counts = worker.state.jobs().counts().expect("counts");
-        assert_eq!(counts.failed, 1);
-        assert_eq!(counts.pending, 0);
-    }
-
-    #[test]
-    fn reclaims_crash_residue_running_rows() {
-        let handler = Arc::new(CountingHandler {
-            kind: "test-ok",
-            runs: AtomicUsize::new(0),
-            fail_first: 0,
-        });
-        let worker = worker_with(handler.clone());
-        let store = worker.state.jobs();
-
-        store
-            .enqueue("job-crashed", "test-ok", "{}", 3)
-            .expect("enqueue");
-        // Simulate a crash mid-run: claim leaves the row 'running', then nothing
-        // completes it.
-        let claimed = store.claim_next().expect("claim").expect("a job");
-        assert_eq!(claimed.id, "job-crashed");
-        assert_eq!(store.counts().expect("counts").running, 1);
-
-        // Startup reclaim requeues it; the worker then completes it.
-        let reclaimed = worker.reclaim_on_startup().expect("reclaim");
-        assert_eq!(reclaimed, 1);
-        assert_eq!(store.counts().expect("counts").pending, 1);
-
-        assert!(worker.process_one().expect("process"));
-        assert_eq!(store.counts().expect("counts").succeeded, 1);
-    }
-}
+#[path = "queue_tests.rs"]
+mod tests;
