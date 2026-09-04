@@ -118,6 +118,16 @@ const RAW_CATALOG = [
     states: ["default"],
     tiers: FULL_TIERS,
   },
+  {
+    // Activity center panel (ADR 0109, #133) — M-only (a topbar dialog, not a
+    // pane-density screen); the seeded view carries progress/count/datetime
+    // figures throughout its rows.
+    screen: "activity-open",
+    spec: "visual-activity.spec.ts",
+    states: ["default"],
+    tiers: M_ONLY,
+    figures: { selector: "[data-figure]", min: 3 },
+  },
 ];
 
 /** Validates a catalog list: rejects duplicate or empty screen ids and entries with no states. */

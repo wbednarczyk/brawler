@@ -2085,7 +2085,10 @@ export const plText: Record<string, string> = {
   "Open settings": "Otwórz ustawienia",
   "Couldn't load transcripts": "Nie udało się wczytać transkrypcji",
   "Loading transcripts…": "Wczytywanie transkrypcji…",
-  "In progress": "Trwa",
+  // F3d S2 (#133): retargeted from the unused "Trwa" to "W toku" — no live
+  // `text("In progress")` call site existed before the Activity panel's
+  // section header adopted it (grep confirmed, 2026-09-04).
+  "In progress": "W toku",
   "Transcript failed": "Nie udało się",
   "Configure Gemini API key in Settings before running transcription": "Skonfiguruj klucz API Gemini w Ustawieniach przed uruchomieniem transkrypcji",
   "Gemini is not configured": "Gemini nie jest skonfigurowany",
@@ -2246,4 +2249,44 @@ export const plText: Record<string, string> = {
   // Palette listbox aria-label (docs/plans/f3c-contracts/s2-palette-focus-ring.md).
   "Commands": "Polecenia",
   // ---- /F3c S2 ----
+  // ---- F3d S2 ----
+  // Activity center (ADR 0109, #133): topbar indicator + panel copy. Family
+  // and status labels (`activityLabels.ts`); "queued"/"running"/"partial" and
+  // "Source refresh"/"Morning briefing"/"Transcript"/"Try again"/"Open
+  // document"/"Open company" reuse their existing exact-match entries above
+  // instead of duplicating a key.
+  "Company refresh": "Odświeżanie komunikatów spółki",
+  "Company registry": "Katalog spółek",
+  "Currency rates": "Kursy walut",
+  "Aggregator financial data": "Dane finansowe z agregatora",
+  "Report history retrieval": "Pobieranie historii raportów",
+  "Bulk report reading": "Czytanie raportów",
+  "Report re-reading": "Ponowne czytanie raportów",
+  "Report reading": "Czytanie raportu",
+  "Ownership reading": "Odczyt akcjonariatu",
+  "Management holdings reading": "Odczyt udziałów zarządu",
+  "Price quote history": "Historia kursów",
+  "KPI collection (agent)": "Zbieranie KPI (agent)",
+  "Unrecognized task": "Zadanie o nieznanym kształcie",
+  "Stalled": "zatrzymane",
+  "Completed": "zakończone",
+  "Did not finish": "nie udało się",
+  "Interrupted": "przerwane",
+  "Open activity": "Otwórz aktywność",
+  "Activity": "Aktywność",
+  "Recent": "Ostatnio",
+  "Sources and system": "Źródła i system",
+  "Nothing is running in the background.": "Nic nie działa w tle.",
+  "Nothing in the background": "Nic w tle",
+  "Could not refresh the list. Showing the state from {time}.":
+    "Nie udało się odświeżyć listy. Pokazuję stan z {time}.",
+  "Open sources": "Otwórz źródła",
+  "Open Today": "Otwórz Dziś",
+  "Open transcripts": "Otwórz transkrypcje",
+  "Last finished": "Ostatnio zakończone",
+  "Attempt": "Próba",
+  "active": "aktywne",
+  "in flight": "w toku",
+  "7 days": "7 dni",
+  // ---- /F3d S2 ----
 };

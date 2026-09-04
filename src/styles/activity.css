@@ -1,0 +1,88 @@
+/* Activity center (ADR 0109, #133): topbar indicator + panel. The dialog
+   establishes its OWN inline-size container (a portal, outside the workspace
+   pane container `shell.css:262` sets up) so the narrow-row rule below can
+   react to the dialog's own width, not the app window's. */
+
+.activity-modal {
+  container-type: inline-size;
+}
+
+.activity-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: min(70vh, 640px);
+  overflow: auto;
+  min-width: 0;
+}
+
+.activity-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.activity-group-heading {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.activity-item {
+  min-width: 0;
+}
+
+.activity-family {
+  font-weight: 600;
+}
+
+.activity-subject {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.activity-subject-mono {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+}
+
+.activity-progress,
+.activity-inflight {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.activity-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) 0 0 var(--space-4);
+}
+
+.activity-detail-attempt {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.activity-error-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 6px;
+}
+
+/* Narrow dialog (960px window / quarter-ultrawide range): the destination
+   action wraps under the row instead of squeezing the subject text. */
+@container (max-width: 640px) {
+  .activity-item .expandable-row-line {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .activity-item .expandable-row-actions {
+    justify-content: flex-end;
+  }
+}

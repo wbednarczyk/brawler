@@ -62,6 +62,12 @@ type AppLifecycleEffectsInput = {
    * Startup load is the controller's own license-gated effect.
    */
   refreshAttention: () => void;
+  /**
+   * Refetch the Activity topbar summary (ADR 0109 dec. 6, #133) on the SAME
+   * 15 s tick — a SIBLING statement of `getSchedulerStatus()`, never inside
+   * its `.then`, so a scheduler-status read failure never blocks the summary.
+   */
+  refreshActivitySummary: () => void;
   refreshGeminiCredentialStatus: () => void;
   refreshHealth: () => void;
   refreshLicenseStatus: () => void;
@@ -108,6 +114,7 @@ export function useAppLifecycleEffects({
   refreshSignals,
   onRefreshCompletion,
   refreshAttention,
+  refreshActivitySummary,
   refreshGeminiCredentialStatus,
   refreshHealth,
   refreshLicenseStatus,
@@ -280,6 +287,10 @@ export function useAppLifecycleEffects({
 
     let cancelled = false;
     const syncScheduler = () => {
+      // Sibling of getSchedulerStatus() below, NOT inside its `.then` — the
+      // Activity summary refreshes on this tick regardless of whether the
+      // scheduler-status read succeeds (#133 contract item 1).
+      refreshActivitySummary();
       void getSchedulerStatus()
         .then((status) => {
           if (cancelled) {

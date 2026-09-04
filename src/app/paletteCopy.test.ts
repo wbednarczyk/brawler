@@ -32,6 +32,7 @@ function collectCommands(locale: LocaleCode): Command[] {
     trackedCompanies,
     onOpenCompany: () => {},
     setActiveSection: () => {},
+    onOpenActivity: () => {},
     text,
   });
   const spolkaToolCommands: Command[] = SPOLKA_TOOL_COMMANDS.map(({ actionKey, label }) => ({

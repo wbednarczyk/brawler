@@ -33,6 +33,7 @@ import * as signalsApi from "../api/signals";
 import { emptyTranscriptJobForm } from "./transcriptForms";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
 import { useAttentionController } from "./useAttentionController";
+import { useActivityController } from "./useActivityController";
 import { AlertsScreenHost } from "./useAlertsScreenWiring";
 import { useAppViewModel } from "./useAppViewModel";
 import { useNotebookController } from "./useNotebookController";
@@ -475,6 +476,8 @@ export function AppStateRoot({
   // THE attention state (ADR 0097 dec. 6): Today's stream, the Alerts fired
   // list, and the sidebar Today badge all consume this one controller.
   const attention = useAttentionController(licenseCanUseApp);
+  // THE Activity center state (ADR 0109 dec. 6, #133) — AppShell renders it.
+  const activity = useActivityController({ enabled: licenseCanUseApp });
 
   const {
     researchMode,
@@ -1025,6 +1028,7 @@ export function AppStateRoot({
     companies,
     spolkaTool,
     refreshAttention: attention.refresh,
+    refreshActivitySummary: activity.refreshSummary,
     onRefreshCompletion: bumpRefreshCompletionCount,
     companyEventCompanyFilter,
     companyEventDateFrom,
@@ -1402,7 +1406,7 @@ export function AppStateRoot({
 
   // Company deep-dive entry points (Spółka default, ADR 0107) — extracted to
   // useCompanyEntryActions.
-  const { openCompanyWorkspaceById, openSpolkaMode } = useCompanyEntryActions({
+  const { openCompanyWorkspaceById, openSpolkaMode, onNavigateToActivityTarget } = useCompanyEntryActions({
     companies,
     pinnedCompanyIds,
     selectedCompanyId,
@@ -1489,8 +1493,7 @@ export function AppStateRoot({
       <SettingsProvider value={settings ?? null}>
         <AppShell
           activeSection={activeSection}
-          dbRefreshState={dbRefreshState}
-          effectiveTheme={effectiveTheme}
+          dbRefreshState={dbRefreshState} effectiveTheme={effectiveTheme}
           health={health}
           openSourceStatus={openSourceStatus}
           refreshDatabaseBackedViews={refreshDatabaseBackedViews}
@@ -1503,18 +1506,15 @@ export function AppStateRoot({
           selectedCompanyId={selectedCompanyId}
           onOpenCompany={openPinnedCompany}
           onUnpinCompany={unpinCompany}
-          sourceRefreshError={sourceRefreshError}
-          sourceRefreshResult={sourceRefreshResult}
+          sourceRefreshError={sourceRefreshError} sourceRefreshResult={sourceRefreshResult}
           sourceRefreshState={sourceRefreshState}
           sourceStatusSummary={sourceStatusSummary}
-          theme={theme}
-          locale={locale}
-          shortcutBindings={shortcutBindings}
-          shortcutActions={shortcutActions}
+          theme={theme} locale={locale}
+          shortcutBindings={shortcutBindings} shortcutActions={shortcutActions}
           totalUnreadFeedItems={totalUnreadFeedItems}
-          unseenAttentionCount={attention.unseenCount}
-          attentionHydrated={attention.hydrated}
+          unseenAttentionCount={attention.unseenCount} attentionHydrated={attention.hydrated}
           updateTheme={updateTheme}
+          activity={activity} onNavigateToActivityTarget={onNavigateToActivityTarget}
         >
           <section
             className={
