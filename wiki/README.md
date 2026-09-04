@@ -89,6 +89,9 @@ per feature.
   the ESPI witness that audits your official-report feed and warns when the
   primary source missed a disclosure; the KNF short-selling register as a
   signal + dashboard panel; and the auditor-opinion red-flag signal.
+- **[Activity](activity.md)** — the top-bar Activity icon and panel: what
+  background work runs now, what finished in the last 7 days, and one action
+  per task that lands on its result.
 - **[Sources](sources.md)** — the source status/diagnostics screen: what
   every official-report, calendar, media, and company-directory feed is,
   its health, its schedule, and its last-run result; refresh one or all,

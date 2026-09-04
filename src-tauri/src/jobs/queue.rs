@@ -177,14 +177,28 @@ impl JobWorker {
         // Resolve identity on its own checkout, released before `begin_attempt`
         // takes its own below — never nested (a nested checkout on the
         // single-connection pool would deadlock).
-        let identity = self.state.checkout().ok().and_then(|connection| {
-            crate::jobs::activity_identity::identity_for_job(
+        // A checkout failure defers exactly like a `begin_attempt` failure:
+        // a registered kind must never run unrecorded (the read model would
+        // call its running row `stalled`).
+        let identity = match self.state.checkout() {
+            Ok(connection) => crate::jobs::activity_identity::identity_for_job(
                 &job.kind,
                 &job.id,
                 &job.payload,
                 &connection,
-            )
-        });
+            ),
+            Err(error) => {
+                log::warn!(
+                    "job queue: identity checkout failed for job {} ({}): {error}; deferring",
+                    job.id,
+                    job.kind
+                );
+                store
+                    .defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
+                    .map_err(|error| error.to_string())?;
+                return Ok(());
+            }
+        };
         let run_id = match identity {
             Some(identity) => {
                 let new_run = crate::storage::NewJobRun {
