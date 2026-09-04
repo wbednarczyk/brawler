@@ -561,7 +561,7 @@ pub(crate) fn stalled_autopilot_runs(
 ) -> StorageResult<Vec<(StalledDomainRow, String)>> {
     // sol diff R1 #12: candidates are every non-terminal, non-sweep-child
     // run; liveness itself is checked per-candidate via
-    // `crate::jobs::autopilot::has_live_stage_job` — an exact `IN` match
+    // `crate::jobs::autopilot_liveness::has_live_stage_job` — an exact `IN` match
     // over the five deterministic stage ids, never the previous `id LIKE
     // 'autopilot:' || autopilot_run.id || ':%'` (exploitable by a run id
     // containing `_`, a SQLite LIKE wildcard, into a false-positive "live"
@@ -591,7 +591,7 @@ pub(crate) fn stalled_autopilot_runs(
 
     let mut out = Vec::new();
     for (domain, document_id) in candidates {
-        if !crate::jobs::autopilot::has_live_stage_job(connection, &domain.id)? {
+        if !crate::jobs::autopilot_liveness::has_live_stage_job(connection, &domain.id)? {
             out.push((domain, document_id));
         }
     }

@@ -3,6 +3,7 @@ pub mod activity_identity;
 pub mod activity_reconcile;
 pub mod aggregator_fundamentals_pull;
 pub mod autopilot;
+pub mod autopilot_liveness;
 pub mod backfill;
 pub mod failure_surface;
 pub mod fx_daily_pull;

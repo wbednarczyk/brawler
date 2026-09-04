@@ -55,11 +55,10 @@ pub const DIRECT_PATHS: &[DirectPath] = &[
         defining_file: "jobs/aggregator_fundamentals_pull.rs",
         extra_allowed_files: &[(
             "jobs/rebuild_fundamentals.rs",
-            "documented exception (2026-09-04, this task): `run_rebuild_fundamentals` is a rare, \
-             whole-corpus (3-pass) maintenance rebuild command, not itself Activity-ledgered — \
-             wrapping only its Pass-1 sub-call would misrepresent the rebuild's true scope. Flagged \
-             to the owner rather than silently fixed; revisit if rebuild_fundamentals joins the \
-             Activity ledger.",
+            "ADR 0109 dec. 3 exclusion: the headless-only `run_rebuild_fundamentals` (a rare \
+             whole-corpus 3-pass maintenance rebuild) is deliberately outside the Activity \
+             ledger — wrapping only its Pass-1 sub-call would misrepresent the rebuild's scope. \
+             Revisit only with an ADR 0109 amendment.",
         )],
     },
     DirectPath {

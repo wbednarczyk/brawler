@@ -111,7 +111,7 @@ fn fail_orphaned_autopilot_runs(state: &AppState) -> Result<(), String> {
         // (`jobs::autopilot::has_live_stage_job`) — never a `LIKE` prefix
         // match, which a `run_id` containing `_` (a SQLite LIKE wildcard)
         // could exploit into a false-positive "still live" read.
-        let live_stage = crate::jobs::autopilot::has_live_stage_job(&connection, &run_id)
+        let live_stage = crate::jobs::autopilot_liveness::has_live_stage_job(&connection, &run_id)
             .map_err(|e| e.to_string())?;
         if live_stage {
             continue;
