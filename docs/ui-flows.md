@@ -355,7 +355,7 @@ Acceptance criteria:
 
 ## Journey: See What The App Is Doing (Activity)
 
-Status: planned (v0.81.0, [ADR 0109](adr/0109-activity-center-occurrence-ledger.md), #133)
+Delivered v0.81.0 ([ADR 0109](adr/0109-activity-center-occurrence-ledger.md), #133).
 
 Intent: from anywhere, learn what background work runs now and what just finished, and jump to the place where its result (or failure) can be acted on.
 

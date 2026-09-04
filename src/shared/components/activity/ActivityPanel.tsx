@@ -93,6 +93,15 @@ function groupByCompany(items: ActivityItem[]): Group[] {
   return groups;
 }
 
+// A company-keyed task (sweep, history fetch, company refresh, price history)
+// carries the ticker as its raw subject; under the company group heading that
+// would read twice, so the row shows the family alone (ADR 0104 dec. 5:
+// detail never repeats what the heading already said).
+function subjectRepeatsTicker(item: ActivityItem): boolean {
+  const ticker = item.qualifiedTicker?.split(":").pop();
+  return Boolean(ticker) && item.subject === ticker;
+}
+
 function ActivityRow({
   item,
   expanded,
@@ -129,8 +138,9 @@ function ActivityRow({
           </div>
         }
       >
+        <span className="activity-line">
         <span className="activity-family">{familyLabel(item.family, text)}</span>
-        {item.subject ? (
+        {item.subject && !subjectRepeatsTicker(item) ? (
           <span className={isDocumentSubject ? "activity-subject activity-subject-mono" : "activity-subject"}>
             {item.subject}
           </span>
@@ -147,6 +157,7 @@ function ActivityRow({
             <Figure kind="count" value={item.inFlight} /> {text("in flight")}
           </span>
         ) : null}
+        </span>
       </ExpandableRow>
     </div>
   );

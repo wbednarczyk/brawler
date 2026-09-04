@@ -1493,7 +1493,8 @@ export function AppStateRoot({
       <SettingsProvider value={settings ?? null}>
         <AppShell
           activeSection={activeSection}
-          dbRefreshState={dbRefreshState} effectiveTheme={effectiveTheme}
+          dbRefreshState={dbRefreshState}
+          effectiveTheme={effectiveTheme}
           health={health}
           openSourceStatus={openSourceStatus}
           refreshDatabaseBackedViews={refreshDatabaseBackedViews}
@@ -1506,15 +1507,20 @@ export function AppStateRoot({
           selectedCompanyId={selectedCompanyId}
           onOpenCompany={openPinnedCompany}
           onUnpinCompany={unpinCompany}
-          sourceRefreshError={sourceRefreshError} sourceRefreshResult={sourceRefreshResult}
+          sourceRefreshError={sourceRefreshError}
+          sourceRefreshResult={sourceRefreshResult}
           sourceRefreshState={sourceRefreshState}
           sourceStatusSummary={sourceStatusSummary}
-          theme={theme} locale={locale}
-          shortcutBindings={shortcutBindings} shortcutActions={shortcutActions}
+          theme={theme}
+          locale={locale}
+          shortcutBindings={shortcutBindings}
+          shortcutActions={shortcutActions}
           totalUnreadFeedItems={totalUnreadFeedItems}
-          unseenAttentionCount={attention.unseenCount} attentionHydrated={attention.hydrated}
+          unseenAttentionCount={attention.unseenCount}
+          attentionHydrated={attention.hydrated}
           updateTheme={updateTheme}
-          activity={activity} onNavigateToActivityTarget={onNavigateToActivityTarget}
+          activity={activity}
+          onNavigateToActivityTarget={onNavigateToActivityTarget}
         >
           <section
             className={
