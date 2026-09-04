@@ -125,7 +125,11 @@ function ActivityRow({
   locale: LocaleCode;
   text: (value: string) => string;
 }) {
-  const timestamp = item.finishedAt ?? item.startedAt;
+  // A queued queue row carries its ORIGINAL enqueue time as `startedAt` (a
+  // recurring id re-armed months later still says July) — showing it would
+  // read as "waiting since July". Queued rows show no time; running rows show
+  // when they started, terminal rows when they finished (live-drive 2026-09-04).
+  const timestamp = item.status === "queued" ? null : (item.finishedAt ?? item.startedAt);
   const isDocumentSubject = isDocumentSubjectMono(item);
   const target = item.target;
   // sol diff R2 finding 8: the live harness needs the row's declared
