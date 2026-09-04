@@ -1590,13 +1590,14 @@ The activity read model ([ADR 0109](adr/0109-activity-center-occurrence-ledger.m
   "startedAt": "2026-09-03T11:58:02Z",
   "finishedAt": "2026-09-03T12:01:11Z",
   "error": "HTTP request failed: error sending request for url (…)",
+  "members": ["Raport roczny 2025.pdf", "Raport półroczny 2025.pdf"],
   "target": { "kind": "company", "companyId": "company_gpw_pas", "tool": { "t": "dokumenty", "documentId": "doc_…" } }
 }
 ```
 
 - `family` ∈ `sourceRefresh | companyRefresh | registryRefresh | fxPull | fundamentalsPull | briefing | historyFetch | reportSweep | reextraction | reportReading | ownershipReading | managementReading | priceHistory | kpiIngest | transcript | corrupted` — exhaustive; every registered queue kind and every instrumented awaited path maps to exactly one family (gate-enforced), a registered kind with an unparseable payload yields `corrupted` (subject = the job id), rows of unregistered kinds are excluded.
 - `status` ∈ `queued | running | stalled | succeeded | failed | partial | interrupted`. `partial` only when the domain task says so (a run finalized `partial`, a sweep/batch with mixed member outcomes).
-- `subject` is raw source data (document title, adapter display name, video title/URL) — never composed prose. `progress` only for parents (sweep, batch, backfill) with real counters; `inFlight` = non-terminal members of a running parent.
+- `subject` is raw source data (document title, adapter display name, video title/URL) — never composed prose; system tasks (briefing, registry refresh) ship `""` and the family label carries the name. `progress` only for parents (sweep, batch, backfill) with real counters; `inFlight` = non-terminal members of a running parent; `members` = a bounded (≤ 10) list of a parent's raw member subjects, `[]` otherwise. A parent's terminal status is derived from ALL its members (mixed → `partial`, all failed → `failed`, all succeeded → `succeeded`), never from the parent row alone.
 - `target` ∈ `{ kind: "company", companyId, tool }` (`tool` = a Spółka `Tool` value — `{t:"feed"}`, `{t:"pokrycie"}`, `{t:"dokumenty", documentId}` — or `null` for the core Overview) · `{ kind: "sources" }` · `{ kind: "today" }` · `{ kind: "transcripts" }`.
 
 `get_activity_summary()` → `ActivitySummary` (two indexed counts + one max, polled every 15 s by the shell):

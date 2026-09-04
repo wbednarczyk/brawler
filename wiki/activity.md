@@ -26,8 +26,8 @@ Open it by clicking the icon or with `Ctrl+K → Open activity`.
 
 - **In progress** — every running, queued or stalled task, grouped per
   company (company-independent work sits under *Sources and system*). A
-  history sweep shows its progress (`7/12`); a queued task shows when its next
-  attempt is due.
+  history sweep shows its progress (`7/12`); a queued task that is retrying
+  shows its attempt count and the last error when you expand it.
 - **Recent** — the last 7 days, newest first (up to 40 tasks). Each row says
   what the task was (*Report reading*, *Source refresh*, *History fetch*, …),
   on what (the document's title, the company's ticker, the source's name),

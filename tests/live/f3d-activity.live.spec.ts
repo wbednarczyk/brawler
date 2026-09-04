@@ -76,7 +76,8 @@ test("activity panel on the real app: open, read, land on a declared destination
     await expect(rows.nth(index).locator("[data-action-kind='destination']")).toHaveCount(1);
   }
 
-  // Follow every row's declared destination (capped at 5 on a busy database):
+  // Follow each of the first five rows' declared destinations (a busy database
+  // has 40; five cover every target kind the seeded ledger produces):
   // re-open the panel for each row, read the target kind the backend shipped
   // (data-activity-target — the row never guesses), click its one action and
   // assert the screen it named.
@@ -89,15 +90,29 @@ test("activity panel on the real app: open, read, land on a declared destination
     }
     const row = rows.nth(index);
     const targetKind = await row.getAttribute("data-activity-target");
+    const targetTool = await row.getAttribute("data-activity-tool");
+    const targetDocument = await row.getAttribute("data-activity-document");
     const action = row.locator("[data-action-kind='destination']");
     const label = (await action.textContent())?.trim() ?? "";
     testInfo.annotations.push({ type: `row-${index}-target`, description: `${targetKind} · ${label}` });
     await action.click();
     await expect(dialog).toBeHidden();
     switch (targetKind) {
-      case "company":
+      case "company": {
         await expect(page.getByRole("region", { name: /Widok spółki|Company view/ })).toBeVisible({ timeout: 15_000 });
+        // The declared tool must be the one that opened (Overview = no tool),
+        // and a document target must land on the highlighted document row.
+        const tool = page.getByRole("group", { name: /Workshop tool|Narzędzie warsztatu/ });
+        if (targetTool && targetTool !== "overview") {
+          await expect(tool).toHaveAttribute("data-tool", targetTool, { timeout: 15_000 });
+        } else {
+          await expect(tool).toHaveCount(0);
+        }
+        if (targetDocument) {
+          await expect(page.locator(`[data-document-id="${targetDocument}"]`)).toBeVisible({ timeout: 15_000 });
+        }
         break;
+      }
       case "sources":
         await expect(page.getByRole("region", { name: /^(Źródła|Sources)$/ })).toBeVisible({ timeout: 15_000 });
         break;
