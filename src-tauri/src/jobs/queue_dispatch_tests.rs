@@ -541,3 +541,121 @@ fn a_max_attempt_scaffolding_panic_still_runs_terminal_hooks() {
          the ordinary error branch"
     );
 }
+
+/// A handler whose ordinary `run` fails, and whose `failure_context` AND
+/// `on_terminal_failure` BOTH panic (sol diff R4 #3) — reuses
+/// `MORNING_BRIEFING_KIND` so `failure_surface` classifies it
+/// `TodayAttention`, the one surface that actually calls `failure_context`.
+struct PanicsInBothTerminalHooksHandler {
+    /// Bumped BEFORE each hook panics — proves the hook actually ran (rather
+    /// than the surrounding call never reaching it), and that BOTH hooks run
+    /// independently: a single shared `catch_unwind` around the old direct
+    /// `surface_terminal_failure` + `on_terminal_failure` call pair would stop
+    /// at the FIRST panic, so `on_terminal_failure` (called second) would
+    /// never even run.
+    failure_context_calls: AtomicUsize,
+    on_terminal_failure_calls: AtomicUsize,
+}
+
+impl JobHandler for PanicsInBothTerminalHooksHandler {
+    fn kind(&self) -> &'static str {
+        crate::jobs::morning_briefing::MORNING_BRIEFING_KIND
+    }
+    fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
+        Err("boom: ordinary handler failure".to_owned())
+    }
+    fn failure_context(
+        &self,
+        _job: &ClaimedJob,
+        _state: &AppState,
+    ) -> (Option<String>, Option<String>) {
+        self.failure_context_calls.fetch_add(1, Ordering::SeqCst);
+        panic!("boom: failure_context panicked");
+    }
+    fn on_terminal_failure(&self, _job: &ClaimedJob, _error: &str, _state: &AppState) {
+        self.on_terminal_failure_calls
+            .fetch_add(1, Ordering::SeqCst);
+        panic!("boom: on_terminal_failure panicked");
+    }
+}
+
+#[test]
+fn terminal_hooks_that_both_panic_never_take_down_the_worker() {
+    // sol diff R4 #3: `run_terminal_hooks_no_unwind` wraps `surface_terminal_failure`
+    // (which calls the handler's `failure_context`) and `handler.on_terminal_failure`
+    // EACH in their own `catch_unwind` — before this fix, the ordinary error
+    // branch (and the panic arm, and the non-panicking `Drop` fallback) called
+    // both directly and uncontained, so either panicking would escape past
+    // the point where `dispatch`'s own outer `catch_unwind` had already
+    // returned, killing the worker thread.
+    let handler = Arc::new(PanicsInBothTerminalHooksHandler {
+        failure_context_calls: AtomicUsize::new(0),
+        on_terminal_failure_calls: AtomicUsize::new(0),
+    });
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let mut worker = JobWorker::new(state);
+    worker.register(handler.clone());
+    worker.register(Arc::new(OkHandler));
+
+    worker
+        .state
+        .jobs()
+        // max_attempts = 1: this claim IS the last attempt, so `run`'s
+        // ordinary error is terminal on the first try — the ORDINARY error
+        // branch invokes the terminal hooks, never the panic arm.
+        .enqueue("job-1", handler.kind(), "{}", 1)
+        .expect("enqueue");
+
+    assert!(
+        worker.process_one().expect(
+            "process must survive a handler whose failure_context AND on_terminal_failure both panic"
+        ),
+        "the panics are contained; the worker keeps going"
+    );
+
+    let status = worker
+        .state
+        .jobs()
+        .status("job-1")
+        .expect("status")
+        .expect("row");
+    assert_eq!(
+        status.status, "failed",
+        "the row must be terminal exactly once, despite both hooks panicking"
+    );
+    assert_eq!(
+        job_runs_statuses(&worker.state),
+        vec!["failed"],
+        "no second settle: exactly one terminal occurrence row"
+    );
+    assert_eq!(
+        handler.failure_context_calls.load(Ordering::SeqCst),
+        1,
+        "failure_context must run (and its panic must be caught on its own)"
+    );
+    assert_eq!(
+        handler.on_terminal_failure_calls.load(Ordering::SeqCst),
+        1,
+        "on_terminal_failure must ALSO run, independent of failure_context's panic — a single \
+         shared catch_unwind around both calls would stop at the first panic and never reach \
+         this one"
+    );
+
+    // The SAME worker instance keeps processing the next job normally.
+    worker
+        .state
+        .jobs()
+        .enqueue("other-ok", "test-ok-after-panic", "{}", 1)
+        .expect("enqueue second");
+    assert!(worker.process_one().expect("second job processes fine"));
+    assert_eq!(
+        worker
+            .state
+            .jobs()
+            .status("other-ok")
+            .expect("status")
+            .expect("row")
+            .status,
+        "succeeded"
+    );
+}

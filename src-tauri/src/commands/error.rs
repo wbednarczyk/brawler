@@ -292,6 +292,9 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // The queue row vanished mid-settle (sol diff R1 #2) — an invariant
         // violation in stored state, not a shape problem with the request.
         StorageError::JobQueueRowMissingDuringSettle { .. } => Internal,
+        // A sweep/batch parent's declared member set failed verification
+        // (sol diff R4 #2) — corrupt producer bookkeeping, not caller input.
+        StorageError::ActivityParentMemberInvariant { .. } => Internal,
     }
 }
 

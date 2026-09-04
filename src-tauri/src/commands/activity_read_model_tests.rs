@@ -733,6 +733,60 @@ fn a_forced_storage_failure_surfaces_in_the_summary_too() {
     );
 }
 
+#[test]
+fn a_corrupt_stalled_activity_key_surfaces_from_the_summary() {
+    // sol diff R4 #1: `activity_key_for_occurrence` used to `.ok()` away a
+    // genuine SQL/decode failure into the same `None` a truly absent row
+    // produces — `resolved_key_statuses` then silently dropped the stalled
+    // key from the summary, letting a lower-precedence queued row with the
+    // SAME key leak into the topbar count instead. Force a settle-failed
+    // (stalled) registry entry, then corrupt that row's `activity_key` into
+    // an undecodable BLOB and prove the summary now errors, never silently
+    // omits it.
+    let state = state();
+    let identity = crate::jobs::activity_identity::ActivityIdentity {
+        activity_key: "report-sweep:stalled-key-test".to_owned(),
+        family: ActivityFamily::ReportSweep,
+        company_id: None,
+        subject: "GPW ESPI/EBI".to_owned(),
+        target: ActivityTarget::Today,
+    };
+    let guard = crate::storage::activity_registry::start(&state, identity);
+
+    // Poison the settle UPDATE specifically (same recipe as
+    // `activity_registry::tests::a_forced_settle_failure_keeps_the_entry_live_as_settle_failed`)
+    // so `begin_attempt`'s earlier INSERT already succeeded and the entry
+    // lands as `settle_failed` (stalled).
+    state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute_batch(
+            "CREATE TRIGGER poison_settle BEFORE UPDATE ON job_runs
+             BEGIN SELECT RAISE(ABORT, 'settle poisoned for test'); END;",
+        )
+        .expect("install poison trigger");
+    guard.settle(Ok(()));
+
+    let connection = state.checkout_for_tests().expect("checkout");
+    connection
+        .execute_batch("DROP TRIGGER poison_settle;")
+        .expect("remove poison trigger before corrupting the row");
+    connection
+        .execute(
+            "UPDATE job_runs SET activity_key = X'ff' WHERE activity_key = 'report-sweep:stalled-key-test'",
+            [],
+        )
+        .expect("corrupt activity_key to force a real decode failure");
+    drop(connection);
+
+    let result = compute_activity_summary(&state);
+    assert!(
+        result.is_err(),
+        "a corrupt stalled activity_key must surface as an error, never a silently-omitted \
+         key: {result:?}"
+    );
+}
+
 // ------------------------------------------------------------------
 // Parent-task evidence (sol diff R1 #14)
 // ------------------------------------------------------------------

@@ -161,6 +161,55 @@ fn surface_terminal_failure(state: &AppState, job: &ClaimedJob, handler: Option<
     }
 }
 
+/// Run both terminal hooks — `surface_terminal_failure` (which itself calls
+/// the handler's `failure_context`) and `handler.on_terminal_failure` — with
+/// NO unwind past this function (sol diff R4 #3), each wrapped in its OWN
+/// `catch_unwind` independently, so a handler whose `failure_context` OR
+/// `on_terminal_failure` panics can never propagate out of here. Before this
+/// fix, `ClaimGuard`'s non-panic `Drop` fallback (and the outer dispatch-level
+/// panic arm) invoked both directly and uncontained: a panic in either would
+/// propagate past the point `dispatch`'s own outer `catch_unwind` had already
+/// returned from (the `Drop` case) or was already inside (the panic-arm
+/// case), killing the worker thread — or, if it happened while the guard
+/// itself was unwinding, aborting the process outright. Used identically from
+/// the ordinary error branch, the outer panic arm, and the non-panicking
+/// `Drop` fallback — callers keep the "never while `std::thread::panicking()`"
+/// rule themselves; invoking arbitrary handler code mid-unwind is what this
+/// helper does NOT protect against.
+fn run_terminal_hooks_no_unwind(
+    state: &AppState,
+    job: &ClaimedJob,
+    handler: Option<&dyn JobHandler>,
+    error: &str,
+) {
+    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        surface_terminal_failure(state, job, handler);
+    }))
+    .is_err()
+    {
+        log::error!(
+            "job queue: surface_terminal_failure panicked for job {} ({}) — caught, worker \
+             thread continues",
+            job.id,
+            job.kind
+        );
+    }
+    if let Some(handler) = handler {
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            handler.on_terminal_failure(job, error, state);
+        }))
+        .is_err()
+        {
+            log::error!(
+                "job queue: handler.on_terminal_failure panicked for job {} ({}) — caught, \
+                 worker thread continues",
+                job.id,
+                job.kind
+            );
+        }
+    }
+}
+
 /// The outcome of [`settle_with_recovery`] (sol diff R3 #2) — replaces an
 /// untyped `Option<T>` that could not tell a caller "committed" apart from
 /// "both attempts failed, the claim guard is now the last resort", which used
@@ -290,10 +339,12 @@ impl Drop for ClaimGuard {
                 // arbitrary handler code mid-panic risks a second panic
                 // during unwind, which aborts the process outright.
                 if !will_retry && !panicking {
-                    surface_terminal_failure(&self.state, &self.job, self.handler.as_deref());
-                    if let Some(handler) = self.handler.as_deref() {
-                        handler.on_terminal_failure(&self.job, &error_text, &self.state);
-                    }
+                    run_terminal_hooks_no_unwind(
+                        &self.state,
+                        &self.job,
+                        self.handler.as_deref(),
+                        &error_text,
+                    );
                 }
             }
             Err(StorageError::JobQueueRowMissingDuringSettle { .. }) => {}
@@ -444,10 +495,12 @@ impl JobWorker {
                             )
                         });
                         if let SettleOutcome::Settled(false) = outcome {
-                            surface_terminal_failure(&self.state, &job, handler.as_deref());
-                            if let Some(handler) = handler.as_deref() {
-                                handler.on_terminal_failure(&job, &panic_error, &self.state);
-                            }
+                            run_terminal_hooks_no_unwind(
+                                &self.state,
+                                &job,
+                                handler.as_deref(),
+                                &panic_error,
+                            );
                         }
                     }
                 }
@@ -595,10 +648,7 @@ impl JobWorker {
                     // The hook fires for EVERY kind, independent of the
                     // failure-surface classification inside
                     // `surface_terminal_failure`.
-                    surface_terminal_failure(&self.state, job, handler);
-                    if let Some(handler) = handler {
-                        handler.on_terminal_failure(job, &error, &self.state);
-                    }
+                    run_terminal_hooks_no_unwind(&self.state, job, handler, &error);
                 }
             }
         }

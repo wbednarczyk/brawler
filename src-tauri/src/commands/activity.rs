@@ -779,7 +779,7 @@ fn resolved_key_statuses(
     }
     let snapshot = activity_registry::snapshot(state);
     for id in &snapshot.stalled_run_ids {
-        if let Some(key) = reads::activity_key_for_occurrence(connection, *id) {
+        if let Some(key) = reads::activity_key_for_occurrence(connection, *id)? {
             stalled.push((key, "stalled".to_owned()));
         }
     }

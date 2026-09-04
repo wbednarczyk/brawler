@@ -297,6 +297,176 @@ fn malformed_member_json_surfaces_as_error() {
 }
 
 // ------------------------------------------------------------------
+// Parent member verification (sol diff R4 #2)
+// ------------------------------------------------------------------
+
+#[test]
+fn missing_declared_member_surfaces_as_error() {
+    // A declared member id with no matching `autopilot_run` row must fail
+    // closed — a completed parent silently resolving `succeeded` around a
+    // broken reference would be worse than surfacing the error.
+    let state = state();
+    let cdr = company(&state, "CDR");
+    let sweep = state
+        .history_sweeps()
+        .create_history_sweep(&cdr, "manual")
+        .expect("sweep");
+    state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute(
+            "UPDATE history_sweeps
+             SET status = 'completed', candidates_total = 1,
+                 enqueued_run_ids_json = '[\"run:does-not-exist\"]'
+             WHERE id = ?1",
+            [&sweep.id],
+        )
+        .expect("seed missing member");
+    seed_sweep_occurrence(&state, &sweep.id, &cdr, JobRunOutcome::Succeeded);
+
+    let result = compute_activity(&state);
+    assert!(
+        result.is_err(),
+        "a declared member with no matching row must surface as an error: {result:?}"
+    );
+}
+
+#[test]
+fn duplicate_declared_member_surfaces_as_error() {
+    // A duplicate declared id could let one real member row satisfy two
+    // declared slots and silently pass verification.
+    let state = state();
+    let cdr = company(&state, "CDR");
+    let sweep = state
+        .history_sweeps()
+        .create_history_sweep(&cdr, "manual")
+        .expect("sweep");
+    let doc = document(&state, &cdr, "Raport zdublowany");
+    let run = state
+        .autopilot()
+        .create_run_if_absent(
+            "run:dup",
+            &cdr,
+            &doc,
+            "history_sweep",
+            "autopilot",
+            Some(&sweep.id),
+        )
+        .expect("create run")
+        .expect("created");
+    let connection = state.checkout_for_tests().expect("checkout");
+    connection
+        .execute(
+            "UPDATE autopilot_run SET status = 'succeeded' WHERE id = ?1",
+            [&run.id],
+        )
+        .expect("mark succeeded");
+    connection
+        .execute(
+            "UPDATE history_sweeps
+             SET status = 'completed', candidates_total = 1, enqueued_run_ids_json = ?2
+             WHERE id = ?1",
+            rusqlite::params![sweep.id, format!(r#"["{0}","{0}"]"#, run.id)],
+        )
+        .expect("seed duplicate member id");
+    drop(connection);
+    seed_sweep_occurrence(&state, &sweep.id, &cdr, JobRunOutcome::Succeeded);
+
+    let result = compute_activity(&state);
+    assert!(
+        result.is_err(),
+        "a duplicate declared member id must surface as an error: {result:?}"
+    );
+}
+
+#[test]
+fn unrecognized_member_status_surfaces_as_error() {
+    // A member row whose status is not one of pending|running|succeeded|
+    // failed|partial must fail closed rather than silently contributing to
+    // none of the aggregate's buckets.
+    let state = state();
+    let cdr = company(&state, "CDR");
+    let sweep = state
+        .history_sweeps()
+        .create_history_sweep(&cdr, "manual")
+        .expect("sweep");
+    let doc = document(&state, &cdr, "Raport z nieznanym statusem");
+    let run = state
+        .autopilot()
+        .create_run_if_absent(
+            "run:unknown-status",
+            &cdr,
+            &doc,
+            "history_sweep",
+            "autopilot",
+            Some(&sweep.id),
+        )
+        .expect("create run")
+        .expect("created");
+    let connection = state.checkout_for_tests().expect("checkout");
+    // Same recipe as the corrupt-status domain-lookup test below: bypass the
+    // CHECK constraint on this connection to force a genuinely unrecognized
+    // status value into the row.
+    connection
+        .execute_batch("PRAGMA ignore_check_constraints = 1;")
+        .expect("disable check constraints for this connection");
+    connection
+        .execute(
+            "UPDATE autopilot_run SET status = 'bogus' WHERE id = ?1",
+            [&run.id],
+        )
+        .expect("force an unrecognized status past the CHECK constraint");
+    connection
+        .execute(
+            "UPDATE history_sweeps
+             SET status = 'completed', candidates_total = 1, enqueued_run_ids_json = ?2
+             WHERE id = ?1",
+            rusqlite::params![sweep.id, format!(r#"["{}"]"#, run.id)],
+        )
+        .expect("seed member with unrecognized status");
+    drop(connection);
+    seed_sweep_occurrence(&state, &sweep.id, &cdr, JobRunOutcome::Succeeded);
+
+    let result = compute_activity(&state);
+    assert!(
+        result.is_err(),
+        "an unrecognized member status must surface as an error: {result:?}"
+    );
+}
+
+#[test]
+fn terminal_candidate_counter_drift_surfaces_as_error() {
+    // Once the parent is terminal, `candidates_total` must equal `enqueued +
+    // runs_failed + skipped_existing` — the producer normally maintains this
+    // invariant, so a mismatch means the row itself is corrupt.
+    let state = state();
+    let cdr = company(&state, "CDR");
+    let sweep = state
+        .history_sweeps()
+        .create_history_sweep(&cdr, "manual")
+        .expect("sweep");
+    state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute(
+            "UPDATE history_sweeps
+             SET status = 'completed', candidates_total = 5, runs_failed = 0,
+                 skipped_existing = 0, enqueued_run_ids_json = '[]'
+             WHERE id = ?1",
+            [&sweep.id],
+        )
+        .expect("seed counter drift");
+    seed_sweep_occurrence(&state, &sweep.id, &cdr, JobRunOutcome::Succeeded);
+
+    let result = compute_activity(&state);
+    assert!(
+        result.is_err(),
+        "candidates_total disagreeing with enqueued+runs_failed+skipped_existing must surface \
+         as an error: {result:?}"
+    );
+}
+
+// ------------------------------------------------------------------
 // Domain lookups fail closed (sol diff R3 #3)
 // ------------------------------------------------------------------
 

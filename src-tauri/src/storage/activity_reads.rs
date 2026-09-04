@@ -490,14 +490,24 @@ pub(crate) fn kpi_run_status(
 /// A `job_runs` row's `activity_key` by id — the cheap summary path's way of
 /// naming a registry `settle_failed` handle's key without the full
 /// `occurrences_by_id` join (sol diff R1 #5).
-pub(crate) fn activity_key_for_occurrence(connection: &Connection, id: i64) -> Option<String> {
+///
+/// sol diff R4 #1: `StorageResult<Option<_>>` — `.ok()` used to collapse a
+/// genuine SQL/decode failure into the same `None` a truly absent row
+/// produces, letting `resolved_key_statuses` silently drop the stalled key
+/// (and a lower-precedence `queued` row with the same key could then leak
+/// into the topbar count).
+pub(crate) fn activity_key_for_occurrence(
+    connection: &Connection,
+    id: i64,
+) -> StorageResult<Option<String>> {
     connection
         .query_row(
             "SELECT activity_key FROM job_runs WHERE id = ?1",
             [id],
             |row| row.get(0),
         )
-        .ok()
+        .optional()
+        .map_err(StorageError::from)
 }
 
 /// Bounded (≤ `limit`) raw member subjects for a sweep/batch parent (sol
@@ -782,42 +792,93 @@ pub(crate) fn parent_progress(
         Some(json) => serde_json::from_str(&json)?,
     };
 
-    if run_ids.is_empty() {
-        return Ok(Some(ParentAggregate {
-            parent_status,
-            parent_error,
-            candidates_total,
-            enqueued: 0,
-            live: 0,
-            member_succeeded: 0,
-            member_partial: 0,
-            member_failed: 0,
-            runs_failed,
-            skipped_existing,
-        }));
-    }
-    let placeholders = vec!["?"; run_ids.len()].join(", ");
-    let status_sql = format!("SELECT status FROM autopilot_run WHERE id IN ({placeholders})");
-    let mut statement = connection.prepare(&status_sql)?;
-    let statuses = statement.query_map(rusqlite::params_from_iter(run_ids.iter()), |row| {
-        row.get::<_, String>(0)
-    })?;
-    let (mut member_succeeded, mut member_partial, mut member_failed, mut live) =
-        (0i64, 0i64, 0i64, 0i64);
-    for status in statuses {
-        match status?.as_str() {
-            "succeeded" => member_succeeded += 1,
-            "partial" => member_partial += 1,
-            "failed" => member_failed += 1,
-            "pending" | "running" => live += 1,
-            _ => {}
+    // sol diff R4 #2: reject a duplicate declared member id up front — left
+    // unchecked, one real member row could satisfy two declared slots and
+    // silently pass the "every declared id observed" check below.
+    let mut seen_ids = std::collections::HashSet::with_capacity(run_ids.len());
+    for run_id in &run_ids {
+        if !seen_ids.insert(run_id.as_str()) {
+            return Err(StorageError::ActivityParentMemberInvariant {
+                table: table.to_owned(),
+                id: id.to_owned(),
+                reason: format!("duplicate declared member id {run_id}"),
+            });
         }
     }
+
+    let (member_succeeded, member_partial, member_failed, live) = if run_ids.is_empty() {
+        (0i64, 0i64, 0i64, 0i64)
+    } else {
+        let placeholders = vec!["?"; run_ids.len()].join(", ");
+        let status_sql =
+            format!("SELECT id, status FROM autopilot_run WHERE id IN ({placeholders})");
+        let mut statement = connection.prepare(&status_sql)?;
+        let rows = statement.query_map(rusqlite::params_from_iter(run_ids.iter()), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut statuses: std::collections::HashMap<String, String> =
+            std::collections::HashMap::with_capacity(run_ids.len());
+        for row in rows {
+            let (member_id, status) = row?;
+            statuses.insert(member_id, status);
+        }
+        let (mut member_succeeded, mut member_partial, mut member_failed, mut live) =
+            (0i64, 0i64, 0i64, 0i64);
+        for run_id in &run_ids {
+            // sol diff R4 #2: every declared id must yield exactly one
+            // member row with a recognized status — a missing referenced run
+            // or an unknown status used to contribute to none of
+            // live/succeeded/partial/failed, letting a completed parent with
+            // a broken reference silently resolve `succeeded`.
+            let status = statuses.get(run_id).ok_or_else(|| {
+                StorageError::ActivityParentMemberInvariant {
+                    table: table.to_owned(),
+                    id: id.to_owned(),
+                    reason: format!("declared member {run_id} has no matching autopilot_run row"),
+                }
+            })?;
+            match status.as_str() {
+                "succeeded" => member_succeeded += 1,
+                "partial" => member_partial += 1,
+                "failed" => member_failed += 1,
+                "pending" | "running" => live += 1,
+                other => {
+                    return Err(StorageError::ActivityParentMemberInvariant {
+                        table: table.to_owned(),
+                        id: id.to_owned(),
+                        reason: format!(
+                            "declared member {run_id} has unrecognized status '{other}'"
+                        ),
+                    });
+                }
+            }
+        }
+        (member_succeeded, member_partial, member_failed, live)
+    };
+
+    let enqueued = run_ids.len() as i64;
+    // sol diff R4 #2: once the parent is terminal (its own row is no longer
+    // queued/running AND no enqueued member is still live), the durable
+    // candidate counters must add up — a drift means the producer's own
+    // bookkeeping is corrupt, not something the aggregate should paper over.
+    let terminal = parent_status != "queued" && parent_status != "running" && live == 0;
+    if terminal && candidates_total != enqueued + runs_failed + skipped_existing {
+        return Err(StorageError::ActivityParentMemberInvariant {
+            table: table.to_owned(),
+            id: id.to_owned(),
+            reason: format!(
+                "candidate counter drift: candidates_total={candidates_total} != \
+                 enqueued({enqueued}) + runs_failed({runs_failed}) + \
+                 skipped_existing({skipped_existing})"
+            ),
+        });
+    }
+
     Ok(Some(ParentAggregate {
         parent_status,
         parent_error,
         candidates_total,
-        enqueued: run_ids.len() as i64,
+        enqueued,
         live,
         member_succeeded,
         member_partial,
@@ -828,157 +889,5 @@ pub(crate) fn parent_progress(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::storage::open_in_memory_database;
-
-    fn seed_occurrence(connection: &Connection, activity_key: &str, finished_at: &str) {
-        connection
-            .execute(
-                "INSERT INTO job_runs
-                    (activity_key, run_key, kind, family, subject, target_json, status,
-                     attempt, started_at, finished_at)
-                 VALUES (?1, ?1, 'k', 'sourceRefresh', 's', '{\"kind\":\"sources\"}',
-                     'succeeded', 1, ?2, ?2)",
-                rusqlite::params![activity_key, finished_at],
-            )
-            .expect("seed occurrence");
-    }
-
-    /// sol diff R1 #10: the window compare used to be a lexical text
-    /// comparison, mixing the stored `T…Z` format against `datetime()`'s
-    /// space-separated one. Since the 'T' separator sorts after a plain
-    /// space, any row sharing the cutoff's calendar date passed regardless
-    /// of its actual time-of-day — up to nearly a day too old. Exercise the
-    /// exact boundary now that both sides share one format.
-    #[test]
-    fn window_boundary_is_exact_not_a_lexical_false_positive() {
-        let connection = open_in_memory_database().expect("db");
-        let now = "2026-09-04T12:00:00.000Z";
-
-        // The historical bug's exact false positive: same calendar date as
-        // the cutoff (2026-08-28), but 6 hours EARLIER in the day — genuinely
-        // 7 days + 6 hours old. The old lexical compare wrongly admitted it.
-        seed_occurrence(
-            &connection,
-            "past-cutoff-same-date",
-            "2026-08-28T06:00:00.000Z",
-        );
-        // Exactly at the cutoff instant: inclusive `>=`, must be admitted.
-        seed_occurrence(&connection, "exactly-7-days", "2026-08-28T12:00:00.000Z");
-        // One second older than the cutoff: just outside the window.
-        seed_occurrence(&connection, "7-days-plus-1s", "2026-08-28T11:59:59.000Z");
-        // One millisecond younger than the cutoff: inside, exercising
-        // fractional-second precision.
-        seed_occurrence(&connection, "7-days-minus-1ms", "2026-08-28T12:00:00.001Z");
-        // Comfortably inside the window.
-        seed_occurrence(&connection, "well-inside", "2026-09-01T00:00:00.000Z");
-
-        let rows = recent_occurrences(&connection, now, 7, 40).expect("recent");
-        let keys: std::collections::BTreeSet<String> =
-            rows.into_iter().map(|row| row.activity_key).collect();
-        assert_eq!(
-            keys,
-            std::collections::BTreeSet::from([
-                "exactly-7-days".to_owned(),
-                "7-days-minus-1ms".to_owned(),
-                "well-inside".to_owned(),
-            ]),
-            "only rows at/after the exact 7-day cutoff instant pass — never a same-date lexical false positive"
-        );
-    }
-
-    /// ADR 0109 dec. 2/D3 volume gate: `recent_occurrences` reads a BOUNDED
-    /// set at 100k finished rows — asserted via the query plan (it must use an
-    /// index, never a full table scan), never wall-clock (ADR 0049).
-    #[test]
-    fn list_activity_reads_bounded_rows_at_100k() {
-        let connection = open_in_memory_database().expect("db");
-        let tx = rusqlite::Transaction::new_unchecked(
-            &connection,
-            rusqlite::TransactionBehavior::Immediate,
-        )
-        .expect("tx");
-        for i in 0..100_000 {
-            tx.execute(
-                "INSERT INTO job_runs
-                    (activity_key, run_key, kind, family, subject, target_json, status,
-                     attempt, started_at, finished_at)
-                 VALUES (?1, ?1, 'k', 'sourceRefresh', 's', '{\"kind\":\"sources\"}',
-                     'succeeded', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-                     strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
-                [format!("k:{i}")],
-            )
-            .expect("seed row");
-        }
-        tx.commit().expect("commit");
-
-        // sol diff R1 #16: EXPLAIN the EXACT production candidate-selection
-        // query (`recent_candidates_sql()`, the same string
-        // `recent_occurrences` runs) — never a hand-copied stand-in that can
-        // drift from what actually executes.
-        let sql = recent_candidates_sql();
-        let mut statement = connection
-            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
-            .expect("prepare plan");
-        let plan: Vec<String> = statement
-            .query_map(
-                params!["2026-09-03T00:00:00Z", "-7 days", RECENT_FETCH_CAP],
-                |row| row.get::<_, String>(3),
-            )
-            .expect("plan rows")
-            .map(|row| row.expect("plan row"))
-            .collect();
-        let plan_text = plan.join(" | ");
-        assert!(
-            plan_text.contains(&format!("USING INDEX {RECENT_INDEX}"))
-                || plan_text.contains(&format!("USING COVERING INDEX {RECENT_INDEX}")),
-            "the candidate scan must use the intended index {RECENT_INDEX} — not `idx_job_runs_status` \
-             (selective-looking on the status IN-list, but touches almost the whole table at scale \
-             since most terminal rows share one of three statuses) and not a temp-b-tree GROUP BY: {plan_text}"
-        );
-        assert!(
-            !plan_text.contains("SCAN job_runs") && !plan_text.contains("TEMP B-TREE"),
-            "no full table/index scan of job_runs, and no temp-b-tree materialization, at 100k rows: {plan_text}"
-        );
-
-        // Rows VISITED/DECODED must stay bounded by the index range scan —
-        // never proportional to the 100k table (sol diff R1 #16: the old
-        // `rows.len() <= 40` assertion was guaranteed by `LIMIT` alone and
-        // proved nothing about how much work got done to produce it).
-        // `sqlite3_stmt_status`'s fullscan-step counter on the prepared
-        // statement gives a real measurement, independent of wall clock.
-        let mut statement = connection.prepare(&sql).expect("prepare recent");
-        let decoded = {
-            let rows = statement
-                .query_map(
-                    params!["2026-09-03T00:00:00Z", "-7 days", RECENT_FETCH_CAP],
-                    map_occurrence_row,
-                )
-                .expect("query recent");
-            let mut decoded = 0;
-            for row in rows {
-                row.expect("row").expect("decodes");
-                decoded += 1;
-            }
-            decoded
-        };
-        assert!(
-            decoded as i64 <= RECENT_FETCH_CAP,
-            "rows actually decoded must stay bounded by the fetch cap, not the 100k table: {decoded}"
-        );
-        let fullscan_steps = statement.get_status(rusqlite::StatementStatus::FullscanStep);
-        assert!(
-            fullscan_steps < 1_000,
-            "the index range scan must touch a small fraction of the 100k rows, never approach a \
-             full-table walk: {fullscan_steps} fullscan steps"
-        );
-
-        let recent =
-            recent_occurrences(&connection, "2026-09-03T00:00:00Z", 7, 40).expect("recent");
-        assert!(
-            recent.len() <= 40,
-            "the cap is applied AFTER the collapse, never bypassed"
-        );
-    }
-}
+#[path = "activity_reads_tests.rs"]
+mod tests;
