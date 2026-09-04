@@ -50,12 +50,10 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     // Lands on the Documents tool with the exact `documentId` the row
-    // declared (`data-tool` + the target's identity, asserted in the
-    // AppShell.test.tsx unit test); the highlight itself is the SAME
-    // provenance-ticket mechanism already exercised elsewhere
-    // (CompanyReportDocumentsPanel) — the seeded mock's synthetic
-    // `doc_mock_activity_*` id has no backing `reportDocuments` row, so no
-    // row exists to assert a highlight attribute on here.
+    // declared and the document row flashed (`data-document-highlighted`,
+    // CompanyReportDocumentsPanel — the seeded reading targets the smoke
+    // runtime's `doc_cdr_q3_2025`).
     await expect(page.getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "dokumenty");
+    await expect(page.locator('[data-document-id="doc_cdr_q3_2025"][data-document-highlighted="true"]')).toBeVisible();
   });
 });

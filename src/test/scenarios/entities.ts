@@ -1583,7 +1583,11 @@ export function makeActivityView(companies: readonly Company[]): ActivityView {
   const at = (index: number) => companies[index % companies.length];
   const sweepCompany = at(0);
   const readingCompany = at(1);
-  const failedCompany = at(2);
+  // The first failed reading targets `doc_cdr_q3_2025` — the one report document
+  // the browser smoke runtime seeds — so the Otwórz dokument landing can assert
+  // the highlighted row (sol diff R1 #17); CDR is the owner when the scenario
+  // has it, else the mock degrades to a positional company.
+  const failedCompany = companies.find((company) => company.qualifiedTicker === "GPW:CDR") ?? at(2);
 
   const active: ActivityItem[] = [
     {
@@ -1669,7 +1673,7 @@ export function makeActivityView(companies: readonly Company[]): ActivityView {
       target: {
         kind: "company",
         companyId: failedCompany.id,
-        tool: { t: "dokumenty", documentId: "doc_mock_activity_failed_1" },
+        tool: { t: "dokumenty", documentId: "doc_cdr_q3_2025" },
       },
     },
     {
