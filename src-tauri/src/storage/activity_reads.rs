@@ -513,7 +513,11 @@ mod tests {
     #[test]
     fn list_activity_reads_bounded_rows_at_100k() {
         let connection = open_in_memory_database().expect("db");
-        let tx = connection.unchecked_transaction().expect("tx");
+        let tx = rusqlite::Transaction::new_unchecked(
+            &connection,
+            rusqlite::TransactionBehavior::Immediate,
+        )
+        .expect("tx");
         for i in 0..100_000 {
             tx.execute(
                 "INSERT INTO job_runs

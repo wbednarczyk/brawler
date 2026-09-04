@@ -1124,7 +1124,7 @@ Fields:
 
 - `id` — autoincrement; the settle handle (never the reusable queue id).
 - `activity_key` — the **task** identity the UI collapses on (`report-reading:<autopilot_run_id>`, `report-sweep:<sweep_id>`, `kpi-ingest:<run_id>`, `source-refresh:<adapter_id>`, `company-refresh:<company_id>`, `history-fetch:<company_id>`, `reextraction:<batch_id>`, `ownership-reading:<document_id>`, `management-reading:<document_id>`, `price-history:<company_id>`, `transcript:<job_id>`, singletons for registry/FX/aggregator/briefing).
-- `run_key` — the queue `job_queue.id` or `direct:<kind>:<key>` for awaited work.
+- `run_key` — the queue `job_queue.id` or `direct:<activity_key>` for awaited work.
 - `kind`, `family` (the `ActivityFamily` token), `company_id` (nullable, `REFERENCES companies(id) ON DELETE CASCADE`), `subject` (raw: document title / adapter display name / video title), `target_json` (the typed navigation target).
 - `status` — `running | succeeded | failed | retry_scheduled | interrupted`; `attempt`; `started_at`; `finished_at` (NULL while running); `error`.
 - Indexes: `(status)`, `(finished_at DESC, id DESC)`, `(activity_key)`.

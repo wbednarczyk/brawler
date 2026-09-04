@@ -546,7 +546,10 @@ fn manual_refresh_is_one_occurrence_per_adapter_via_the_core() {
         .collect();
     assert_eq!(
         rows,
-        vec![("direct:not-a-real-adapter".to_owned(), "failed".to_owned())],
+        vec![(
+            "direct:source-refresh:not-a-real-adapter".to_owned(),
+            "failed".to_owned()
+        )],
         "exactly one occurrence, under the direct: run_key, terminal"
     );
 }
