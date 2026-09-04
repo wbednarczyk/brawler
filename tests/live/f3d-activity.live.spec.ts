@@ -76,31 +76,42 @@ test("activity panel on the real app: open, read, land on a declared destination
     await expect(rows.nth(index).locator("[data-action-kind='destination']")).toHaveCount(1);
   }
 
-  // Follow the FIRST row's declared destination (data-activity-target = the
-  // target kind the backend shipped; the row never guesses).
-  const first = rows.first();
-  const targetKind = await first.getAttribute("data-activity-target");
-  const action = first.locator("[data-action-kind='destination']");
-  const label = (await action.textContent())?.trim() ?? "";
-  testInfo.annotations.push({ type: "first-target", description: `${targetKind} · ${label}` });
-  await action.click();
-  await expect(dialog).toBeHidden();
-
-  switch (targetKind) {
-    case "company":
-      await expect(page.getByRole("region", { name: /Widok spółki|Company view/ })).toBeVisible({ timeout: 15_000 });
-      break;
-    case "sources":
-      await expect(page.getByRole("region", { name: /^(Źródła|Sources)$/ })).toBeVisible({ timeout: 15_000 });
-      break;
-    case "today":
-      await expect(page.getByRole("region", { name: /^(Dziś|Today)$/ })).toBeVisible({ timeout: 15_000 });
-      break;
-    case "transcripts":
-      await expect(page.getByRole("region", { name: /^(Transkrypcje|Transcripts)$/ })).toBeVisible({ timeout: 15_000 });
-      break;
-    default:
-      throw new Error(`row declared an unknown target kind: ${targetKind}`);
+  // Follow every row's declared destination (capped at 5 on a busy database):
+  // re-open the panel for each row, read the target kind the backend shipped
+  // (data-activity-target — the row never guesses), click its one action and
+  // assert the screen it named.
+  const toVerify = Math.min(rowCount, 5);
+  for (let index = 0; index < toVerify; index += 1) {
+    if (index > 0) {
+      await indicator.click();
+      await expect(dialog).toBeVisible({ timeout: 10_000 });
+      await expect(rows.first()).toBeVisible({ timeout: 20_000 });
+    }
+    const row = rows.nth(index);
+    const targetKind = await row.getAttribute("data-activity-target");
+    const action = row.locator("[data-action-kind='destination']");
+    const label = (await action.textContent())?.trim() ?? "";
+    testInfo.annotations.push({ type: `row-${index}-target`, description: `${targetKind} · ${label}` });
+    await action.click();
+    await expect(dialog).toBeHidden();
+    switch (targetKind) {
+      case "company":
+        await expect(page.getByRole("region", { name: /Widok spółki|Company view/ })).toBeVisible({ timeout: 15_000 });
+        break;
+      case "sources":
+        await expect(page.getByRole("region", { name: /^(Źródła|Sources)$/ })).toBeVisible({ timeout: 15_000 });
+        break;
+      case "today":
+        await expect(page.getByRole("region", { name: /^(Dziś|Today)$/ })).toBeVisible({ timeout: 15_000 });
+        break;
+      case "transcripts":
+        await expect(page.getByRole("region", { name: /^(Transkrypcje|Transcripts)$/ })).toBeVisible({ timeout: 15_000 });
+        break;
+      default:
+        throw new Error(`row ${index} declared an unknown target kind: ${targetKind}`);
+    }
+    if (index === 0) {
+      await shoot(page, "after-open", testInfo);
+    }
   }
-  await shoot(page, "after-open", testInfo);
 });
