@@ -2251,10 +2251,10 @@ export const plText: Record<string, string> = {
   // ---- /F3c S2 ----
   // ---- F3d S2 ----
   // Activity center (ADR 0109, #133): topbar indicator + panel copy. Family
-  // and status labels (`activityLabels.ts`); "queued"/"running"/"partial" and
-  // "Source refresh"/"Morning briefing"/"Transcript"/"Try again"/"Open
-  // document"/"Open company" reuse their existing exact-match entries above
-  // instead of duplicating a key.
+  // labels (`activityLabels.ts`); "Source refresh"/"Morning briefing"/
+  // "Transcript"/"Try again"/"Open document"/"Open company" reuse their
+  // existing exact-match entries above instead of duplicating a key. Status
+  // labels moved to the "F3d fixT2" block below (sol diff R2 finding 6).
   "Company refresh": "Odświeżanie komunikatów spółki",
   "Company registry": "Katalog spółek",
   "Currency rates": "Kursy walut",
@@ -2269,8 +2269,6 @@ export const plText: Record<string, string> = {
   "KPI collection (agent)": "Zbieranie KPI (agent)",
   "Unrecognized task": "Zadanie o nieznanym kształcie",
   "Stalled": "zatrzymane",
-  "Completed": "zakończone",
-  "Did not finish": "nie udało się",
   "Interrupted": "przerwane",
   "Open activity": "Otwórz aktywność",
   "Activity": "Aktywność",
@@ -2291,4 +2289,18 @@ export const plText: Record<string, string> = {
   // ---- F3d fixT ----
   "Close dialog": "Zamknij okno",
   // ---- /F3d fixT ----
+  // ---- F3d fixT2 ----
+  // Activity status labels (`activityLabels.ts` statusCopy, sol diff R2
+  // finding 6): the bare outcome words "Queued"/"Running"/"Succeeded"/
+  // "Failed"/"Partial" already carry a different PL value elsewhere
+  // (attentionEventLabels.ts, QualityPanel.tsx, CompanyCoveragePanel.tsx),
+  // so Activity uses a distinct phrase for each that still names the
+  // outcome exactly; "Stalled"/"Interrupted" above are unchanged (no
+  // collision, already the exact outcome word).
+  "Queued to run": "w kolejce",
+  "Currently running": "w toku",
+  "Finished successfully": "zakończone",
+  "Finished with an error": "nie udało się",
+  "Partially finished": "częściowo",
+  // ---- /F3d fixT2 ----
 };

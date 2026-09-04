@@ -127,9 +127,19 @@ function ActivityRow({
 }) {
   const timestamp = item.finishedAt ?? item.startedAt;
   const isDocumentSubject = isDocumentSubjectMono(item);
+  const target = item.target;
+  // sol diff R2 finding 8: the live harness needs the row's declared
+  // target precise enough to tell Coverage/Overview/Documents apart and
+  // catch a wrong document ID, not just "some company view opened".
+  const documentId = target.kind === "company" && target.tool?.t === "dokumenty" ? target.tool.documentId : null;
 
   return (
-    <div className="activity-item" data-activity-target={item.target.kind}>
+    <div
+      className="activity-item"
+      data-activity-target={target.kind}
+      data-activity-tool={target.kind === "company" ? (target.tool?.t ?? "overview") : ""}
+      data-activity-document={documentId ?? ""}
+    >
       <ExpandableRow
         label={`${familyLabel(item.family, text)} ${item.subject} ${statusLabel(item.status, text)}`.trim()}
         isExpanded={expanded}

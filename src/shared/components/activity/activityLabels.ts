@@ -57,20 +57,27 @@ export function familyLabel(family: ActivityFamily, text: TextFn): string {
 
 type ActivityStatus = ActivityItem["status"];
 
+// Every status renders the ledger's exact outcome (sol diff R2 finding 6),
+// not a vague paraphrase ("Completed"/"Did not finish" used to collapse
+// "failed" toward "interrupted"). "Stalled"/"Interrupted" use the bare
+// outcome word; the other five can't — "Queued"/"Running"/"Succeeded"/
+// "Failed"/"Partial" already carry a DIFFERENT PL value elsewhere
+// (attentionEventLabels.ts, QualityPanel.tsx, CompanyCoveragePanel.tsx), so
+// each uses a distinct phrase that still names the outcome exactly.
 function statusCopy(status: ActivityStatus): string {
   switch (status) {
     case "queued":
-      return "queued";
+      return "Queued to run";
     case "running":
-      return "running";
+      return "Currently running";
     case "stalled":
       return "Stalled";
     case "succeeded":
-      return "Completed";
+      return "Finished successfully";
     case "failed":
-      return "Did not finish";
+      return "Finished with an error";
     case "partial":
-      return "partial";
+      return "Partially finished";
     case "interrupted":
       return "Interrupted";
     default: {

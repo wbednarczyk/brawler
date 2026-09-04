@@ -84,6 +84,48 @@ describe.each(LOCALES)("ActivityPanel labels — exhaustive family/status covera
   });
 });
 
+// sol diff R2 finding 6: the displayed text must be the ledger's exact
+// outcome — "Completed"/"Did not finish" were not, and collapsed "failed"
+// into the same vague phrase as "interrupted". "Stalled"/"Interrupted" don't
+// collide with any unrelated plText entry and keep their literal outcome
+// word; "Queued"/"Running"/"Succeeded"/"Failed"/"Partial" as bare EN text
+// already carry a DIFFERENT PL value elsewhere (attentionEventLabels.ts,
+// QualityPanel.tsx, CompanyCoveragePanel.tsx) — activityLabels.ts uses a
+// distinct EN phrase for those five that still names the outcome exactly.
+const EXPECTED_STATUS_TEXT: Record<ActivityItem["status"], { en: string; pl: string }> = {
+  queued: { en: "Queued to run", pl: "w kolejce" },
+  running: { en: "Currently running", pl: "w toku" },
+  stalled: { en: "Stalled", pl: "zatrzymane" },
+  succeeded: { en: "Finished successfully", pl: "zakończone" },
+  failed: { en: "Finished with an error", pl: "nie udało się" },
+  partial: { en: "Partially finished", pl: "częściowo" },
+  interrupted: { en: "Interrupted", pl: "przerwane" },
+};
+
+describe("statusLabel — exact ledger outcomes, no PL leaked into English (sol diff R2 finding 6)", () => {
+  for (const [status, expected] of Object.entries(EXPECTED_STATUS_TEXT) as [
+    ActivityItem["status"],
+    { en: string; pl: string },
+  ][]) {
+    it(`statusLabel(${status}) renders "${expected.en}" in English`, () => {
+      expect(statusLabel(status, makeTextTranslator("en"))).toBe(expected.en);
+    });
+    it(`statusLabel(${status}) renders "${expected.pl}" in Polish`, () => {
+      expect(statusLabel(status, makeTextTranslator("pl"))).toBe(expected.pl);
+    });
+  }
+
+  it("none of the five disambiguated EN phrases collide with an unrelated plText entry of a different value", () => {
+    // attentionEventLabels.ts / QualityPanel.tsx / CompanyCoveragePanel.tsx
+    // already own the bare "Queued"/"Running"/"Succeeded"/"Failed"/"Partial"
+    // keys with different PL text; activityLabels.ts must not silently
+    // shadow them.
+    for (const bare of ["Queued", "Running", "Succeeded", "Failed", "Partial"]) {
+      expect(Object.values(EXPECTED_STATUS_TEXT).map((v) => v.en)).not.toContain(bare);
+    }
+  });
+});
+
 afterEach(() => {
   cleanup();
 });

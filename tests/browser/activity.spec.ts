@@ -45,6 +45,12 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
 
     const failedRow = dialog.locator(".activity-item").filter({ hasText: "Raport roczny 2025 skrócony.pdf" });
     await expect(failedRow).toBeVisible();
+    // sol diff R2 finding 8: the row declares its target precisely enough
+    // for the live harness to tell Coverage/Overview/Documents apart and
+    // catch a wrong document ID, not just "some company view opened".
+    await expect(failedRow).toHaveAttribute("data-activity-target", "company");
+    await expect(failedRow).toHaveAttribute("data-activity-tool", "dokumenty");
+    await expect(failedRow).toHaveAttribute("data-activity-document", "doc_cdr_q3_2025");
     await failedRow.getByRole("button", { name: "Open document" }).click();
 
     await expect(dialog).toBeHidden();
