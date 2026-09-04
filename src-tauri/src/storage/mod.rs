@@ -320,10 +320,11 @@ pub struct AppState {
     /// concurrently while guaranteeing at most one touches the *same* source —
     /// politeness (no parallel hammering) with no duplicate work.
     sources_in_flight: Arc<Mutex<HashSet<String>>>,
-    /// Live direct-activity entries (ADR 0109 dec. 3): `run_key` -> the open
-    /// `job_runs.id` for awaited (non-queue) work in progress. See
-    /// `storage::activity_registry`.
-    activity_registry: Arc<Mutex<HashMap<String, i64>>>,
+    /// Live direct-activity entries (ADR 0109 dec. 3): a per-guard handle
+    /// (the open `job_runs.id`, or a synthetic negative id when
+    /// `begin_attempt` itself failed) -> its [`activity_registry::RegistryEntry`]
+    /// for awaited (non-queue) work in progress. See `storage::activity_registry`.
+    activity_registry: Arc<Mutex<HashMap<i64, activity_registry::RegistryEntry>>>,
     /// The outbound page fetcher for the BiznesRadar fundamentals **witness**
     /// (ADR 0085). Injected rather than constructed inline so the only code that
     /// can reach the network is the code the real app bootstrap installs:

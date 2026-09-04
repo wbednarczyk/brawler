@@ -136,11 +136,14 @@ pub(crate) struct PendingJobRow {
     pub payload: String,
     pub last_error: Option<String>,
     pub created_at: String,
+    /// The real `job_queue.attempts` count (sol diff R1 #14) — a retry-
+    /// pending row's attempt count, never a hardcoded 0.
+    pub attempts: i64,
 }
 
 pub(crate) fn pending_jobs(connection: &Connection) -> StorageResult<Vec<PendingJobRow>> {
     let mut statement = connection.prepare(
-        "SELECT id, kind, payload, last_error, created_at
+        "SELECT id, kind, payload, last_error, created_at, attempts
          FROM job_queue
          WHERE status = 'pending'
          ORDER BY available_at, created_at",
@@ -152,6 +155,7 @@ pub(crate) fn pending_jobs(connection: &Connection) -> StorageResult<Vec<Pending
             payload: row.get(2)?,
             last_error: row.get(3)?,
             created_at: row.get(4)?,
+            attempts: row.get(5)?,
         })
     })?;
     let mut out = Vec::new();
@@ -197,6 +201,66 @@ pub(crate) fn queued_transcript_jobs(
     Ok(out)
 }
 
+/// The intended access path for `recent_candidates_sql()` (sol diff R1
+/// #16) — a `finished_at DESC` range scan that early-terminates once past
+/// the window, never `idx_job_runs_status`: `status IN (…)` alone is not
+/// selective at scale (most rows are terminal), so leading with it would
+/// visit close to the WHOLE table before the date filter ever applies.
+const RECENT_INDEX: &str = "idx_job_runs_finished_at";
+
+/// Generous cap on rows FETCHED before the per-`activity_key` collapse (sol
+/// diff R1 #16) — comfortably above how many attempts of the SAME key could
+/// realistically land inside one 7-day window, so a burst of retries for one
+/// key can never crowd a different key's newest occurrence out of the
+/// result before the collapse runs.
+const RECENT_FETCH_CAP: i64 = 500;
+
+/// The candidate-selection query `recent_occurrences` runs against
+/// `job_runs` — factored out as its own constant (sol diff R1 #16) so the
+/// 100k-row performance gate can `EXPLAIN QUERY PLAN` the EXACT production
+/// query, never a hand-copied stand-in that can drift from what actually
+/// runs.
+///
+/// Deliberately NOT a `GROUP BY activity_key` aggregate (sol diff R1 #16):
+/// grouping forces SQLite into `USE TEMP B-TREE FOR GROUP BY` over
+/// everything the `status` filter matches — which, since most terminal rows
+/// share one of three statuses, is close to the WHOLE table, not the recent
+/// window. A plain range scan ordered `finished_at DESC` with `LIMIT` uses
+/// [`RECENT_INDEX`] directly and early-terminates; the "one newest row per
+/// key, cap AFTER the collapse" rule (D3/ADR 0109 dec. 2) then runs in Rust
+/// over this already-small, already-ordered fetch.
+///
+/// sol diff R1 #10: `finished_at` is stored `YYYY-MM-DDTHH:MM:SS.SSSZ`
+/// (`strftime('%Y-%m-%dT%H:%M:%fZ', ...)`), but `datetime()` returns
+/// `YYYY-MM-DD HH:MM:SS` (a space, no fractional seconds). A lexical `>=`
+/// comparison of those two formats is wrong: 'T' (0x54) sorts after ' '
+/// (0x20), so ANY stored row sharing the cutoff's calendar date passes
+/// regardless of its actual time-of-day — up to nearly a day too old.
+/// Fix: format the cutoff with `strftime` IDENTICALLY to how `finished_at`
+/// itself is stored, so the comparison stays plain TEXT `>=` — correct AND
+/// still able to use [`RECENT_INDEX`] (wrapping the COLUMN in `julianday()`
+/// instead would have been correct too, but forces a full index/table scan
+/// since the index is built on the raw text ordering).
+fn recent_candidates_sql() -> String {
+    // `INDEXED BY` forces `RECENT_INDEX` (sol diff R1 #16): without ANALYZE
+    // statistics on a fresh/small database, SQLite's planner prefers
+    // `idx_job_runs_status` (an IN-list over 3 literal values LOOKS cheap)
+    // and then sorts/scans everything it matches — which at scale is close
+    // to the WHOLE table, since most terminal rows share one of 3 statuses.
+    // The date-bounded index is the one whose ORDER already matches this
+    // query and can early-terminate; pin it rather than hope the planner's
+    // heuristic agrees.
+    format!(
+        "SELECT {OCCURRENCE_COLUMNS}
+         FROM job_runs INDEXED BY {RECENT_INDEX}
+         WHERE status IN ('succeeded', 'failed', 'interrupted')
+             AND finished_at IS NOT NULL
+             AND finished_at >= strftime('%Y-%m-%dT%H:%M:%fZ', ?1, ?2)
+         ORDER BY finished_at DESC, id DESC
+         LIMIT ?3"
+    )
+}
+
 /// The latest occurrence per `activity_key` among TERMINAL `job_runs` rows
 /// (`succeeded`/`failed`/`interrupted` — `retry_scheduled` is not terminal,
 /// the job runs again) within `window_days` of `now`, newest first, capped at
@@ -208,27 +272,20 @@ pub(crate) fn recent_occurrences(
     window_days: i64,
     limit: i64,
 ) -> StorageResult<Vec<OccurrenceRow>> {
-    let sql = format!(
-        "SELECT {OCCURRENCE_COLUMNS} FROM job_runs
-         WHERE id IN (
-             SELECT MAX(id) FROM job_runs
-             WHERE status IN ('succeeded', 'failed', 'interrupted')
-                 AND finished_at IS NOT NULL
-                 AND finished_at >= datetime(?1, ?2)
-             GROUP BY activity_key
-         )
-         ORDER BY finished_at DESC, id DESC
-         LIMIT ?3"
-    );
-    let mut statement = connection.prepare(&sql)?;
+    let mut statement = connection.prepare(&recent_candidates_sql())?;
     let rows = statement.query_map(
-        params![now, format!("-{window_days} days"), limit],
+        params![now, format!("-{window_days} days"), RECENT_FETCH_CAP],
         map_occurrence_row,
     )?;
+    let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for row in rows {
-        if let Some(row) = row? {
+        let Some(row) = row? else { continue };
+        if seen.insert(row.activity_key.clone()) {
             out.push(row);
+            if out.len() as i64 >= limit {
+                break;
+            }
         }
     }
     Ok(out)
@@ -326,7 +383,7 @@ pub(crate) fn document_title_bound(connection: &Connection, document_id: &str) -
 /// honestly as `stalled` rather than fabricating `active` or hiding it (D3).
 pub(crate) fn stalled_queue_rows(connection: &Connection) -> StorageResult<Vec<PendingJobRow>> {
     let mut statement = connection.prepare(
-        "SELECT job_queue.id, job_queue.kind, job_queue.payload, job_queue.last_error, job_queue.created_at
+        "SELECT job_queue.id, job_queue.kind, job_queue.payload, job_queue.last_error, job_queue.created_at, job_queue.attempts
          FROM job_queue
          LEFT JOIN job_runs ON job_runs.run_key = job_queue.id AND job_runs.status = 'running'
          WHERE job_queue.status = 'running' AND job_runs.id IS NULL",
@@ -338,6 +395,7 @@ pub(crate) fn stalled_queue_rows(connection: &Connection) -> StorageResult<Vec<P
             payload: row.get(2)?,
             last_error: row.get(3)?,
             created_at: row.get(4)?,
+            attempts: row.get(5)?,
         })
     })?;
     let mut out = Vec::new();
@@ -345,6 +403,141 @@ pub(crate) fn stalled_queue_rows(connection: &Connection) -> StorageResult<Vec<P
         out.push(row?);
     }
     Ok(out)
+}
+
+/// A `transcript_jobs` row literally `running` with no matching open
+/// `job_runs` occurrence (`run_key = 'direct:' || activity_key`) — the
+/// transcript-runner finalizer (sol diff R1 #6) means this should not exist
+/// while the app is alive, but the read model surfaces it honestly as
+/// `stalled` rather than hiding it, mirroring [`stalled_queue_rows`].
+pub(crate) struct StalledTranscriptRow {
+    pub id: String,
+    pub company_id: Option<String>,
+    pub source_label: Option<String>,
+    pub source_url: String,
+    pub started_at: String,
+}
+
+pub(crate) fn stalled_transcript_rows(
+    connection: &Connection,
+) -> StorageResult<Vec<StalledTranscriptRow>> {
+    let mut statement = connection.prepare(
+        "SELECT transcript_jobs.id, transcript_jobs.company_id, transcript_jobs.source_label,
+                transcript_jobs.source_url, transcript_jobs.started_at
+         FROM transcript_jobs
+         LEFT JOIN job_runs
+             ON job_runs.run_key = 'direct:transcript:' || transcript_jobs.id
+             AND job_runs.status = 'running'
+         WHERE transcript_jobs.status = 'running' AND job_runs.id IS NULL",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(StalledTranscriptRow {
+            id: row.get(0)?,
+            company_id: row.get(1)?,
+            source_label: row.get(2)?,
+            source_url: row.get(3)?,
+            started_at: row.get(4)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// One domain row's terminal-ish `(status, error)` — the raw material for
+/// the recent-occurrence domain-status override (sol diff R1 #4): the
+/// ledger's own `job_runs.status` alone cannot represent `partial`, nor a
+/// fan-out job that finished its own attempt while its members still run —
+/// only the domain row knows either.
+pub(crate) fn autopilot_run_status(
+    connection: &Connection,
+    run_id: &str,
+) -> Option<(String, Option<String>)> {
+    connection
+        .query_row(
+            "SELECT status, last_error FROM autopilot_run WHERE id = ?1",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok()
+}
+
+pub(crate) fn parent_status(
+    connection: &Connection,
+    table: &str,
+    id: &str,
+) -> Option<(String, Option<String>)> {
+    let sql = format!("SELECT status, error FROM {table} WHERE id = ?1");
+    connection
+        .query_row(&sql, [id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .ok()
+}
+
+pub(crate) fn kpi_run_status(
+    connection: &Connection,
+    run_id: &str,
+) -> Option<(String, Option<String>)> {
+    connection
+        .query_row(
+            "SELECT status, last_error FROM kpi_ingest_runs WHERE id = ?1",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok()
+}
+
+/// A `job_runs` row's `activity_key` by id — the cheap summary path's way of
+/// naming a registry `settle_failed` handle's key without the full
+/// `occurrences_by_id` join (sol diff R1 #5).
+pub(crate) fn activity_key_for_occurrence(connection: &Connection, id: i64) -> Option<String> {
+    connection
+        .query_row(
+            "SELECT activity_key FROM job_runs WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .ok()
+}
+
+/// Bounded (≤ `limit`) raw member subjects for a sweep/batch parent (sol
+/// diff R1 #14) — the expanded row's evidence of WHAT it is processing. Each
+/// member run's report document title, raw (never composed prose).
+pub(crate) fn member_subjects(
+    connection: &Connection,
+    table: &str,
+    id: &str,
+    limit: usize,
+) -> Vec<String> {
+    let run_ids_json: Option<String> = connection
+        .query_row(
+            &format!("SELECT enqueued_run_ids_json FROM {table} WHERE id = ?1"),
+            [id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+    let run_ids: Vec<String> = run_ids_json
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+    let mut subjects = Vec::with_capacity(limit.min(run_ids.len()));
+    for run_id in run_ids.into_iter().take(limit) {
+        let subject: Option<String> = connection
+            .query_row(
+                "SELECT report_documents.title FROM autopilot_run
+                 JOIN report_documents ON report_documents.id = autopilot_run.report_document_id
+                 WHERE autopilot_run.id = ?1",
+                [&run_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten();
+        if let Some(subject) = subject.filter(|title| !title.trim().is_empty()) {
+            subjects.push(subject);
+        }
+    }
+    subjects
 }
 
 /// A non-terminal domain row (id, company_id, error, updated_at) with no
@@ -366,17 +559,18 @@ pub(crate) struct StalledDomainRow {
 pub(crate) fn stalled_autopilot_runs(
     connection: &Connection,
 ) -> StorageResult<Vec<(StalledDomainRow, String)>> {
+    // sol diff R1 #12: candidates are every non-terminal, non-sweep-child
+    // run; liveness itself is checked per-candidate via
+    // `crate::jobs::autopilot::has_live_stage_job` — an exact `IN` match
+    // over the five deterministic stage ids, never the previous `id LIKE
+    // 'autopilot:' || autopilot_run.id || ':%'` (exploitable by a run id
+    // containing `_`, a SQLite LIKE wildcard, into a false-positive "live"
+    // read for an unrelated row).
     let mut statement = connection.prepare(
         "SELECT id, company_id, last_error, updated_at, report_document_id
          FROM autopilot_run
          WHERE status IN ('pending', 'running')
-             AND sweep_id IS NULL
-             AND NOT EXISTS (
-                 SELECT 1 FROM job_queue
-                 WHERE kind = 'autopilot_stage'
-                     AND status IN ('pending', 'running')
-                     AND id LIKE 'autopilot:' || autopilot_run.id || ':%'
-             )",
+             AND sweep_id IS NULL",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
@@ -389,9 +583,17 @@ pub(crate) fn stalled_autopilot_runs(
             row.get::<_, String>(4)?,
         ))
     })?;
-    let mut out = Vec::new();
+    let mut candidates = Vec::new();
     for row in rows {
-        out.push(row?);
+        candidates.push(row?);
+    }
+    drop(statement);
+
+    let mut out = Vec::new();
+    for (domain, document_id) in candidates {
+        if !crate::jobs::autopilot::has_live_stage_job(connection, &domain.id)? {
+            out.push((domain, document_id));
+        }
     }
     Ok(out)
 }
@@ -471,41 +673,66 @@ pub(crate) fn parent_progress(
     Ok(Some((done, total, failed)))
 }
 
-/// Counts for `get_activity_summary` (two indexed counts + one max, no fan-out).
-pub(crate) struct ActivitySummaryCounts {
-    pub active: i64,
-    pub queued: i64,
-    pub last_finished_at: Option<String>,
-}
-
-pub(crate) fn summary_counts(
-    connection: &Connection,
-    active_ids: &[i64],
-) -> StorageResult<ActivitySummaryCounts> {
-    let queued: i64 = connection.query_row(
-        "SELECT COUNT(*) FROM job_queue WHERE status = 'pending'",
-        [],
-        |row| row.get(0),
-    )?;
-    let last_finished_at: Option<String> = connection
-        .query_row(
-            "SELECT MAX(finished_at) FROM job_runs WHERE finished_at IS NOT NULL",
-            [],
-            |row| row.get(0),
-        )
-        .optional()?
-        .flatten();
-    Ok(ActivitySummaryCounts {
-        active: active_ids.len() as i64,
-        queued,
-        last_finished_at,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::open_in_memory_database;
+
+    fn seed_occurrence(connection: &Connection, activity_key: &str, finished_at: &str) {
+        connection
+            .execute(
+                "INSERT INTO job_runs
+                    (activity_key, run_key, kind, family, subject, target_json, status,
+                     attempt, started_at, finished_at)
+                 VALUES (?1, ?1, 'k', 'sourceRefresh', 's', '{\"kind\":\"sources\"}',
+                     'succeeded', 1, ?2, ?2)",
+                rusqlite::params![activity_key, finished_at],
+            )
+            .expect("seed occurrence");
+    }
+
+    /// sol diff R1 #10: the window compare used to be a lexical text
+    /// comparison, mixing the stored `T…Z` format against `datetime()`'s
+    /// space-separated one. Since the 'T' separator sorts after a plain
+    /// space, any row sharing the cutoff's calendar date passed regardless
+    /// of its actual time-of-day — up to nearly a day too old. Exercise the
+    /// exact boundary now that both sides share one format.
+    #[test]
+    fn window_boundary_is_exact_not_a_lexical_false_positive() {
+        let connection = open_in_memory_database().expect("db");
+        let now = "2026-09-04T12:00:00.000Z";
+
+        // The historical bug's exact false positive: same calendar date as
+        // the cutoff (2026-08-28), but 6 hours EARLIER in the day — genuinely
+        // 7 days + 6 hours old. The old lexical compare wrongly admitted it.
+        seed_occurrence(
+            &connection,
+            "past-cutoff-same-date",
+            "2026-08-28T06:00:00.000Z",
+        );
+        // Exactly at the cutoff instant: inclusive `>=`, must be admitted.
+        seed_occurrence(&connection, "exactly-7-days", "2026-08-28T12:00:00.000Z");
+        // One second older than the cutoff: just outside the window.
+        seed_occurrence(&connection, "7-days-plus-1s", "2026-08-28T11:59:59.000Z");
+        // One millisecond younger than the cutoff: inside, exercising
+        // fractional-second precision.
+        seed_occurrence(&connection, "7-days-minus-1ms", "2026-08-28T12:00:00.001Z");
+        // Comfortably inside the window.
+        seed_occurrence(&connection, "well-inside", "2026-09-01T00:00:00.000Z");
+
+        let rows = recent_occurrences(&connection, now, 7, 40).expect("recent");
+        let keys: std::collections::BTreeSet<String> =
+            rows.into_iter().map(|row| row.activity_key).collect();
+        assert_eq!(
+            keys,
+            std::collections::BTreeSet::from([
+                "exactly-7-days".to_owned(),
+                "7-days-minus-1ms".to_owned(),
+                "well-inside".to_owned(),
+            ]),
+            "only rows at/after the exact 7-day cutoff instant pass — never a same-date lexical false positive"
+        );
+    }
 
     /// ADR 0109 dec. 2/D3 volume gate: `recent_occurrences` reads a BOUNDED
     /// set at 100k finished rows — asserted via the query plan (it must use an
@@ -532,34 +759,71 @@ mod tests {
         }
         tx.commit().expect("commit");
 
-        let sql = "SELECT id FROM job_runs
-             WHERE status IN ('succeeded', 'failed', 'interrupted')
-                 AND finished_at IS NOT NULL
-                 AND finished_at >= datetime(?1, ?2)
-             GROUP BY activity_key";
+        // sol diff R1 #16: EXPLAIN the EXACT production candidate-selection
+        // query (`recent_candidates_sql()`, the same string
+        // `recent_occurrences` runs) — never a hand-copied stand-in that can
+        // drift from what actually executes.
+        let sql = recent_candidates_sql();
         let mut statement = connection
             .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
             .expect("prepare plan");
         let plan: Vec<String> = statement
-            .query_map(params!["2026-09-03T00:00:00Z", "-7 days"], |row| {
-                row.get::<_, String>(3)
-            })
+            .query_map(
+                params!["2026-09-03T00:00:00Z", "-7 days", RECENT_FETCH_CAP],
+                |row| row.get::<_, String>(3),
+            )
             .expect("plan rows")
             .map(|row| row.expect("plan row"))
             .collect();
         let plan_text = plan.join(" | ");
         assert!(
-            plan_text.contains("USING INDEX") || plan_text.contains("USING COVERING INDEX"),
-            "the candidate scan over job_runs must use an index, never an unindexed full scan: {plan_text}"
+            plan_text.contains(&format!("USING INDEX {RECENT_INDEX}"))
+                || plan_text.contains(&format!("USING COVERING INDEX {RECENT_INDEX}")),
+            "the candidate scan must use the intended index {RECENT_INDEX} — not `idx_job_runs_status` \
+             (selective-looking on the status IN-list, but touches almost the whole table at scale \
+             since most terminal rows share one of three statuses) and not a temp-b-tree GROUP BY: {plan_text}"
         );
         assert!(
-            !plan_text.contains("SCAN job_runs USING TEMP B-TREE"),
-            "grouping must not fall back to a full temp-b-tree materialization at this volume: {plan_text}"
+            !plan_text.contains("SCAN job_runs") && !plan_text.contains("TEMP B-TREE"),
+            "no full table/index scan of job_runs, and no temp-b-tree materialization, at 100k rows: {plan_text}"
         );
 
-        let rows = recent_occurrences(&connection, "2026-09-03T00:00:00Z", 7, 40).expect("recent");
+        // Rows VISITED/DECODED must stay bounded by the index range scan —
+        // never proportional to the 100k table (sol diff R1 #16: the old
+        // `rows.len() <= 40` assertion was guaranteed by `LIMIT` alone and
+        // proved nothing about how much work got done to produce it).
+        // `sqlite3_stmt_status`'s fullscan-step counter on the prepared
+        // statement gives a real measurement, independent of wall clock.
+        let mut statement = connection.prepare(&sql).expect("prepare recent");
+        let decoded = {
+            let rows = statement
+                .query_map(
+                    params!["2026-09-03T00:00:00Z", "-7 days", RECENT_FETCH_CAP],
+                    map_occurrence_row,
+                )
+                .expect("query recent");
+            let mut decoded = 0;
+            for row in rows {
+                row.expect("row").expect("decodes");
+                decoded += 1;
+            }
+            decoded
+        };
         assert!(
-            rows.len() <= 40,
+            decoded as i64 <= RECENT_FETCH_CAP,
+            "rows actually decoded must stay bounded by the fetch cap, not the 100k table: {decoded}"
+        );
+        let fullscan_steps = statement.get_status(rusqlite::StatementStatus::FullscanStep);
+        assert!(
+            fullscan_steps < 1_000,
+            "the index range scan must touch a small fraction of the 100k rows, never approach a \
+             full-table walk: {fullscan_steps} fullscan steps"
+        );
+
+        let recent =
+            recent_occurrences(&connection, "2026-09-03T00:00:00Z", 7, 40).expect("recent");
+        assert!(
+            recent.len() <= 40,
             "the cap is applied AFTER the collapse, never bypassed"
         );
     }

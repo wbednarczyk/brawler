@@ -344,6 +344,207 @@ fn reclaims_crash_residue_running_rows() {
 }
 
 // ------------------------------------------------------------------
+// ClaimGuard unwind containment (ADR 0109 dec. 2, sol diff R1 #1)
+// ------------------------------------------------------------------
+
+/// A handler whose `serialization_key` (called in `dispatch_claimed`'s
+/// scaffolding, BEFORE identity resolution / `begin_attempt` — i.e. outside
+/// the inner `handler.run` boundary, exactly the surrounding-scaffolding
+/// panic surface sol diff R1 #1 flags) panics. This is a genuine end-to-end
+/// injection: `run_id` is still `None` at this point, so it exercises the
+/// `ClaimGuard` fallback's queue-only path (no occurrence to settle).
+struct PanicsBeforeIdentityHandler {
+    runs: AtomicUsize,
+}
+
+impl JobHandler for PanicsBeforeIdentityHandler {
+    fn kind(&self) -> &'static str {
+        "panics-before-identity"
+    }
+    fn serialization_key(&self, _payload: &str) -> Option<String> {
+        panic!("boom: scaffolding panic before identity resolution");
+    }
+    fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
+        self.runs.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_scaffolding_panic_before_identity_is_contained_and_the_worker_survives() {
+    // The OUTER catch_unwind (added by this fix) contains a panic BEFORE
+    // identity/begin_attempt ever runs. `ClaimGuard`'s fallback settles the
+    // queue row (no occurrence exists yet — run_id is None); the queue row
+    // is never left `running`, and the SAME worker keeps processing.
+    let handler = Arc::new(PanicsBeforeIdentityHandler {
+        runs: AtomicUsize::new(0),
+    });
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let mut worker = JobWorker::new(state);
+    worker.register(handler.clone());
+    worker.register(Arc::new(OkHandler));
+
+    worker
+        .state
+        .jobs()
+        .enqueue("job-1", "panics-before-identity", "{}", 3)
+        .expect("enqueue");
+
+    assert!(worker.process_one().expect("process survives the panic"));
+    assert_eq!(
+        handler.runs.load(Ordering::SeqCst),
+        0,
+        "the handler must never run — the panic happened before that point"
+    );
+    let status = worker
+        .state
+        .jobs()
+        .status("job-1")
+        .expect("status")
+        .expect("row");
+    assert_ne!(
+        status.status, "running",
+        "the claimed row must never strand `running` after a scaffolding panic"
+    );
+    assert!(
+        job_runs_statuses(&worker.state).is_empty(),
+        "no occurrence was ever opened"
+    );
+
+    // The SAME worker instance still processes the next job normally.
+    worker
+        .state
+        .jobs()
+        .enqueue("job-2", "test-ok-after-panic", "{}", 1)
+        .expect("enqueue second");
+    assert!(worker.process_one().expect("second job processes fine"));
+}
+
+/// Directly exercises `ClaimGuard`'s Drop-while-armed fallback for the two
+/// shapes an outer-scaffolding panic can leave it in (sol diff R1 #1): with
+/// an occurrence already open (`run_id: Some`, representing a panic during/
+/// after `begin_attempt` but before settle) and without one (representing a
+/// panic during identity resolution itself). White-box (same module) since
+/// no honest end-to-end seam exists to force a real panic at those exact
+/// points without adding test-only production hooks.
+#[test]
+fn claim_guard_fallback_settles_a_run_id_occurrence_on_unwind() {
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    state
+        .jobs()
+        .enqueue("job-1", "any-kind", "{}", 3)
+        .expect("enqueue");
+    state.jobs().claim_next().expect("claim").expect("job");
+    let run_id = state
+        .job_runs()
+        .begin_attempt(crate::storage::NewJobRun {
+            activity_key: "k:job-1".to_owned(),
+            run_key: "job-1".to_owned(),
+            kind: "any-kind".to_owned(),
+            family: crate::jobs::activity_identity::ActivityFamily::SourceRefresh,
+            company_id: None,
+            subject: "s".to_owned(),
+            target: crate::jobs::activity_identity::ActivityTarget::Sources,
+            attempt: 1,
+        })
+        .expect("begin");
+
+    {
+        let guard = ClaimGuard::new(state.clone(), "job-1".to_owned(), 1);
+        guard.set_run_id(run_id);
+        // Dropped here without `disarm()` — simulates an unwind mid-flight.
+    }
+
+    let queue_status = state.jobs().status("job-1").expect("status").expect("row");
+    assert_ne!(
+        queue_status.status, "running",
+        "the fallback must terminalize the stranded queue row"
+    );
+    assert_eq!(job_runs_statuses(&state), vec!["retry_scheduled"]);
+}
+
+#[test]
+fn claim_guard_fallback_settles_the_queue_row_with_no_occurrence() {
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    state
+        .jobs()
+        .enqueue("job-2", "any-kind", "{}", 1)
+        .expect("enqueue");
+    state.jobs().claim_next().expect("claim").expect("job");
+
+    {
+        let _guard = ClaimGuard::new(state.clone(), "job-2".to_owned(), 1);
+        // No run_id ever set (identity resolution never got that far).
+    }
+
+    let queue_status = state.jobs().status("job-2").expect("status").expect("row");
+    assert_eq!(
+        queue_status.status, "failed",
+        "attempts (1) == max_attempts (1): terminal on the fallback path too"
+    );
+    assert!(job_runs_statuses(&state).is_empty());
+}
+
+#[test]
+fn claim_guard_fallback_settles_succeeded_when_marked_before_unwind() {
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    state
+        .jobs()
+        .enqueue("job-3", "any-kind", "{}", 3)
+        .expect("enqueue");
+    state.jobs().claim_next().expect("claim").expect("job");
+    let run_id = state
+        .job_runs()
+        .begin_attempt(crate::storage::NewJobRun {
+            activity_key: "k:job-3".to_owned(),
+            run_key: "job-3".to_owned(),
+            kind: "any-kind".to_owned(),
+            family: crate::jobs::activity_identity::ActivityFamily::SourceRefresh,
+            company_id: None,
+            subject: "s".to_owned(),
+            target: crate::jobs::activity_identity::ActivityTarget::Sources,
+            attempt: 1,
+        })
+        .expect("begin");
+
+    {
+        let guard = ClaimGuard::new(state.clone(), "job-3".to_owned(), 1);
+        guard.set_run_id(run_id);
+        guard.set_succeeded(true);
+        // A panic while ATTEMPTING the succeed-settle call — the fallback
+        // must record success, never downgrade completed work to failed.
+    }
+
+    let queue_status = state.jobs().status("job-3").expect("status").expect("row");
+    assert_eq!(queue_status.status, "succeeded");
+    assert_eq!(job_runs_statuses(&state), vec!["succeeded"]);
+}
+
+#[test]
+fn claim_guard_disarmed_is_a_noop_on_drop() {
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    state
+        .jobs()
+        .enqueue("job-4", "any-kind", "{}", 1)
+        .expect("enqueue");
+    state.jobs().claim_next().expect("claim").expect("job");
+
+    {
+        let guard = ClaimGuard::new(state.clone(), "job-4".to_owned(), 1);
+        guard.disarm();
+        // The ordinary path is presumed to have already handled this job
+        // (e.g. via `defer`) — the guard must not touch it again.
+        state.jobs().defer("job-4", 0).expect("ordinary defer");
+    }
+
+    let queue_status = state.jobs().status("job-4").expect("status").expect("row");
+    assert_eq!(
+        queue_status.status, "pending",
+        "a disarmed guard must never re-settle a row the ordinary path already handled"
+    );
+}
+
+// ------------------------------------------------------------------
 // Occurrence-ledger dispatch (ADR 0109 dec. 2)
 // ------------------------------------------------------------------
 
@@ -572,8 +773,13 @@ fn begin_attempt_failure_skips_run_and_defers() {
 
 #[test]
 fn settle_failure_leaves_queue_and_occurrence_consistent() {
-    // The queue row and its occurrence settle in ONE transaction: after a
-    // terminal failure both agree (`failed` / `failed`), never split.
+    // sol diff R1 #17: this test used to run an ORDINARY terminal failure
+    // (no fault injected) and merely asserted the happy-path outcome. Inject
+    // a REAL failure at settle time — a BEFORE UPDATE trigger on `job_runs`
+    // that RAISEs — and prove the queue row and the occurrence stay in their
+    // PRE-settle state (both still `running`), never split: the settle
+    // transaction is one `BEGIN IMMEDIATE`, so a mid-transaction failure
+    // rolls back the queue-side UPDATE too, not just the occurrence UPDATE.
     let handler = Arc::new(ActivityHandler {
         fail_first: usize::MAX,
         panics: false,
@@ -590,7 +796,24 @@ fn settle_failure_leaves_queue_and_occurrence_consistent() {
             1,
         )
         .expect("enqueue");
-    assert!(worker.process_one().expect("process"));
+
+    // A trigger on UPDATE only — `begin_attempt`'s INSERT still succeeds, so
+    // identity resolution proceeds normally; only the settle UPDATE fails.
+    worker
+        .state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute_batch(
+            "CREATE TRIGGER poison_job_runs_settle BEFORE UPDATE ON job_runs
+             BEGIN SELECT RAISE(ABORT, 'settle poisoned for test'); END;",
+        )
+        .expect("install poison trigger");
+
+    let result = worker.process_one();
+    assert!(
+        result.is_err(),
+        "the poisoned settle must surface as an error, not a swallowed success: {result:?}"
+    );
 
     let queue_status = worker
         .state
@@ -598,21 +821,48 @@ fn settle_failure_leaves_queue_and_occurrence_consistent() {
         .status("src:1")
         .expect("status")
         .expect("row");
-    assert_eq!(queue_status.status, "failed");
-    assert_eq!(job_runs_statuses(&worker.state), vec!["failed"]);
+    assert_eq!(
+        queue_status.status, "running",
+        "the queue row's UPDATE must roll back with the failed occurrence UPDATE — never split"
+    );
+    assert_eq!(
+        job_runs_statuses(&worker.state),
+        vec!["running"],
+        "the occurrence UPDATE rolled back too — both sides stay consistent"
+    );
+}
+
+/// A handler that always succeeds, registered alongside the panicking
+/// handler in [`handler_panic_takes_the_retry_path`] so the SAME `JobWorker`
+/// instance (not a second one sharing state) proves it survives a panic.
+struct OkHandler;
+impl JobHandler for OkHandler {
+    fn kind(&self) -> &'static str {
+        "test-ok-after-panic"
+    }
+    fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[test]
 fn handler_panic_takes_the_retry_path() {
     // A handler panic is contained (`catch_unwind`): the queue row goes back
     // to `pending` with attempts+1, the occurrence settles `retry_scheduled`
-    // (never left open), and the worker survives to process the next job.
+    // (never left open), and the SAME worker instance survives to process the
+    // next job normally (sol diff R1 #17: the prior version of this test
+    // built a SECOND worker sharing state, proving state survival but never
+    // that the WORKER THREAD/instance itself keeps running).
     let handler = Arc::new(ActivityHandler {
         fail_first: 0,
         panics: true,
         runs: AtomicUsize::new(0),
     });
-    let worker = activity_worker(handler.clone());
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let mut worker = JobWorker::new(state);
+    worker.register(handler.clone());
+    worker.register(Arc::new(OkHandler));
+
     worker
         .state
         .jobs()
@@ -636,25 +886,22 @@ fn handler_panic_takes_the_retry_path() {
     assert_eq!(status.attempts, 1);
     assert_eq!(job_runs_statuses(&worker.state), vec!["retry_scheduled"]);
 
-    // Worker continues to process the NEXT job normally after a panic.
+    // Worker continues to process the NEXT job normally after a panic — the
+    // SAME `worker` instance, never a second one.
     worker
         .state
         .jobs()
         .enqueue("other-ok", "test-ok-after-panic", "{}", 1)
         .expect("enqueue second");
-    struct OkHandler;
-    impl JobHandler for OkHandler {
-        fn kind(&self) -> &'static str {
-            "test-ok-after-panic"
-        }
-        fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
-            Ok(())
-        }
-    }
-    // Registering after construction isn't possible on this worker instance
-    // (handlers are immutable once built for this test's `worker`), so drive
-    // a second worker sharing the same state to prove the STATE survives.
-    let mut worker2 = JobWorker::new(worker.state.clone());
-    worker2.register(Arc::new(OkHandler));
-    assert!(worker2.process_one().expect("second job processes fine"));
+    assert!(worker.process_one().expect("second job processes fine"));
+    assert_eq!(
+        worker
+            .state
+            .jobs()
+            .status("other-ok")
+            .expect("status")
+            .expect("row")
+            .status,
+        "succeeded"
+    );
 }

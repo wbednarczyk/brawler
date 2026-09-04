@@ -289,6 +289,9 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // The aggregate cap is a response/request-size budget (ADR 0102 dec.
         // 10), the same class as the single-call `OBSERVATIONS_MAX` refusal.
         StorageError::KpiIngestDraftAggregateBudgetExceeded { .. } => ResponseBudgetExceeded,
+        // The queue row vanished mid-settle (sol diff R1 #2) — an invariant
+        // violation in stored state, not a shape problem with the request.
+        StorageError::JobQueueRowMissingDuringSettle { .. } => Internal,
     }
 }
 

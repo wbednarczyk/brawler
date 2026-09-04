@@ -1,6 +1,7 @@
 use super::*;
 use crate::app_state::AppState;
 use crate::jobs::handlers::build_worker;
+use crate::jobs::kpi_ingest_queue::KPI_INGEST_VALIDATE_KIND;
 use crate::storage::{
     open_in_memory_database, CaptureReportDocumentInput, NewCompany, NewKpiIngestRun,
 };
@@ -165,12 +166,16 @@ fn representative_payloads(state: &AppState) -> Vec<(&'static str, String, Strin
         ),
         (
             KPI_INGEST_VALIDATE_KIND,
-            "kpi-validate-job:1".to_owned(),
+            // sol diff R1 #9/#17: the REAL production job id shape
+            // (`kpi_ingest_queue::validate_job_id`), never an arbitrary
+            // fixture id — `run_id` is now parsed FROM this id, so a fixture
+            // id that doesn't conform resolves `Corrupted`, not `KpiIngest`.
+            format!("{KPI_INGEST_VALIDATE_KIND}:{}:rev1", kpi_run.id),
             format!(r#"{{"jobId":"x","runId":"{}","revision":1}}"#, kpi_run.id),
         ),
         (
             KPI_INGEST_COMMIT_KIND,
-            "kpi-commit-job:1".to_owned(),
+            format!("{KPI_INGEST_COMMIT_KIND}:{}:rev1:h", kpi_run.id),
             format!(
                 r#"{{"jobId":"x","runId":"{}","revision":1,"manifestHash":"h"}}"#,
                 kpi_run.id
@@ -294,6 +299,100 @@ fn job_kind_list_matches_registry() {
         ts_kinds, registered,
         "jobKinds.ts must list exactly the registered queue kinds"
     );
+}
+
+#[test]
+fn kpi_identity_is_authoritative_from_the_job_id_never_a_tampered_payload() {
+    // sol diff R1 #9: `run_id` must come from the CLAIMED job id
+    // (`kpi_ingest_queue::parse_job_id`), never the payload's duplicated
+    // `runId` — a payload whose `runId` disagrees with the id must still
+    // resolve to the ID's run, never the payload's (a tampered/stale
+    // payload could otherwise misattribute the occurrence to the wrong run
+    // before preflight validation ever runs).
+    let state = state();
+    let cdr = company(&state, "CDR");
+    let real_doc = document(&state, &cdr, "Prawdziwy raport");
+    let real_run = state
+        .kpi_ingest_runs()
+        .create_run_if_absent(&NewKpiIngestRun {
+            report_document_id: real_doc,
+            company_id: cdr.clone(),
+            period_id: None,
+            profile_version: "gpw_ifrs_annual@v1".to_owned(),
+            scope: None,
+            data_quality: None,
+            period_fiscal_year: None,
+            period_type: None,
+        })
+        .expect("real kpi run");
+    let decoy_doc = document(&state, &cdr, "Zwodniczy raport");
+    let decoy_run = state
+        .kpi_ingest_runs()
+        .create_run_if_absent(&NewKpiIngestRun {
+            report_document_id: decoy_doc,
+            company_id: cdr,
+            period_id: None,
+            profile_version: "gpw_ifrs_annual@v1".to_owned(),
+            scope: None,
+            data_quality: None,
+            period_fiscal_year: None,
+            period_type: None,
+        })
+        .expect("decoy kpi run");
+
+    let connection = state.checkout_for_tests().expect("checkout");
+    let job_id = format!("{KPI_INGEST_VALIDATE_KIND}:{}:rev1", real_run.id);
+    // Tampered payload: `runId` names the DECOY run, not the claimed job's.
+    let payload = format!(r#"{{"jobId":"x","runId":"{}","revision":1}}"#, decoy_run.id);
+    let identity = identity_for_job(KPI_INGEST_VALIDATE_KIND, &job_id, &payload, &connection)
+        .expect("identity");
+
+    assert_eq!(
+        identity.activity_key,
+        format!("kpi-ingest:{}", real_run.id),
+        "the identity must come from the CLAIMED job id, never the payload's runId"
+    );
+    assert_ne!(
+        identity.activity_key,
+        format!("kpi-ingest:{}", decoy_run.id)
+    );
+}
+
+#[test]
+fn kpi_identity_from_a_malformed_job_id_is_corrupted_not_the_payloads_run() {
+    // The flip side: a job id that does not match the production
+    // `kpi_ingest_validate:{run}:rev{N}` shape must resolve `Corrupted` —
+    // never silently fall back to trusting the payload's `runId`.
+    let state = state();
+    let connection = state.checkout_for_tests().expect("checkout");
+    let identity = identity_for_job(
+        KPI_INGEST_VALIDATE_KIND,
+        "not-a-real-kpi-job-id",
+        r#"{"jobId":"x","runId":"kpiing_deadbeef","revision":1}"#,
+        &connection,
+    )
+    .expect("identity");
+    assert_eq!(identity.family, ActivityFamily::Corrupted);
+}
+
+#[test]
+fn briefing_subject_is_never_composed_prose() {
+    // sol diff R1 #17: the briefing family had a fixed Polish string baked
+    // into the backend (`"Poranny przegląd"`) — composed prose, untranslated
+    // for an English user, and contrary to contracts.md's raw-subject rule.
+    // The family has no raw subject of its own; the frontend renders the
+    // family label instead.
+    let state = state();
+    let connection = state.checkout_for_tests().expect("checkout");
+    let identity = identity_for_job(
+        crate::jobs::morning_briefing::MORNING_BRIEFING_KIND,
+        "briefing",
+        "{}",
+        &connection,
+    )
+    .expect("identity");
+    assert_eq!(identity.family, ActivityFamily::Briefing);
+    assert_eq!(identity.subject, "");
 }
 
 #[test]

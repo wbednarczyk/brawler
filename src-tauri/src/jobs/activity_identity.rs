@@ -262,7 +262,12 @@ pub fn identity_for_job(
             activity_key: "briefing".to_owned(),
             family: ActivityFamily::Briefing,
             company_id: None,
-            subject: "Poranny przegląd".to_owned(),
+            // sol diff R1 #17: no composed backend prose in `subject` (ADR
+            // 0087 dec. 4 / contracts.md: raw source data only) — a fixed
+            // Polish string here rendered untranslated for an English user.
+            // The briefing/system families have no raw subject of their
+            // own; the frontend renders the family label instead.
+            subject: String::new(),
             target: ActivityTarget::Today,
         },
         COMPANY_BACKFILL_KIND => {
@@ -405,10 +410,28 @@ pub fn identity_for_job(
             }
         }
         KPI_INGEST_VALIDATE_KIND | KPI_INGEST_COMMIT_KIND => {
-            let Some(run_id) = value.as_ref().and_then(|v| str_field(v, "runId")) else {
+            // sol diff R1 #9: `run_id` is authoritative from the CLAIMED
+            // job id (`kpi_ingest_queue::parse_job_id`, the SAME parser the
+            // KPI subsystem itself treats as the single authority for
+            // terminalization) — never the payload's duplicated `runId`,
+            // which a tampered/mismatched payload could otherwise use to
+            // misattribute the occurrence to the wrong run before preflight
+            // validation ever runs. The payload's `runId` is only a
+            // coherence check (logged, never authoritative).
+            let Some(parsed) = crate::jobs::kpi_ingest_queue::parse_job_id(job_id) else {
                 return Some(ActivityIdentity::corrupted(job_id));
             };
-            let Some((company_id, report_document_id)) = kpi_run_scope(connection, &run_id) else {
+            let run_id = parsed.run_id();
+            if let Some(payload_run_id) = value.as_ref().and_then(|v| str_field(v, "runId")) {
+                if payload_run_id != run_id {
+                    log::warn!(
+                        "activity identity: job {job_id} payload runId {payload_run_id:?} \
+                         disagrees with the id-derived run {run_id:?} — identity taken from the \
+                         id (sol diff R1 #9)"
+                    );
+                }
+            }
+            let Some((company_id, report_document_id)) = kpi_run_scope(connection, run_id) else {
                 return Some(ActivityIdentity::corrupted(job_id));
             };
             ActivityIdentity {

@@ -7,7 +7,6 @@
 //! are still in the state it looks for, so a second call is a no-op.
 
 use crate::app_state::AppState;
-use crate::jobs::autopilot::AUTOPILOT_STAGE_KIND;
 use crate::jobs::history_sweep::HISTORY_SWEEP_KIND;
 use crate::jobs::pipeline_reextraction::PIPELINE_REEXTRACTION_KIND;
 use crate::storage::{job_runs, JobRunOutcome};
@@ -15,9 +14,17 @@ use crate::storage::{job_runs, JobRunOutcome};
 /// Terminalize everything a crash could have left ambiguous (ADR 0109 dec. 4).
 /// Best-effort per rule: one rule's storage error is logged and does not stop
 /// the others (never blocks startup).
+///
+/// DELIBERATE (sol diff R1 #12): reconciliation failing does NOT refuse to
+/// start the worker pools. The ledger is a read-model convenience over the
+/// app's real work, never a gate on it — a startup that hard-failed because
+/// one occurrence's `interrupted` write errored would turn an activity-panel
+/// cosmetic issue into the app not starting at all. Every failure here logs
+/// at `error` level (loud, since it means a durable ledger row is now
+/// silently wrong) and reconciliation simply moves on.
 pub fn reconcile_on_startup(state: &AppState) {
     if let Err(error) = interrupt_open_occurrences(state) {
-        log::warn!("activity reconcile: open occurrences: {error}");
+        log::error!("activity reconcile: open occurrences: {error}");
     }
     if let Err(error) = fail_running_transcripts(state) {
         log::warn!("activity reconcile: transcripts: {error}");
@@ -43,14 +50,22 @@ pub fn reconcile_on_startup(state: &AppState) {
 
 /// Every occurrence still `running` when the app starts could not have
 /// survived the crash — terminalize it `interrupted` (ADR 0109 dec. 4).
+/// Bulk, in ONE `BEGIN IMMEDIATE` transaction (sol diff R1 #12): the
+/// previous per-id loop ran each settle as its own autocommit statement, so
+/// a failure partway left an arbitrary split between interrupted and still-
+/// `running` rows. Atomic now: either every open occurrence settles, or none
+/// does (and the caller logs it loudly and moves on regardless).
 fn interrupt_open_occurrences(state: &AppState) -> Result<(), String> {
-    let connection = state.checkout().map_err(|e| e.to_string())?;
-    let ids = job_runs::running_ids(&connection).map_err(|e| e.to_string())?;
+    let mut connection = state.checkout().map_err(|e| e.to_string())?;
+    let tx = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    let ids = job_runs::running_ids(&tx).map_err(|e| e.to_string())?;
     for id in ids {
-        job_runs::settle(&connection, id, &JobRunOutcome::Interrupted)
-            .map_err(|e| e.to_string())?;
+        job_runs::settle(&tx, id, &JobRunOutcome::Interrupted).map_err(|e| e.to_string())?;
     }
-    job_runs::prune(&connection).map_err(|e| e.to_string())
+    job_runs::prune(&tx).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
 }
 
 /// A `transcript_jobs` row left `running` by a crash: no queue and no
@@ -92,22 +107,11 @@ fn fail_orphaned_autopilot_runs(state: &AppState) -> Result<(), String> {
     drop(statement);
 
     for run_id in run_ids {
-        // Stage job ids are deterministic: `autopilot:{run_id}:{stage}`
-        // (`jobs::autopilot::stage_job_id`) — an exact prefix match over the
-        // five known stage names is precise, no payload parsing needed.
-        let live_stage: bool = connection
-            .query_row(
-                &format!(
-                    "SELECT EXISTS(
-                        SELECT 1 FROM job_queue
-                        WHERE kind = '{AUTOPILOT_STAGE_KIND}'
-                            AND status IN ('pending', 'running')
-                            AND id LIKE ?1
-                    )"
-                ),
-                [format!("autopilot:{run_id}:%")],
-                |row| row.get(0),
-            )
+        // sol diff R1 #12: exact `IN` over the five deterministic stage ids
+        // (`jobs::autopilot::has_live_stage_job`) — never a `LIKE` prefix
+        // match, which a `run_id` containing `_` (a SQLite LIKE wildcard)
+        // could exploit into a false-positive "still live" read.
+        let live_stage = crate::jobs::autopilot::has_live_stage_job(&connection, &run_id)
             .map_err(|e| e.to_string())?;
         if live_stage {
             continue;

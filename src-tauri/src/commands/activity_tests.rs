@@ -90,7 +90,13 @@ fn detection_run_is_one_item_per_document_with_document_target() {
     state
         .jobs()
         .enqueue(
-            "autopilot:1",
+            // The real production stage-job id format (`autopilot:{run_id}:{stage}`,
+            // `jobs::autopilot::stage_job_id`) — required since the read model's
+            // stalled-autopilot-run detection matches it exactly (sol diff R1 #12),
+            // and the unified keyed task map (sol diff R1 #5) now surfaces any
+            // mismatch as a real precedence conflict instead of silently
+            // coexisting in two DTO sections.
+            &format!("autopilot:run:{doc}:fetch"),
             crate::jobs::autopilot::AUTOPILOT_STAGE_KIND,
             &format!(r#"{{"run_id":"run:{doc}","stage":"fetch"}}"#),
             1,
@@ -187,6 +193,71 @@ fn recent_cap_applies_after_the_collapse() {
     }
     let view = compute_activity(&state).expect("view");
     assert_eq!(view.recent.len(), 40, "cap applies AFTER the collapse");
+}
+
+#[test]
+fn a_stage_plus_retries_collapses_to_one_recent_item() {
+    // sol diff R1 #17: a task that took several ATTEMPTS (retries) before
+    // finally terminating — the shape a multi-stage pipeline with retries
+    // leaves in `job_runs` — must still collapse to exactly ONE `recent`
+    // item, the LATEST attempt, not one row per attempt.
+    let state = state();
+    let key = "source-refresh:flaky-adapter".to_owned();
+
+    let attempt_1 = state
+        .job_runs()
+        .begin_attempt(NewJobRun {
+            activity_key: key.clone(),
+            run_key: "job-flaky:1".to_owned(),
+            kind: SOURCE_REFRESH_KIND.to_owned(),
+            family: ActivityFamily::SourceRefresh,
+            company_id: None,
+            subject: "Flaky Adapter".to_owned(),
+            target: ActivityTarget::Sources,
+            attempt: 1,
+        })
+        .expect("begin attempt 1");
+    // `retry_scheduled` is explicitly non-terminal (the job runs again) and
+    // excluded from the `recent_occurrences` candidate set entirely — settle
+    // this as `interrupted` instead (a genuinely TERMINAL row in storage,
+    // the shape a crash mid-retry leaves) so TWO terminal rows really do
+    // share this activity_key, actually exercising the collapse.
+    state
+        .job_runs()
+        .settle(attempt_1, JobRunOutcome::Interrupted)
+        .expect("settle attempt 1 as interrupted");
+
+    let attempt_2 = state
+        .job_runs()
+        .begin_attempt(NewJobRun {
+            activity_key: key.clone(),
+            run_key: "job-flaky:1".to_owned(),
+            kind: SOURCE_REFRESH_KIND.to_owned(),
+            family: ActivityFamily::SourceRefresh,
+            company_id: None,
+            subject: "Flaky Adapter".to_owned(),
+            target: ActivityTarget::Sources,
+            attempt: 2,
+        })
+        .expect("begin attempt 2");
+    state
+        .job_runs()
+        .settle(attempt_2, JobRunOutcome::Succeeded)
+        .expect("settle attempt 2 as succeeded");
+
+    let view = compute_activity(&state).expect("view");
+    let matches: Vec<_> = view
+        .recent
+        .iter()
+        .filter(|item| item.activity_key == key)
+        .collect();
+    assert_eq!(
+        matches.len(),
+        1,
+        "every attempt of the same task collapses to ONE recent item, got {matches:?}"
+    );
+    assert_eq!(matches[0].status, "succeeded", "the LATEST attempt wins");
+    assert_eq!(matches[0].attempt, 2);
 }
 
 #[test]
@@ -402,6 +473,43 @@ fn running_row_without_open_occurrence_is_stalled() {
 }
 
 #[test]
+fn running_transcript_row_without_open_occurrence_is_stalled() {
+    // sol diff R1 #6: the live read model used to project only `queued`
+    // transcript rows — a `running` transcript row with no backing
+    // occurrence (the finalizer's own best-effort ceiling, or crash residue
+    // before a restart's reconcile runs) was simply invisible, not honestly
+    // `stalled` like the analogous `job_queue` case above.
+    let state = state();
+    state
+        .create_transcript_job(crate::storage::NewTranscriptJob {
+            company_id: None,
+            provider_id: None,
+            source_url: "https://youtube.test/watch?v=mock".to_owned(),
+            source_label: Some("Earnings call Q2 2026".to_owned()),
+            recognized_company_candidates: None,
+        })
+        .expect("create transcript job");
+    let connection = state.checkout_for_tests().expect("checkout");
+    connection
+        .execute(
+            "UPDATE transcript_jobs SET status = 'running', started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE source_label = 'Earnings call Q2 2026'",
+            [],
+        )
+        .expect("force running, no occurrence");
+    drop(connection);
+
+    let view = compute_activity(&state).expect("view");
+    let stalled: Vec<_> = view
+        .active
+        .iter()
+        .filter(|item| item.family == ActivityFamily::Transcript && item.status == "stalled")
+        .collect();
+    assert_eq!(stalled.len(), 1);
+    assert_eq!(stalled[0].subject, "Earnings call Q2 2026");
+}
+
+#[test]
 fn sweep_is_one_parent_with_progress_and_children_suppressed() {
     // ADR 0109 dec. 1: a sweep is ONE item with member progress; its child
     // `autopilot_stage` jobs (pending/running) resolve to the SAME
@@ -489,6 +597,456 @@ fn sweep_is_one_parent_with_progress_and_children_suppressed() {
     assert_eq!(progress.done, 1);
     assert_eq!(progress.total, 2);
     assert_eq!(progress.failed, 0);
+}
+
+// ------------------------------------------------------------------
+// Domain-status override (sol diff R1 #4)
+// ------------------------------------------------------------------
+
+#[test]
+fn recent_succeeded_occurrence_with_a_failed_domain_row_shows_failed() {
+    // `job_runs.status` alone records only whether the LEDGERED attempt
+    // itself finished — never the underlying domain outcome. A report-
+    // reading run that finalized `failed` must show `failed` in `recent`,
+    // never the occurrence's own stale `succeeded`.
+    let state = state();
+    let cdr = company(&state, "CDR");
+    let doc = document(&state, &cdr, "Raport z błędem");
+    let run = state
+        .autopilot()
+        .create_run_if_absent(
+            "run:domain-failed",
+            &cdr,
+            &doc,
+            "detection",
+            "autopilot",
+            None,
+        )
+        .expect("create run")
+        .expect("created");
+    let connection = state.checkout_for_tests().expect("checkout");
+    connection
+        .execute(
+            "UPDATE autopilot_run SET status = 'failed', last_error = 'diff stage exploded' WHERE id = ?1",
+            [&run.id],
+        )
+        .expect("mark failed");
+    drop(connection);
+
+    let run_id = state
+        .job_runs()
+        .begin_attempt(NewJobRun {
+            activity_key: format!("report-reading:{}", run.id),
+            run_key: format!("autopilot:{}:notify", run.id),
+            kind: crate::jobs::autopilot::AUTOPILOT_STAGE_KIND.to_owned(),
+            family: ActivityFamily::ReportReading,
+            company_id: Some(cdr.clone()),
+            subject: "Raport z błędem".to_owned(),
+            target: ActivityTarget::Company {
+                company_id: cdr,
+                tool: None,
+            },
+            attempt: 1,
+        })
+        .expect("begin");
+    state
+        .job_runs()
+        .settle(run_id, JobRunOutcome::Succeeded)
+        .expect("settle succeeded");
+
+    let view = compute_activity(&state).expect("view");
+    let item = view
+        .recent
+        .iter()
+        .find(|item| item.activity_key == format!("report-reading:{}", run.id))
+        .expect("recent item");
+    assert_eq!(item.status, "failed");
+    assert_eq!(item.error.as_deref(), Some("diff stage exploded"));
+}
+
+#[test]
+fn recent_occurrence_with_a_partial_domain_row_shows_partial() {
+    // `job_runs.status` has no `partial` value at all (the schema's CHECK
+    // constraint excludes it) — `partial` can ONLY come from the domain
+    // override.
+    let state = state();
+    let cdr = company(&state, "CDR");
+    let doc = document(&state, &cdr, "Raport częściowy");
+    let run = state
+        .autopilot()
+        .create_run_if_absent(
+            "run:domain-partial",
+            &cdr,
+            &doc,
+            "detection",
+            "autopilot",
+            None,
+        )
+        .expect("create run")
+        .expect("created");
+    let connection = state.checkout_for_tests().expect("checkout");
+    connection
+        .execute(
+            "UPDATE autopilot_run SET status = 'partial', last_error = 'notify failed, rest ok' WHERE id = ?1",
+            [&run.id],
+        )
+        .expect("mark partial");
+    drop(connection);
+
+    let run_id = state
+        .job_runs()
+        .begin_attempt(NewJobRun {
+            activity_key: format!("report-reading:{}", run.id),
+            run_key: format!("autopilot:{}:notify", run.id),
+            kind: crate::jobs::autopilot::AUTOPILOT_STAGE_KIND.to_owned(),
+            family: ActivityFamily::ReportReading,
+            company_id: Some(run.company_id.clone()),
+            subject: "Raport częściowy".to_owned(),
+            target: ActivityTarget::Company {
+                company_id: run.company_id.clone(),
+                tool: None,
+            },
+            attempt: 1,
+        })
+        .expect("begin");
+    state
+        .job_runs()
+        .settle(run_id, JobRunOutcome::Succeeded)
+        .expect("settle succeeded");
+
+    let view = compute_activity(&state).expect("view");
+    let item = view
+        .recent
+        .iter()
+        .find(|item| item.activity_key == format!("report-reading:{}", run.id))
+        .expect("recent item");
+    assert_eq!(item.status, "partial");
+}
+
+// ------------------------------------------------------------------
+// Keyed task map + precedence (sol diff R1 #5)
+// ------------------------------------------------------------------
+
+#[test]
+fn sweep_with_a_running_child_pending_children_and_a_completed_fan_out_is_one_running_item() {
+    // Precedence `running > stalled > queued > recent` (sol diff R1 #5): the
+    // sweep's OWN job finishes quickly (its own occurrence is a terminal,
+    // `recent`-window row), one member's stage job is literally CLAIMED
+    // (`running`), and another member is merely `pending` — the whole sweep
+    // must collapse to exactly ONE item, `running` (the highest-precedence
+    // source wins), never split across sections or shown `recent`/`stalled`.
+    let state = state();
+    let cdr = company(&state, "CDR");
+    let sweep = state
+        .history_sweeps()
+        .create_history_sweep(&cdr, "manual")
+        .expect("sweep");
+
+    let running_doc = document(&state, &cdr, "Raport w trakcie");
+    state
+        .autopilot()
+        .create_run_if_absent(
+            "run:running-child",
+            &cdr,
+            &running_doc,
+            "history_sweep",
+            "autopilot",
+            Some(&sweep.id),
+        )
+        .expect("create run")
+        .expect("created");
+    state
+        .jobs()
+        .enqueue(
+            "autopilot:run:running-child:fetch",
+            crate::jobs::autopilot::AUTOPILOT_STAGE_KIND,
+            r#"{"run_id":"run:running-child","stage":"fetch"}"#,
+            1,
+        )
+        .expect("enqueue running child");
+    // Claim it so the queue row is literally `running` (matches production:
+    // the queue's dispatch seam opens the occurrence via `begin_attempt`).
+    let connection = state.checkout_for_tests().expect("checkout");
+    let identity = crate::jobs::activity_identity::identity_for_job(
+        crate::jobs::autopilot::AUTOPILOT_STAGE_KIND,
+        "autopilot:run:running-child:fetch",
+        r#"{"run_id":"run:running-child","stage":"fetch"}"#,
+        &connection,
+    )
+    .expect("identity");
+    drop(connection);
+    let claimed = state
+        .jobs()
+        .claim_next()
+        .expect("claim")
+        .expect("running child claimed");
+    let run_id = state
+        .job_runs()
+        .begin_attempt(NewJobRun {
+            activity_key: identity.activity_key.clone(),
+            run_key: claimed.id,
+            kind: crate::jobs::autopilot::AUTOPILOT_STAGE_KIND.to_owned(),
+            family: identity.family,
+            company_id: identity.company_id.clone(),
+            subject: identity.subject.clone(),
+            target: identity.target.clone(),
+            attempt: 1,
+        })
+        .expect("begin occurrence for the running child");
+    let _ = run_id;
+
+    let pending_doc = document(&state, &cdr, "Raport oczekujący");
+    state
+        .autopilot()
+        .create_run_if_absent(
+            "run:pending-child",
+            &cdr,
+            &pending_doc,
+            "history_sweep",
+            "autopilot",
+            Some(&sweep.id),
+        )
+        .expect("create run")
+        .expect("created");
+    state
+        .jobs()
+        .enqueue(
+            "autopilot:run:pending-child:fetch",
+            crate::jobs::autopilot::AUTOPILOT_STAGE_KIND,
+            r#"{"run_id":"run:pending-child","stage":"fetch"}"#,
+            1,
+        )
+        .expect("enqueue pending child");
+
+    // The sweep's own fan-out job already finished (terminal, `recent`).
+    let sweep_run_id = state
+        .job_runs()
+        .begin_attempt(NewJobRun {
+            activity_key: format!("report-sweep:{}", sweep.id),
+            run_key: format!("sweep-job:{}", sweep.id),
+            kind: crate::jobs::history_sweep::HISTORY_SWEEP_KIND.to_owned(),
+            family: ActivityFamily::ReportSweep,
+            company_id: Some(cdr.clone()),
+            subject: "GPW ESPI/EBI".to_owned(),
+            target: ActivityTarget::Company {
+                company_id: cdr,
+                tool: None,
+            },
+            attempt: 1,
+        })
+        .expect("begin sweep occurrence");
+    state
+        .job_runs()
+        .settle(sweep_run_id, JobRunOutcome::Succeeded)
+        .expect("settle sweep occurrence");
+
+    let view = compute_activity(&state).expect("view");
+    let sweep_key = format!("report-sweep:{}", sweep.id);
+    let matches: Vec<_> = view
+        .active
+        .iter()
+        .chain(view.queued.iter())
+        .chain(view.recent.iter())
+        .filter(|item| item.activity_key == sweep_key)
+        .collect();
+    assert_eq!(
+        matches.len(),
+        1,
+        "the sweep must collapse to exactly ONE item across active/queued/recent, got {matches:?}"
+    );
+    assert_eq!(
+        matches[0].status, "running",
+        "the running member wins the precedence"
+    );
+
+    // The summary's unique-key count must agree: exactly one ACTIVE key
+    // (the sweep), never inflated by its member/occurrence duplicates.
+    let summary = compute_activity_summary(&state).expect("summary");
+    assert_eq!(
+        summary.active, 1,
+        "summary counts unique keys, not raw rows"
+    );
+    assert_eq!(summary.queued, 0);
+}
+
+#[test]
+fn stalled_items_never_inflate_the_active_summary_count() {
+    // sol diff R1 #5: `active` counts RUNNING keys only — a stalled item
+    // stays in the panel's In-progress section (the `active` DTO array) but
+    // must never drive the topbar spinner count.
+    let state = state();
+    state
+        .jobs()
+        .enqueue(
+            "src:degenerate",
+            SOURCE_REFRESH_KIND,
+            r#"{"adapterId":"gpw-espi-ebi"}"#,
+            1,
+        )
+        .expect("enqueue");
+    state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute(
+            "UPDATE job_queue SET status = 'running' WHERE id = 'src:degenerate'",
+            [],
+        )
+        .expect("force running, no occurrence -> stalled");
+
+    let view = compute_activity(&state).expect("view");
+    assert_eq!(view.active.len(), 1);
+    assert_eq!(view.active[0].status, "stalled");
+
+    let summary = compute_activity_summary(&state).expect("summary");
+    assert_eq!(summary.active, 0, "a stalled item must not count as active");
+}
+
+// ------------------------------------------------------------------
+// No unwrap_or_default on storage reads (sol diff R1 #13)
+// ------------------------------------------------------------------
+
+#[test]
+fn a_forced_storage_failure_surfaces_as_an_error_not_an_empty_view() {
+    let state = state();
+    state
+        .jobs()
+        .enqueue(
+            "src:1",
+            SOURCE_REFRESH_KIND,
+            r#"{"adapterId":"gpw-espi-ebi"}"#,
+            1,
+        )
+        .expect("enqueue");
+    state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute("DROP TABLE job_queue", [])
+        .expect("poison job_queue");
+
+    let result = compute_activity(&state);
+    assert!(
+        result.is_err(),
+        "a forced storage failure must propagate as an error, never a silently-empty view: {result:?}"
+    );
+}
+
+#[test]
+fn a_forced_storage_failure_surfaces_in_the_summary_too() {
+    let state = state();
+    state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute("DROP TABLE job_runs", [])
+        .expect("poison job_runs");
+
+    let result = compute_activity_summary(&state);
+    assert!(
+        result.is_err(),
+        "the summary must propagate storage failures too: {result:?}"
+    );
+}
+
+// ------------------------------------------------------------------
+// Parent-task evidence (sol diff R1 #14)
+// ------------------------------------------------------------------
+
+#[test]
+fn a_pending_job_carries_its_real_attempt_count() {
+    let state = state();
+    state
+        .jobs()
+        .enqueue(
+            "src:flaky",
+            SOURCE_REFRESH_KIND,
+            r#"{"adapterId":"gpw-espi-ebi"}"#,
+            5,
+        )
+        .expect("enqueue");
+    state.jobs().claim_next().expect("claim").expect("job");
+    state
+        .jobs()
+        .mark_failed("src:flaky", "transient", 0)
+        .expect("fail once, back to pending");
+
+    let view = compute_activity(&state).expect("view");
+    let item = view
+        .queued
+        .iter()
+        .find(|item| item.family == ActivityFamily::SourceRefresh)
+        .expect("queued item");
+    assert_eq!(
+        item.attempt, 1,
+        "the real job_queue.attempts count, never hardcoded 0"
+    );
+}
+
+#[test]
+fn a_sweep_parent_carries_bounded_member_subjects() {
+    let state = state();
+    let cdr = company(&state, "CDR");
+    let sweep = state
+        .history_sweeps()
+        .create_history_sweep(&cdr, "manual")
+        .expect("sweep");
+    let doc_a = document(&state, &cdr, "Raport A");
+    let run_a = state
+        .autopilot()
+        .create_run_if_absent(
+            "run:member-a",
+            &cdr,
+            &doc_a,
+            "history_sweep",
+            "autopilot",
+            Some(&sweep.id),
+        )
+        .expect("create run")
+        .expect("created");
+    let doc_b = document(&state, &cdr, "Raport B");
+    let run_b = state
+        .autopilot()
+        .create_run_if_absent(
+            "run:member-b",
+            &cdr,
+            &doc_b,
+            "history_sweep",
+            "autopilot",
+            Some(&sweep.id),
+        )
+        .expect("create run")
+        .expect("created");
+    state
+        .jobs()
+        .enqueue(
+            "autopilot:run:member-a:fetch",
+            crate::jobs::autopilot::AUTOPILOT_STAGE_KIND,
+            r#"{"run_id":"run:member-a","stage":"fetch"}"#,
+            1,
+        )
+        .expect("enqueue member a stage");
+
+    let connection = state.checkout_for_tests().expect("checkout");
+    connection
+        .execute(
+            "UPDATE history_sweeps SET candidates_total = 2, enqueued_run_ids_json = ?2 WHERE id = ?1",
+            rusqlite::params![
+                sweep.id,
+                serde_json::to_string(&[run_a.id.clone(), run_b.id.clone()]).unwrap(),
+            ],
+        )
+        .expect("seed member run ids");
+    drop(connection);
+
+    let view = compute_activity(&state).expect("view");
+    let sweep_key = format!("report-sweep:{}", sweep.id);
+    let item = view
+        .active
+        .iter()
+        .chain(view.queued.iter())
+        .find(|item| item.activity_key == sweep_key)
+        .expect("sweep item");
+    let mut members = item.members.clone();
+    members.sort();
+    assert_eq!(members, vec!["Raport A".to_owned(), "Raport B".to_owned()]);
 }
 
 #[test]

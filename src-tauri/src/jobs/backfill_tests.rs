@@ -464,6 +464,24 @@ fn untracked_company_fails_cleanly() {
     assert!(progress.error.is_some());
 }
 
+#[test]
+fn run_company_backfill_job_returns_err_when_the_progress_ended_failed() {
+    // sol diff R1 #7: `run_company_backfill_job` (the QUEUE handler) used to
+    // discard `BackfillProgress` entirely and always return `Ok(())` — so a
+    // failed backfill (unsupported market, untracked company, ...) settled
+    // its occurrence `succeeded`. An untracked company id fails
+    // deterministically with no network I/O (`find_target` / market-status
+    // lookup finds nothing before any fetcher call).
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let result = run_company_backfill_job(&state, r#"{"companyId":"company_missing"}"#);
+    assert!(
+        result.is_err(),
+        "a failed backfill must return Err so the occurrence settles truthfully, got {result:?}"
+    );
+}
+
 // --- automatic backfill catch-up (v0.57, ADR 0077 amendment) ---------------
 
 fn automated_company(state: &AppState, ticker: &str) -> String {

@@ -11,6 +11,7 @@
 //! closed-app execution stays out of scope. The existing fire-and-forget
 //! `spawn_blocking` jobs migrate onto this queue incrementally (strangler).
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -112,6 +113,95 @@ fn retry_backoff_seconds(attempts: i64) -> i64 {
     2_i64.pow(exponent)
 }
 
+/// Extract a human message from a `catch_unwind` payload — shared by the
+/// dispatch-level unwind boundary and the handler-run boundary.
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "job worker panicked".to_owned())
+}
+
+/// RAII unwind guard for one claimed job's post-claim lifecycle (ADR 0109
+/// dec. 2, sol diff R1 #1). `dispatch_claimed` disarms it right after each
+/// ordinary settle call returns (Ok OR Err — a normal error already told the
+/// caller what happened, nothing left for the fallback to do). If the stack
+/// unwinds through a panic BEFORE that — identity checkout, `begin_attempt`,
+/// or the settle call itself panicking mid-flight — `Drop` fires while still
+/// armed and best-effort re-settles the claim so it never strands `running`
+/// and the worker thread keeps running the next job.
+struct ClaimGuard {
+    state: AppState,
+    job_id: String,
+    attempts: i64,
+    run_id: Cell<Option<i64>>,
+    /// `Some(true)` once the handler is known to have succeeded (set right
+    /// before the ordinary succeed-settle call) — the fallback then tries
+    /// `mark_succeeded_with_run` instead of failing a job that actually
+    /// finished its work. `None`/`Some(false)` fall back to failed/retried.
+    succeeded: Cell<Option<bool>>,
+    armed: Cell<bool>,
+}
+
+impl ClaimGuard {
+    fn new(state: AppState, job_id: String, attempts: i64) -> Self {
+        Self {
+            state,
+            job_id,
+            attempts,
+            run_id: Cell::new(None),
+            succeeded: Cell::new(None),
+            armed: Cell::new(true),
+        }
+    }
+
+    fn set_run_id(&self, run_id: i64) {
+        self.run_id.set(Some(run_id));
+    }
+
+    fn set_succeeded(&self, succeeded: bool) {
+        self.succeeded.set(Some(succeeded));
+    }
+
+    /// The ordinary settle path has taken over (Ok or Err — either way the
+    /// situation is already handled) — the fallback must not also fire.
+    fn disarm(&self) {
+        self.armed.set(false);
+    }
+}
+
+impl Drop for ClaimGuard {
+    fn drop(&mut self) {
+        if !self.armed.get() {
+            return;
+        }
+        let run_id = self.run_id.get();
+        let result = if self.succeeded.get() == Some(true) {
+            self.state
+                .jobs()
+                .mark_succeeded_with_run(&self.job_id, run_id)
+        } else {
+            let backoff = retry_backoff_seconds(self.attempts);
+            self.state
+                .jobs()
+                .mark_failed_with_run(
+                    &self.job_id,
+                    "panic: job worker unwound before settling",
+                    backoff,
+                    run_id,
+                )
+                .map(|_| ())
+        };
+        if let Err(error) = result {
+            log::error!(
+                "job queue: claim guard could not settle job {} after a panic: {error}",
+                self.job_id
+            );
+        }
+    }
+}
+
 /// Worker holding the registered handlers and an `AppState` handle.
 pub struct JobWorker {
     state: AppState,
@@ -146,28 +236,74 @@ impl JobWorker {
     /// Dispatch one already-claimed job to its handler and record the outcome
     /// (success or retry-with-backoff). Shared by the all-kinds and kind-scoped
     /// claim paths.
+    ///
+    /// The whole post-claim lifecycle (identity resolution, `begin_attempt`,
+    /// the handler run, and settle) runs under [`ClaimGuard`]'s unwind
+    /// containment (ADR 0109 dec. 2, sol diff R1 #1): a panic ANYWHERE in that
+    /// path — not just inside `handler.run` — is caught here so the worker
+    /// thread survives, and [`ClaimGuard::drop`] best-effort terminalizes the
+    /// claim if it unwound before the ordinary settle path disarmed it. A
+    /// handler panic specifically is caught one layer INSIDE this (see
+    /// `run_validated`) so it still enters the ordinary retry/terminal-hook
+    /// path with its real message, exactly as before this fix — the outer
+    /// guard exists for panics in the surrounding scaffolding (identity
+    /// checkout, `begin_attempt`, the settle calls themselves), which used to
+    /// escape uncontained and could strand a claimed row `running` forever
+    /// while killing the worker thread.
     fn dispatch(&self, job: ClaimedJob) -> Result<(), String> {
-        let store = self.state.jobs();
         let handler = self.handlers.get(job.kind.as_str()).cloned();
+        let claim_guard = ClaimGuard::new(self.state.clone(), job.id.clone(), job.attempts);
+
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.dispatch_claimed(&job, handler.as_deref(), &claim_guard)
+        }));
+
+        match outcome {
+            Ok(result) => result,
+            Err(panic_payload) => {
+                // `claim_guard` already ran its Drop-during-unwind fallback
+                // (best-effort settle) by the time we get here. The worker
+                // thread survives: log and move on to the next tick.
+                let message = panic_message(panic_payload);
+                log::error!(
+                    "job queue: job {} ({}) unwound past its handler while settling: {message}",
+                    job.id,
+                    job.kind
+                );
+                Ok(())
+            }
+        }
+    }
+
+    /// The identity/begin_attempt/run/settle body `dispatch` wraps in unwind
+    /// containment. Every early return disarms `claim_guard` first — the
+    /// guard's fallback exists only to protect a panic mid-flight, never to
+    /// double-handle a normal exit this function already handled itself.
+    fn dispatch_claimed(
+        &self,
+        job: &ClaimedJob,
+        handler: Option<&dyn JobHandler>,
+        claim_guard: &ClaimGuard,
+    ) -> Result<(), String> {
+        let store = self.state.jobs();
 
         // Per-source serialization (ADR 0059): if the handler names a source for
         // this job, hold that source's exclusive lock across the run. On contention
         // the job is deferred (not failed) and a later tick retries it.
-        let _source_guard = match handler
-            .as_ref()
-            .and_then(|handler| handler.serialization_key(&job.payload))
-        {
-            Some(key) => match self.state.try_acquire_source(&key) {
-                Some(guard) => Some(guard),
-                None => {
-                    store
-                        .defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
-                        .map_err(|error| error.to_string())?;
-                    return Ok(());
-                }
-            },
-            None => None,
-        };
+        let _source_guard =
+            match handler.and_then(|handler| handler.serialization_key(&job.payload)) {
+                Some(key) => match self.state.try_acquire_source(&key) {
+                    Some(guard) => Some(guard),
+                    None => {
+                        claim_guard.disarm();
+                        store
+                            .defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
+                            .map_err(|error| error.to_string())?;
+                        return Ok(());
+                    }
+                },
+                None => None,
+            };
 
         // Occurrence ledger (ADR 0109 dec. 2): begin the attempt AFTER the source
         // lock, before the handler runs. An insert failure (or a kind with no
@@ -193,6 +329,7 @@ impl JobWorker {
                     job.id,
                     job.kind
                 );
+                claim_guard.disarm();
                 store
                     .defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
                     .map_err(|error| error.to_string())?;
@@ -212,13 +349,17 @@ impl JobWorker {
                     attempt: job.attempts,
                 };
                 match self.state.job_runs().begin_attempt(new_run) {
-                    Ok(run_id) => Some(run_id),
+                    Ok(run_id) => {
+                        claim_guard.set_run_id(run_id);
+                        Some(run_id)
+                    }
                     Err(error) => {
                         log::warn!(
                             "job queue: begin_attempt failed for job {} ({}): {error}; deferring",
                             job.id,
                             job.kind
                         );
+                        claim_guard.disarm();
                         store
                             .defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
                             .map_err(|error| error.to_string())?;
@@ -231,44 +372,44 @@ impl JobWorker {
 
         // Preflight (id↔payload coherence) composes with the run itself: either
         // failure enters the same settle/retry path, never leaving the row
-        // `running`. The whole attempt runs under `catch_unwind` (ADR 0109 dec.
-        // 2) so a handler panic is contained: it becomes an ordinary retry/
-        // terminal failure instead of poisoning the worker thread or leaving an
-        // orphan `running` queue row / open occurrence.
-        let outcome =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match handler.as_ref() {
+        // `running`. The handler run itself is contained by its OWN
+        // `catch_unwind` (below) so a handler panic becomes an ordinary
+        // retry/terminal failure with its real message — never the outer
+        // guard's generic fallback.
+        let run_outcome =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match handler {
                 Some(handler) => handler
-                    .validate_claimed_job(&job)
+                    .validate_claimed_job(job)
                     .and_then(|()| handler.run(&job.payload, &self.state)),
                 None => Err(format!("no handler registered for job kind {}", job.kind)),
             }))
             .unwrap_or_else(|panic_payload| {
-                let message = panic_payload
-                    .downcast_ref::<&str>()
-                    .map(|s| s.to_string())
-                    .or_else(|| panic_payload.downcast_ref::<String>().cloned())
-                    .unwrap_or_else(|| "job handler panicked".to_owned());
-                Err(format!("panic: {message}"))
+                Err(format!("panic: {}", panic_message(panic_payload)))
             });
 
-        match outcome {
-            Ok(()) => store
-                .mark_succeeded_with_run(&job.id, run_id)
-                .map_err(|error| error.to_string())?,
+        match run_outcome {
+            Ok(()) => {
+                claim_guard.set_succeeded(true);
+                let result = store
+                    .mark_succeeded_with_run(&job.id, run_id)
+                    .map_err(|error| error.to_string());
+                claim_guard.disarm();
+                result?;
+            }
             Err(error) => {
                 let backoff = retry_backoff_seconds(job.attempts);
-                let will_retry = store
-                    .mark_failed_with_run(&job.id, &error, backoff, run_id)
-                    .map_err(|error| error.to_string())?;
+                let will_retry = store.mark_failed_with_run(&job.id, &error, backoff, run_id);
+                claim_guard.disarm();
+                let will_retry = will_retry.map_err(|error| error.to_string())?;
                 if !will_retry {
                     // Event first (deduped, migration 0118), domain transition
                     // second — a crash between the two converges at startup.
                     // The hook fires for EVERY kind, independent of the
                     // failure-surface classification inside
                     // `surface_terminal_failure`.
-                    self.surface_terminal_failure(&job, handler.as_deref());
-                    if let Some(handler) = handler.as_ref() {
-                        handler.on_terminal_failure(&job, &error, &self.state);
+                    self.surface_terminal_failure(job, handler);
+                    if let Some(handler) = handler {
+                        handler.on_terminal_failure(job, &error, &self.state);
                     }
                 }
             }

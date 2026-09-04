@@ -1,3 +1,4 @@
+pub mod activity_awaited_paths;
 pub mod activity_identity;
 pub mod activity_reconcile;
 pub mod aggregator_fundamentals_pull;

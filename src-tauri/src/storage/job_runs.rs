@@ -206,10 +206,17 @@ impl JobRunsStore {
         begin_attempt(&connection, new_run)
     }
 
+    /// Settle + prune in ONE `BEGIN IMMEDIATE` transaction (ADR 0109 dec. 3,
+    /// sol diff R1 #3) — the direct-activity registry's guard is the caller;
+    /// two separate autocommit statements could interleave with a concurrent
+    /// reader between them.
     pub fn settle(&self, id: i64, outcome: JobRunOutcome<'_>) -> StorageResult<()> {
-        let connection = self.db.checkout()?;
-        settle(&connection, id, &outcome)?;
-        prune(&connection)
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        settle(&tx, id, &outcome)?;
+        prune(&tx)?;
+        tx.commit()?;
+        Ok(())
     }
 }
 

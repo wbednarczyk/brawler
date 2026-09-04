@@ -414,7 +414,7 @@ fn sweep_adapters(
             )
         });
         let guard =
-            identity.and_then(|identity| crate::storage::activity_registry::start(state, identity));
+            identity.map(|identity| crate::storage::activity_registry::start(state, identity));
         let outcome = refresh_optional_source(state, adapter, trigger);
         if let Some(guard) = guard {
             guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
@@ -742,8 +742,7 @@ pub fn refresh_source_direct(
             &connection,
         )
     });
-    let guard =
-        identity.and_then(|identity| crate::storage::activity_registry::start(state, identity));
+    let guard = identity.map(|identity| crate::storage::activity_registry::start(state, identity));
     let outcome = refresh_source_for_trigger(state, adapter_id, trigger, date);
     if let Some(guard) = guard {
         guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
@@ -769,8 +768,7 @@ pub fn refresh_company_directories_direct(
             &connection,
         )
     });
-    let guard =
-        identity.and_then(|identity| crate::storage::activity_registry::start(state, identity));
+    let guard = identity.map(|identity| crate::storage::activity_registry::start(state, identity));
     let outcome = refresh_company_directories_for_trigger(state, trigger);
     if let Some(guard) = guard {
         guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));

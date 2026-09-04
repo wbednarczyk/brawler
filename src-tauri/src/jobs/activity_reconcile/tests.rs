@@ -1,4 +1,5 @@
 use super::*;
+use crate::jobs::autopilot::AUTOPILOT_STAGE_KIND;
 use crate::storage::{open_in_memory_database, NewCompany};
 
 fn state() -> AppState {
@@ -197,6 +198,125 @@ fn startup_reconcile_fails_a_run_with_a_dead_lettered_stage_job() {
 }
 
 #[test]
+fn startup_reconcile_is_not_fooled_by_a_like_false_positive_from_an_underscore_in_the_run_id() {
+    // sol diff R1 #12: the previous `id LIKE 'autopilot:' || run_id || ':%'`
+    // check treated `_` in `run_id` as a SQL LIKE wildcard (matches ANY
+    // single character) — an UNRELATED job_queue row could then
+    // false-positive-match, making a genuinely stranded run look "live" and
+    // never get reconciled. `co_1` and a decoy row `autopilot:coX1:fetch`
+    // (the `_` position substituted) would have collided under the old
+    // check; the exact `IN` fix must not be fooled.
+    let state = state();
+    let company_id = company(&state);
+    let document_id = state
+        .create_or_find_pending_report_document(crate::storage::CaptureReportDocumentInput {
+            company_id: company_id.clone(),
+            source_type: "official_report".to_owned(),
+            url: "https://example.test/underscore.pdf".to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: Some("Raport podkreślnik".to_owned()),
+            attribution: None,
+        })
+        .expect("document")
+        .id;
+    let run = state
+        .autopilot()
+        .create_run_if_absent(
+            "co_1",
+            &company_id,
+            &document_id,
+            "detection",
+            "autopilot",
+            None,
+        )
+        .expect("create run")
+        .expect("created");
+    // The decoy: NOT a real stage job for `co_1` (its run_id in the payload
+    // deliberately does not match either), but its id would satisfy the OLD
+    // LIKE pattern `autopilot:co_1:%` (`_` wildcards to `X`).
+    state
+        .jobs()
+        .enqueue(
+            "autopilot:coX1:fetch",
+            AUTOPILOT_STAGE_KIND,
+            r#"{"run_id":"unrelated","stage":"fetch"}"#,
+            3,
+        )
+        .expect("enqueue decoy");
+
+    reconcile_on_startup(&state);
+
+    let status = state.autopilot().get_run(&run.id).expect("run").status;
+    assert_eq!(
+        status, "failed",
+        "the decoy row must not falsely keep `co_1` looking live"
+    );
+}
+
+#[test]
+fn startup_reconcile_fails_a_run_whose_last_stage_succeeded_with_no_successor() {
+    // sol diff R1 #17: `notify` is the LAST stage — it has no successor to
+    // enqueue at all (`next_stage` returns `None` for it). A crash between
+    // the notify job settling `succeeded` and `autopilot_run.status` itself
+    // being finalized leaves the run `pending`/`running` with NO live stage
+    // job — provably stuck (there is nothing left to resume), so reconcile
+    // must still fail it, exactly like the "stage job is gone" case, rather
+    // than mishandling the "no successor by design" shape differently.
+    let state = state();
+    let company_id = company(&state);
+    let document_id = state
+        .create_or_find_pending_report_document(crate::storage::CaptureReportDocumentInput {
+            company_id: company_id.clone(),
+            source_type: "official_report".to_owned(),
+            url: "https://example.test/r4.pdf".to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: Some("Raport 4".to_owned()),
+            attribution: None,
+        })
+        .expect("document")
+        .id;
+    let run = state
+        .autopilot()
+        .create_run_if_absent(
+            "run-4",
+            &company_id,
+            &document_id,
+            "detection",
+            "autopilot",
+            None,
+        )
+        .expect("create run")
+        .expect("created");
+    // The notify stage's job ran to a genuine terminal success...
+    state
+        .jobs()
+        .enqueue(
+            "autopilot:run-4:notify",
+            AUTOPILOT_STAGE_KIND,
+            r#"{"run_id":"run-4","stage":"notify"}"#,
+            1,
+        )
+        .expect("enqueue");
+    state.jobs().claim_next().expect("claim").expect("job");
+    state
+        .jobs()
+        .mark_succeeded("autopilot:run-4:notify")
+        .expect("succeed");
+    // ...but the run's own finalization (autopilot_run.status -> terminal)
+    // never happened — simulating a crash in that exact window.
+
+    reconcile_on_startup(&state);
+
+    let status = state.autopilot().get_run(&run.id).expect("run").status;
+    assert_eq!(
+        status, "failed",
+        "no live stage job survives the notify stage's own success — provably stuck, honestly failed"
+    );
+}
+
+#[test]
 fn startup_reconcile_never_terminalizes_kpi_runs() {
     // KPI ingest runs are NEVER terminalized here (ADR 0109 dec. 4) — their
     // own reclaim owns `committing`; reconcile must leave a `committing` run
@@ -294,6 +414,70 @@ fn startup_reconcile_fails_an_orphaned_batch() {
         .get_batch(&batch.id)
         .expect("batch");
     assert_eq!(batch.status, "failed");
+}
+
+#[test]
+fn startup_reconcile_interrupt_is_atomic_across_all_open_occurrences() {
+    // sol diff R1 #12: the interrupt pass now runs in ONE `BEGIN IMMEDIATE`
+    // transaction — a fault partway must leave EVERY open occurrence
+    // untouched (still `running`), never a split where some settled and
+    // others didn't.
+    let state = state();
+    let run_id_a = state
+        .job_runs()
+        .begin_attempt(crate::storage::NewJobRun {
+            activity_key: "source-refresh:a".to_owned(),
+            run_key: "job-a".to_owned(),
+            kind: "scheduled_source_refresh".to_owned(),
+            family: crate::jobs::activity_identity::ActivityFamily::SourceRefresh,
+            company_id: None,
+            subject: "a".to_owned(),
+            target: crate::jobs::activity_identity::ActivityTarget::Sources,
+            attempt: 1,
+        })
+        .expect("begin a");
+    let run_id_b = state
+        .job_runs()
+        .begin_attempt(crate::storage::NewJobRun {
+            activity_key: "source-refresh:b".to_owned(),
+            run_key: "job-b".to_owned(),
+            kind: "scheduled_source_refresh".to_owned(),
+            family: crate::jobs::activity_identity::ActivityFamily::SourceRefresh,
+            company_id: None,
+            subject: "b".to_owned(),
+            target: crate::jobs::activity_identity::ActivityTarget::Sources,
+            attempt: 1,
+        })
+        .expect("begin b");
+
+    // Poison the settle UPDATE so the tx aborts partway through the loop.
+    state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute_batch(
+            "CREATE TRIGGER poison_interrupt BEFORE UPDATE ON job_runs
+             BEGIN SELECT RAISE(ABORT, 'interrupt poisoned for test'); END;",
+        )
+        .expect("install poison trigger");
+
+    // Best-effort: reconcile_on_startup swallows the error and continues —
+    // assert the DB state directly, not a return value.
+    reconcile_on_startup(&state);
+
+    let connection = state.checkout_for_tests().expect("checkout");
+    for run_id in [run_id_a, run_id_b] {
+        let status: String = connection
+            .query_row(
+                "SELECT status FROM job_runs WHERE id = ?1",
+                [run_id],
+                |row| row.get(0),
+            )
+            .expect("status");
+        assert_eq!(
+            status, "running",
+            "a poisoned tx must leave EVERY occurrence untouched, never a partial split"
+        );
+    }
 }
 
 #[test]

@@ -228,8 +228,7 @@ pub fn run_aggregator_fundamentals_pull_direct(
             &connection,
         )
     });
-    let guard =
-        identity.and_then(|identity| crate::storage::activity_registry::start(state, identity));
+    let guard = identity.map(|identity| crate::storage::activity_registry::start(state, identity));
     let outcome = run_aggregator_fundamentals_pull_serialized(state);
     if let Some(guard) = guard {
         guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));

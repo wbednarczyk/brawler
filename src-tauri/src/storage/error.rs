@@ -255,6 +255,13 @@ pub enum StorageError {
     /// 0102 dec. 10, contracts.md tool 5).
     #[error("kpi ingest draft {draft_id} finalize refused: {reason}")]
     KpiIngestDraftAggregateBudgetExceeded { draft_id: String, reason: String },
+    /// The `job_queue` row a settle call targeted was gone by the time the
+    /// settle transaction ran (ADR 0109 dec. 2, sol diff R1 #2) — the
+    /// occurrence still settles truthfully in the SAME transaction, but this
+    /// distinct error tells `jobs::queue::dispatch` the queue-side transition
+    /// did NOT happen, so it must not run terminal hooks as if it had.
+    #[error("job queue row {id} vanished before its settle could complete — the occurrence closed truthfully, but the queue-side transition did NOT apply")]
+    JobQueueRowMissingDuringSettle { id: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

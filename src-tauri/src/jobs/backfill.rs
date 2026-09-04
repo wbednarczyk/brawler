@@ -103,8 +103,7 @@ pub fn backfill_company_history_direct(state: &AppState, company_id: &str) -> Ba
             &connection,
         )
     });
-    let guard =
-        identity.and_then(|identity| crate::storage::activity_registry::start(state, identity));
+    let guard = identity.map(|identity| crate::storage::activity_registry::start(state, identity));
     let progress = backfill_company_history(state, company_id);
     if let Some(guard) = guard {
         guard.settle(if progress.status == "failed" {
@@ -357,7 +356,16 @@ pub fn run_company_backfill_job(state: &AppState, payload: &str) -> Result<(), S
         .get("companyId")
         .and_then(|value| value.as_str())
         .ok_or("company backfill missing companyId")?;
-    backfill_company_history(state, company_id);
+    let progress = backfill_company_history(state, company_id);
+    // sol diff R1 #7: `BackfillProgress` used to be discarded, so the queue
+    // ALWAYS settled the occurrence `succeeded` even when the backfill
+    // itself ended `failed` — an `Err` here enters the ordinary settle/retry
+    // path so the ledger records the truthful outcome.
+    if progress.status == "failed" {
+        return Err(progress
+            .error
+            .unwrap_or_else(|| "company backfill failed".to_owned()));
+    }
     Ok(())
 }
 
