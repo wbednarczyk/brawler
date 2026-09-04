@@ -1600,6 +1600,7 @@ export function makeActivityView(companies: readonly Company[]): ActivityView {
       startedAt: SAMPLE_NOW,
       finishedAt: null,
       error: null,
+      members: [],
       target: {
         kind: "company",
         companyId: sweepCompany.id,
@@ -1620,6 +1621,7 @@ export function makeActivityView(companies: readonly Company[]): ActivityView {
       startedAt: SAMPLE_NOW,
       finishedAt: null,
       error: null,
+      members: [],
       target: {
         kind: "company",
         companyId: readingCompany.id,
@@ -1643,6 +1645,7 @@ export function makeActivityView(companies: readonly Company[]): ActivityView {
       startedAt: SAMPLE_NOW,
       finishedAt: null,
       error: null,
+      members: [],
       target: { kind: "sources" },
     },
   ];
@@ -1662,6 +1665,7 @@ export function makeActivityView(companies: readonly Company[]): ActivityView {
       startedAt: SAMPLE_NOW,
       finishedAt: SAMPLE_NOW,
       error: "HTTP request failed: error sending request for url (https://example.test/report.pdf)",
+      members: [],
       target: {
         kind: "company",
         companyId: failedCompany.id,
@@ -1682,6 +1686,7 @@ export function makeActivityView(companies: readonly Company[]): ActivityView {
       startedAt: SAMPLE_NOW,
       finishedAt: SAMPLE_NOW,
       error: "Parse error: unrecognized document structure",
+      members: [],
       target: {
         kind: "company",
         companyId: failedCompany.id,
@@ -1702,6 +1707,7 @@ export function makeActivityView(companies: readonly Company[]): ActivityView {
       startedAt: SAMPLE_NOW,
       finishedAt: SAMPLE_NOW,
       error: null,
+      members: [],
       target: {
         kind: "company",
         companyId: readingCompany.id,
@@ -1722,6 +1728,7 @@ export function makeActivityView(companies: readonly Company[]): ActivityView {
       startedAt: SAMPLE_NOW,
       finishedAt: SAMPLE_NOW,
       error: null,
+      members: [],
       target: { kind: "sources" },
     },
     {
@@ -1738,6 +1745,7 @@ export function makeActivityView(companies: readonly Company[]): ActivityView {
       startedAt: SAMPLE_NOW,
       finishedAt: SAMPLE_NOW,
       error: null,
+      members: [],
       target: { kind: "today" },
     },
   ];

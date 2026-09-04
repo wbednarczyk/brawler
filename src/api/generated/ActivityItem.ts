@@ -11,4 +11,9 @@ export type ActivityItem = { id: string, activityKey: string, family: ActivityFa
 /**
  * `queued | running | stalled | succeeded | failed | partial | interrupted`.
  */
-status: "queued" | "running" | "stalled" | "succeeded" | "failed" | "partial" | "interrupted", subject: string, companyId: string | null, qualifiedTicker: string | null, progress: ActivityProgress | null, inFlight: number | null, attempt: number, startedAt: string, finishedAt: string | null, error: string | null, target: ActivityTarget, };
+status: "queued" | "running" | "stalled" | "succeeded" | "failed" | "partial" | "interrupted", subject: string, companyId: string | null, qualifiedTicker: string | null, progress: ActivityProgress | null, inFlight: number | null, attempt: number, startedAt: string, finishedAt: string | null, error: string | null, 
+/**
+ * Bounded (≤ 10) raw subjects of a parent task's members (a sweep's
+ * documents) — the expanded row lists them (contract § 5, sol diff R1 #14).
+ */
+members: Array<string>, target: ActivityTarget, };

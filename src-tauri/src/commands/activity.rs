@@ -57,6 +57,9 @@ pub struct ActivityItem {
     pub started_at: String,
     pub finished_at: Option<String>,
     pub error: Option<String>,
+    /// Bounded (≤ 10) raw subjects of a parent task's members (a sweep's
+    /// documents) — the expanded row lists them (contract § 5, sol diff R1 #14).
+    pub members: Vec<String>,
     pub target: ActivityTarget,
 }
 
@@ -152,6 +155,8 @@ fn occurrence_to_item(
         started_at: row.started_at,
         finished_at: row.finished_at,
         error: row.error,
+        members: Vec::new(),
+
         target: row.target,
     }
 }
@@ -210,6 +215,8 @@ fn queue_row_item(
         started_at: job.created_at,
         finished_at: None,
         error: job.last_error,
+        members: Vec::new(),
+
         target: identity.target,
     })
 }
@@ -236,6 +243,8 @@ fn kpi_run_item(
         started_at: run.created_at,
         finished_at: None,
         error: run.last_error,
+        members: Vec::new(),
+
         target: ActivityTarget::Company {
             company_id: run.company_id,
             tool: Some(crate::jobs::activity_identity::ActivityTool::Dokumenty {
@@ -272,6 +281,8 @@ fn queued_transcript_item(
         started_at: row.created_at,
         finished_at: None,
         error: None,
+        members: Vec::new(),
+
         target: ActivityTarget::Transcripts,
     }
 }
@@ -298,6 +309,8 @@ fn stalled_domain_items(connection: &rusqlite::Connection) -> Vec<ActivityItem> 
             started_at: row.updated_at,
             finished_at: None,
             error: row.error,
+            members: Vec::new(),
+
             target: ActivityTarget::Company {
                 company_id: row.company_id,
                 tool: Some(crate::jobs::activity_identity::ActivityTool::Dokumenty { document_id }),
@@ -346,6 +359,8 @@ fn stalled_domain_items(connection: &rusqlite::Connection) -> Vec<ActivityItem> 
                 started_at: row.updated_at,
                 finished_at: None,
                 error: row.error,
+                members: Vec::new(),
+
                 target: ActivityTarget::Company {
                     company_id: row.company_id,
                     tool: Some(crate::jobs::activity_identity::ActivityTool::Pokrycie),

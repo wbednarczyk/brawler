@@ -345,6 +345,7 @@ function deriveActivityView(d: ScenarioData) {
       startedAt: job.createdAt,
       finishedAt: null,
       error: null,
+      members: [],
       target: { kind: "transcripts" as const },
     }));
   return { ...view, queued: [...view.queued, ...queuedTranscripts] };
