@@ -104,42 +104,62 @@ fn now_iso() -> String {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
 }
 
-/// Parent (sweep/batch/backfill) member progress (D1: `{done,total,failed}`),
-/// only for the families that have one — `None` for every leaf item.
-/// `historyFetch` reads its LIVE counters from `BackfillProgress` (sol diff
-/// R1 #14) rather than a `job_runs`-adjacent table, since a backfill has no
-/// domain parent row of its own.
+/// The `(table, prefix)` a sweep/batch family's `activity_key` resolves
+/// through — `None` for a family with no parent aggregate.
+fn parent_table(family: ActivityFamily) -> Option<(&'static str, &'static str)> {
+    match family {
+        ActivityFamily::ReportSweep => Some(("history_sweeps", "report-sweep:")),
+        ActivityFamily::Reextraction => Some(("pipeline_reextraction_batches", "reextraction:")),
+        _ => None,
+    }
+}
+
+/// Parent (sweep/batch/backfill) member progress (D1: `{done,total,failed}`)
+/// AND its `inFlight` count, only for the families that have one — `(None,
+/// None)` for every leaf item. `historyFetch` reads its LIVE counters from
+/// `BackfillProgress` (sol diff R1 #14) rather than a `job_runs`-adjacent
+/// table, since a backfill has no domain parent row of its own.
+///
+/// sol diff R3 #1: `inFlight` for a sweep/batch parent comes STRAIGHT from
+/// [`reads::ParentAggregate::live`] (non-terminal ENQUEUED members only) —
+/// never derived as `total - done - failed`, which silently trusted the
+/// row's own `candidates_total` to already agree with
+/// `enqueued + skipped_existing + runs_failed` and would misreport `inFlight`
+/// the moment those counters drifted.
 ///
 /// sol diff R2 #5: propagates a genuine `parent_progress` SQL failure with
 /// `?` rather than collapsing it into the same `None` a leaf item or a
 /// parent with no rows legitimately produces.
-fn parent_progress_for(
+fn parent_progress_and_in_flight(
     connection: &rusqlite::Connection,
     state: &AppState,
     family: ActivityFamily,
     activity_key: &str,
     company_id: Option<&str>,
-) -> StorageResult<Option<ActivityProgress>> {
+) -> StorageResult<(Option<ActivityProgress>, Option<i64>)> {
     if family == ActivityFamily::HistoryFetch {
-        return Ok(history_fetch_progress(state, company_id));
+        let progress = history_fetch_progress(state, company_id);
+        let in_flight = in_flight_for(&progress);
+        return Ok((progress, in_flight));
     }
-    let (table, prefix) = match family {
-        ActivityFamily::ReportSweep => ("history_sweeps", "report-sweep:"),
-        ActivityFamily::Reextraction => ("pipeline_reextraction_batches", "reextraction:"),
-        _ => return Ok(None),
+    let Some((table, prefix)) = parent_table(family) else {
+        return Ok((None, None));
     };
     let Some(id) = activity_key.strip_prefix(prefix) else {
-        return Ok(None);
+        return Ok((None, None));
     };
-    let Some((done, total, failed, _enqueued)) = reads::parent_progress(connection, table, id)?
-    else {
-        return Ok(None);
+    let Some(aggregate) = reads::parent_progress(connection, table, id)? else {
+        return Ok((None, None));
     };
-    Ok(Some(ActivityProgress {
-        done,
-        total,
-        failed,
-    }))
+    let (done, total, failed) = aggregate.progress();
+    Ok((
+        Some(ActivityProgress {
+            done,
+            total,
+            failed,
+        }),
+        Some(aggregate.live),
+    ))
 }
 
 /// A running backfill's LIVE progress (sol diff R1 #14): `done` = documents
@@ -177,10 +197,8 @@ fn members_for(
     family: ActivityFamily,
     activity_key: &str,
 ) -> StorageResult<Vec<String>> {
-    let (table, prefix) = match family {
-        ActivityFamily::ReportSweep => ("history_sweeps", "report-sweep:"),
-        ActivityFamily::Reextraction => ("pipeline_reextraction_batches", "reextraction:"),
-        _ => return Ok(Vec::new()),
+    let Some((table, prefix)) = parent_table(family) else {
+        return Ok(Vec::new());
     };
     let Some(id) = activity_key.strip_prefix(prefix) else {
         return Ok(Vec::new());
@@ -194,15 +212,14 @@ fn members_for(
 /// that finished its OWN attempt while its domain row — and its members —
 /// are still running. `Ok(None)` leaves the occurrence's own ledger status.
 ///
-/// sol diff R2 #3 (sweep/batch parents): the fan-out's OWN row goes terminal
-/// (`completed`/`failed`) once every member is DISPATCHED, not once every
-/// dispatched member has FINISHED — and `history_sweeps` deliberately writes
-/// `completed` even when `runs_failed > 0` (a completed sweep never aborts
-/// for a partial failure). So the terminal status here is derived from ALL
-/// `enqueued_run_ids_json` members regardless of whether the parent row
-/// itself says `completed` or `failed`: any member still non-terminal keeps
-/// the parent `running`; otherwise mixed outcomes → `partial`, all failed →
-/// `failed`, all succeeded → `succeeded`.
+/// sol diff R3 #1 (sweep/batch parents, tightening sol diff R2 #3): the
+/// terminal status here is [`reads::ParentAggregate::resolve`] — the row's
+/// OWN durable counters (`runs_failed`, `skipped_existing`) AND every
+/// `enqueued_run_ids_json` member's current status, never just the parent
+/// row's own `completed`/`failed` column (which `history_sweeps` writes
+/// `completed` even when `runs_failed > 0` — a completed sweep never aborts
+/// for a partial failure — and which a malformed member failure could NOT
+/// distinguish from "no members" at all).
 ///
 /// sol diff R2 #5: propagates a genuine storage failure with `?` instead of
 /// swallowing it into the same `None` a non-matching/absent parent produces.
@@ -216,7 +233,8 @@ fn domain_status_override(
             let Some(run_id) = activity_key.strip_prefix("report-reading:") else {
                 return Ok(None);
             };
-            let Some((status, last_error)) = reads::autopilot_run_status(connection, run_id) else {
+            let Some((status, last_error)) = reads::autopilot_run_status(connection, run_id)?
+            else {
                 return Ok(None);
             };
             Ok(match status.as_str() {
@@ -226,46 +244,22 @@ fn domain_status_override(
             })
         }
         ActivityFamily::ReportSweep | ActivityFamily::Reextraction => {
-            let (table, prefix) = match family {
-                ActivityFamily::ReportSweep => ("history_sweeps", "report-sweep:"),
-                _ => ("pipeline_reextraction_batches", "reextraction:"),
+            let Some((table, prefix)) = parent_table(family) else {
+                return Ok(None);
             };
             let Some(id) = activity_key.strip_prefix(prefix) else {
                 return Ok(None);
             };
-            let Some((status, error)) = reads::parent_status(connection, table, id)? else {
+            let Some(aggregate) = reads::parent_progress(connection, table, id)? else {
                 return Ok(None);
             };
-            if status == "queued" || status == "running" {
-                // The fan-out's OWN job hasn't even finished dispatching yet
-                // — trivially active.
-                return Ok(Some(("running".to_owned(), None)));
-            }
-            // The parent row is terminal, but its members may not be: derive
-            // the real status from them, never from the parent row's own
-            // (possibly stale-relative-to-members, and for `completed`,
-            // possibly failure-blind) status column.
-            let Some((done, _total, failed, enqueued)) =
-                reads::parent_progress(connection, table, id)?
-            else {
-                return Ok(None);
-            };
-            if done + failed < enqueued {
-                return Ok(Some(("running".to_owned(), None)));
-            }
-            Ok(Some(if failed > 0 && done > 0 {
-                ("partial".to_owned(), error)
-            } else if failed > 0 {
-                ("failed".to_owned(), error)
-            } else {
-                ("succeeded".to_owned(), error)
-            }))
+            Ok(Some(aggregate.resolve()))
         }
         ActivityFamily::KpiIngest => {
             let Some(run_id) = activity_key.strip_prefix("kpi-ingest:") else {
                 return Ok(None);
             };
-            let Some((status, last_error)) = reads::kpi_run_status(connection, run_id) else {
+            let Some((status, last_error)) = reads::kpi_run_status(connection, run_id)? else {
                 return Ok(None);
             };
             Ok(match status.as_str() {
@@ -291,14 +285,13 @@ fn occurrence_to_item(
         .company_id
         .as_deref()
         .and_then(|id| reads::qualified_ticker(connection, id));
-    let progress = parent_progress_for(
+    let (progress, in_flight) = parent_progress_and_in_flight(
         connection,
         state,
         row.family,
         &row.activity_key,
         row.company_id.as_deref(),
     )?;
-    let in_flight = in_flight_for(&progress);
     let members = members_for(connection, row.family, &row.activity_key)?;
     Ok(ActivityItem {
         id: format!("job_runs:{}", row.id),
@@ -370,14 +363,13 @@ fn queue_row_item(
         .company_id
         .as_deref()
         .and_then(|id| reads::qualified_ticker(connection, id));
-    let progress = parent_progress_for(
+    let (progress, in_flight) = parent_progress_and_in_flight(
         connection,
         state,
         identity.family,
         &identity.activity_key,
         identity.company_id.as_deref(),
     )?;
-    let in_flight = in_flight_for(&progress);
     let members = members_for(connection, identity.family, &identity.activity_key)?;
     Ok(Some(ActivityItem {
         id: format!("job_queue:{}", job.id),
@@ -551,14 +543,18 @@ fn stalled_domain_items(connection: &rusqlite::Connection) -> StorageResult<Vec<
     ];
     for (table, prefix, family, job_kind) in parents {
         for row in reads::stalled_parent_rows(connection, table, job_kind)? {
-            let progress = reads::parent_progress(connection, table, &row.id)?.map(
-                |(done, total, failed, _enqueued)| ActivityProgress {
+            let aggregate = reads::parent_progress(connection, table, &row.id)?;
+            let progress = aggregate.as_ref().map(|aggregate| {
+                let (done, total, failed) = aggregate.progress();
+                ActivityProgress {
                     done,
                     total,
                     failed,
-                },
-            );
-            let in_flight = in_flight_for(&progress);
+                }
+            });
+            // sol diff R3 #1: `inFlight` from `live` directly (non-terminal
+            // enqueued members), never derived via `total - done - failed`.
+            let in_flight = aggregate.as_ref().map(|aggregate| aggregate.live);
             let members = members_for(connection, family, &format!("{prefix}:{}", row.id))?;
             items.push(ActivityItem {
                 id: format!("{table}:{}", row.id),

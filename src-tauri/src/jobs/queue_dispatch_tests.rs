@@ -214,23 +214,66 @@ fn begin_attempt_failure_skips_run_and_defers() {
     assert_eq!(counts.failed, 0);
 }
 
+/// A handler that always fails with the SAME fixed error text and counts
+/// `on_terminal_failure` — purpose-built for
+/// `settle_failure_recovers_and_leaves_no_row_running` (sol diff R3 #2),
+/// which needs BOTH a stable error string to key the poison trigger on and a
+/// hook-call count, neither of which the shared `ActivityHandler` tracks.
+struct RetryThenRecoveredHandler {
+    runs: AtomicUsize,
+    terminal_calls: AtomicUsize,
+}
+
+impl JobHandler for RetryThenRecoveredHandler {
+    fn kind(&self) -> &'static str {
+        crate::jobs::scheduler::SOURCE_REFRESH_KIND
+    }
+    fn serialization_key(&self, payload: &str) -> Option<String> {
+        serde_json::from_str::<serde_json::Value>(payload)
+            .ok()?
+            .get("adapterId")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+    }
+    fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
+        self.runs.fetch_add(1, Ordering::SeqCst);
+        Err("transient failure 0".to_owned())
+    }
+    fn on_terminal_failure(&self, _job: &ClaimedJob, _error: &str, _state: &AppState) {
+        self.terminal_calls.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
 #[test]
 fn settle_failure_recovers_and_leaves_no_row_running() {
     // sol diff R2 #1: the prior version of this test asserted the LEAK
     // itself (both sides stay `running` forever after a settle failure —
     // exactly the stranded-claim bug ADR 0109 dec. 2 exists to prevent).
     // Fixed: `dispatch_claimed` retries the SAME settle call once
-    // (`settle_with_recovery`) before giving up; poison the trigger keyed on
-    // the handler's REAL failure text, so both the primary attempt and the
-    // retry — which use the identical error string — fail identically, and
-    // `ClaimGuard`'s Drop fallback (a DIFFERENT, fixed message) is let
-    // through as the last resort. No row remains `running` on either side.
-    let handler = Arc::new(ActivityHandler {
-        fail_first: usize::MAX,
-        panics: false,
+    // (`settle_with_recovery`) before giving up, then `ClaimGuard`'s Drop
+    // fallback is the last resort. No row remains `running` on either side.
+    //
+    // sol diff R3 #2: Drop's fallback now repeats the SAME real error the
+    // two ordinary attempts already carried (never a different fabricated
+    // message) and, once THAT lands the row terminal, fires the SAME
+    // terminal hooks the ordinary branch would — so the poison trigger can
+    // no longer dodge Drop's attempt by matching on a DIFFERENT error text.
+    // Instead it poisons by `total_changes()`, SQLite's connection-wide
+    // row-change counter: unlike table data, that counter is NOT rolled back
+    // by an aborted statement (verified against SQLite's own semantics), so
+    // each of the first two attempts' `job_queue` UPDATE — which precedes
+    // the poisoned `job_runs` UPDATE, same transaction — still durably bumps
+    // it even though the whole transaction then rolls back. A literal
+    // `total_changes() <= pre + 2` threshold therefore poisons EXACTLY the
+    // first two attempts (primary + the one retry) and lets the third
+    // (Drop's) through — proving genuine "twice-failed-then-recovered".
+    let handler = Arc::new(RetryThenRecoveredHandler {
         runs: AtomicUsize::new(0),
+        terminal_calls: AtomicUsize::new(0),
     });
-    let worker = activity_worker(handler.clone());
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let mut worker = JobWorker::new(state);
+    worker.register(handler.clone());
     worker
         .state
         .jobs()
@@ -242,29 +285,39 @@ fn settle_failure_recovers_and_leaves_no_row_running() {
         )
         .expect("enqueue");
 
-    // A trigger on UPDATE only — `begin_attempt`'s INSERT still succeeds, so
-    // identity resolution proceeds normally; only the settle UPDATE fails,
-    // and only for the handler's exact error text (`ActivityHandler`'s first
-    // failure message) — `ClaimGuard`'s Drop fallback settles with its own
-    // fixed "panic: job worker unwound before settling" message, which does
-    // not match and is let through.
-    worker
+    // Claim the job MANUALLY (instead of letting `process_one` claim
+    // internally) so `total_changes()` can be measured right BEFORE
+    // `begin_attempt`'s INSERT — the only unaccounted write between here and
+    // the first settle attempt (source-lock acquisition is in-memory, and
+    // identity resolution is read-only). From that anchor, EVERY settle
+    // attempt contributes exactly one more change (its `job_queue` UPDATE)
+    // before reaching the poisoned `job_runs` UPDATE: attempt 1 lands at
+    // pre+2 (begin_attempt +1, this attempt's job_queue +1), attempt 2 at
+    // pre+3, and Drop's own fallback attempt at pre+4 — so `<= pre+3` poisons
+    // exactly the first two and lets the third (Drop's) through.
+    let claimed = worker
         .state
-        .checkout_for_tests()
-        .expect("checkout")
-        .execute_batch(
+        .jobs()
+        .claim_next()
+        .expect("claim_next")
+        .expect("a runnable job");
+    let connection = worker.state.checkout_for_tests().expect("checkout");
+    let pre_changes: i64 = connection
+        .query_row("SELECT total_changes()", [], |row| row.get(0))
+        .expect("total_changes");
+    connection
+        .execute_batch(&format!(
             "CREATE TRIGGER poison_job_runs_settle BEFORE UPDATE ON job_runs
-             WHEN NEW.error = 'transient failure 0'
+             WHEN NEW.error = 'transient failure 0' AND total_changes() <= {}
              BEGIN SELECT RAISE(ABORT, 'settle poisoned for test'); END;",
-        )
+            pre_changes + 3
+        ))
         .expect("install poison trigger");
+    drop(connection);
 
-    assert!(
-        worker
-            .process_one()
-            .expect("dispatch survives the settle failure"),
-        "a job was claimed and processed"
-    );
+    worker
+        .dispatch(claimed)
+        .expect("dispatch survives the settle failure");
 
     let queue_status = worker
         .state
@@ -274,13 +327,24 @@ fn settle_failure_recovers_and_leaves_no_row_running() {
         .expect("row");
     assert_eq!(
         queue_status.status, "failed",
-        "the queue row must never strand `running` after a settle failure — the Drop \
-         fallback terminalizes it once the ordinary retry also fails"
+        "the queue row must never strand `running` after a settle failure — Drop's own \
+         last-resort recovery terminalizes it once the ordinary retry also fails"
+    );
+    assert_eq!(
+        queue_status.last_error.as_deref(),
+        Some("transient failure 0"),
+        "Drop's fallback repeats the SAME real error, never a fabricated one"
     );
     assert_eq!(
         job_runs_statuses(&worker.state),
         vec!["failed"],
         "the occurrence must never strand `running` either — same fallback settle"
+    );
+    assert_eq!(
+        handler.terminal_calls.load(Ordering::SeqCst),
+        1,
+        "Drop's non-panic fallback must fire on_terminal_failure exactly once, same as the \
+         ordinary branch"
     );
 }
 

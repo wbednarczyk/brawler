@@ -451,45 +451,40 @@ pub(crate) fn stalled_transcript_rows(
 /// ledger's own `job_runs.status` alone cannot represent `partial`, nor a
 /// fan-out job that finished its own attempt while its members still run —
 /// only the domain row knows either.
+///
+/// sol diff R3 #3: `StorageResult<Option<_>>`, never a bare `Option` that
+/// collapsed a genuine query failure (a dropped table, a schema/type error)
+/// into the SAME "no row" the caller reads for a genuinely absent run — which
+/// let the recent item silently keep the ledger's stale `succeeded` while the
+/// domain lookup had actually failed. `.optional()?` keeps `None` for a truly
+/// absent row; any other error propagates with `?`.
 pub(crate) fn autopilot_run_status(
     connection: &Connection,
     run_id: &str,
-) -> Option<(String, Option<String>)> {
+) -> StorageResult<Option<(String, Option<String>)>> {
     connection
         .query_row(
             "SELECT status, last_error FROM autopilot_run WHERE id = ?1",
             [run_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .ok()
-}
-
-/// sol diff R2 #5: `Option` used to collapse a genuine SQL failure into "no
-/// row" indistinguishably — `StorageResult` lets the caller propagate a real
-/// error instead of quietly treating it as an absent parent.
-pub(crate) fn parent_status(
-    connection: &Connection,
-    table: &str,
-    id: &str,
-) -> StorageResult<Option<(String, Option<String>)>> {
-    let sql = format!("SELECT status, error FROM {table} WHERE id = ?1");
-    connection
-        .query_row(&sql, [id], |row| Ok((row.get(0)?, row.get(1)?)))
         .optional()
         .map_err(StorageError::from)
 }
 
+/// sol diff R3 #3: same fail-closed fix as [`autopilot_run_status`].
 pub(crate) fn kpi_run_status(
     connection: &Connection,
     run_id: &str,
-) -> Option<(String, Option<String>)> {
+) -> StorageResult<Option<(String, Option<String>)>> {
     connection
         .query_row(
             "SELECT status, last_error FROM kpi_ingest_runs WHERE id = ?1",
             [run_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .ok()
+        .optional()
+        .map_err(StorageError::from)
 }
 
 /// A `job_runs` row's `activity_key` by id — the cheap summary path's way of
@@ -513,6 +508,10 @@ pub(crate) fn activity_key_for_occurrence(connection: &Connection, id: i64) -> O
 /// `unwrap_or_default` used to collapse it into the same empty `Vec` a
 /// parent with zero members legitimately produces, silently hiding the
 /// difference from the caller.
+///
+/// sol diff R3 #1 (same class): a malformed `enqueued_run_ids_json` is a
+/// `StorageError` too, not a silent empty member list — the same column
+/// [`parent_progress`] now fails closed on.
 pub(crate) fn member_subjects(
     connection: &Connection,
     table: &str,
@@ -527,9 +526,10 @@ pub(crate) fn member_subjects(
         )
         .optional()?
         .flatten();
-    let run_ids: Vec<String> = run_ids_json
-        .and_then(|json| serde_json::from_str(&json).ok())
-        .unwrap_or_default();
+    let run_ids: Vec<String> = match run_ids_json {
+        None => Vec::new(),
+        Some(json) => serde_json::from_str(&json)?,
+    };
     let mut subjects = Vec::with_capacity(limit.min(run_ids.len()));
     for run_id in run_ids.into_iter().take(limit) {
         let subject: Option<String> = connection
@@ -642,34 +642,159 @@ pub(crate) fn stalled_parent_rows(
     Ok(out)
 }
 
-/// Member-run progress for a sweep/batch parent (D1: `progress {done,total,failed}`
-/// from its drain counters). `total` = the row's own `candidates_total`; `done`/
-/// `failed` are counted from its `enqueued_run_ids_json` member runs' current
-/// `autopilot_run.status` — read fresh so an in-progress parent's counters move
-/// as members complete, not just at sweep-finish time. The 4th element is the
-/// COUNT of enqueued members (`run_ids.len()`, never `candidates_total`, which
-/// also counts candidates skipped before enqueue) — sol diff R2 #3: the caller
-/// uses `done + failed < enqueued` to know whether any member is still
-/// non-terminal even after the parent row itself has gone terminal (a sweep
-/// marks itself `completed` once every job is DISPATCHED, not once every
-/// dispatched job has FINISHED).
+/// A sweep/batch parent's full state (sol diff R3 #1): the row's OWN durable
+/// counters (`candidates_total`, `runs_failed`, `skipped_existing`) AND every
+/// enqueued member's current `autopilot_run.status`, read fresh so an
+/// in-progress parent's counters move as members complete. Replaces an untyped
+/// `(done, total, failed, enqueued)` tuple that folded `partial` members into
+/// "done", ignored the row's own `runs_failed`/`skipped_existing`, and treated
+/// a malformed `enqueued_run_ids_json` as an empty (rather than unreadable)
+/// member list.
+#[derive(Debug, Clone)]
+pub(crate) struct ParentAggregate {
+    pub parent_status: String,
+    pub parent_error: Option<String>,
+    /// How many candidates the parent's own drain counted when it ran.
+    pub candidates_total: i64,
+    /// `enqueued_run_ids_json`'s length — real member runs, never counting
+    /// `skipped_existing`/`runs_failed` candidates that never became one.
+    pub enqueued: i64,
+    /// Enqueued members still `pending`/`running` — never counts
+    /// `skipped_existing` (skipped candidates were never enqueued at all).
+    pub live: i64,
+    pub member_succeeded: i64,
+    pub member_partial: i64,
+    pub member_failed: i64,
+    /// Candidates a storage error prevented enqueuing (the row's own column).
+    pub runs_failed: i64,
+    /// Candidates already terminal before this run, so skipped (`0` for
+    /// `pipeline_reextraction_batches`, which has no such column).
+    pub skipped_existing: i64,
+}
+
+impl ParentAggregate {
+    /// `{done,total,failed}` for the DTO's `ActivityProgress` (D1): `done`
+    /// counts a member `partial` as done (it finished, just not cleanly) and
+    /// a skipped candidate as done (it needed no work); `failed` folds in the
+    /// row's own enqueue failures alongside member failures.
+    pub(crate) fn progress(&self) -> (i64, i64, i64) {
+        (
+            self.member_succeeded + self.member_partial + self.skipped_existing,
+            self.candidates_total,
+            self.member_failed + self.runs_failed,
+        )
+    }
+
+    /// Derive the parent's resolved `(status, error)` from the row AND its
+    /// members (sol diff R2 #3 lineage, tightened by sol diff R3 #1):
+    ///
+    /// - the parent's own row still `queued`/`running` (hasn't finished
+    ///   dispatching) → trivially `running`, regardless of any member;
+    /// - any enqueued member still non-terminal → `running` (`live` is
+    ///   computed strictly from ENQUEUED members — a skipped candidate was
+    ///   never enqueued, so it can never keep the parent "in flight");
+    /// - a `failed` parent row with NO members ever enqueued → `failed`,
+    ///   keeping the row's own error (a storage-level abort before any
+    ///   candidate was even attempted);
+    /// - no members enqueued and zero candidates on a terminal row →
+    ///   `succeeded` (nothing to do, nothing failed);
+    /// - otherwise: any member `partial`, or any failure (member or
+    ///   row-level `runs_failed`) mixed with a success/skip → `partial`; all
+    ///   outcomes failures → `failed`; all outcomes successes/skips →
+    ///   `succeeded`.
+    pub(crate) fn resolve(&self) -> (String, Option<String>) {
+        if self.parent_status == "queued" || self.parent_status == "running" {
+            return ("running".to_owned(), None);
+        }
+        if self.live > 0 {
+            return ("running".to_owned(), None);
+        }
+        if self.enqueued == 0 {
+            if self.parent_status == "failed" {
+                return ("failed".to_owned(), self.parent_error.clone());
+            }
+            if self.candidates_total == 0 {
+                return ("succeeded".to_owned(), self.parent_error.clone());
+            }
+        }
+        let any_failure = self.member_failed > 0 || self.runs_failed > 0;
+        let any_success_or_skip =
+            self.member_succeeded > 0 || self.member_partial > 0 || self.skipped_existing > 0;
+        if self.member_partial > 0 || (any_failure && any_success_or_skip) {
+            return ("partial".to_owned(), self.parent_error.clone());
+        }
+        if any_failure {
+            return ("failed".to_owned(), self.parent_error.clone());
+        }
+        ("succeeded".to_owned(), self.parent_error.clone())
+    }
+}
+
+/// Read a sweep/batch parent row plus its member runs' current status (sol
+/// diff R3 #1). `table` is `history_sweeps` or `pipeline_reextraction_batches`
+/// — only the former has a `skipped_existing` column, so the other reports it
+/// as `0` (never a schema drift, no such candidates exist for that table).
+///
+/// A malformed `enqueued_run_ids_json` is a `StorageError` (sol diff R3 #1):
+/// silently treating it as an empty member list used to let a sweep that
+/// actually enqueued work report as if it had none.
 pub(crate) fn parent_progress(
     connection: &Connection,
     table: &str,
     id: &str,
-) -> StorageResult<Option<(i64, i64, i64, i64)>> {
-    let sql = format!("SELECT candidates_total, enqueued_run_ids_json FROM {table} WHERE id = ?1");
-    let row: Option<(i64, Option<String>)> = connection
-        .query_row(&sql, [id], |row| Ok((row.get(0)?, row.get(1)?)))
+) -> StorageResult<Option<ParentAggregate>> {
+    let skipped_existing_column = if table == "history_sweeps" {
+        "skipped_existing"
+    } else {
+        "0"
+    };
+    let sql = format!(
+        "SELECT status, error, candidates_total, runs_failed, {skipped_existing_column}, \
+         enqueued_run_ids_json FROM {table} WHERE id = ?1"
+    );
+    #[allow(clippy::type_complexity)]
+    let row: Option<(String, Option<String>, i64, i64, i64, Option<String>)> = connection
+        .query_row(&sql, [id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })
         .optional()?;
-    let Some((total, run_ids_json)) = row else {
+    let Some((
+        parent_status,
+        parent_error,
+        candidates_total,
+        runs_failed,
+        skipped_existing,
+        run_ids_json,
+    )) = row
+    else {
         return Ok(None);
     };
-    let run_ids: Vec<String> = run_ids_json
-        .and_then(|json| serde_json::from_str(&json).ok())
-        .unwrap_or_default();
+
+    let run_ids: Vec<String> = match run_ids_json {
+        None => Vec::new(),
+        Some(json) => serde_json::from_str(&json)?,
+    };
+
     if run_ids.is_empty() {
-        return Ok(Some((0, total, 0, 0)));
+        return Ok(Some(ParentAggregate {
+            parent_status,
+            parent_error,
+            candidates_total,
+            enqueued: 0,
+            live: 0,
+            member_succeeded: 0,
+            member_partial: 0,
+            member_failed: 0,
+            runs_failed,
+            skipped_existing,
+        }));
     }
     let placeholders = vec!["?"; run_ids.len()].join(", ");
     let status_sql = format!("SELECT status FROM autopilot_run WHERE id IN ({placeholders})");
@@ -677,15 +802,29 @@ pub(crate) fn parent_progress(
     let statuses = statement.query_map(rusqlite::params_from_iter(run_ids.iter()), |row| {
         row.get::<_, String>(0)
     })?;
-    let (mut done, mut failed) = (0i64, 0i64);
+    let (mut member_succeeded, mut member_partial, mut member_failed, mut live) =
+        (0i64, 0i64, 0i64, 0i64);
     for status in statuses {
         match status?.as_str() {
-            "succeeded" | "partial" => done += 1,
-            "failed" => failed += 1,
+            "succeeded" => member_succeeded += 1,
+            "partial" => member_partial += 1,
+            "failed" => member_failed += 1,
+            "pending" | "running" => live += 1,
             _ => {}
         }
     }
-    Ok(Some((done, total, failed, run_ids.len() as i64)))
+    Ok(Some(ParentAggregate {
+        parent_status,
+        parent_error,
+        candidates_total,
+        enqueued: run_ids.len() as i64,
+        live,
+        member_succeeded,
+        member_partial,
+        member_failed,
+        runs_failed,
+        skipped_existing,
+    }))
 }
 
 #[cfg(test)]

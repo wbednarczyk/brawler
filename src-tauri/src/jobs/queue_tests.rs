@@ -448,6 +448,18 @@ fn a_scaffolding_panic_before_identity_is_contained_and_the_worker_survives() {
     assert!(worker.process_one().expect("second job processes fine"));
 }
 
+/// A minimal `ClaimedJob` for `ClaimGuard`'s own white-box tests below — the
+/// exact `kind`/`payload` never matter (no handler is registered for these).
+fn claimed_job(id: &str, attempts: i64, max_attempts: i64) -> ClaimedJob {
+    ClaimedJob {
+        id: id.to_owned(),
+        kind: "any-kind".to_owned(),
+        payload: "{}".to_owned(),
+        attempts,
+        max_attempts,
+    }
+}
+
 /// Directly exercises `ClaimGuard`'s Drop-while-armed fallback for the two
 /// shapes an outer-scaffolding panic can leave it in (sol diff R1 #1): with
 /// an occurrence already open (`run_id: Some`, representing a panic during/
@@ -478,7 +490,7 @@ fn claim_guard_fallback_settles_a_run_id_occurrence_on_unwind() {
         .expect("begin");
 
     {
-        let guard = ClaimGuard::new(state.clone(), "job-1".to_owned(), 1);
+        let guard = ClaimGuard::new(state.clone(), claimed_job("job-1", 1, 3), None);
         guard.set_run_id(run_id);
         // Dropped here without `disarm()` — simulates an unwind mid-flight.
     }
@@ -501,7 +513,7 @@ fn claim_guard_fallback_settles_the_queue_row_with_no_occurrence() {
     state.jobs().claim_next().expect("claim").expect("job");
 
     {
-        let _guard = ClaimGuard::new(state.clone(), "job-2".to_owned(), 1);
+        let _guard = ClaimGuard::new(state.clone(), claimed_job("job-2", 1, 1), None);
         // No run_id ever set (identity resolution never got that far).
     }
 
@@ -536,7 +548,7 @@ fn claim_guard_fallback_settles_succeeded_when_marked_before_unwind() {
         .expect("begin");
 
     {
-        let guard = ClaimGuard::new(state.clone(), "job-3".to_owned(), 1);
+        let guard = ClaimGuard::new(state.clone(), claimed_job("job-3", 1, 3), None);
         guard.set_run_id(run_id);
         guard.set_succeeded(true);
         // A panic while ATTEMPTING the succeed-settle call — the fallback
@@ -558,7 +570,7 @@ fn claim_guard_disarmed_is_a_noop_on_drop() {
     state.jobs().claim_next().expect("claim").expect("job");
 
     {
-        let guard = ClaimGuard::new(state.clone(), "job-4".to_owned(), 1);
+        let guard = ClaimGuard::new(state.clone(), claimed_job("job-4", 1, 1), None);
         guard.disarm();
         // The ordinary path is presumed to have already handled this job
         // (e.g. via `defer`) — the guard must not touch it again.
@@ -569,6 +581,134 @@ fn claim_guard_disarmed_is_a_noop_on_drop() {
     assert_eq!(
         queue_status.status, "pending",
         "a disarmed guard must never re-settle a row the ordinary path already handled"
+    );
+}
+
+/// sol diff R3 #2: `settle_with_recovery` retries the SAME op (same closure,
+/// so the SAME args/error text) exactly once, and reports `Unrecovered` —
+/// never a bare `None` indistinguishable from `MissingRow` — leaving the
+/// guard armed for its own last-resort Drop recovery.
+#[test]
+fn settle_with_recovery_retries_once_with_the_same_op_then_reports_unrecovered() {
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let guard = ClaimGuard::new(state, claimed_job("job-x", 1, 1), None);
+    let attempts = AtomicUsize::new(0);
+    let outcome = settle_with_recovery(&guard, || {
+        attempts.fetch_add(1, Ordering::SeqCst);
+        Err::<(), _>(StorageError::Classification("boom".to_owned()))
+    });
+    assert_eq!(
+        attempts.load(Ordering::SeqCst),
+        2,
+        "op is retried exactly once"
+    );
+    assert!(matches!(outcome, SettleOutcome::Unrecovered));
+    assert!(
+        guard.armed.get(),
+        "an Unrecovered outcome must leave the guard armed for Drop's own recovery"
+    );
+}
+
+/// sol diff R3 #2: once BOTH ordinary settle attempts have failed (simulated
+/// directly here — the guard is left armed with the real error recorded via
+/// `set_pending_error`, never a settle attempt made), a Drop that runs
+/// WITHOUT an actual panic in flight must repeat that SAME real error — never
+/// the fabricated "panic: ..." message — and, since this lands the row
+/// terminal, fire the SAME terminal hooks the ordinary branch would, exactly
+/// once.
+#[test]
+fn claim_guard_drop_fallback_uses_the_real_error_and_fires_terminal_hooks_once() {
+    let handler = Arc::new(HookRecordingHandler {
+        kind: "hook-kind-recovery",
+        preflight_errors: 0,
+        preflights: AtomicUsize::new(0),
+        terminal_calls: AtomicUsize::new(0),
+    });
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    state
+        .jobs()
+        .enqueue("job-5", handler.kind(), "{}", 1)
+        .expect("enqueue");
+    state.jobs().claim_next().expect("claim").expect("job");
+
+    {
+        let guard = ClaimGuard::new(
+            state.clone(),
+            claimed_job("job-5", 1, 1),
+            Some(handler.clone() as Arc<dyn JobHandler>),
+        );
+        guard.set_pending_error("transient failure 0");
+        // Dropped here with no settle attempt ever made and no panic in
+        // flight — the "twice-failed-then-recovered" shape, minus the
+        // mechanically-unreproducible DB poisoning (SQLite's `total_changes`
+        // does not survive as a per-call-site counter usable from a trigger
+        // without a custom SQL function, which is not worth a new rusqlite
+        // feature for one test); the ordinary path always sets
+        // `pending_error` before every `settle_with_recovery` call, so this
+        // is exactly the state Drop sees in the real twice-failed case.
+    }
+
+    let queue_status = state.jobs().status("job-5").expect("status").expect("row");
+    assert_eq!(queue_status.status, "failed");
+    assert_eq!(
+        queue_status.last_error.as_deref(),
+        Some("transient failure 0"),
+        "Drop's non-panic fallback must repeat the REAL error, never a fabricated one"
+    );
+    assert_eq!(
+        handler.terminal_calls.load(Ordering::SeqCst),
+        1,
+        "the non-panic Drop fallback must fire on_terminal_failure exactly once, same as the \
+         ordinary branch"
+    );
+}
+
+/// The panic counterpart: while genuinely unwinding, `Drop` must keep its
+/// fixed diagnosis (never a stale `pending_error` from before the panic) and
+/// must fire NO hooks — invoking arbitrary handler code mid-unwind risks a
+/// second panic, which aborts the process outright.
+#[test]
+fn claim_guard_drop_during_a_real_panic_ignores_pending_error_and_fires_no_hooks() {
+    let handler = Arc::new(HookRecordingHandler {
+        kind: "hook-kind-panic",
+        preflight_errors: 0,
+        preflights: AtomicUsize::new(0),
+        terminal_calls: AtomicUsize::new(0),
+    });
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    state
+        .jobs()
+        .enqueue("job-6", handler.kind(), "{}", 1)
+        .expect("enqueue");
+    state.jobs().claim_next().expect("claim").expect("job");
+
+    let state_for_panic = state.clone();
+    let handler_for_panic = handler.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        let guard = ClaimGuard::new(
+            state_for_panic,
+            claimed_job("job-6", 1, 1),
+            Some(handler_for_panic as Arc<dyn JobHandler>),
+        );
+        guard.set_pending_error("this must never reach the queue row");
+        panic!("boom: genuine unwind while the guard is armed");
+    }));
+    assert!(
+        result.is_err(),
+        "the panic must actually unwind through this scope"
+    );
+
+    let queue_status = state.jobs().status("job-6").expect("status").expect("row");
+    assert_eq!(queue_status.status, "failed");
+    assert_eq!(
+        queue_status.last_error.as_deref(),
+        Some("panic: job worker unwound before settling"),
+        "a genuine unwind keeps the fabricated panic message, never the stale pending_error"
+    );
+    assert_eq!(
+        handler.terminal_calls.load(Ordering::SeqCst),
+        0,
+        "no hooks fire from a Drop that is itself mid-unwind"
     );
 }
 

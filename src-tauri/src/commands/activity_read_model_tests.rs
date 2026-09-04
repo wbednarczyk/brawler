@@ -860,6 +860,13 @@ fn list_activity_is_checkout_bounded() {
     );
 }
 
+// Parent-aggregate derivation (sol diff R3 #1) and fail-closed domain
+// lookups (sol diff R3 #3) live in `activity_read_model_parent_aggregate_tests.rs`
+// (split out to stay under the file-size ratchet, ADR 0103) — nested here so
+// they resolve as `commands::activity::tests::read_model::parent_aggregate::*`.
+#[path = "activity_read_model_parent_aggregate_tests.rs"]
+mod parent_aggregate;
+
 /// Advisory (not a CI gate): run once with `--ignored` against a COPY of the
 /// owner's real snapshot and eyeball whether `compute_activity`'s grouping
 /// reads as tasks (S1 handoff evidence).

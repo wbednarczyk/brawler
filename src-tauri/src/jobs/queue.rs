@@ -123,36 +123,105 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
         .unwrap_or_else(|| "job worker panicked".to_owned())
 }
 
+/// THE single terminal-failure point (ADR 0091 dec. 1): the job has exhausted
+/// its retries and will not run again. Kinds whose failure surface is
+/// [`crate::jobs::failure_surface::FailureSurface::TodayAttention`] raise the
+/// generic system `job_failed` attention event here; kinds with a richer
+/// domain surface (Sources adapter health, the autopilot run card) keep it
+/// EXCLUSIVELY, so nothing double-fires. An unclassified kind surfaces
+/// nothing and is caught by the enumeration gate
+/// (`jobs::failure_surface::tests`), never silently defaulted here.
+///
+/// A free function, not a `JobWorker` method (sol diff R3 #2): `ClaimGuard`'s
+/// `Drop` fallback — which has no `&JobWorker`, only its own `AppState`
+/// handle — must be able to invoke this SAME terminal-failure point when its
+/// own last-resort settle lands terminal, exactly like the ordinary branch.
+///
+/// Best-effort: raising the event must never turn a recorded failure into a
+/// worker error (the queue row is already the durable record).
+fn surface_terminal_failure(state: &AppState, job: &ClaimedJob, handler: Option<&dyn JobHandler>) {
+    use crate::jobs::failure_surface::{failure_surface, FailureSurface};
+
+    if failure_surface(&job.kind) != Some(FailureSurface::TodayAttention) {
+        return;
+    }
+    let (company, subject) = handler
+        .map(|handler| handler.failure_context(job, state))
+        .unwrap_or((None, None));
+    if let Err(error) =
+        state
+            .attention()
+            .record_job_failure(&job.id, company.as_deref(), subject.as_deref())
+    {
+        log::warn!(
+            "job queue: could not raise the failure event for job {} ({}): {error}",
+            job.id,
+            job.kind
+        );
+    }
+}
+
+/// The outcome of [`settle_with_recovery`] (sol diff R3 #2) — replaces an
+/// untyped `Option<T>` that could not tell a caller "committed" apart from
+/// "both attempts failed, the claim guard is now the last resort", which used
+/// to read identically to `MissingRow`'s intentional `None`.
+enum SettleOutcome<T> {
+    /// The call committed (on the primary attempt or the retry) — `T` is its
+    /// real return value (e.g. `mark_failed_with_run`'s `will_retry` bool).
+    Settled(T),
+    /// [`StorageError::JobQueueRowMissingDuringSettle`] — the settle
+    /// transaction proved the occurrence already closed truthfully even
+    /// though the queue-side transition did not apply. Nothing more to do.
+    MissingRow,
+    /// Both the primary attempt and the retry failed. `claim_guard` is left
+    /// ARMED; its `Drop` fallback is the last-resort recovery.
+    Unrecovered,
+}
+
 /// RAII unwind guard for one claimed job's post-claim lifecycle (ADR 0109
 /// dec. 2, sol diff R1 #1). `dispatch_claimed` disarms it ONLY once a
 /// defer/settle call is known to have actually committed (sol diff R2 #1) —
 /// via [`settle_with_recovery`], never unconditionally before the call's
-/// result is known. If the stack unwinds through a panic BEFORE that —
-/// identity checkout, `begin_attempt`, or the settle call itself panicking
-/// mid-flight — `Drop` fires while still armed and best-effort re-settles the
-/// claim so it never strands `running` and the worker thread keeps running
-/// the next job.
+/// result is known. If both the ordinary attempt and its one recovery retry
+/// fail — [`SettleOutcome::Unrecovered`] — the caller records the REAL
+/// intended failure text via [`ClaimGuard::set_pending_error`] so `Drop`'s
+/// own last-resort settle (below) repeats that SAME transition with that
+/// SAME text, never a fabricated one (sol diff R3 #2): the "panic: job
+/// worker unwound before settling" message is reserved for when `Drop`
+/// itself fires while the thread is actually unwinding (`std::thread::
+/// panicking()`) — e.g. identity checkout or `begin_attempt` panicking
+/// before any settle attempt was even made, or a second panic escaping the
+/// dispatch-level panic arm's own hook calls.
 struct ClaimGuard {
     state: AppState,
-    job_id: String,
-    attempts: i64,
+    job: ClaimedJob,
+    /// The registered handler, if any — kept so a non-panic `Drop` fallback
+    /// that lands terminal can invoke the SAME terminal hooks
+    /// (`surface_terminal_failure`, `on_terminal_failure`) the ordinary
+    /// branch would (sol diff R3 #2).
+    handler: Option<Arc<dyn JobHandler>>,
     run_id: Cell<Option<i64>>,
     /// `Some(true)` once the handler is known to have succeeded (set right
     /// before the ordinary succeed-settle call) — the fallback then tries
     /// `mark_succeeded_with_run` instead of failing a job that actually
     /// finished its work. `None`/`Some(false)` fall back to failed/retried.
     succeeded: Cell<Option<bool>>,
+    /// The real text of whichever failure/defer transition is currently
+    /// intended — set by the caller right before every `settle_with_recovery`
+    /// call in the non-success path (sol diff R3 #2).
+    pending_error: Cell<Option<String>>,
     armed: Cell<bool>,
 }
 
 impl ClaimGuard {
-    fn new(state: AppState, job_id: String, attempts: i64) -> Self {
+    fn new(state: AppState, job: ClaimedJob, handler: Option<Arc<dyn JobHandler>>) -> Self {
         Self {
             state,
-            job_id,
-            attempts,
+            job,
+            handler,
             run_id: Cell::new(None),
             succeeded: Cell::new(None),
+            pending_error: Cell::new(None),
             armed: Cell::new(true),
         }
     }
@@ -163,6 +232,10 @@ impl ClaimGuard {
 
     fn set_succeeded(&self, succeeded: bool) {
         self.succeeded.set(Some(succeeded));
+    }
+
+    fn set_pending_error(&self, error: impl Into<String>) {
+        self.pending_error.set(Some(error.into()));
     }
 
     /// The ordinary settle path has taken over (Ok or Err — either way the
@@ -178,27 +251,58 @@ impl Drop for ClaimGuard {
             return;
         }
         let run_id = self.run_id.get();
-        let result = if self.succeeded.get() == Some(true) {
-            self.state
+        if self.succeeded.get() == Some(true) {
+            if let Err(error) = self
+                .state
                 .jobs()
-                .mark_succeeded_with_run(&self.job_id, run_id)
+                .mark_succeeded_with_run(&self.job.id, run_id)
+            {
+                log::error!(
+                    "job queue: claim guard could not settle job {} as succeeded: {error}",
+                    self.job.id
+                );
+            }
+            return;
+        }
+
+        // sol diff R3 #2: the fabricated panic message is used ONLY while
+        // genuinely unwinding — every non-panic arrival here (both ordinary
+        // settle attempts failed, or a defer/checkout/begin_attempt failure
+        // repeatedly failed to even record) reuses the REAL intended error
+        // text instead.
+        let panicking = std::thread::panicking();
+        let error_text = if panicking {
+            "panic: job worker unwound before settling".to_owned()
         } else {
-            let backoff = retry_backoff_seconds(self.attempts);
-            self.state
-                .jobs()
-                .mark_failed_with_run(
-                    &self.job_id,
-                    "panic: job worker unwound before settling",
-                    backoff,
-                    run_id,
-                )
-                .map(|_| ())
+            self.pending_error.take().unwrap_or_else(|| {
+                "job worker exited before settling and no error was recorded".to_owned()
+            })
         };
-        if let Err(error) = result {
-            log::error!(
-                "job queue: claim guard could not settle job {} after a panic: {error}",
-                self.job_id
-            );
+        let backoff = retry_backoff_seconds(self.job.attempts);
+        match self
+            .state
+            .jobs()
+            .mark_failed_with_run(&self.job.id, &error_text, backoff, run_id)
+        {
+            Ok(will_retry) => {
+                // Terminal hooks fire from this last-resort path too (sol
+                // diff R3 #2) — but never while genuinely unwinding: invoking
+                // arbitrary handler code mid-panic risks a second panic
+                // during unwind, which aborts the process outright.
+                if !will_retry && !panicking {
+                    surface_terminal_failure(&self.state, &self.job, self.handler.as_deref());
+                    if let Some(handler) = self.handler.as_deref() {
+                        handler.on_terminal_failure(&self.job, &error_text, &self.state);
+                    }
+                }
+            }
+            Err(StorageError::JobQueueRowMissingDuringSettle { .. }) => {}
+            Err(error) => {
+                log::error!(
+                    "job queue: claim guard could not settle job {} after exhausting recovery: {error}",
+                    self.job.id
+                );
+            }
         }
     }
 }
@@ -210,37 +314,39 @@ impl Drop for ClaimGuard {
 /// (ADR 0109 dec. 2, sol diff R2 #1). If BOTH the primary attempt and the
 /// retry return any other `Err`, `claim_guard` is left ARMED — its `Drop`
 /// fallback is the last-resort recovery — and the failure is logged at error
-/// level so a truly stuck row is never silent.
+/// level so a truly stuck row is never silent. `op` is called with the SAME
+/// arguments both times (sol diff R3 #2) — callers close over the real
+/// intended error text once, never re-derive it per attempt.
 fn settle_with_recovery<T>(
     claim_guard: &ClaimGuard,
     mut op: impl FnMut() -> StorageResult<T>,
-) -> Option<T> {
+) -> SettleOutcome<T> {
     for attempt in 1..=2 {
         match op() {
             Ok(value) => {
                 claim_guard.disarm();
-                return Some(value);
+                return SettleOutcome::Settled(value);
             }
             Err(StorageError::JobQueueRowMissingDuringSettle { .. }) => {
                 claim_guard.disarm();
-                return None;
+                return SettleOutcome::MissingRow;
             }
             Err(error) if attempt == 1 => {
                 log::warn!(
                     "job queue: settle failed for job {}, retrying once: {error}",
-                    claim_guard.job_id
+                    claim_guard.job.id
                 );
             }
             Err(error) => {
                 log::error!(
                     "job queue: settle failed twice for job {}: {error}; leaving the claim \
                      guard armed so its Drop fallback terminalizes the row",
-                    claim_guard.job_id
+                    claim_guard.job.id
                 );
             }
         }
     }
-    None
+    SettleOutcome::Unrecovered
 }
 
 /// Worker holding the registered handlers and an `AppState` handle.
@@ -300,7 +406,7 @@ impl JobWorker {
     /// itself also fails.
     fn dispatch(&self, job: ClaimedJob) -> Result<(), String> {
         let handler = self.handlers.get(job.kind.as_str()).cloned();
-        let claim_guard = ClaimGuard::new(self.state.clone(), job.id.clone(), job.attempts);
+        let claim_guard = ClaimGuard::new(self.state.clone(), job.clone(), handler.clone());
 
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.dispatch_claimed(&job, handler.as_deref(), &claim_guard)
@@ -328,7 +434,8 @@ impl JobWorker {
                     } else {
                         let panic_error = format!("panic: {message}");
                         let backoff = retry_backoff_seconds(job.attempts);
-                        let will_retry = settle_with_recovery(&claim_guard, || {
+                        claim_guard.set_pending_error(panic_error.clone());
+                        let outcome = settle_with_recovery(&claim_guard, || {
                             self.state.jobs().mark_failed_with_run(
                                 &job.id,
                                 &panic_error,
@@ -336,8 +443,8 @@ impl JobWorker {
                                 run_id,
                             )
                         });
-                        if let Some(false) = will_retry {
-                            self.surface_terminal_failure(&job, handler.as_deref());
+                        if let SettleOutcome::Settled(false) = outcome {
+                            surface_terminal_failure(&self.state, &job, handler.as_deref());
                             if let Some(handler) = handler.as_deref() {
                                 handler.on_terminal_failure(&job, &panic_error, &self.state);
                             }
@@ -370,6 +477,11 @@ impl JobWorker {
                 Some(key) => match self.state.try_acquire_source(&key) {
                     Some(guard) => Some(guard),
                     None => {
+                        claim_guard.set_pending_error(format!(
+                            "job queue: source lock busy for job {} and the deferral could not \
+                             be recorded",
+                            job.id
+                        ));
                         settle_with_recovery(claim_guard, || {
                             store.defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
                         });
@@ -403,6 +515,7 @@ impl JobWorker {
                     job.id,
                     job.kind
                 );
+                claim_guard.set_pending_error(format!("identity checkout failed: {error}"));
                 settle_with_recovery(claim_guard, || {
                     store.defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
                 });
@@ -432,6 +545,7 @@ impl JobWorker {
                             job.id,
                             job.kind
                         );
+                        claim_guard.set_pending_error(format!("begin_attempt failed: {error}"));
                         settle_with_recovery(claim_guard, || {
                             store.defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
                         });
@@ -468,16 +582,20 @@ impl JobWorker {
             }
             Err(error) => {
                 let backoff = retry_backoff_seconds(job.attempts);
-                let will_retry = settle_with_recovery(claim_guard, || {
+                // sol diff R3 #2: the REAL handler error, stored so a non-panic
+                // Drop fallback (both attempts below fail too) repeats this
+                // SAME text instead of a fabricated one.
+                claim_guard.set_pending_error(error.clone());
+                let outcome = settle_with_recovery(claim_guard, || {
                     store.mark_failed_with_run(&job.id, &error, backoff, run_id)
                 });
-                if let Some(false) = will_retry {
+                if let SettleOutcome::Settled(false) = outcome {
                     // Event first (deduped, migration 0118), domain transition
                     // second — a crash between the two converges at startup.
                     // The hook fires for EVERY kind, independent of the
                     // failure-surface classification inside
                     // `surface_terminal_failure`.
-                    self.surface_terminal_failure(job, handler);
+                    surface_terminal_failure(&self.state, job, handler);
                     if let Some(handler) = handler {
                         handler.on_terminal_failure(job, &error, &self.state);
                     }
@@ -485,38 +603,6 @@ impl JobWorker {
             }
         }
         Ok(())
-    }
-
-    /// THE single terminal-failure point (ADR 0091 dec. 1): the job has exhausted
-    /// its retries and will not run again. Kinds whose failure surface is
-    /// [`FailureSurface::TodayAttention`] raise the generic system `job_failed`
-    /// attention event here; kinds with a richer domain surface (Sources adapter
-    /// health, the autopilot run card) keep it EXCLUSIVELY, so nothing double-fires.
-    /// An unclassified kind surfaces nothing and is caught by the enumeration gate
-    /// (`jobs::failure_surface::tests`), never silently defaulted here.
-    ///
-    /// Best-effort: raising the event must never turn a recorded failure into a
-    /// worker error (the queue row is already the durable record).
-    fn surface_terminal_failure(&self, job: &ClaimedJob, handler: Option<&dyn JobHandler>) {
-        use crate::jobs::failure_surface::{failure_surface, FailureSurface};
-
-        if failure_surface(&job.kind) != Some(FailureSurface::TodayAttention) {
-            return;
-        }
-        let (company, subject) = handler
-            .map(|handler| handler.failure_context(job, &self.state))
-            .unwrap_or((None, None));
-        if let Err(error) = self.state.attention().record_job_failure(
-            &job.id,
-            company.as_deref(),
-            subject.as_deref(),
-        ) {
-            log::warn!(
-                "job queue: could not raise the failure event for job {} ({}): {error}",
-                job.id,
-                job.kind
-            );
-        }
     }
 
     /// Claim and process at most one job (any kind). Returns `true` if a job was
