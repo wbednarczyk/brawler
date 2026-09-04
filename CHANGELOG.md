@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.81.0 - 2026-09-04
+
+
+### Features
+
+- **activity**: F3d — Aktywność, the activity center: job_runs ledger, direct-activity registry, startup reconciliation, topbar indicator + panel (#133) (#459)
+
 ## v0.80.0 - 2026-09-03
 
 
