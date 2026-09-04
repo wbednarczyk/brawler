@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -6,6 +7,7 @@ import {
   shortcutMatchesEvent,
   useKeyboardShortcuts,
 } from "./index";
+import { appShortcutReferenceItems, createAppShortcutDefinitions, type AppShortcutActionMap } from "../../app/shortcuts";
 
 function ShortcutHarness({ onRun }: { onRun: () => void }) {
   useKeyboardShortcuts([
@@ -80,5 +82,69 @@ describe("keyboard shortcuts", () => {
     fireEvent.keyDown(screen.getByLabelText("Note editor"), { key: "K", code: "KeyK", ctrlKey: true });
 
     expect(onRun).toHaveBeenCalledTimes(1);
+  });
+});
+
+// F3d S2 (#133, plan § D4 "one-modal shortcut policy" — harvest of a class
+// F3c missed): the global capture-phase dispatcher (`useKeyboardShortcuts`)
+// must suppress EVERY registered app shortcut while any `[aria-modal="true"]`
+// dialog is open — not a per-shortcut check (`app.focusWorkshop` carried the
+// only one before this). No `preventDefault` on the early return: the
+// dialog's own bubble-phase Escape and native editing keys stay untouched.
+
+function AppShortcutsHarness({ fired }: { fired: Record<string, number> }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const actions = Object.fromEntries(
+    appShortcutReferenceItems.map((item) => [
+      item.id,
+      () => {
+        fired[item.id] = (fired[item.id] ?? 0) + 1;
+      },
+    ]),
+  ) as AppShortcutActionMap;
+  const definitions = createAppShortcutDefinitions(actions, {});
+  useKeyboardShortcuts(definitions);
+
+  return (
+    <div>
+      <button onClick={() => setModalOpen(true)}>open modal</button>
+      {modalOpen ? <div aria-modal="true">dialog</div> : null}
+    </div>
+  );
+}
+
+describe("one-modal shortcut policy (plan § D4)", () => {
+  // sol diff R1 #17: exhaustive over EVERY registered id (not "> 0 fired") —
+  // a single dead binding must redden this, not hide behind an aggregate count.
+  it("every registered app shortcut fires without a dialog, and is inert while one is open", () => {
+    const fired: Record<string, number> = {};
+    render(<AppShortcutsHarness fired={fired} />);
+
+    for (const item of appShortcutReferenceItems) {
+      fireEvent.keyDown(document, { ...item.defaultBinding });
+    }
+    for (const item of appShortcutReferenceItems) {
+      expect(fired[item.id], `shortcut ${item.id} did not fire without a dialog open`).toBe(1);
+    }
+
+    // Open the modal, reset the tally, replay every binding — none may fire.
+    fireEvent.click(document.querySelector("button")!);
+    for (const key of Object.keys(fired)) delete fired[key];
+
+    for (const item of appShortcutReferenceItems) {
+      fireEvent.keyDown(document, { ...item.defaultBinding });
+    }
+    for (const item of appShortcutReferenceItems) {
+      expect(fired[item.id], `shortcut ${item.id} fired while [aria-modal="true"] was present`).toBeUndefined();
+    }
+  });
+
+  it("does not call preventDefault while a dialog is open (native editing/Escape stay live)", () => {
+    render(<AppShortcutsHarness fired={{}} />);
+    fireEvent.click(document.querySelector("button")!);
+
+    const event = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
   });
 });

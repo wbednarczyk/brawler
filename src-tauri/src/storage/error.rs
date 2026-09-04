@@ -255,6 +255,27 @@ pub enum StorageError {
     /// 0102 dec. 10, contracts.md tool 5).
     #[error("kpi ingest draft {draft_id} finalize refused: {reason}")]
     KpiIngestDraftAggregateBudgetExceeded { draft_id: String, reason: String },
+    /// The `job_queue` row a settle call targeted was gone by the time the
+    /// settle transaction ran (ADR 0109 dec. 2, sol diff R1 #2) — the
+    /// occurrence still settles truthfully in the SAME transaction, but this
+    /// distinct error tells `jobs::queue::dispatch` the queue-side transition
+    /// did NOT happen, so it must not run terminal hooks as if it had.
+    #[error("job queue row {id} vanished before its settle could complete — the occurrence closed truthfully, but the queue-side transition did NOT apply")]
+    JobQueueRowMissingDuringSettle { id: String },
+    /// A sweep/batch parent's declared member set failed verification (sol
+    /// diff R4 #2): a duplicate declared id, a declared id with no matching
+    /// member row, a member row with an unrecognized status, or (once the
+    /// parent is terminal) `candidates_total != enqueued + runs_failed +
+    /// skipped_existing`. Fail-closed, consistent with the malformed-JSON
+    /// posture — the producer normally maintains these invariants, so a
+    /// violation means the data is corrupt, not that the aggregate should
+    /// guess.
+    #[error("activity parent {table}:{id} member invariant violated: {reason}")]
+    ActivityParentMemberInvariant {
+        table: String,
+        id: String,
+        reason: String,
+    },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

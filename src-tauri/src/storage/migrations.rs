@@ -273,3 +273,52 @@ mod migration_invariants {
         );
     }
 }
+
+#[cfg(test)]
+mod job_runs_migration {
+    use super::*;
+
+    /// Migration 0153 (`job_runs`, ADR 0109) applies cleanly to a COPY of the
+    /// owner's real database, and a second apply on the same connection is a
+    /// no-op (idempotent — `apply_migrations` skips already-applied versions).
+    /// Skipped when the read-only snapshot is not present in this sandbox
+    /// (CI / a fresh checkout never has it).
+    #[test]
+    fn applies_to_real_snapshot_and_reapply_is_idempotent() {
+        let snapshot = std::path::Path::new(
+            "/tmp/claude-1000/-home-wojtas-projects-brawler/d9ef921f-6b1b-4904-8b65-b5f67e25e394/scratchpad/realdb/snap.sqlite3",
+        );
+        if !snapshot.exists() {
+            eprintln!("real snapshot not present in this sandbox, skipping");
+            return;
+        }
+        let dir =
+            std::env::temp_dir().join(format!("brawler-job-runs-migration-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let copy_path = dir.join("snap-copy.sqlite3");
+        std::fs::copy(snapshot, &copy_path).expect("copy real snapshot");
+
+        let mut connection = Connection::open(&copy_path).expect("open copy");
+        apply_migrations(&mut connection).expect("apply migrations to real snapshot copy");
+
+        let table_exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'job_runs')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("check job_runs exists");
+        assert!(table_exists, "job_runs table must exist after migration");
+
+        // Re-apply is a no-op: same migration count, no error.
+        let before = count_applied_migrations(&connection).expect("count before");
+        apply_migrations(&mut connection).expect("re-apply is idempotent");
+        let after = count_applied_migrations(&connection).expect("count after");
+        assert_eq!(
+            before, after,
+            "re-applying migrations must not change the count"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

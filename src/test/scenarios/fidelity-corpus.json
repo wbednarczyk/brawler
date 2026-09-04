@@ -1869,6 +1869,39 @@
           }
         }
       ]
+    },
+    {
+      "name": "a freshly created transcript job surfaces as queued activity (ADR 0109, #133)",
+      "_comment": "create_video_transcript_job only inserts the row (status 'queued') — no job_runs/registry entry exists until run_video_transcript_job actually starts it (ADR 0109 dec. 3), so the item must land in list_activity's queued array, never active, with family 'transcript' and a transcripts target. get_activity_summary is checked shape-only (its counts move with whatever else a fresh in-memory db seeds).",
+      "steps": [
+        {
+          "command": "create_video_transcript_job",
+          "input": {
+            "input": {
+              "companyId": null,
+              "providerId": null,
+              "sourceUrl": "https://youtube.test/watch?v=fidelity-mock",
+              "sourceLabel": "Fidelity corpus mock transcript",
+              "recognizedCompanyCandidates": null
+            }
+          }
+        },
+        {
+          "command": "list_activity",
+          "input": {},
+          "expectContainsField": "queued",
+          "expectContains": {
+            "family": "transcript",
+            "subject": "Fidelity corpus mock transcript",
+            "target": { "kind": "transcripts" }
+          }
+        },
+        {
+          "command": "get_activity_summary",
+          "input": {},
+          "expectField": {}
+        }
+      ]
     }
   ]
 }

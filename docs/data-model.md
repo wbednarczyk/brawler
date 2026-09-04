@@ -1083,33 +1083,13 @@ Rules:
 
 The docking engine and its saved-layout table are retired ([ADR 0108](adr/0108-retire-docking-engine.md)); migration `0152_drop_cockpit_layouts.sql` drops the table.
 
-### Jobs
+### Jobs (legacy table — retired in prose)
 
-Supports Sources screen, background ingestion, manual refresh, and transcript processing status.
-
-Fields:
-
-- `id`
-- `type`
-- `adapter_id`
-- `transcript_job_id`
-- `status`
-- `started_at`
-- `finished_at`
-- `items_fetched`
-- `items_created`
-- `warnings_json`
-- `error`
-
-Rules:
-
-- `adapter_id` is used for source polling jobs.
-- `transcript_job_id` is used for transcript jobs when represented in the shared job list.
-- Warnings can be JSON in v1 unless they need filtering.
+The `jobs` table (migration 0001: `id, type, adapter_id, transcript_job_id, status, started_at, finished_at, items_fetched, items_created, warnings_json, error`) is **dead**: its only writer was the one-time data migration `0017`; no store reads or writes it (0 rows on the maintainer's database, 2026-09-03). It stays in the schema under the append-only migration rule; its former role ("what ran") is taken by the durable queue below and the **`job_runs` occurrence history** ([ADR 0109](adr/0109-activity-center-occurrence-ledger.md)). Dropping it is a #351 de-massing candidate, not part of any feature slice.
 
 ### Durable Job Queue
 
-The `job_queue` table (migration `0051`, Architecture v2 / [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md)) is the persisted work list that replaces fire-and-forget `spawn_blocking` tasks, so work survives a crash mid-job and can be retried/resumed. Distinct from the `jobs` activity log above: `jobs` records what *ran*; `job_queue` holds what *must run*. Driven by `storage::JobQueueStore` + the in-process `jobs::queue::JobWorker`.
+The `job_queue` table (migration `0051`, Architecture v2 / [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md)) is the persisted work list that replaces fire-and-forget `spawn_blocking` tasks, so work survives a crash mid-job and can be retried/resumed. Distinct from the dead legacy `jobs` table above and from `job_runs` (below, ADR 0109), which records what *ran*; `job_queue` holds what *must run*. Driven by `storage::JobQueueStore` + the in-process `jobs::queue::JobWorker`.
 
 Fields:
 
@@ -1133,6 +1113,27 @@ Rules:
 - **Chunked company-scoped refresh.** A company-scoped scheduled refresh (bankier-company) is a **planner**: it enqueues one idempotent `source_company_refresh` job (stable id `source_company_refresh:{adapter}:{company}`, re-armed via `reschedule`) **per tracked company** instead of looping all companies in one job. The per-source lock serializes them (politeness preserved), other lanes run alongside, unfinished per-company jobs resume across restarts, and each job rides autopilot detection on its own ingest completion. This retires the monolith that monopolized the single worker for minutes. ([ADR 0059](adr/0059-worker-pools-and-queue-fairness.md).)
 - **`enqueue` vs `reschedule` for a reused id (guardrail, bug `dce9ce8`).** `enqueue` is `INSERT OR IGNORE` — safe only when `id` is genuinely fresh. Any producer that may enqueue again under the **same** `id` after that row already reached a terminal state (a recreated run, a `retry_*` command, a re-triggered one-shot job) must use `reschedule`, not `enqueue`: otherwise the later call is a silent no-op against the existing terminal row and the work never runs again. This broke the autopilot pipeline (a recreated `autopilot_run` stuck at `pending`/`fetch` forever behind an already-`succeeded` stage job — `create_run_if_absent` → `enqueue_stage`) and, mechanically identically, `jobs::handlers::enqueue_per_job` (backs `retry_kpi_extraction` / `retry_claim_extraction` / `retry_ai_analysis`, whose per-job handlers always terminal-succeed the queue row regardless of domain outcome).
 - Local-first: workers drain the queue only while the app is open. Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`).
+
+### Job runs (activity occurrence history)
+
+`job_runs` (migration `0153`, [ADR 0109](adr/0109-activity-center-occurrence-ledger.md)) records **one occurrence per attempt** of background work — queue jobs and awaited direct work alike — so the Activity panel can state what ran, when, for how long and with what outcome, which the queue cannot (its recurring rows are overwritten in place; `updated_at` is a transition proxy touched by five paths). Distinct from `job_queue` (what must run) and from the dead legacy `jobs` table above.
+
+Fields:
+
+- `id` — autoincrement; the settle handle (never the reusable queue id).
+- `activity_key` — the **task** identity the UI collapses on (`report-reading:<autopilot_run_id>`, `report-sweep:<sweep_id>`, `kpi-ingest:<run_id>`, `source-refresh:<adapter_id>`, `company-refresh:<company_id>`, `history-fetch:<company_id>`, `reextraction:<batch_id>`, `ownership-reading:<document_id>`, `management-reading:<document_id>`, `price-history:<company_id>`, `transcript:<job_id>`, singletons for registry/FX/aggregator/briefing).
+- `run_key` — the queue `job_queue.id` or `direct:<activity_key>` for awaited work.
+- `kind`, `family` (the `ActivityFamily` token), `company_id` (nullable, `REFERENCES companies(id) ON DELETE CASCADE`), `subject` (raw: document title / adapter display name / video title), `target_json` (the typed navigation target).
+- `status` — `running | succeeded | failed | retry_scheduled | interrupted`; `attempt`; `started_at`; `finished_at` (NULL while running); `error`.
+- Indexes: `(status)`, `(finished_at DESC, id DESC)`, `(activity_key)`.
+
+Rules:
+
+- **Two writers only.** The queue worker's single dispatch seam (`begin_attempt` after the source lock; settle of the queue row and this exact occurrence in ONE `IMMEDIATE` transaction; a deferred job writes nothing) and the direct-activity registry's RAII guard (Drop on unwind = `interrupted`). A handler panic is contained (`catch_unwind`) and settles through the ordinary retry/terminal path.
+- **Identity is never reused**; one legal update (`running` → terminal). This is an occurrence history with explicit GC, not an append-only table in the migration sense.
+- **Retention at settlement and after startup reconciliation, never on insert**: keep the newest 500 finished rows by `(finished_at DESC, id DESC)`, drop `finished_at` older than 30 days.
+- **Startup reconciliation** (order pinned in `lib.rs`: KPI-run reclaim → generic queue reclaim → KPI queue reconciliation → activity reconcile, before any worker lane starts): open occurrences → `interrupted`; `transcript_jobs.status='running'` → `failed` + `error_code='interrupted'`; an `autopilot_run` with any stage job pending/running is left alone, otherwise a non-terminal run whose reachable stage job is terminally failed / absent / succeeded with no live successor → `failed` with that job's error; a `history_sweeps` / `pipeline_reextraction_batches` row that is non-terminal while its parent job is absent or terminal → `failed`; `kpi_ingest_runs` are never terminalized here (their own reclaim owns `committing`; an expired/NULL lease reads as waiting). Idempotent.
+- The read model (`storage/activity_reads.rs`) reads the bounded candidate set in SQL — terminal occurrences ordered by `(finished_at DESC, id DESC)` over the index, capped at the retention size (500) — then collapses to the newest occurrence per `activity_key` in Rust and applies the 40-task cap AFTER the collapse; keys that are live elsewhere (running/stalled/queued) are excluded from `recent`. A run/sweep/batch/KPI run takes its final status from the domain row(s): a parent from ALL its members (mixed → `partial`).
 
 ### Autopilot Settings and Runs
 

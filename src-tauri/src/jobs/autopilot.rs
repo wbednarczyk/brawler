@@ -27,11 +27,11 @@ pub const AUTOPILOT_STAGE_KIND: &str = "autopilot_stage";
 /// to determinism-only until F3b (the tier-4 AI budget counter, T5.2).
 pub const TRIGGER_HISTORY_SWEEP: &str = "history_sweep";
 
-const STAGE_FETCH: &str = "fetch";
-const STAGE_EXTRACT: &str = "extract";
-const STAGE_DIFF: &str = "diff";
-const STAGE_CROSS_REFERENCE: &str = "cross_reference";
-const STAGE_NOTIFY: &str = "notify";
+pub(crate) const STAGE_FETCH: &str = "fetch";
+pub(crate) const STAGE_EXTRACT: &str = "extract";
+pub(crate) const STAGE_DIFF: &str = "diff";
+pub(crate) const STAGE_CROSS_REFERENCE: &str = "cross_reference";
+pub(crate) const STAGE_NOTIFY: &str = "notify";
 
 /// Queue attempts per stage (ADR 0055 dec. 2: "each stage retries with backoff
 /// independently"). Only a **transient** stage failure (a network-level fetch
@@ -46,7 +46,7 @@ pub struct StagePayload {
     pub stage: String,
 }
 
-fn stage_job_id(run_id: &str, stage: &str) -> String {
+pub(crate) fn stage_job_id(run_id: &str, stage: &str) -> String {
     format!("autopilot:{run_id}:{stage}")
 }
 

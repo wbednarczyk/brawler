@@ -52,9 +52,13 @@ describe("visual-update-core", () => {
   // F4c S1 (docs/plans/f4c-contracts/s1-guardrails.md item 6): 94 → 90 — the
   // `notebooks-global` row (4 cells: S/M/L dark + M light, `states:
   // ["default"]`) is deleted from the catalog ahead of S2's screen deletion.
-  it("every catalog cell (90 today) has an existing baseline file", () => {
+  // F3d S2 (#133): 90 → 92 — `activity-open` (M_ONLY: 1 dark + 1 light cell)
+  // registered ahead of its baseline PNGs, which the S3 integrator shoots in
+  // the pinned renderer (never committed by a slice subagent) — the
+  // `existsSync` loop below stays red for those 2 files until then.
+  it("every catalog cell (92 today) has an existing baseline file", () => {
     const cells = allExpectedCells();
-    expect(cells.length).toBe(90);
+    expect(cells.length).toBe(92);
     // Sol R2 blocker: every cell maps to a DISTINCT file — a state-less
     // filename would alias "empty" cells onto the default PNGs and the
     // existence check below would prove nothing.

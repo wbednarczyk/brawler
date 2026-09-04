@@ -772,4 +772,9 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         name: "drop_cockpit_layouts",
         sql: include_str!("../../migrations/0152_drop_cockpit_layouts.sql"),
     },
+    Migration {
+        version: 153,
+        name: "job_runs",
+        sql: include_str!("../../migrations/0153_job_runs.sql"),
+    },
 ];

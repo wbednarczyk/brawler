@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatAiProvider } from "./labels";
+import { JOB_KINDS } from "./jobKinds";
+import { formatAiProvider, formatJobKindDisplayName, JOB_KIND_LABELS } from "./labels";
 
 describe("formatAiProvider", () => {
   it("labels every registered provider id and the capability-routed sentinel", () => {
@@ -16,5 +17,14 @@ describe("formatAiProvider", () => {
     expect(formatAiProvider("provider_future")).toBe("provider_future");
     expect(formatAiProvider(null)).toBe("Not configured");
     expect(formatAiProvider(undefined)).toBe("Not configured");
+  });
+});
+
+describe("formatJobKindDisplayName", () => {
+  it("has an explicit label for every kind in the checked-in registry list (ADR 0109 parity)", () => {
+    for (const kind of JOB_KINDS) {
+      expect(JOB_KIND_LABELS[kind], `missing explicit label for job kind "${kind}"`).toBeDefined();
+      expect(formatJobKindDisplayName(kind)).toBe(JOB_KIND_LABELS[kind]);
+    }
   });
 });

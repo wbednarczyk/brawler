@@ -145,3 +145,24 @@ export const SEGMENT_FORMS: PluralForms = {
   en: ["segment", "segments"],
   pl: ["fragment", "fragmenty", "fragmentów"],
 };
+
+// Activity panel (F3d, #133, sol diff R1 #15): "active"/"failed" are
+// adjectives agreeing with the implicit neuter noun "zadanie" (task) — one
+// and few share the nominative "aktywne"/"nieudane", many takes the
+// genitive-plural "aktywnych"/"nieudanych". "queued" ("w kolejce") needs no
+// declension and stays a plain `text()` entry.
+export const ACTIVE_FORMS: PluralForms = {
+  en: ["active", "active"],
+  pl: ["aktywne", "aktywne", "aktywnych"],
+};
+
+export const FAILED_FORMS: PluralForms = {
+  en: ["failed", "failed"],
+  pl: ["nieudane", "nieudane", "nieudanych"],
+};
+
+// Activity panel's Recent section count ("N zadań").
+export const TASK_FORMS: PluralForms = {
+  en: ["task", "tasks"],
+  pl: ["zadanie", "zadania", "zadań"],
+};

@@ -895,6 +895,28 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
         )
         .unwrap(),
         "mcp_status" => serde_json::to_value(lifecycle.status()).unwrap(),
+        // Activity read model (ADR 0109, #133) — same composed-view helpers
+        // the command wrappers offload to, so the corpus can never diverge
+        // from real assembly.
+        "create_video_transcript_job" => {
+            let new: crate::storage::NewTranscriptJob =
+                serde_json::from_value(inner).expect("NewTranscriptJob");
+            serde_json::to_value(
+                state
+                    .create_transcript_job(new)
+                    .expect("create_video_transcript_job"),
+            )
+            .unwrap()
+        }
+        "list_activity" => serde_json::to_value(
+            crate::commands::activity::compute_activity(state).expect("list_activity"),
+        )
+        .unwrap(),
+        "get_activity_summary" => serde_json::to_value(
+            crate::commands::activity::compute_activity_summary(state)
+                .expect("get_activity_summary"),
+        )
+        .unwrap(),
         // Retired AI-generation commands (ADR 0084): the corpus and both replayers
         // are reconciled together by the orchestrator after the Rust + frontend
         // retirement slices both land. Until then the shared corpus may still list
@@ -997,22 +1019,33 @@ fn rust_backend_satisfies_the_fidelity_corpus() {
                     );
                 }
             }
+            // `expectContainsField`: when the result is an OBJECT (not itself
+            // an array — e.g. `ActivityView`), name the array-valued field to
+            // scan instead (mirrors the TS replayer's `expectContainsField`).
+            let contains_target = |result: &Value| -> Value {
+                match step.get("expectContainsField").and_then(Value::as_str) {
+                    Some(field) => result.get(field).cloned().unwrap_or(Value::Null),
+                    None => result.clone(),
+                }
+            };
             if let Some(subset) = step.get("expectContains") {
-                let array = result.as_array().unwrap_or_else(|| {
-                    panic!("[{name}] {command}: expected an array, got {result}")
+                let target = contains_target(&result);
+                let array = target.as_array().unwrap_or_else(|| {
+                    panic!("[{name}] {command}: expected an array, got {target}")
                 });
                 assert!(
                     array.iter().any(|item| is_superset(item, subset)),
-                    "[{name}] {command}: none of {result} contains {subset}"
+                    "[{name}] {command}: none of {target} contains {subset}"
                 );
             }
             if let Some(subset) = step.get("expectAbsent") {
-                let array = result.as_array().unwrap_or_else(|| {
-                    panic!("[{name}] {command}: expected an array, got {result}")
+                let target = contains_target(&result);
+                let array = target.as_array().unwrap_or_else(|| {
+                    panic!("[{name}] {command}: expected an array, got {target}")
                 });
                 assert!(
                     array.iter().all(|item| !is_superset(item, subset)),
-                    "[{name}] {command}: {result} still contains {subset}"
+                    "[{name}] {command}: {target} still contains {subset}"
                 );
             }
         }

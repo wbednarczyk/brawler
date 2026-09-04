@@ -79,8 +79,11 @@ fn commit_job_id(run_id: &str, revision: i64, manifest_hash: &str) -> String {
 /// for terminalization and the failure event (live path and startup path see
 /// the same identity; a tampered payload cannot redirect either). Run ids
 /// (`kpiing_<hex>`) and manifest hashes contain no `:`, so the split is
-/// unambiguous.
-enum IngestJobIdentity {
+/// unambiguous. `pub(crate)` (sol diff R1 #9): the Activity identity resolver
+/// (`jobs::activity_identity`) reuses this SAME parser as ITS authority for
+/// `run_id` too, rather than trusting the duplicated `runId` field a queue
+/// payload happens to carry.
+pub(crate) enum IngestJobIdentity {
     Validate {
         run_id: String,
         revision: i64,
@@ -92,7 +95,15 @@ enum IngestJobIdentity {
     },
 }
 
-fn parse_job_id(job_id: &str) -> Option<IngestJobIdentity> {
+impl IngestJobIdentity {
+    pub(crate) fn run_id(&self) -> &str {
+        match self {
+            Self::Validate { run_id, .. } | Self::Commit { run_id, .. } => run_id,
+        }
+    }
+}
+
+pub(crate) fn parse_job_id(job_id: &str) -> Option<IngestJobIdentity> {
     let parts: Vec<&str> = job_id.split(':').collect();
     let revision_of = |part: &str| part.strip_prefix("rev")?.parse::<i64>().ok();
     match parts.as_slice() {

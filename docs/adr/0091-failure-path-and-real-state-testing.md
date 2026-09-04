@@ -76,3 +76,9 @@ metric becomes the hard zero this ADR asks for on the run that first measures it
 stored rows needs a forward migration and is tracked separately (#243), not smuggled into a test slice.
 `silent_missing_metrics` measured `0` on the first run — the health read model already names every
 missing input — so it is a ceiling at zero and no read-model field had to be added.
+
+**Amendment (2026-09-03, [ADR 0109](0109-activity-center-occurrence-ledger.md), #133).** Decision 1's
+exclusivity governs *notification*: a terminal failure is announced once, on the surface
+`jobs::failure_surface` names. The Activity panel is a *status ledger* — it may list the same
+failure as the task's outcome (raw error, an "Otwórz" to the item's home) without being a second
+announcement. Dev-gated Diagnostics remains no surface at all.

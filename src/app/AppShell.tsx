@@ -8,6 +8,9 @@ import type {
   ShortcutBindingSetting,
   Theme,
 } from "../api/types";
+import type { ActivityTarget } from "../api/generated/ActivityTarget";
+import { ActivityIndicator, ActivityPanel } from "../shared/components/activity";
+import type { ActivityController } from "./useActivityController";
 import { makeTextTranslator, makeTranslator } from "../shared/locale";
 import { pluralNoun, type PluralForms } from "../shared/locale/plural";
 import { useKeyboardShortcuts } from "../shared/shortcuts";
@@ -117,6 +120,10 @@ type AppShellProps = {
   attentionHydrated: boolean;
   updateTheme: (theme: Theme) => void;
   openSourceStatus: () => void;
+  /** The Activity center's app-level state (ADR 0109, #133) — one controller,
+   * owned by AppStateRoot (the 15 s tick lives in useAppLifecycleEffects.ts). */
+  activity: ActivityController;
+  onNavigateToActivityTarget: (target: ActivityTarget) => void;
 };
 
 // Badge aria-label + polite announcement for unseen attention events (ADR 0097
@@ -149,6 +156,9 @@ export function buildAppCommands(input: {
   trackedCompanies: PinnedCompany[];
   onOpenCompany: (companyId: string) => void;
   setActiveSection: (section: Section) => void;
+  /** Opens the Activity panel (#133) — a sibling of `onOpenCompany`, never a
+   * `setActiveSection` call: Activity is a topbar dialog, not a screen. */
+  onOpenActivity: () => void;
   text: (s: string) => string;
 }): PaletteCommand[] {
   const { text } = input;
@@ -180,7 +190,16 @@ export function buildAppCommands(input: {
     actionKey,
     run: () => input.setActiveSection(section),
   }));
-  return [...fromShortcuts, ...companyCommands, ...screenCommands];
+  // Activity (#133, plan § D4 item 6): opens the panel directly, not a
+  // "Open screen: …" entry — it is a topbar dialog, never a nav destination.
+  const activityCommand = {
+    id: "activity",
+    label: text("Open activity"),
+    verb: "open" as const,
+    actionKey: "app.openActivity",
+    run: () => input.onOpenActivity(),
+  };
+  return [...fromShortcuts, ...companyCommands, ...screenCommands, activityCommand];
 }
 
 export function AppShell({
@@ -212,6 +231,8 @@ export function AppShell({
   attentionHydrated,
   updateTheme,
   openSourceStatus,
+  activity,
+  onNavigateToActivityTarget,
 }: AppShellProps) {
   const developerMode = useDeveloperMode();
   const t = makeTranslator(locale);
@@ -278,12 +299,11 @@ export function AppShell({
       }, 0);
     },
     // F3c S1 (plan § Design 5): jumps to the Spółka workshop bar's current
-    // tab stop. A no-op off Spółka (no bar mounted) or with any modal open —
-    // this shortcut runs in the document CAPTURE phase, so without the
-    // `aria-modal` guard it would steal focus to the background bar out from
-    // under an open dialog.
+    // tab stop. A no-op off Spółka (no bar mounted). The one-modal shortcut
+    // policy (`useKeyboardShortcuts`, F3d S2) already suppresses every app
+    // shortcut while a dialog is open — no per-shortcut `aria-modal` check
+    // needed here anymore.
     "app.focusWorkshop": () => {
-      if (document.querySelector('[aria-modal="true"]')) return false;
       const bar = document.querySelector<HTMLElement>("[data-workshop-bar]");
       if (!bar) return false;
       bar.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
@@ -349,6 +369,7 @@ export function AppShell({
         trackedCompanies,
         onOpenCompany,
         setActiveSection,
+        onOpenActivity: () => activity.setOpen(true),
         text,
       }),
     // `text` derives from `locale`; listing `locale` keeps labels re-translating.
@@ -359,6 +380,7 @@ export function AppShell({
       trackedCompanies,
       onOpenCompany,
       setActiveSection,
+      activity.setOpen,
       locale,
     ],
   );
@@ -394,6 +416,15 @@ export function AppShell({
   return (
     <CommandPaletteProvider appCommands={appCommands} text={text}>
       <PaletteShortcutBinder bindOpen={bindPaletteOpen} />
+      <ActivityPanel
+        open={activity.open}
+        onClose={() => activity.setOpen(false)}
+        view={activity.view}
+        hydrated={activity.hydrated}
+        error={activity.error}
+        onRetry={activity.refreshView}
+        onNavigate={onNavigateToActivityTarget}
+      />
       <div className="app-shell">
         {/* Polite, coalesced ambient-attention announcement (ADR 0097 dec. 4).
             aria-live WITHOUT role="status": announcement behavior is identical,
@@ -528,6 +559,7 @@ export function AppShell({
                 <span>{t("app.sources.label")}</span>
                 <strong>{sourcePill.label}</strong>
               </button>
+              <ActivityIndicator summary={activity.summary} onOpen={() => activity.setOpen(true)} />
               <button
                 aria-label={sourceRefreshButtonLabel()}
                 className={[
@@ -540,7 +572,10 @@ export function AppShell({
                   .join(" ")}
                 disabled={sourceRefreshState === "refreshing"}
                 onClick={() => {
-                  void refreshSources("manual");
+                  // Activity's summary refreshes right after the user's own
+                  // manual refresh completes too (#133 contract item 1) — on
+                  // top of the shared 15 s tick.
+                  Promise.resolve(refreshSources("manual")).then(() => activity.refreshSummary());
                 }}
                 type="button"
                 title={sourceRefreshButtonTitle()}

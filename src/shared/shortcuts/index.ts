@@ -95,6 +95,13 @@ export function useKeyboardShortcuts(shortcuts: ShortcutDefinition[]) {
   // made that window real (caught by the inbox shortcut workflow test).
   useLayoutEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      // One-modal shortcut policy (ADR 0109 dec. 6, plan § D4 — a class F3c
+      // missed): every app/screen shortcut is inert while ANY dialog is open.
+      // No `preventDefault` here — the dialog's own bubble-phase Escape and
+      // native editing keys must keep working (F3d S2 contract item 5).
+      if (document.querySelector('[aria-modal="true"]')) {
+        return;
+      }
       for (const shortcut of shortcuts) {
         if (!shortcutMatchesEvent(shortcut.binding, event)) {
           continue;

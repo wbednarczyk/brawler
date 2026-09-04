@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod aggregator_fundamentals;
 pub mod analyst_recommendations;
 pub mod attention;

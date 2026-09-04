@@ -56,7 +56,10 @@ pub fn lookup_company(
         return Ok(first_result);
     }
 
-    source_refresh::refresh_company_directories_for_trigger(&state, "lookup")?;
+    // sol diff R1 #8: route through the instrumented DIRECT wrapper, never
+    // the unwrapped core — a lookup-triggered refresh is awaited command
+    // work (ADR 0109 dec. 3), and the unwrapped core has no occurrence.
+    source_refresh::refresh_company_directories_direct(&state, "lookup")?;
 
     state
         .lookup_company(input)

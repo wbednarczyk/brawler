@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import type { ActivityTarget } from "../api/generated/ActivityTarget";
 import type { Company } from "../api/types";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import type { Tool } from "../screens/Spolka/route";
@@ -67,5 +68,27 @@ export function useCompanyEntryActions(input: CompanyEntryActionsInput) {
     }
   }
 
-  return { openCompanyWorkspaceById, openSpolkaMode };
+  // Activity panel row destinations (ADR 0109 dec. 6, F3d S2): the ONE new
+  // AppShell prop the pinned AppStateRoot needed (contract § allowance) —
+  // company targets reuse the SAME guarded `navigate` every other deep link
+  // uses (the dirty-draft stay/discard dialog applies for free); the other
+  // three kinds are plain section switches.
+  function onNavigateToActivityTarget(target: ActivityTarget) {
+    switch (target.kind) {
+      case "company":
+        input.navigate({ companyId: target.companyId, section: "Spolka", tool: target.tool ?? null });
+        return;
+      case "sources":
+        input.setActiveSection("Sources");
+        return;
+      case "today":
+        input.setActiveSection("Today");
+        return;
+      case "transcripts":
+        input.setActiveSection("Transcripts");
+        return;
+    }
+  }
+
+  return { openCompanyWorkspaceById, openSpolkaMode, onNavigateToActivityTarget };
 }

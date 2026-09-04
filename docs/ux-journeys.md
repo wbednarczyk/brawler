@@ -85,3 +85,5 @@ Settings, Diagnostics, Sources administration, import/export, the **MCP server**
 **Sources** (F4b, contract `docs/plans/frontend-v2-f4b.md` § Sources) is named explicitly: source health/schedule/last-result status and the company-directory add flow feed every journey's data without being a step in any one of them. Named spec: `tests/browser/sources.spec.ts`.
 
 **Transcripts** (F4b, contract `docs/plans/frontend-v2-f4b.md` § Transcripts) also joins this list: fetching a YouTube transcript and pulling segments into a company note isn't tied to one journey's steps — it feeds whichever company notebook the user links it to. Named spec: `tests/browser/transcripts.spec.ts`.
+
+**Activity** (F3d, [ADR 0109](adr/0109-activity-center-occurrence-ledger.md), contract `docs/plans/frontend-v2-f3d.md`; v0.81.0) joins this list: knowing what the app is doing now and what just finished — and jumping to the item — serves every journey's background work (J2's report reading, J3's history fetch, Sources refreshes) without being a step in any one of them. Named spec: `tests/browser/activity.spec.ts`.

@@ -297,6 +297,110 @@ fn try_acquire_source_is_exclusive_and_releases_on_drop() {
 }
 
 #[test]
+fn mark_failed_with_run_settles_the_occurrence_even_when_the_queue_row_vanished() {
+    // sol diff R1 #2: `mark_failed_with_run` used to read the queue row,
+    // find it gone, and return `Ok(false)` WITHOUT ever settling the
+    // occurrence — stranding it `running` forever while dispatch treated the
+    // `Ok(false)` as an ordinary terminal failure and ran terminal hooks.
+    let state = state();
+    let jobs = state.jobs();
+    jobs.enqueue("job", "kind-a", "{}", 3).expect("enqueue");
+    jobs.claim_next().expect("claim").expect("a job");
+    let run_id = state
+        .job_runs()
+        .begin_attempt(NewJobRun {
+            activity_key: "k:job".to_owned(),
+            run_key: "job".to_owned(),
+            kind: "kind-a".to_owned(),
+            family: crate::jobs::activity_identity::ActivityFamily::SourceRefresh,
+            company_id: None,
+            subject: "s".to_owned(),
+            target: crate::jobs::activity_identity::ActivityTarget::Sources,
+            attempt: 1,
+        })
+        .expect("begin");
+
+    // Simulate the row vanishing mid-run (never happens via ordinary control
+    // flow — this is the invariant-violation fault the fix guards against).
+    state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute("DELETE FROM job_queue WHERE id = 'job'", [])
+        .expect("delete queue row");
+
+    let result = jobs.mark_failed_with_run("job", "boom", 0, Some(run_id));
+    assert!(
+        matches!(
+            result,
+            Err(StorageError::JobQueueRowMissingDuringSettle { .. })
+        ),
+        "a vanished queue row must surface a distinct invariant error, not Ok(false): {result:?}"
+    );
+
+    let connection = state.checkout_for_tests().expect("checkout");
+    let status: String = connection
+        .query_row(
+            "SELECT status FROM job_runs WHERE id = ?1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .expect("status");
+    assert_eq!(
+        status, "failed",
+        "the occurrence must settle truthfully even though the queue row was gone"
+    );
+}
+
+#[test]
+fn mark_succeeded_with_run_settles_the_occurrence_even_when_the_queue_row_vanished() {
+    let state = state();
+    let jobs = state.jobs();
+    jobs.enqueue("job", "kind-a", "{}", 3).expect("enqueue");
+    jobs.claim_next().expect("claim").expect("a job");
+    let run_id = state
+        .job_runs()
+        .begin_attempt(NewJobRun {
+            activity_key: "k:job".to_owned(),
+            run_key: "job".to_owned(),
+            kind: "kind-a".to_owned(),
+            family: crate::jobs::activity_identity::ActivityFamily::SourceRefresh,
+            company_id: None,
+            subject: "s".to_owned(),
+            target: crate::jobs::activity_identity::ActivityTarget::Sources,
+            attempt: 1,
+        })
+        .expect("begin");
+
+    state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute("DELETE FROM job_queue WHERE id = 'job'", [])
+        .expect("delete queue row");
+
+    let result = jobs.mark_succeeded_with_run("job", Some(run_id));
+    assert!(
+        matches!(
+            result,
+            Err(StorageError::JobQueueRowMissingDuringSettle { .. })
+        ),
+        "a vanished queue row must surface a distinct invariant error: {result:?}"
+    );
+
+    let connection = state.checkout_for_tests().expect("checkout");
+    let status: String = connection
+        .query_row(
+            "SELECT status FROM job_runs WHERE id = ?1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .expect("status");
+    assert_eq!(
+        status, "succeeded",
+        "the occurrence must settle truthfully even though the queue row was gone"
+    );
+}
+
+#[test]
 fn reclaim_dead_letters_a_running_row_that_exhausted_attempts() {
     // Poison-job guard (ADR 0059): a job that hangs never reaches mark_failed, so
     // its attempts only climb via reclaim+claim cycles across restarts. Once it has

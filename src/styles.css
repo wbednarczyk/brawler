@@ -34,5 +34,6 @@
 @import "./styles/screens/analyst-recommendations.css";
 @import "./styles/screens/today.css";
 @import "./styles/screens/spolka.css";
+@import "./styles/activity.css";
 @import "./styles/utilities.css";
 @import "./styles/responsive.css";

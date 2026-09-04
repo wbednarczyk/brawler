@@ -336,6 +336,132 @@ impl JobQueueStore {
         }
     }
 
+    /// Settle a claimed job succeeded AND its exact `job_runs` occurrence in ONE
+    /// `BEGIN IMMEDIATE` transaction (ADR 0109 dec. 2), then run retention.
+    /// `run_id` is `None` when [`begin_attempt`](super::job_runs::begin_attempt)
+    /// itself failed or the kind has no resolved identity — the queue row still
+    /// settles normally, just with no occurrence to close.
+    ///
+    /// The occurrence settles even when the queue row has vanished (sol diff
+    /// R1 #2): the UPDATE's affected-row count is asserted at exactly one, and
+    /// a mismatch returns [`StorageError::JobQueueRowMissingDuringSettle`]
+    /// instead of silently reporting success — the transaction still commits
+    /// (the occurrence closes truthfully), the caller learns the queue side
+    /// did not.
+    pub fn mark_succeeded_with_run(&self, id: &str, run_id: Option<i64>) -> StorageResult<()> {
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let updated = tx.execute(
+            "
+            UPDATE job_queue
+            SET status = 'succeeded',
+                last_error = NULL,
+                locked_at = NULL,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ?1
+            ",
+            [id],
+        )?;
+        if let Some(run_id) = run_id {
+            super::job_runs::settle(&tx, run_id, &super::job_runs::JobRunOutcome::Succeeded)?;
+            super::job_runs::prune(&tx)?;
+        }
+        tx.commit()?;
+        if updated != 1 {
+            return Err(StorageError::JobQueueRowMissingDuringSettle { id: id.to_owned() });
+        }
+        Ok(())
+    }
+
+    /// Settle a claimed job's failure AND its exact `job_runs` occurrence in ONE
+    /// `BEGIN IMMEDIATE` transaction (ADR 0109 dec. 2): `Failed` when the queue
+    /// row goes terminally `failed`, `RetryScheduled` when retries remain. Same
+    /// return contract as [`mark_failed`](Self::mark_failed) (`true` = will retry).
+    ///
+    /// If the queue row is gone (sol diff R1 #2 — an invariant violation, not
+    /// ordinary control flow: only startup reclaim otherwise touches a
+    /// `running` row), the occurrence still settles `Failed` in this SAME
+    /// transaction so it never strands `running`, and this returns
+    /// [`StorageError::JobQueueRowMissingDuringSettle`] instead of `Ok(false)`
+    /// — a plain `Ok(false)` reads to the dispatch caller exactly like an
+    /// ordinary terminal failure and would fire terminal hooks (the
+    /// `job_failed` attention event, `on_terminal_failure`) as if the queue
+    /// row had genuinely gone terminal, which it never did.
+    pub fn mark_failed_with_run(
+        &self,
+        id: &str,
+        error: &str,
+        backoff_seconds: i64,
+        run_id: Option<i64>,
+    ) -> StorageResult<bool> {
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let attempts_and_max: Option<(i64, i64)> = tx
+            .query_row(
+                "SELECT attempts, max_attempts FROM job_queue WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((attempts, max_attempts)) = attempts_and_max else {
+            if let Some(run_id) = run_id {
+                super::job_runs::settle(
+                    &tx,
+                    run_id,
+                    &super::job_runs::JobRunOutcome::Failed { error },
+                )?;
+                super::job_runs::prune(&tx)?;
+            }
+            tx.commit()?;
+            return Err(StorageError::JobQueueRowMissingDuringSettle { id: id.to_owned() });
+        };
+
+        let will_retry = attempts < max_attempts;
+        let updated = if will_retry {
+            tx.execute(
+                "
+                UPDATE job_queue
+                SET status = 'pending',
+                    available_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?2),
+                    last_error = ?3,
+                    locked_at = NULL,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE id = ?1
+                ",
+                params![id, format!("+{} seconds", backoff_seconds.max(0)), error],
+            )?
+        } else {
+            tx.execute(
+                "
+                UPDATE job_queue
+                SET status = 'failed',
+                    last_error = ?2,
+                    locked_at = NULL,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE id = ?1
+                ",
+                params![id, error],
+            )?
+        };
+
+        if let Some(run_id) = run_id {
+            let outcome = if will_retry {
+                super::job_runs::JobRunOutcome::RetryScheduled { error }
+            } else {
+                super::job_runs::JobRunOutcome::Failed { error }
+            };
+            super::job_runs::settle(&tx, run_id, &outcome)?;
+            super::job_runs::prune(&tx)?;
+        }
+
+        tx.commit()?;
+        if updated != 1 {
+            return Err(StorageError::JobQueueRowMissingDuringSettle { id: id.to_owned() });
+        }
+        Ok(will_retry)
+    }
+
     /// Requeue crash-residue `running` rows on startup (no worker is alive yet).
     /// A row that already **exhausted its attempts** is dead-lettered instead of
     /// resurrected: it is a job that keeps getting reclaimed and re-run without

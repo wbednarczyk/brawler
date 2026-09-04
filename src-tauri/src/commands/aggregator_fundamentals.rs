@@ -22,7 +22,7 @@ pub async fn run_aggregator_fundamentals_pull(
     // Serialized entry (issue #132): shares the queue's per-adapter lock so an
     // on-demand run can never race the daily job on the BiznesRadar host.
     jobs::scheduler::run_blocking_task(move || {
-        jobs::aggregator_fundamentals_pull::run_aggregator_fundamentals_pull_serialized(&state)
+        jobs::aggregator_fundamentals_pull::run_aggregator_fundamentals_pull_direct(&state)
     })
     .await
 }

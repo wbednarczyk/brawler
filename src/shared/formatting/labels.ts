@@ -36,23 +36,29 @@ export function formatSignalCategoryDisplayName(category: string) {
 // place that turns it into a user-facing name, so the stream can say WHICH task
 // failed instead of leaking an enum token. An unknown/new kind degrades to its
 // prettified token rather than disappearing.
-export function formatJobKindDisplayName(kind: string) {
-  const labels: Record<string, string> = {
-    morning_briefing: "Morning briefing",
-    history_sweep: "Report history sweep",
-    ownership_extraction: "Shareholder extraction",
-    management_holdings_extraction: "Management holdings extraction",
-    quote_backfill: "Price history fetch",
-    company_backfill: "Report history fetch",
-    aggregator_fundamentals_pull: "Fundamentals pull",
-    autopilot_stage: "Autopilot stage",
-    scheduled_source_refresh: "Source refresh",
-    source_company_refresh: "Company source refresh",
-    scheduled_registry_refresh: "Company registry refresh",
-    fx_daily_pull: "Exchange-rate pull",
-  };
+// Exported (not just used internally) so the parity test can assert every
+// kind in `jobKinds.ts` has an EXPLICIT entry here, not a `formatEnumLabel`
+// fallback.
+export const JOB_KIND_LABELS: Record<string, string> = {
+  morning_briefing: "Morning briefing",
+  history_sweep: "Report history sweep",
+  ownership_extraction: "Shareholder extraction",
+  management_holdings_extraction: "Management holdings extraction",
+  quote_backfill: "Price history fetch",
+  company_backfill: "Report history fetch",
+  aggregator_fundamentals_pull: "Fundamentals pull",
+  autopilot_stage: "Autopilot stage",
+  scheduled_source_refresh: "Source refresh",
+  source_company_refresh: "Company source refresh",
+  scheduled_registry_refresh: "Company registry refresh",
+  fx_daily_pull: "Exchange-rate pull",
+  pipeline_reextraction: "Version-aware re-extraction",
+  kpi_ingest_validate: "KPI ingest validation",
+  kpi_ingest_commit: "KPI ingest commit",
+};
 
-  return labels[kind] ?? formatEnumLabel(kind);
+export function formatJobKindDisplayName(kind: string) {
+  return JOB_KIND_LABELS[kind] ?? formatEnumLabel(kind);
 }
 
 export function formatEnumLabel(value: string) {

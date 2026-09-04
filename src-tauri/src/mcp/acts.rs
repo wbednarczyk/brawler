@@ -913,7 +913,7 @@ act_handler!(
     refresh_source_handler,
     RefreshSourceInput,
     |state, input| {
-        crate::jobs::source_refresh::refresh_source_for_trigger(
+        crate::jobs::source_refresh::refresh_source_direct(
             state,
             &input.adapter_id,
             &refresh_trigger(input.trigger),
@@ -927,7 +927,7 @@ act_handler!(
     run_aggregator_fundamentals_pull_handler,
     NoInput,
     |state, _input| {
-        crate::jobs::aggregator_fundamentals_pull::run_aggregator_fundamentals_pull(state)
+        crate::jobs::aggregator_fundamentals_pull::run_aggregator_fundamentals_pull_direct(state)
             .map_err(job_error)
     }
 );
@@ -942,7 +942,7 @@ act_handler!(
     backfill_company_history_handler,
     BackfillCompanyHistoryInput,
     |state, input| {
-        Ok::<_, CommandError>(crate::jobs::backfill::backfill_company_history(
+        Ok::<_, CommandError>(crate::jobs::backfill::backfill_company_history_direct(
             state,
             &input.company_id,
         ))
