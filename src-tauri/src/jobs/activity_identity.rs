@@ -123,6 +123,67 @@ fn document_title(connection: &Connection, document_id: &str) -> String {
     crate::storage::activity_reads::document_title_bound(connection, document_id)
 }
 
+/// Identity for [`crate::jobs::scheduler::SOURCE_REFRESH_KIND`], connection-
+/// free (`adapter_display_name` is a static registry lookup) — the SAME
+/// value [`identity_for_job`]'s own arm for this kind produces. A `_direct`
+/// wrapper builds this directly instead of losing registration to a checkout
+/// failure it never actually needed to survive (sol diff R2 #4: registration
+/// must never depend on database health for a kind whose identity never
+/// touched the database in the first place).
+pub fn source_refresh_identity(adapter_id: &str) -> ActivityIdentity {
+    ActivityIdentity {
+        activity_key: format!("source-refresh:{adapter_id}"),
+        family: ActivityFamily::SourceRefresh,
+        company_id: None,
+        subject: adapter_display_name(adapter_id),
+        target: ActivityTarget::Sources,
+    }
+}
+
+/// Identity for [`crate::jobs::scheduler::REGISTRY_REFRESH_KIND`],
+/// connection-free (sol diff R2 #4, mirrors [`source_refresh_identity`]).
+pub fn registry_refresh_identity() -> ActivityIdentity {
+    ActivityIdentity {
+        activity_key: "registry-refresh".to_owned(),
+        family: ActivityFamily::RegistryRefresh,
+        company_id: None,
+        // sol diff R2 #6 (backend): empty, never composed prose — the
+        // family label carries it (mirrors the briefing/system subjects).
+        subject: String::new(),
+        target: ActivityTarget::Sources,
+    }
+}
+
+/// Identity for
+/// [`crate::jobs::aggregator_fundamentals_pull::AGGREGATOR_FUNDAMENTALS_PULL_KIND`],
+/// connection-free (sol diff R2 #4, mirrors [`source_refresh_identity`]).
+pub fn aggregator_fundamentals_pull_identity() -> ActivityIdentity {
+    ActivityIdentity {
+        activity_key: "fundamentals-pull".to_owned(),
+        family: ActivityFamily::FundamentalsPull,
+        company_id: None,
+        subject: crate::source_adapters::biznesradar_fundamentals::DISPLAY_NAME.to_owned(),
+        target: ActivityTarget::Sources,
+    }
+}
+
+/// Fallback identity for [`crate::jobs::backfill::COMPANY_BACKFILL_KIND`]
+/// when no checkout is available to resolve the company's ticker (sol diff
+/// R2 #4): the raw `company_id` substitutes as the subject so the direct
+/// wrapper still ALWAYS registers instead of running the core unrecorded.
+pub fn company_backfill_identity_fallback(company_id: &str) -> ActivityIdentity {
+    ActivityIdentity {
+        activity_key: format!("history-fetch:{company_id}"),
+        family: ActivityFamily::HistoryFetch,
+        subject: company_id.to_owned(),
+        target: ActivityTarget::Company {
+            company_id: company_id.to_owned(),
+            tool: Some(ActivityTool::Pokrycie),
+        },
+        company_id: Some(company_id.to_owned()),
+    }
+}
+
 /// The company scoping a `history_sweeps` row, if the row exists.
 fn sweep_company(connection: &Connection, sweep_id: &str) -> Option<String> {
     connection
@@ -213,13 +274,7 @@ pub fn identity_for_job(
             let Some(adapter_id) = value.as_ref().and_then(|v| str_field(v, "adapterId")) else {
                 return Some(ActivityIdentity::corrupted(job_id));
             };
-            ActivityIdentity {
-                activity_key: format!("source-refresh:{adapter_id}"),
-                family: ActivityFamily::SourceRefresh,
-                company_id: None,
-                subject: adapter_display_name(&adapter_id),
-                target: ActivityTarget::Sources,
-            }
+            source_refresh_identity(&adapter_id)
         }
         SOURCE_COMPANY_REFRESH_KIND => {
             let company_id = value.as_ref().and_then(|v| str_field(v, "companyId"));
@@ -237,13 +292,7 @@ pub fn identity_for_job(
                 company_id: Some(company_id),
             }
         }
-        REGISTRY_REFRESH_KIND => ActivityIdentity {
-            activity_key: "registry-refresh".to_owned(),
-            family: ActivityFamily::RegistryRefresh,
-            company_id: None,
-            subject: "Rejestr spółek GPW/NewConnect".to_owned(),
-            target: ActivityTarget::Sources,
-        },
+        REGISTRY_REFRESH_KIND => registry_refresh_identity(),
         FX_DAILY_PULL_KIND => ActivityIdentity {
             activity_key: "fx-pull".to_owned(),
             family: ActivityFamily::FxPull,
@@ -251,13 +300,7 @@ pub fn identity_for_job(
             subject: crate::source_adapters::nbp_fx::DISPLAY_NAME.to_owned(),
             target: ActivityTarget::Sources,
         },
-        AGGREGATOR_FUNDAMENTALS_PULL_KIND => ActivityIdentity {
-            activity_key: "fundamentals-pull".to_owned(),
-            family: ActivityFamily::FundamentalsPull,
-            company_id: None,
-            subject: crate::source_adapters::biznesradar_fundamentals::DISPLAY_NAME.to_owned(),
-            target: ActivityTarget::Sources,
-        },
+        AGGREGATOR_FUNDAMENTALS_PULL_KIND => aggregator_fundamentals_pull_identity(),
         MORNING_BRIEFING_KIND => ActivityIdentity {
             activity_key: "briefing".to_owned(),
             family: ActivityFamily::Briefing,

@@ -529,3 +529,91 @@ fn startup_reconcile_is_idempotent() {
         .expect("status");
     assert_eq!(status, "failed");
 }
+
+#[test]
+fn startup_reconcile_prunes_finished_rows_to_the_500_retention_cap() {
+    // sol diff R2 #8(c): retention (`job_runs::prune`, ADR 0109 dec. 2 — keep
+    // the newest 500 FINISHED rows) runs in the SAME transaction as this
+    // pass's open-occurrence interrupt. Seed 500 already-finished rows PLUS
+    // one open ("running") occurrence that reconcile itself terminalizes to
+    // `interrupted` — 501 finished rows once reconcile runs — and assert the
+    // table settles back to the 500-row cap, with the interrupted row
+    // (freshest by `finished_at`/id) surviving and the single oldest
+    // pre-existing row the one pruned.
+    let state = state();
+    {
+        let mut connection = state.checkout_for_tests().expect("checkout");
+        let tx = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .expect("tx");
+        for i in 0..500 {
+            tx.execute(
+                "INSERT INTO job_runs
+                    (activity_key, run_key, kind, family, subject, target_json, status,
+                     attempt, started_at, finished_at)
+                 VALUES (?1, ?1, 'k', 'sourceRefresh', 's', '{\"kind\":\"sources\"}',
+                     'succeeded', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                     strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+                [format!("pre-existing:{i}")],
+            )
+            .expect("seed finished row");
+        }
+        tx.commit().expect("commit");
+    }
+    let oldest_id: i64 = state
+        .checkout_for_tests()
+        .expect("checkout")
+        .query_row("SELECT MIN(id) FROM job_runs", [], |row| row.get(0))
+        .expect("oldest id");
+
+    // One genuinely OPEN occurrence — reconcile must interrupt this AND
+    // still enforce retention in the same pass.
+    state
+        .job_runs()
+        .begin_attempt(crate::storage::NewJobRun {
+            activity_key: "source-refresh:open".to_owned(),
+            run_key: "job-open".to_owned(),
+            kind: "scheduled_source_refresh".to_owned(),
+            family: crate::jobs::activity_identity::ActivityFamily::SourceRefresh,
+            company_id: None,
+            subject: "open".to_owned(),
+            target: crate::jobs::activity_identity::ActivityTarget::Sources,
+            attempt: 1,
+        })
+        .expect("begin the open occurrence");
+
+    reconcile_on_startup(&state);
+
+    let connection = state.checkout_for_tests().expect("checkout");
+    let total: i64 = connection
+        .query_row("SELECT COUNT(*) FROM job_runs", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(
+        total, 500,
+        "retention caps at 500 rows even right after reconcile terminalizes an open one"
+    );
+
+    let oldest_survives: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM job_runs WHERE id = ?1",
+            [oldest_id],
+            |row| row.get(0),
+        )
+        .expect("check oldest");
+    assert_eq!(
+        oldest_survives, 0,
+        "the single oldest row (501 finished, cap 500) must be the one pruned"
+    );
+
+    let open_status: String = connection
+        .query_row(
+            "SELECT status FROM job_runs WHERE activity_key = 'source-refresh:open'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("open row status");
+    assert_eq!(
+        open_status, "interrupted",
+        "the open occurrence must still be interrupted, not swallowed by retention"
+    );
+}

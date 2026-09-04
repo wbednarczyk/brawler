@@ -352,6 +352,139 @@ fn recent_occurrence_with_a_partial_domain_row_shows_partial() {
     assert_eq!(item.status, "partial");
 }
 
+/// Seeds a `history_sweeps` parent whose fan-out finished dispatching
+/// (`status = 'completed'`, sol diff R2 #3: a completed sweep never aborts
+/// for a partial failure) with TWO members — one succeeded, one failed —
+/// and gives the sweep's OWN `job_runs` occurrence the given terminal
+/// outcome, simulating "which member happened to finish last" (the ordering
+/// the parent row's own raw status used to reflect before this fix). Returns
+/// the sweep id.
+fn seed_completed_sweep_with_mixed_members(
+    state: &AppState,
+    parent_occurrence_outcome: JobRunOutcome<'_>,
+) -> String {
+    let cdr = company(state, "CDR");
+    let sweep = state
+        .history_sweeps()
+        .create_history_sweep(&cdr, "manual")
+        .expect("sweep");
+
+    let ok_doc = document(state, &cdr, "Raport ukończony");
+    let ok_run = state
+        .autopilot()
+        .create_run_if_absent(
+            "run:mixed-ok",
+            &cdr,
+            &ok_doc,
+            "history_sweep",
+            "autopilot",
+            Some(&sweep.id),
+        )
+        .expect("create run")
+        .expect("created");
+    let bad_doc = document(state, &cdr, "Raport z błędem");
+    let bad_run = state
+        .autopilot()
+        .create_run_if_absent(
+            "run:mixed-failed",
+            &cdr,
+            &bad_doc,
+            "history_sweep",
+            "autopilot",
+            Some(&sweep.id),
+        )
+        .expect("create run")
+        .expect("created");
+
+    let connection = state.checkout_for_tests().expect("checkout");
+    connection
+        .execute(
+            "UPDATE autopilot_run SET status = 'succeeded' WHERE id = ?1",
+            [&ok_run.id],
+        )
+        .expect("mark succeeded");
+    connection
+        .execute(
+            "UPDATE autopilot_run SET status = 'failed', last_error = 'diff stage exploded' \
+             WHERE id = ?1",
+            [&bad_run.id],
+        )
+        .expect("mark failed");
+    connection
+        .execute(
+            "UPDATE history_sweeps
+             SET status = 'completed', candidates_total = 2, enqueued_run_ids_json = ?2
+             WHERE id = ?1",
+            rusqlite::params![sweep.id, format!(r#"["{}","{}"]"#, ok_run.id, bad_run.id)],
+        )
+        .expect("seed sweep progress");
+    drop(connection);
+
+    let run_id = state
+        .job_runs()
+        .begin_attempt(NewJobRun {
+            activity_key: format!("report-sweep:{}", sweep.id),
+            run_key: format!("history_sweep:{}", sweep.id),
+            kind: crate::jobs::history_sweep::HISTORY_SWEEP_KIND.to_owned(),
+            family: ActivityFamily::ReportSweep,
+            company_id: Some(cdr.clone()),
+            subject: "GPW ESPI/EBI".to_owned(),
+            target: ActivityTarget::Company {
+                company_id: cdr,
+                tool: Some(crate::jobs::activity_identity::ActivityTool::Pokrycie),
+            },
+            attempt: 1,
+        })
+        .expect("begin sweep occurrence");
+    state
+        .job_runs()
+        .settle(run_id, parent_occurrence_outcome)
+        .expect("settle sweep occurrence");
+
+    sweep.id
+}
+
+#[test]
+fn completed_sweep_with_mixed_members_is_partial_when_the_last_child_succeeded() {
+    // sol diff R2 #3: the sweep's OWN occurrence happens to settle
+    // `succeeded` (as if the last-finishing member were the successful one),
+    // but ONE of its two members actually failed — the parent must show
+    // `partial`, never `succeeded`, derived from ALL members regardless of
+    // the parent row's own status.
+    let state = state();
+    let sweep_id = seed_completed_sweep_with_mixed_members(&state, JobRunOutcome::Succeeded);
+
+    let view = compute_activity(&state).expect("view");
+    let item = view
+        .recent
+        .iter()
+        .find(|item| item.activity_key == format!("report-sweep:{sweep_id}"))
+        .expect("recent item");
+    assert_eq!(item.status, "partial");
+}
+
+#[test]
+fn completed_sweep_with_mixed_members_is_partial_when_the_last_child_failed() {
+    // Same mixed-member sweep, but the parent's OWN occurrence happens to
+    // settle `failed` this time (the other ordering) — still `partial`,
+    // never `failed`, since one member DID succeed.
+    let state = state();
+    let sweep_id = seed_completed_sweep_with_mixed_members(
+        &state,
+        JobRunOutcome::Failed {
+            error: "diff stage exploded",
+        },
+    );
+
+    let view = compute_activity(&state).expect("view");
+    let item = view
+        .recent
+        .iter()
+        .find(|item| item.activity_key == format!("report-sweep:{sweep_id}"))
+        .expect("recent item");
+    assert_eq!(item.status, "partial");
+}
+
 // ------------------------------------------------------------------
 // Keyed task map + precedence (sol diff R1 #5)
 // ------------------------------------------------------------------
@@ -556,6 +689,31 @@ fn a_forced_storage_failure_surfaces_as_an_error_not_an_empty_view() {
     assert!(
         result.is_err(),
         "a forced storage failure must propagate as an error, never a silently-empty view: {result:?}"
+    );
+}
+
+#[test]
+fn a_forced_member_subjects_failure_surfaces_from_compute_activity() {
+    // sol diff R2 #5: `member_subjects` (and the nested reads it composes
+    // with — `parent_progress_for`, the parent domain-status override) used
+    // to collapse a genuine SQL failure into the same empty/default value a
+    // parent with no members legitimately produces. Force a failure specific
+    // to `member_subjects`'s own query (the per-member report title join —
+    // `parent_progress`/`parent_status` never touch `report_documents`) and
+    // prove it surfaces as an error, not a silently-empty members list.
+    let state = state();
+    seed_completed_sweep_with_mixed_members(&state, JobRunOutcome::Succeeded);
+    state
+        .checkout_for_tests()
+        .expect("checkout")
+        .execute("DROP TABLE report_documents", [])
+        .expect("poison report_documents");
+
+    let result = compute_activity(&state);
+    assert!(
+        result.is_err(),
+        "a forced member_subjects failure must propagate, never a silently-empty members list: \
+         {result:?}"
     );
 }
 

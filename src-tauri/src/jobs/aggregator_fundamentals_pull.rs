@@ -220,19 +220,12 @@ pub fn run_aggregator_fundamentals_pull_serialized(
 pub fn run_aggregator_fundamentals_pull_direct(
     state: &AppState,
 ) -> Result<AggregatorPullSummary, String> {
-    let identity = state.checkout().ok().and_then(|connection| {
-        crate::jobs::activity_identity::identity_for_job(
-            AGGREGATOR_FUNDAMENTALS_PULL_KIND,
-            &format!("direct:{AGGREGATOR_FUNDAMENTALS_PULL_KIND}"),
-            "{}",
-            &connection,
-        )
-    });
-    let guard = identity.map(|identity| crate::storage::activity_registry::start(state, identity));
+    // Connection-free (sol diff R2 #4): this kind's identity never touches
+    // the database, so registration never depends on a checkout succeeding.
+    let identity = crate::jobs::activity_identity::aggregator_fundamentals_pull_identity();
+    let guard = crate::storage::activity_registry::start(state, identity);
     let outcome = run_aggregator_fundamentals_pull_serialized(state);
-    if let Some(guard) = guard {
-        guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
-    }
+    guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
     outcome
 }
 

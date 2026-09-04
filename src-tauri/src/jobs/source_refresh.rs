@@ -405,20 +405,13 @@ fn sweep_adapters(
         // queue's dispatch seam (`jobs::queue`), so this path never double-counts
         // it (this sweep is reached only by the manual/MCP "refresh all" entry
         // points, never by the queue).
-        let identity = state.checkout().ok().and_then(|connection| {
-            crate::jobs::activity_identity::identity_for_job(
-                crate::jobs::scheduler::SOURCE_REFRESH_KIND,
-                &format!("direct:{}", adapter.id),
-                &json!({ "adapterId": adapter.id }).to_string(),
-                &connection,
-            )
-        });
-        let guard =
-            identity.map(|identity| crate::storage::activity_registry::start(state, identity));
+        // Connection-free (sol diff R2 #4): `SOURCE_REFRESH_KIND`'s identity
+        // never touches the database, so registration never depends on a
+        // checkout succeeding.
+        let identity = crate::jobs::activity_identity::source_refresh_identity(adapter.id);
+        let guard = crate::storage::activity_registry::start(state, identity);
         let outcome = refresh_optional_source(state, adapter, trigger);
-        if let Some(guard) = guard {
-            guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
-        }
+        guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
         match outcome {
             Ok(result) => {
                 total.items_fetched += result.items_fetched;
@@ -734,19 +727,11 @@ pub fn refresh_source_direct(
     trigger: &str,
     date: Option<&str>,
 ) -> Result<storage::SourceIngestionResult, String> {
-    let identity = state.checkout().ok().and_then(|connection| {
-        crate::jobs::activity_identity::identity_for_job(
-            crate::jobs::scheduler::SOURCE_REFRESH_KIND,
-            &format!("direct:{adapter_id}"),
-            &json!({ "adapterId": adapter_id }).to_string(),
-            &connection,
-        )
-    });
-    let guard = identity.map(|identity| crate::storage::activity_registry::start(state, identity));
+    // Connection-free (sol diff R2 #4): see `sweep_adapters` above.
+    let identity = crate::jobs::activity_identity::source_refresh_identity(adapter_id);
+    let guard = crate::storage::activity_registry::start(state, identity);
     let outcome = refresh_source_for_trigger(state, adapter_id, trigger, date);
-    if let Some(guard) = guard {
-        guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
-    }
+    guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
     outcome
 }
 
@@ -760,19 +745,12 @@ pub fn refresh_company_directories_direct(
     state: &app_state::AppState,
     trigger: &str,
 ) -> Result<storage::CompanyRegistryRefreshResult, String> {
-    let identity = state.checkout().ok().and_then(|connection| {
-        crate::jobs::activity_identity::identity_for_job(
-            crate::jobs::scheduler::REGISTRY_REFRESH_KIND,
-            &format!("direct:{}", crate::jobs::scheduler::REGISTRY_REFRESH_KIND),
-            "{}",
-            &connection,
-        )
-    });
-    let guard = identity.map(|identity| crate::storage::activity_registry::start(state, identity));
+    // Connection-free (sol diff R2 #4): `REGISTRY_REFRESH_KIND`'s identity
+    // never touches the database either.
+    let identity = crate::jobs::activity_identity::registry_refresh_identity();
+    let guard = crate::storage::activity_registry::start(state, identity);
     let outcome = refresh_company_directories_for_trigger(state, trigger);
-    if let Some(guard) = guard {
-        guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
-    }
+    guard.settle(outcome.as_ref().map(|_| ()).map_err(|e| e.as_str()));
     outcome
 }
 

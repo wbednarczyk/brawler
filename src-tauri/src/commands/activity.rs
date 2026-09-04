@@ -109,30 +109,37 @@ fn now_iso() -> String {
 /// `historyFetch` reads its LIVE counters from `BackfillProgress` (sol diff
 /// R1 #14) rather than a `job_runs`-adjacent table, since a backfill has no
 /// domain parent row of its own.
+///
+/// sol diff R2 #5: propagates a genuine `parent_progress` SQL failure with
+/// `?` rather than collapsing it into the same `None` a leaf item or a
+/// parent with no rows legitimately produces.
 fn parent_progress_for(
     connection: &rusqlite::Connection,
     state: &AppState,
     family: ActivityFamily,
     activity_key: &str,
     company_id: Option<&str>,
-) -> Option<ActivityProgress> {
+) -> StorageResult<Option<ActivityProgress>> {
     if family == ActivityFamily::HistoryFetch {
-        return history_fetch_progress(state, company_id);
+        return Ok(history_fetch_progress(state, company_id));
     }
     let (table, prefix) = match family {
         ActivityFamily::ReportSweep => ("history_sweeps", "report-sweep:"),
         ActivityFamily::Reextraction => ("pipeline_reextraction_batches", "reextraction:"),
-        _ => return None,
+        _ => return Ok(None),
     };
-    let id = activity_key.strip_prefix(prefix)?;
-    let (done, total, failed) = reads::parent_progress(connection, table, id)
-        .ok()
-        .flatten()?;
-    Some(ActivityProgress {
+    let Some(id) = activity_key.strip_prefix(prefix) else {
+        return Ok(None);
+    };
+    let Some((done, total, failed, _enqueued)) = reads::parent_progress(connection, table, id)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(ActivityProgress {
         done,
         total,
         failed,
-    })
+    }))
 }
 
 /// A running backfill's LIVE progress (sol diff R1 #14): `done` = documents
@@ -161,18 +168,22 @@ fn in_flight_for(progress: &Option<ActivityProgress>) -> Option<i64> {
 
 /// Bounded (≤ [`MEMBER_LIMIT`]) raw member subjects for a sweep/batch parent
 /// (sol diff R1 #14) — `[]` for every family without members.
+///
+/// sol diff R2 #5: propagates a genuine `member_subjects` SQL failure with
+/// `?` rather than collapsing it into the same empty `Vec` a family with no
+/// members legitimately produces.
 fn members_for(
     connection: &rusqlite::Connection,
     family: ActivityFamily,
     activity_key: &str,
-) -> Vec<String> {
+) -> StorageResult<Vec<String>> {
     let (table, prefix) = match family {
         ActivityFamily::ReportSweep => ("history_sweeps", "report-sweep:"),
         ActivityFamily::Reextraction => ("pipeline_reextraction_batches", "reextraction:"),
-        _ => return Vec::new(),
+        _ => return Ok(Vec::new()),
     };
     let Some(id) = activity_key.strip_prefix(prefix) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     reads::member_subjects(connection, table, id, MEMBER_LIMIT)
 }
@@ -181,61 +192,92 @@ fn members_for(
 /// headed into `recent` (sol diff R1 #4): `job_runs.status` alone can never
 /// represent `partial` (the schema has no such status), nor a fan-out job
 /// that finished its OWN attempt while its domain row — and its members —
-/// are still running. `None` leaves the occurrence's own ledger status.
+/// are still running. `Ok(None)` leaves the occurrence's own ledger status.
+///
+/// sol diff R2 #3 (sweep/batch parents): the fan-out's OWN row goes terminal
+/// (`completed`/`failed`) once every member is DISPATCHED, not once every
+/// dispatched member has FINISHED — and `history_sweeps` deliberately writes
+/// `completed` even when `runs_failed > 0` (a completed sweep never aborts
+/// for a partial failure). So the terminal status here is derived from ALL
+/// `enqueued_run_ids_json` members regardless of whether the parent row
+/// itself says `completed` or `failed`: any member still non-terminal keeps
+/// the parent `running`; otherwise mixed outcomes → `partial`, all failed →
+/// `failed`, all succeeded → `succeeded`.
+///
+/// sol diff R2 #5: propagates a genuine storage failure with `?` instead of
+/// swallowing it into the same `None` a non-matching/absent parent produces.
 fn domain_status_override(
     connection: &rusqlite::Connection,
     family: ActivityFamily,
     activity_key: &str,
-) -> Option<(String, Option<String>)> {
+) -> StorageResult<Option<(String, Option<String>)>> {
     match family {
         ActivityFamily::ReportReading => {
-            let run_id = activity_key.strip_prefix("report-reading:")?;
-            let (status, last_error) = reads::autopilot_run_status(connection, run_id)?;
-            match status.as_str() {
+            let Some(run_id) = activity_key.strip_prefix("report-reading:") else {
+                return Ok(None);
+            };
+            let Some((status, last_error)) = reads::autopilot_run_status(connection, run_id) else {
+                return Ok(None);
+            };
+            Ok(match status.as_str() {
                 "failed" => Some(("failed".to_owned(), last_error)),
                 "partial" => Some(("partial".to_owned(), last_error)),
                 _ => None,
-            }
+            })
         }
         ActivityFamily::ReportSweep | ActivityFamily::Reextraction => {
             let (table, prefix) = match family {
                 ActivityFamily::ReportSweep => ("history_sweeps", "report-sweep:"),
                 _ => ("pipeline_reextraction_batches", "reextraction:"),
             };
-            let id = activity_key.strip_prefix(prefix)?;
-            let (status, error) = reads::parent_status(connection, table, id)?;
-            match status.as_str() {
-                // The fan-out's OWN job finished, but its domain row is not
-                // terminal — members are still running. Stays active, never
-                // demoted to `recent`.
-                "queued" | "running" => Some(("running".to_owned(), None)),
-                "failed" => {
-                    let (done, _total, failed) = reads::parent_progress(connection, table, id)
-                        .ok()
-                        .flatten()
-                        .unwrap_or((0, 0, 0));
-                    if done > 0 && failed > 0 {
-                        Some(("partial".to_owned(), error))
-                    } else {
-                        Some(("failed".to_owned(), error))
-                    }
-                }
-                _ => None,
+            let Some(id) = activity_key.strip_prefix(prefix) else {
+                return Ok(None);
+            };
+            let Some((status, error)) = reads::parent_status(connection, table, id)? else {
+                return Ok(None);
+            };
+            if status == "queued" || status == "running" {
+                // The fan-out's OWN job hasn't even finished dispatching yet
+                // — trivially active.
+                return Ok(Some(("running".to_owned(), None)));
             }
+            // The parent row is terminal, but its members may not be: derive
+            // the real status from them, never from the parent row's own
+            // (possibly stale-relative-to-members, and for `completed`,
+            // possibly failure-blind) status column.
+            let Some((done, _total, failed, enqueued)) =
+                reads::parent_progress(connection, table, id)?
+            else {
+                return Ok(None);
+            };
+            if done + failed < enqueued {
+                return Ok(Some(("running".to_owned(), None)));
+            }
+            Ok(Some(if failed > 0 && done > 0 {
+                ("partial".to_owned(), error)
+            } else if failed > 0 {
+                ("failed".to_owned(), error)
+            } else {
+                ("succeeded".to_owned(), error)
+            }))
         }
         ActivityFamily::KpiIngest => {
-            let run_id = activity_key.strip_prefix("kpi-ingest:")?;
-            let (status, last_error) = reads::kpi_run_status(connection, run_id)?;
-            match status.as_str() {
+            let Some(run_id) = activity_key.strip_prefix("kpi-ingest:") else {
+                return Ok(None);
+            };
+            let Some((status, last_error)) = reads::kpi_run_status(connection, run_id) else {
+                return Ok(None);
+            };
+            Ok(match status.as_str() {
                 "failed" => Some(("failed".to_owned(), last_error)),
                 "partial" => Some(("partial".to_owned(), last_error)),
                 // No `cancelled` slot in the DTO's status vocabulary — the
                 // closest honest fit without fabricating a new one.
                 "cancelled" => Some(("failed".to_owned(), last_error)),
                 _ => None,
-            }
+            })
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -244,7 +286,7 @@ fn occurrence_to_item(
     state: &AppState,
     row: OccurrenceRow,
     status: &str,
-) -> ActivityItem {
+) -> StorageResult<ActivityItem> {
     let qualified_ticker = row
         .company_id
         .as_deref()
@@ -255,10 +297,10 @@ fn occurrence_to_item(
         row.family,
         &row.activity_key,
         row.company_id.as_deref(),
-    );
+    )?;
     let in_flight = in_flight_for(&progress);
-    let members = members_for(connection, row.family, &row.activity_key);
-    ActivityItem {
+    let members = members_for(connection, row.family, &row.activity_key)?;
+    Ok(ActivityItem {
         id: format!("job_runs:{}", row.id),
         activity_key: row.activity_key,
         family: row.family,
@@ -274,7 +316,7 @@ fn occurrence_to_item(
         error: row.error,
         members,
         target: row.target,
-    }
+    })
 }
 
 /// The active job_runs ids: a queue row literally `running` WITH an open
@@ -291,10 +333,13 @@ fn queued_items(
     connection: &rusqlite::Connection,
     state: &AppState,
 ) -> StorageResult<Vec<ActivityItem>> {
-    Ok(reads::pending_jobs(connection)?
-        .into_iter()
-        .filter_map(|job| queue_row_item(connection, state, job, "queued"))
-        .collect())
+    let mut items = Vec::new();
+    for job in reads::pending_jobs(connection)? {
+        if let Some(item) = queue_row_item(connection, state, job, "queued")? {
+            items.push(item);
+        }
+    }
+    Ok(items)
 }
 
 /// A `job_queue` row literally `running` with no matching open `job_runs`
@@ -303,10 +348,13 @@ fn stalled_queue_items(
     connection: &rusqlite::Connection,
     state: &AppState,
 ) -> StorageResult<Vec<ActivityItem>> {
-    Ok(reads::stalled_queue_rows(connection)?
-        .into_iter()
-        .filter_map(|job| queue_row_item(connection, state, job, "stalled"))
-        .collect())
+    let mut items = Vec::new();
+    for job in reads::stalled_queue_rows(connection)? {
+        if let Some(item) = queue_row_item(connection, state, job, "stalled")? {
+            items.push(item);
+        }
+    }
+    Ok(items)
 }
 
 fn queue_row_item(
@@ -314,8 +362,10 @@ fn queue_row_item(
     state: &AppState,
     job: reads::PendingJobRow,
     status: &str,
-) -> Option<ActivityItem> {
-    let identity = identity_for_job(&job.kind, &job.id, &job.payload, connection)?;
+) -> StorageResult<Option<ActivityItem>> {
+    let Some(identity) = identity_for_job(&job.kind, &job.id, &job.payload, connection) else {
+        return Ok(None);
+    };
     let qualified_ticker = identity
         .company_id
         .as_deref()
@@ -326,10 +376,10 @@ fn queue_row_item(
         identity.family,
         &identity.activity_key,
         identity.company_id.as_deref(),
-    );
+    )?;
     let in_flight = in_flight_for(&progress);
-    let members = members_for(connection, identity.family, &identity.activity_key);
-    Some(ActivityItem {
+    let members = members_for(connection, identity.family, &identity.activity_key)?;
+    Ok(Some(ActivityItem {
         id: format!("job_queue:{}", job.id),
         activity_key: identity.activity_key,
         family: identity.family,
@@ -347,7 +397,7 @@ fn queue_row_item(
         members,
 
         target: identity.target,
-    })
+    }))
 }
 
 /// A KPI ingest run (ADR 0109 dec. 3: never a `job_runs` writer — its live
@@ -501,16 +551,15 @@ fn stalled_domain_items(connection: &rusqlite::Connection) -> StorageResult<Vec<
     ];
     for (table, prefix, family, job_kind) in parents {
         for row in reads::stalled_parent_rows(connection, table, job_kind)? {
-            let progress = reads::parent_progress(connection, table, &row.id)
-                .ok()
-                .flatten()
-                .map(|(done, total, failed)| ActivityProgress {
+            let progress = reads::parent_progress(connection, table, &row.id)?.map(
+                |(done, total, failed, _enqueued)| ActivityProgress {
                     done,
                     total,
                     failed,
-                });
+                },
+            );
             let in_flight = in_flight_for(&progress);
-            let members = members_for(connection, family, &format!("{prefix}:{}", row.id));
+            let members = members_for(connection, family, &format!("{prefix}:{}", row.id))?;
             items.push(ActivityItem {
                 id: format!("{table}:{}", row.id),
                 activity_key: format!("{prefix}:{}", row.id),
@@ -551,7 +600,7 @@ fn registry_stalled_items(
         reads::occurrences_by_id(connection, &snapshot.stalled_run_ids)?
             .into_iter()
             .map(|row| occurrence_to_item(connection, state, row, "stalled"))
-            .collect();
+            .collect::<StorageResult<Vec<_>>>()?;
     for (identity, started_at) in snapshot.stalled_unrecorded {
         let qualified_ticker = identity
             .company_id
@@ -612,7 +661,7 @@ pub(crate) fn compute_activity(state: &AppState) -> StorageResult<ActivityView> 
     let mut running: Vec<ActivityItem> = reads::occurrences_by_id(&connection, &active_ids)?
         .into_iter()
         .map(|row| occurrence_to_item(&connection, state, row, "running"))
-        .collect();
+        .collect::<StorageResult<Vec<_>>>()?;
     let (kpi_leased, kpi_unleased) = reads::kpi_runs_by_lease(&connection, &now)?;
     running.extend(
         kpi_leased
@@ -660,23 +709,22 @@ pub(crate) fn compute_activity(state: &AppState) -> StorageResult<ActivityView> 
         .collect();
 
     // ---- recent (precedence 3: only keys not already live) ----
-    let recent = reads::recent_occurrences(&connection, &now, RECENT_WINDOW_DAYS, RECENT_CAP)?
+    let mut recent = Vec::new();
+    for row in reads::recent_occurrences(&connection, &now, RECENT_WINDOW_DAYS, RECENT_CAP)?
         .into_iter()
         .filter(|row| !live_keys.contains(&row.activity_key))
-        .map(|row| {
-            let override_status =
-                domain_status_override(&connection, row.family, &row.activity_key);
-            let (status, error_override) = match &override_status {
-                Some((status, error)) => (status.clone(), Some(error.clone())),
-                None => (row.status.clone(), None),
-            };
-            let mut item = occurrence_to_item(&connection, state, row, &status);
-            if let Some(error) = error_override {
-                item.error = error;
-            }
-            item
-        })
-        .collect();
+    {
+        let override_status = domain_status_override(&connection, row.family, &row.activity_key)?;
+        let (status, error_override) = match &override_status {
+            Some((status, error)) => (status.clone(), Some(error.clone())),
+            None => (row.status.clone(), None),
+        };
+        let mut item = occurrence_to_item(&connection, state, row, &status)?;
+        if let Some(error) = error_override {
+            item.error = error;
+        }
+        recent.push(item);
+    }
 
     Ok(ActivityView {
         active,

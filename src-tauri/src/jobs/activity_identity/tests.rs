@@ -402,3 +402,79 @@ fn unregistered_kind_yields_none() {
     let connection = state.checkout_for_tests().expect("checkout");
     assert!(identity_for_job("qualitative_assessment", "job-x", "{}", &connection).is_none());
 }
+
+#[test]
+fn registry_refresh_subject_is_never_composed_prose() {
+    // sol diff R2 #6 (backend): the composed Polish subject "Rejestr spółek
+    // GPW/NewConnect" appeared untranslated in the English UI — empty now,
+    // like the briefing/system subjects; the family label carries the prose.
+    let state = state();
+    let connection = state.checkout_for_tests().expect("checkout");
+    let identity = identity_for_job(
+        crate::jobs::scheduler::REGISTRY_REFRESH_KIND,
+        "registry-refresh",
+        "{}",
+        &connection,
+    )
+    .expect("identity");
+    assert_eq!(identity.subject, "");
+    assert_eq!(identity, registry_refresh_identity());
+}
+
+#[test]
+fn direct_wrapper_fallback_identities_need_no_connection() {
+    // sol diff R2 #4: `refresh_source_direct`/`sweep_adapters`,
+    // `refresh_company_directories_direct`, and
+    // `run_aggregator_fundamentals_pull_direct` now build their identity via
+    // a function that takes NO `&Connection` parameter at all — the type
+    // signature itself guarantees registration never again silently depends
+    // on a checkout succeeding. Cross-check each fallback against the
+    // connection-backed `identity_for_job` result for the same input, which
+    // must agree exactly (these functions ARE what `identity_for_job`
+    // delegates to for these kinds).
+    let state = state();
+    let connection = state.checkout_for_tests().expect("checkout");
+
+    assert_eq!(
+        source_refresh_identity("gpw-espi-ebi"),
+        identity_for_job(
+            crate::jobs::scheduler::SOURCE_REFRESH_KIND,
+            "direct:gpw-espi-ebi",
+            r#"{"adapterId":"gpw-espi-ebi"}"#,
+            &connection,
+        )
+        .expect("identity")
+    );
+    assert_eq!(
+        registry_refresh_identity(),
+        identity_for_job(
+            crate::jobs::scheduler::REGISTRY_REFRESH_KIND,
+            "direct:registry-refresh",
+            "{}",
+            &connection,
+        )
+        .expect("identity")
+    );
+    assert_eq!(
+        aggregator_fundamentals_pull_identity(),
+        identity_for_job(
+            crate::jobs::aggregator_fundamentals_pull::AGGREGATOR_FUNDAMENTALS_PULL_KIND,
+            "direct:fundamentals-pull",
+            "{}",
+            &connection,
+        )
+        .expect("identity")
+    );
+}
+
+#[test]
+fn company_backfill_fallback_uses_the_raw_company_id_as_subject() {
+    // sol diff R2 #4: when no checkout is available to resolve a nicer
+    // ticker subject, `backfill_company_history_direct` falls back to the
+    // raw company id rather than skipping registration entirely.
+    let identity = company_backfill_identity_fallback("company_gpw_cdr");
+    assert_eq!(identity.activity_key, "history-fetch:company_gpw_cdr");
+    assert_eq!(identity.family, ActivityFamily::HistoryFetch);
+    assert_eq!(identity.subject, "company_gpw_cdr");
+    assert_eq!(identity.company_id.as_deref(), Some("company_gpw_cdr"));
+}

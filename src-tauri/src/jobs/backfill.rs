@@ -95,23 +95,28 @@ pub fn backfill_company_history(state: &AppState, company_id: &str) -> BackfillP
 /// the queue's dispatch seam, so this wrapper is for the awaited command paths
 /// only (the Tauri command and its MCP twin) — nothing double-counts.
 pub fn backfill_company_history_direct(state: &AppState, company_id: &str) -> BackfillProgress {
-    let identity = state.checkout().ok().and_then(|connection| {
-        crate::jobs::activity_identity::identity_for_job(
+    // A checkout failure must never skip registration (sol diff R2 #4): fall
+    // back to the raw `company_id` as the subject rather than losing the
+    // occurrence entirely when the ticker lookup is unavailable.
+    let identity = match state.checkout() {
+        Ok(connection) => crate::jobs::activity_identity::identity_for_job(
             COMPANY_BACKFILL_KIND,
             &format!("direct:{COMPANY_BACKFILL_KIND}:{company_id}"),
             &serde_json::json!({ "companyId": company_id }).to_string(),
             &connection,
         )
-    });
-    let guard = identity.map(|identity| crate::storage::activity_registry::start(state, identity));
+        .unwrap_or_else(|| {
+            crate::jobs::activity_identity::company_backfill_identity_fallback(company_id)
+        }),
+        Err(_) => crate::jobs::activity_identity::company_backfill_identity_fallback(company_id),
+    };
+    let guard = crate::storage::activity_registry::start(state, identity);
     let progress = backfill_company_history(state, company_id);
-    if let Some(guard) = guard {
-        guard.settle(if progress.status == "failed" {
-            Err(progress.error.as_deref().unwrap_or("backfill failed"))
-        } else {
-            Ok(())
-        });
-    }
+    guard.settle(if progress.status == "failed" {
+        Err(progress.error.as_deref().unwrap_or("backfill failed"))
+    } else {
+        Ok(())
+    });
     progress
 }
 

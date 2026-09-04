@@ -464,15 +464,19 @@ pub(crate) fn autopilot_run_status(
         .ok()
 }
 
+/// sol diff R2 #5: `Option` used to collapse a genuine SQL failure into "no
+/// row" indistinguishably — `StorageResult` lets the caller propagate a real
+/// error instead of quietly treating it as an absent parent.
 pub(crate) fn parent_status(
     connection: &Connection,
     table: &str,
     id: &str,
-) -> Option<(String, Option<String>)> {
+) -> StorageResult<Option<(String, Option<String>)>> {
     let sql = format!("SELECT status, error FROM {table} WHERE id = ?1");
     connection
         .query_row(&sql, [id], |row| Ok((row.get(0)?, row.get(1)?)))
-        .ok()
+        .optional()
+        .map_err(StorageError::from)
 }
 
 pub(crate) fn kpi_run_status(
@@ -504,19 +508,24 @@ pub(crate) fn activity_key_for_occurrence(connection: &Connection, id: i64) -> O
 /// Bounded (≤ `limit`) raw member subjects for a sweep/batch parent (sol
 /// diff R1 #14) — the expanded row's evidence of WHAT it is processing. Each
 /// member run's report document title, raw (never composed prose).
+///
+/// sol diff R2 #5: propagates a genuine SQL failure with `?` — `.ok()`/
+/// `unwrap_or_default` used to collapse it into the same empty `Vec` a
+/// parent with zero members legitimately produces, silently hiding the
+/// difference from the caller.
 pub(crate) fn member_subjects(
     connection: &Connection,
     table: &str,
     id: &str,
     limit: usize,
-) -> Vec<String> {
+) -> StorageResult<Vec<String>> {
     let run_ids_json: Option<String> = connection
         .query_row(
             &format!("SELECT enqueued_run_ids_json FROM {table} WHERE id = ?1"),
             [id],
             |row| row.get(0),
         )
-        .ok()
+        .optional()?
         .flatten();
     let run_ids: Vec<String> = run_ids_json
         .and_then(|json| serde_json::from_str(&json).ok())
@@ -531,13 +540,13 @@ pub(crate) fn member_subjects(
                 [&run_id],
                 |row| row.get::<_, Option<String>>(0),
             )
-            .ok()
+            .optional()?
             .flatten();
         if let Some(subject) = subject.filter(|title| !title.trim().is_empty()) {
             subjects.push(subject);
         }
     }
-    subjects
+    Ok(subjects)
 }
 
 /// A non-terminal domain row (id, company_id, error, updated_at) with no
@@ -637,12 +646,18 @@ pub(crate) fn stalled_parent_rows(
 /// from its drain counters). `total` = the row's own `candidates_total`; `done`/
 /// `failed` are counted from its `enqueued_run_ids_json` member runs' current
 /// `autopilot_run.status` — read fresh so an in-progress parent's counters move
-/// as members complete, not just at sweep-finish time.
+/// as members complete, not just at sweep-finish time. The 4th element is the
+/// COUNT of enqueued members (`run_ids.len()`, never `candidates_total`, which
+/// also counts candidates skipped before enqueue) — sol diff R2 #3: the caller
+/// uses `done + failed < enqueued` to know whether any member is still
+/// non-terminal even after the parent row itself has gone terminal (a sweep
+/// marks itself `completed` once every job is DISPATCHED, not once every
+/// dispatched job has FINISHED).
 pub(crate) fn parent_progress(
     connection: &Connection,
     table: &str,
     id: &str,
-) -> StorageResult<Option<(i64, i64, i64)>> {
+) -> StorageResult<Option<(i64, i64, i64, i64)>> {
     let sql = format!("SELECT candidates_total, enqueued_run_ids_json FROM {table} WHERE id = ?1");
     let row: Option<(i64, Option<String>)> = connection
         .query_row(&sql, [id], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -654,7 +669,7 @@ pub(crate) fn parent_progress(
         .and_then(|json| serde_json::from_str(&json).ok())
         .unwrap_or_default();
     if run_ids.is_empty() {
-        return Ok(Some((0, total, 0)));
+        return Ok(Some((0, total, 0, 0)));
     }
     let placeholders = vec!["?"; run_ids.len()].join(", ");
     let status_sql = format!("SELECT status FROM autopilot_run WHERE id IN ({placeholders})");
@@ -670,7 +685,7 @@ pub(crate) fn parent_progress(
             _ => {}
         }
     }
-    Ok(Some((done, total, failed)))
+    Ok(Some((done, total, failed, run_ids.len() as i64)))
 }
 
 #[cfg(test)]

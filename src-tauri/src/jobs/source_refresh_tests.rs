@@ -578,3 +578,58 @@ fn queue_handler_core_call_is_not_double_counted() {
              dispatch seam (`begin_attempt`) and the direct wrapper do"
     );
 }
+
+#[test]
+fn manual_refresh_panic_settles_the_occurrence_interrupted() {
+    // sol diff R2 #8(d): a panic INSIDE the core, reached through the REAL
+    // manual-refresh wrapper (`sweep_adapters`, backing "refresh all
+    // sources") — never a hand-simulated `ActivityGuard` — must not strand
+    // the occurrence `running` forever. `sweep_adapters` has no unwind
+    // boundary of its own, so the panic propagates uncontained to the
+    // caller; `ActivityGuard`'s Drop is what settles it `interrupted`
+    // (nothing here ever reaches the ordinary `guard.settle(...)` call).
+    use super::{
+        sweep_adapters, Fetcher, RefreshBehavior, RefreshContext, RefreshOutcome, RuntimeAdapter,
+    };
+    use crate::app_state::AppState;
+    use crate::storage::open_in_memory_database;
+
+    struct PanickingFetcher;
+    impl Fetcher for PanickingFetcher {
+        fn refresh(
+            &self,
+            _state: &AppState,
+            _ctx: &RefreshContext,
+        ) -> Result<RefreshOutcome, String> {
+            panic!("boom: manual refresh core panicked");
+        }
+    }
+
+    let fetcher: &'static PanickingFetcher = Box::leak(Box::new(PanickingFetcher));
+    let adapters = vec![RuntimeAdapter {
+        id: "knf-short-selling",
+        behavior: RefreshBehavior::Fetcher(fetcher),
+    }];
+    let state = AppState::new(open_in_memory_database().expect("db"));
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        sweep_adapters(&state, &adapters, "manual")
+    }));
+    assert!(
+        result.is_err(),
+        "the panic must actually unwind through sweep_adapters, uncontained"
+    );
+
+    let connection = state.checkout_for_tests().expect("checkout");
+    let status: String = connection
+        .query_row(
+            "SELECT status FROM job_runs WHERE activity_key = 'source-refresh:knf-short-selling'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("occurrence row");
+    assert_eq!(
+        status, "interrupted",
+        "ActivityGuard's Drop must settle the occurrence interrupted, never strand it running"
+    );
+}

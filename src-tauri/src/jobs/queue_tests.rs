@@ -343,6 +343,34 @@ fn reclaims_crash_residue_running_rows() {
     assert_eq!(store.counts().expect("counts").succeeded, 1);
 }
 
+/// Every `job_runs` row's status, oldest first — shared by the ClaimGuard
+/// tests here and the occurrence-ledger dispatch tests in
+/// `queue_dispatch_tests.rs` (via `super::job_runs_statuses`).
+fn job_runs_statuses(state: &AppState) -> Vec<String> {
+    let connection = state.checkout_for_tests().expect("checkout");
+    let mut statement = connection
+        .prepare("SELECT status FROM job_runs ORDER BY id")
+        .expect("prepare");
+    statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query")
+        .map(|row| row.expect("row"))
+        .collect()
+}
+
+/// A handler that always succeeds, registered alongside a panicking handler
+/// so the SAME `JobWorker` instance (not a second one sharing state) proves
+/// it survives a panic. Shared by this file and `queue_dispatch_tests.rs`.
+struct OkHandler;
+impl JobHandler for OkHandler {
+    fn kind(&self) -> &'static str {
+        "test-ok-after-panic"
+    }
+    fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 // ------------------------------------------------------------------
 // ClaimGuard unwind containment (ADR 0109 dec. 2, sol diff R1 #1)
 // ------------------------------------------------------------------
@@ -544,364 +572,8 @@ fn claim_guard_disarmed_is_a_noop_on_drop() {
     );
 }
 
-// ------------------------------------------------------------------
-// Occurrence-ledger dispatch (ADR 0109 dec. 2)
-// ------------------------------------------------------------------
-
-/// A handler under a REGISTERED kind (so identity resolution succeeds),
-/// controllable to succeed, fail, or panic.
-struct ActivityHandler {
-    fail_first: usize,
-    panics: bool,
-    runs: AtomicUsize,
-}
-
-impl JobHandler for ActivityHandler {
-    fn kind(&self) -> &'static str {
-        crate::jobs::scheduler::SOURCE_REFRESH_KIND
-    }
-    fn serialization_key(&self, payload: &str) -> Option<String> {
-        serde_json::from_str::<serde_json::Value>(payload)
-            .ok()?
-            .get("adapterId")
-            .and_then(|v| v.as_str())
-            .map(str::to_owned)
-    }
-    fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
-        let prior = self.runs.fetch_add(1, Ordering::SeqCst);
-        if self.panics {
-            panic!("boom");
-        }
-        if prior < self.fail_first {
-            Err(format!("transient failure {prior}"))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-fn activity_worker(handler: Arc<ActivityHandler>) -> JobWorker {
-    let state = AppState::new(open_in_memory_database().expect("db"));
-    let mut worker = JobWorker::new(state);
-    worker.register(handler);
-    worker
-}
-
-fn job_runs_statuses(state: &AppState) -> Vec<String> {
-    let connection = state.checkout_for_tests().expect("checkout");
-    let mut statement = connection
-        .prepare("SELECT status FROM job_runs ORDER BY id")
-        .expect("prepare");
-    statement
-        .query_map([], |row| row.get::<_, String>(0))
-        .expect("query")
-        .map(|row| row.expect("row"))
-        .collect()
-}
-
-fn job_runs_run_keys(state: &AppState) -> Vec<String> {
-    let connection = state.checkout_for_tests().expect("checkout");
-    let mut statement = connection
-        .prepare("SELECT run_key FROM job_runs ORDER BY id")
-        .expect("prepare");
-    statement
-        .query_map([], |row| row.get::<_, String>(0))
-        .expect("query")
-        .map(|row| row.expect("row"))
-        .collect()
-}
-
-#[test]
-fn queue_handler_core_call_is_not_double_counted() {
-    // ADR 0109 dec. 3: a scheduled run's occurrence carries the QUEUE job
-    // id as its `run_key` (written by the dispatch seam's `begin_attempt`)
-    // — never a `direct:` one (that prefix belongs to the direct-activity
-    // registry's awaited-path wrapper, never reached by a queue handler,
-    // which calls the unwrapped core) — and exactly one row per attempt.
-    let handler = Arc::new(ActivityHandler {
-        fail_first: 0,
-        panics: false,
-        runs: AtomicUsize::new(0),
-    });
-    let worker = activity_worker(handler);
-    worker
-        .state
-        .jobs()
-        .enqueue(
-            "src:scheduled-1",
-            crate::jobs::scheduler::SOURCE_REFRESH_KIND,
-            r#"{"adapterId":"gpw-espi-ebi"}"#,
-            1,
-        )
-        .expect("enqueue");
-    assert!(worker.process_one().expect("process"));
-
-    let run_keys = job_runs_run_keys(&worker.state);
-    assert_eq!(
-        run_keys,
-        vec!["src:scheduled-1".to_owned()],
-        "the run_key is the queue job id, never a direct: prefix"
-    );
-}
-
-#[test]
-fn dispatch_writes_one_job_run_per_attempt() {
-    // Success: one row, terminal `succeeded`.
-    let handler = Arc::new(ActivityHandler {
-        fail_first: 0,
-        panics: false,
-        runs: AtomicUsize::new(0),
-    });
-    let worker = activity_worker(handler.clone());
-    worker
-        .state
-        .jobs()
-        .enqueue(
-            "src:1",
-            crate::jobs::scheduler::SOURCE_REFRESH_KIND,
-            r#"{"adapterId":"gpw-espi-ebi"}"#,
-            1,
-        )
-        .expect("enqueue");
-    assert!(worker.process_one().expect("process"));
-    assert_eq!(job_runs_statuses(&worker.state), vec!["succeeded"]);
-
-    // Terminal failure (max_attempts = 1): one row, terminal `failed`.
-    let handler = Arc::new(ActivityHandler {
-        fail_first: usize::MAX,
-        panics: false,
-        runs: AtomicUsize::new(0),
-    });
-    let worker = activity_worker(handler.clone());
-    worker
-        .state
-        .jobs()
-        .enqueue(
-            "src:2",
-            crate::jobs::scheduler::SOURCE_REFRESH_KIND,
-            r#"{"adapterId":"gpw-espi-ebi"}"#,
-            1,
-        )
-        .expect("enqueue");
-    assert!(worker.process_one().expect("process"));
-    assert_eq!(job_runs_statuses(&worker.state), vec!["failed"]);
-
-    // Retry scheduled (attempts left): one row, `retry_scheduled`.
-    let handler = Arc::new(ActivityHandler {
-        fail_first: usize::MAX,
-        panics: false,
-        runs: AtomicUsize::new(0),
-    });
-    let worker = activity_worker(handler.clone());
-    worker
-        .state
-        .jobs()
-        .enqueue(
-            "src:3",
-            crate::jobs::scheduler::SOURCE_REFRESH_KIND,
-            r#"{"adapterId":"gpw-espi-ebi"}"#,
-            3,
-        )
-        .expect("enqueue");
-    assert!(worker.process_one().expect("process"));
-    assert_eq!(job_runs_statuses(&worker.state), vec!["retry_scheduled"]);
-
-    // A deferred job (source lock contention) writes NO occurrence.
-    let handler = Arc::new(ActivityHandler {
-        fail_first: 0,
-        panics: false,
-        runs: AtomicUsize::new(0),
-    });
-    let worker = activity_worker(handler.clone());
-    worker
-        .state
-        .jobs()
-        .enqueue(
-            "src:4",
-            crate::jobs::scheduler::SOURCE_REFRESH_KIND,
-            r#"{"adapterId":"gpw-espi-ebi"}"#,
-            1,
-        )
-        .expect("enqueue");
-    let held = worker
-        .state
-        .try_acquire_source("gpw-espi-ebi")
-        .expect("hold");
-    assert!(worker.process_one().expect("process"), "claimed + deferred");
-    assert!(job_runs_statuses(&worker.state).is_empty());
-    drop(held);
-}
-
-#[test]
-fn begin_attempt_failure_skips_run_and_defers() {
-    // A poisoned job_runs table makes `begin_attempt` fail: the handler must
-    // NOT run, and the claim is deferred (not failed) rather than losing the
-    // job entirely.
-    let handler = Arc::new(ActivityHandler {
-        fail_first: 0,
-        panics: false,
-        runs: AtomicUsize::new(0),
-    });
-    let worker = activity_worker(handler.clone());
-    worker
-        .state
-        .jobs()
-        .enqueue(
-            "src:1",
-            crate::jobs::scheduler::SOURCE_REFRESH_KIND,
-            r#"{"adapterId":"gpw-espi-ebi"}"#,
-            3,
-        )
-        .expect("enqueue");
-    worker
-        .state
-        .checkout_for_tests()
-        .expect("checkout")
-        .execute("DROP TABLE job_runs", [])
-        .expect("poison job_runs");
-
-    assert!(worker.process_one().expect("process"), "claimed + deferred");
-    assert_eq!(
-        handler.runs.load(Ordering::SeqCst),
-        0,
-        "the handler must not run when begin_attempt fails"
-    );
-    let counts = worker.state.jobs().counts().expect("counts");
-    assert_eq!(counts.pending, 1, "deferred back to pending, not failed");
-    assert_eq!(counts.failed, 0);
-}
-
-#[test]
-fn settle_failure_leaves_queue_and_occurrence_consistent() {
-    // sol diff R1 #17: this test used to run an ORDINARY terminal failure
-    // (no fault injected) and merely asserted the happy-path outcome. Inject
-    // a REAL failure at settle time — a BEFORE UPDATE trigger on `job_runs`
-    // that RAISEs — and prove the queue row and the occurrence stay in their
-    // PRE-settle state (both still `running`), never split: the settle
-    // transaction is one `BEGIN IMMEDIATE`, so a mid-transaction failure
-    // rolls back the queue-side UPDATE too, not just the occurrence UPDATE.
-    let handler = Arc::new(ActivityHandler {
-        fail_first: usize::MAX,
-        panics: false,
-        runs: AtomicUsize::new(0),
-    });
-    let worker = activity_worker(handler.clone());
-    worker
-        .state
-        .jobs()
-        .enqueue(
-            "src:1",
-            crate::jobs::scheduler::SOURCE_REFRESH_KIND,
-            r#"{"adapterId":"gpw-espi-ebi"}"#,
-            1,
-        )
-        .expect("enqueue");
-
-    // A trigger on UPDATE only — `begin_attempt`'s INSERT still succeeds, so
-    // identity resolution proceeds normally; only the settle UPDATE fails.
-    worker
-        .state
-        .checkout_for_tests()
-        .expect("checkout")
-        .execute_batch(
-            "CREATE TRIGGER poison_job_runs_settle BEFORE UPDATE ON job_runs
-             BEGIN SELECT RAISE(ABORT, 'settle poisoned for test'); END;",
-        )
-        .expect("install poison trigger");
-
-    let result = worker.process_one();
-    assert!(
-        result.is_err(),
-        "the poisoned settle must surface as an error, not a swallowed success: {result:?}"
-    );
-
-    let queue_status = worker
-        .state
-        .jobs()
-        .status("src:1")
-        .expect("status")
-        .expect("row");
-    assert_eq!(
-        queue_status.status, "running",
-        "the queue row's UPDATE must roll back with the failed occurrence UPDATE — never split"
-    );
-    assert_eq!(
-        job_runs_statuses(&worker.state),
-        vec!["running"],
-        "the occurrence UPDATE rolled back too — both sides stay consistent"
-    );
-}
-
-/// A handler that always succeeds, registered alongside the panicking
-/// handler in [`handler_panic_takes_the_retry_path`] so the SAME `JobWorker`
-/// instance (not a second one sharing state) proves it survives a panic.
-struct OkHandler;
-impl JobHandler for OkHandler {
-    fn kind(&self) -> &'static str {
-        "test-ok-after-panic"
-    }
-    fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
-        Ok(())
-    }
-}
-
-#[test]
-fn handler_panic_takes_the_retry_path() {
-    // A handler panic is contained (`catch_unwind`): the queue row goes back
-    // to `pending` with attempts+1, the occurrence settles `retry_scheduled`
-    // (never left open), and the SAME worker instance survives to process the
-    // next job normally (sol diff R1 #17: the prior version of this test
-    // built a SECOND worker sharing state, proving state survival but never
-    // that the WORKER THREAD/instance itself keeps running).
-    let handler = Arc::new(ActivityHandler {
-        fail_first: 0,
-        panics: true,
-        runs: AtomicUsize::new(0),
-    });
-    let state = AppState::new(open_in_memory_database().expect("db"));
-    let mut worker = JobWorker::new(state);
-    worker.register(handler.clone());
-    worker.register(Arc::new(OkHandler));
-
-    worker
-        .state
-        .jobs()
-        .enqueue(
-            "src:1",
-            crate::jobs::scheduler::SOURCE_REFRESH_KIND,
-            r#"{"adapterId":"gpw-espi-ebi"}"#,
-            3,
-        )
-        .expect("enqueue");
-
-    assert!(worker.process_one().expect("process survives the panic"));
-
-    let status = worker
-        .state
-        .jobs()
-        .status("src:1")
-        .expect("status")
-        .expect("row");
-    assert_eq!(status.status, "pending");
-    assert_eq!(status.attempts, 1);
-    assert_eq!(job_runs_statuses(&worker.state), vec!["retry_scheduled"]);
-
-    // Worker continues to process the NEXT job normally after a panic — the
-    // SAME `worker` instance, never a second one.
-    worker
-        .state
-        .jobs()
-        .enqueue("other-ok", "test-ok-after-panic", "{}", 1)
-        .expect("enqueue second");
-    assert!(worker.process_one().expect("second job processes fine"));
-    assert_eq!(
-        worker
-            .state
-            .jobs()
-            .status("other-ok")
-            .expect("status")
-            .expect("row")
-            .status,
-        "succeeded"
-    );
-}
+// Occurrence-ledger dispatch tests (ADR 0109 dec. 2) live in
+// `queue_dispatch_tests.rs` (split out to stay under the file-size ratchet,
+// ADR 0103) — nested here so they resolve as `queue::tests::dispatch::*`.
+#[path = "queue_dispatch_tests.rs"]
+mod dispatch;

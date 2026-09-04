@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::app_state::AppState;
-use crate::storage::ClaimedJob;
+use crate::storage::{ClaimedJob, StorageError, StorageResult};
 
 /// A handler for one job `kind`. `run` does the actual (blocking) work; the
 /// worker calls it off the UI thread.
@@ -124,13 +124,14 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 }
 
 /// RAII unwind guard for one claimed job's post-claim lifecycle (ADR 0109
-/// dec. 2, sol diff R1 #1). `dispatch_claimed` disarms it right after each
-/// ordinary settle call returns (Ok OR Err — a normal error already told the
-/// caller what happened, nothing left for the fallback to do). If the stack
-/// unwinds through a panic BEFORE that — identity checkout, `begin_attempt`,
-/// or the settle call itself panicking mid-flight — `Drop` fires while still
-/// armed and best-effort re-settles the claim so it never strands `running`
-/// and the worker thread keeps running the next job.
+/// dec. 2, sol diff R1 #1). `dispatch_claimed` disarms it ONLY once a
+/// defer/settle call is known to have actually committed (sol diff R2 #1) —
+/// via [`settle_with_recovery`], never unconditionally before the call's
+/// result is known. If the stack unwinds through a panic BEFORE that —
+/// identity checkout, `begin_attempt`, or the settle call itself panicking
+/// mid-flight — `Drop` fires while still armed and best-effort re-settles the
+/// claim so it never strands `running` and the worker thread keeps running
+/// the next job.
 struct ClaimGuard {
     state: AppState,
     job_id: String,
@@ -202,6 +203,46 @@ impl Drop for ClaimGuard {
     }
 }
 
+/// Run a defer/settle storage call with ONE idempotent retry, disarming
+/// `claim_guard` only once the call is PROVEN to have committed — an `Ok`, or
+/// [`StorageError::JobQueueRowMissingDuringSettle`], which the settle
+/// transaction guarantees already closed the occurrence before returning
+/// (ADR 0109 dec. 2, sol diff R2 #1). If BOTH the primary attempt and the
+/// retry return any other `Err`, `claim_guard` is left ARMED — its `Drop`
+/// fallback is the last-resort recovery — and the failure is logged at error
+/// level so a truly stuck row is never silent.
+fn settle_with_recovery<T>(
+    claim_guard: &ClaimGuard,
+    mut op: impl FnMut() -> StorageResult<T>,
+) -> Option<T> {
+    for attempt in 1..=2 {
+        match op() {
+            Ok(value) => {
+                claim_guard.disarm();
+                return Some(value);
+            }
+            Err(StorageError::JobQueueRowMissingDuringSettle { .. }) => {
+                claim_guard.disarm();
+                return None;
+            }
+            Err(error) if attempt == 1 => {
+                log::warn!(
+                    "job queue: settle failed for job {}, retrying once: {error}",
+                    claim_guard.job_id
+                );
+            }
+            Err(error) => {
+                log::error!(
+                    "job queue: settle failed twice for job {}: {error}; leaving the claim \
+                     guard armed so its Drop fallback terminalizes the row",
+                    claim_guard.job_id
+                );
+            }
+        }
+    }
+    None
+}
+
 /// Worker holding the registered handlers and an `AppState` handle.
 pub struct JobWorker {
     state: AppState,
@@ -241,15 +282,22 @@ impl JobWorker {
     /// the handler run, and settle) runs under [`ClaimGuard`]'s unwind
     /// containment (ADR 0109 dec. 2, sol diff R1 #1): a panic ANYWHERE in that
     /// path — not just inside `handler.run` — is caught here so the worker
-    /// thread survives, and [`ClaimGuard::drop`] best-effort terminalizes the
-    /// claim if it unwound before the ordinary settle path disarmed it. A
-    /// handler panic specifically is caught one layer INSIDE this (see
-    /// `run_validated`) so it still enters the ordinary retry/terminal-hook
-    /// path with its real message, exactly as before this fix — the outer
-    /// guard exists for panics in the surrounding scaffolding (identity
-    /// checkout, `begin_attempt`, the settle calls themselves), which used to
-    /// escape uncontained and could strand a claimed row `running` forever
-    /// while killing the worker thread.
+    /// thread survives. A handler panic specifically is caught one layer
+    /// INSIDE this (see `run_validated`) so it still enters the ordinary
+    /// retry/terminal-hook path with its real message — the outer guard
+    /// exists for panics in the surrounding scaffolding (identity checkout,
+    /// `begin_attempt`, the settle calls themselves), which used to escape
+    /// uncontained and could strand a claimed row `running` forever while
+    /// killing the worker thread.
+    ///
+    /// The panic arm below (sol diff R2 #2) makes recovery explicit: it
+    /// decides retry vs terminal via the SAME `mark_failed_with_run`/
+    /// `mark_succeeded_with_run` path (through [`settle_with_recovery`]) the
+    /// ordinary error branch uses, and invokes the SAME terminal hooks
+    /// (`surface_terminal_failure`, `handler.on_terminal_failure`) when
+    /// terminal — never just `ClaimGuard`'s Drop, which never called them.
+    /// Drop stays the last-resort fallback, for when this recovery settle
+    /// itself also fails.
     fn dispatch(&self, job: ClaimedJob) -> Result<(), String> {
         let handler = self.handlers.get(job.kind.as_str()).cloned();
         let claim_guard = ClaimGuard::new(self.state.clone(), job.id.clone(), job.attempts);
@@ -261,24 +309,51 @@ impl JobWorker {
         match outcome {
             Ok(result) => result,
             Err(panic_payload) => {
-                // `claim_guard` already ran its Drop-during-unwind fallback
-                // (best-effort settle) by the time we get here. The worker
-                // thread survives: log and move on to the next tick.
                 let message = panic_message(panic_payload);
                 log::error!(
                     "job queue: job {} ({}) unwound past its handler while settling: {message}",
                     job.id,
                     job.kind
                 );
+                // If the ordinary path already disarmed the guard (e.g. the
+                // panic happened inside a terminal hook AFTER a successful
+                // settle), there is nothing left to redo here — settling
+                // again would double-handle an already-terminal row.
+                if claim_guard.armed.get() {
+                    let run_id = claim_guard.run_id.get();
+                    if claim_guard.succeeded.get() == Some(true) {
+                        settle_with_recovery(&claim_guard, || {
+                            self.state.jobs().mark_succeeded_with_run(&job.id, run_id)
+                        });
+                    } else {
+                        let panic_error = format!("panic: {message}");
+                        let backoff = retry_backoff_seconds(job.attempts);
+                        let will_retry = settle_with_recovery(&claim_guard, || {
+                            self.state.jobs().mark_failed_with_run(
+                                &job.id,
+                                &panic_error,
+                                backoff,
+                                run_id,
+                            )
+                        });
+                        if let Some(false) = will_retry {
+                            self.surface_terminal_failure(&job, handler.as_deref());
+                            if let Some(handler) = handler.as_deref() {
+                                handler.on_terminal_failure(&job, &panic_error, &self.state);
+                            }
+                        }
+                    }
+                }
                 Ok(())
             }
         }
     }
 
     /// The identity/begin_attempt/run/settle body `dispatch` wraps in unwind
-    /// containment. Every early return disarms `claim_guard` first — the
-    /// guard's fallback exists only to protect a panic mid-flight, never to
-    /// double-handle a normal exit this function already handled itself.
+    /// containment. Every early return routes its defer/settle call through
+    /// [`settle_with_recovery`] (sol diff R2 #1) — `claim_guard` disarms only
+    /// once that call is proven committed, never unconditionally before its
+    /// result is known.
     fn dispatch_claimed(
         &self,
         job: &ClaimedJob,
@@ -295,10 +370,9 @@ impl JobWorker {
                 Some(key) => match self.state.try_acquire_source(&key) {
                     Some(guard) => Some(guard),
                     None => {
-                        claim_guard.disarm();
-                        store
-                            .defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
-                            .map_err(|error| error.to_string())?;
+                        settle_with_recovery(claim_guard, || {
+                            store.defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
+                        });
                         return Ok(());
                     }
                 },
@@ -329,10 +403,9 @@ impl JobWorker {
                     job.id,
                     job.kind
                 );
-                claim_guard.disarm();
-                store
-                    .defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
-                    .map_err(|error| error.to_string())?;
+                settle_with_recovery(claim_guard, || {
+                    store.defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
+                });
                 return Ok(());
             }
         };
@@ -359,10 +432,9 @@ impl JobWorker {
                             job.id,
                             job.kind
                         );
-                        claim_guard.disarm();
-                        store
-                            .defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
-                            .map_err(|error| error.to_string())?;
+                        settle_with_recovery(claim_guard, || {
+                            store.defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
+                        });
                         return Ok(());
                     }
                 }
@@ -390,18 +462,16 @@ impl JobWorker {
         match run_outcome {
             Ok(()) => {
                 claim_guard.set_succeeded(true);
-                let result = store
-                    .mark_succeeded_with_run(&job.id, run_id)
-                    .map_err(|error| error.to_string());
-                claim_guard.disarm();
-                result?;
+                settle_with_recovery(claim_guard, || {
+                    store.mark_succeeded_with_run(&job.id, run_id)
+                });
             }
             Err(error) => {
                 let backoff = retry_backoff_seconds(job.attempts);
-                let will_retry = store.mark_failed_with_run(&job.id, &error, backoff, run_id);
-                claim_guard.disarm();
-                let will_retry = will_retry.map_err(|error| error.to_string())?;
-                if !will_retry {
+                let will_retry = settle_with_recovery(claim_guard, || {
+                    store.mark_failed_with_run(&job.id, &error, backoff, run_id)
+                });
+                if let Some(false) = will_retry {
                     // Event first (deduped, migration 0118), domain transition
                     // second — a crash between the two converges at startup.
                     // The hook fires for EVERY kind, independent of the
