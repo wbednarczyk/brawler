@@ -323,6 +323,13 @@
   overflow-y: auto;
 }
 
+/* Hosted in the Spółka workshop the tool body scrolls; the panel must not be
+   a scroll container of its own or the period tables' sticky headers pin to
+   a box that never scrolls. */
+.spolka-tool-body .fundamentals-panel {
+  overflow-y: visible;
+}
+
 .fundamentals-section {
   display: flex;
   flex-direction: column;
@@ -434,7 +441,12 @@
 }
 
 .facts-matrix-scroll {
-  overflow-x: auto;
+  /* Collapsed: NOT a scroll container (`clip` + `visible`), so the sticky
+     header pins to the tool body's scroll — the visible periods fit by
+     construction (`useVisiblePeriods`). Expanded: a bounded 2-axis scroller
+     with the header pinned inside it (owner 2026-09-07). */
+  overflow-x: clip;
+  overflow-y: visible;
   /* An overflow-x scroller in a COLUMN flex chain still propagates its
      content's min-content width upward (cross-axis intrinsic sizing), so the
      wide table used to dictate the whole pane's minimum width and force a
@@ -444,18 +456,14 @@
   contain: inline-size;
   border: 1px solid var(--border);
   border-radius: 8px;
-  /* #5 repro finding (dogfooding wave 2026-09): `overflow-x: auto` alone
-     forces the computed `overflow-y` to `auto` too (CSS Overflow Module —
-     "if one axis is non-visible and the other is visible, visible becomes
-     auto"), which silently makes THIS element — not the true vertical
-     scroller, `.fundamentals-panel` — the sticky positioning containing
-     block for the thead's `position: sticky; top: 0`. Since this element's
-     own height was unbounded (shrink-to-fit), it never scrolled vertically
-     itself, so the sticky header never engaged — it scrolled away with the
-     page. A bounded `max-height` makes this element a genuine 2-axis scroll
-     container, so `top`/`left` sticky both correctly resolve against it. */
-  max-height: 60vh;
-  overflow-y: auto;
+}
+
+.facts-matrix-scroll[data-expanded="true"],
+.fundamentals-periods-scroll[data-expanded="true"] {
+  overflow: auto;
+  /* Pane-relative (`cqh` against `.spolka-layout`'s size container), never
+     taller than the pane; `60vh` is the fallback outside a container. */
+  max-height: min(60vh, 80cqh);
 }
 
 .facts-matrix {
@@ -505,6 +513,14 @@
 /* Origin chip in the newest period's header (dogfooding #7, retires the
    below-table completeness bar): the chip keeps its own casing rather than
    inheriting the header's uppercase/letter-spacing treatment. */
+/* Natural-width wrapper for the period header (columns stretch; the
+   capacity measurement reads this box). */
+.facts-matrix-period {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
 .facts-matrix-origin-chip {
   display: block;
   margin-top: var(--space-1);
@@ -683,11 +699,17 @@ td.facts-matrix-expander {
 .facts-matrix-trend {
   text-align: center;
   padding: var(--space-2) var(--space-3);
-  /* Absorbs the table's slack so period columns keep their natural width
-     (`useVisiblePeriods` measures one period header); the floor is
-     `FACTS_TREND_COLUMN_WIDTH` (FundamentalsPanel.tsx). */
-  width: 100%;
+  /* The host reads this floor for the capacity measurement. */
   min-width: 108px;
+}
+
+/* S tier: the sparkline column folds so one period still fits beside the
+   sticky KPI + expander columns. */
+@container pane (max-width: 419px) {
+  .facts-matrix-trend-head,
+  .facts-matrix-trend {
+    display: none;
+  }
 }
 
 .facts-matrix-trend {
@@ -706,7 +728,8 @@ td.facts-matrix-expander {
 }
 
 .fundamentals-periods-scroll {
-  overflow-x: auto;
+  overflow-x: clip;
+  overflow-y: visible;
   /* Same containment contract as .facts-matrix-scroll: an overflow-x scroller in
      a column flex chain otherwise propagates its content's min-content width up
      and forces a panel-level horizontal scrollbar. */
@@ -714,11 +737,6 @@ td.facts-matrix-expander {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
-  /* Same #5 fix as .facts-matrix-scroll — see its comment: a bounded
-     max-height makes this element the genuine 2-axis scroll container its
-     sticky thead/first-column need. */
-  max-height: 60vh;
-  overflow-y: auto;
 }
 
 .fundamentals-periods-table {
@@ -726,14 +744,6 @@ td.facts-matrix-expander {
   font-size: var(--font-sm);
   font-variant-numeric: tabular-nums;
   min-width: 100%;
-}
-
-/* Trailing absorber column: keeps the period groups at their natural width
-   (`useVisiblePeriods` measures one group). */
-.fundamentals-periods-fill {
-  width: 100%;
-  padding: 0;
-  border: 0;
 }
 
 .fundamentals-periods-table th,
@@ -880,7 +890,8 @@ td.fundamentals-periods-expander {
 
 /* Focus: the most recent complete period column (storyboard "Fokus: ostatni
    pełny okres") carries a subtle primary tint across its header + cells. */
-.fundamentals-periods-focus {
+/* Outranks the shared `.ui-zebra` tint (one class) on even rows. */
+.fundamentals-periods-table .fundamentals-periods-focus {
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }
 

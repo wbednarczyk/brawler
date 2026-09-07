@@ -76,11 +76,11 @@ describe("useVisiblePeriods", () => {
     globalThis.ResizeObserver = originalRO;
   });
 
-  it("derives capacity from the mocked scroller/period widths, clamped to [1, 8]", () => {
-    // available = 1000 - 100(sticky) = 900; periodWidth 100 -> floor(9) -> clamp to 8 (max).
+  it("derives capacity from the mocked scroller/period widths with no upper cap", () => {
+    // available = 1000 - 100(sticky) = 900; periodWidth 100 -> floor(9).
     render(<Harness total={20} clientWidth={1000} periodWidth={100} stickyWidth={100} onResult={() => {}} />);
-    expect(screen.getByText("visibleCount:8")).toBeInTheDocument();
-    expect(screen.getByText("hiddenCount:12")).toBeInTheDocument();
+    expect(screen.getByText("visibleCount:9")).toBeInTheDocument();
+    expect(screen.getByText("hiddenCount:11")).toBeInTheDocument();
   });
 
   it("clamps a tiny available width up to the minimum capacity of 1", () => {
@@ -104,7 +104,7 @@ describe("useVisiblePeriods", () => {
   it("expanded state ignores capacity changes from a later resize", async () => {
     const user = userEvent.setup();
     render(<Harness total={20} clientWidth={1000} periodWidth={100} stickyWidth={100} onResult={() => {}} />);
-    expect(screen.getByText("visibleCount:8")).toBeInTheDocument();
+    expect(screen.getByText("visibleCount:9")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "toggle" }));
     expect(screen.getByText("expanded:true")).toBeInTheDocument();

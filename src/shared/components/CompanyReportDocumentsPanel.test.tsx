@@ -716,6 +716,31 @@ describe("CompanyReportDocumentsPanel", () => {
     expect(screen.getByText("a.pdf").closest("[data-document-id]")).not.toHaveAttribute("data-document-highlighted");
   });
 
+  it("a retarget hidden by the search resets the filter so the row can be marked", async () => {
+    mockView([
+      viewRow({ id: "d_a", title: "a.pdf", docKind: "other" }, { canonical: false }),
+      viewRow({ id: "d_b", title: "b.pdf", docKind: "other" }, { canonical: false }),
+    ]);
+    const user = userEvent.setup();
+    const { rerender } = renderPanel(
+      <CompanyReportDocumentsPanel companyId="company_gpw_cdr" highlightDocumentRef="d_a" />,
+    );
+    await screen.findByText("a.pdf");
+    const search = screen.getByPlaceholderText(/Search titles/);
+    await user.type(search, "a.pdf");
+    await waitFor(() => expect(screen.queryByText("b.pdf")).not.toBeInTheDocument());
+
+    rerender(
+      <ToastProvider>
+        <CompanyReportDocumentsPanel companyId="company_gpw_cdr" highlightDocumentRef="d_b" />
+      </ToastProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByText("b.pdf").closest("[data-document-id]")).toHaveAttribute("aria-current", "true"),
+    );
+    expect(search).toHaveValue("");
+  });
+
   it("clears the mark when re-rendered without a target (close without retarget)", async () => {
     mockView([viewRow({ id: "d_sig", title: "signature.xades", docKind: "other" }, { canonical: false })]);
 

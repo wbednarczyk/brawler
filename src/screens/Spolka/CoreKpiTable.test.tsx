@@ -152,6 +152,7 @@ describe("CoreKpiTable", () => {
         onOpenExternalUrl={vi.fn()}
       />,
     );
+    expect(document.querySelector(".spolka-kpi-table")).toHaveClass("ui-zebra");
     const rows = document.querySelectorAll(".spolka-kpi-table tbody tr");
     expect(rows).toHaveLength(3);
     // nth-child is 1-based and CSS-driven (`utilities.css`'s `.ui-zebra`

@@ -87,15 +87,18 @@ export function useComboboxListbox<T>({
       event.preventDefault();
       setIsOpen(true);
       moveActive(-1);
-    } else if (event.key === "Home") {
+    } else if (event.key === "Home" || event.key === "End" || event.key === "Enter") {
+      // Only a visible list can be navigated or committed: a closed field
+      // must never select the (first) active option on Enter.
+      if (!isOpen) return;
       event.preventDefault();
-      if (filtered.length > 0) setActiveId(getId(filtered[0]));
-    } else if (event.key === "End") {
-      event.preventDefault();
-      if (filtered.length > 0) setActiveId(getId(filtered[filtered.length - 1]));
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      select(activeOption);
+      if (event.key === "Home") {
+        if (filtered.length > 0) setActiveId(getId(filtered[0]));
+      } else if (event.key === "End") {
+        if (filtered.length > 0) setActiveId(getId(filtered[filtered.length - 1]));
+      } else {
+        select(activeOption);
+      }
     } else if (event.key === "Escape") {
       const action = escapePolicy({ query, isOpen });
       if (action === "bubble") return;

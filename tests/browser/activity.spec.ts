@@ -101,6 +101,18 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
     expect(count).toBeGreaterThan(0);
     for (let i = 0; i < count; i += 1) {
       await expectActionInsideScroller(destinations.nth(i), scroller);
+      // The geometry check alone stays green if `.activity-panel` regains its
+      // own scrollbar — pin the scroll OWNER: the nearest scrolling ancestor
+      // of every action is the modal body.
+      const owner = await destinations.nth(i).evaluate((el) => {
+        let node = el.parentElement;
+        while (node && !(/auto|scroll/.test(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight)) {
+          node = node.parentElement;
+        }
+        return node?.className ?? null;
+      });
+      expect(owner, "the modal body owns the scroll").toContain("ui-modal-body");
     }
+    await expect(dialog.locator(".activity-panel")).toHaveCSS("overflow-y", "visible");
   });
 });

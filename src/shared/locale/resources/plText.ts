@@ -2302,5 +2302,6 @@ export const plText: Record<string, string> = {
   "Open source: {metric} · {period} · {source}": "Otwórz źródło: {metric} · {period} · {source}",
   "Expand earlier": "Rozwiń starsze",
   "Collapse earlier": "Zwiń starsze",
+  "Earlier periods": "Wcześniejsze okresy",
   // ---- /wave 2026-09 ----
 };

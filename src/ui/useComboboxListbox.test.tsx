@@ -39,6 +39,20 @@ function setup(overrides: Partial<{ options: Option[]; escapePolicy: (s: { query
 }
 
 describe("useComboboxListbox", () => {
+  it("Enter, Home and End are inert while the list is closed (no silent selection)", () => {
+    const onSelect = vi.fn();
+    const { hook } = setup({ onSelect });
+    const enter = fakeKeyEvent("Enter");
+    act(() => hook.result.current.inputProps.onKeyDown(enter));
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(enter.preventDefault).not.toHaveBeenCalled();
+    act(() => hook.result.current.inputProps.onKeyDown(fakeKeyEvent("End")));
+    expect(hook.result.current.activeOption?.id).toBe("a");
+    act(() => hook.result.current.open());
+    act(() => hook.result.current.inputProps.onKeyDown(fakeKeyEvent("Enter")));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
   it("activedescendant tracks the first option once open, using its stable id", () => {
     const { hook } = setup();
     expect(hook.result.current.inputProps["aria-activedescendant"]).toBeUndefined();

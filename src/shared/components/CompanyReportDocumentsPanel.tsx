@@ -330,6 +330,16 @@ export function CompanyReportDocumentsPanel({
   // to scroll to.
   useEffect(() => {
     if (!highlightDocumentRef) return;
+    // A retarget hidden by the type filter or the search resets both — the
+    // target row must exist to be marked and scrolled to (ADR 0107).
+    if (
+      rows.some((row) => row.document.id === highlightDocumentRef) &&
+      !filteredRows.some((row) => row.document.id === highlightDocumentRef)
+    ) {
+      setKindFilter(KIND_FILTER_ALL);
+      setQuery("");
+      return;
+    }
     const foldedGroup = groups.find((group) =>
       group.folded.some((row) => row.document.id === highlightDocumentRef),
     );
@@ -339,7 +349,7 @@ export function CompanyReportDocumentsPanel({
     if (noPeriodRows.some((row) => row.document.id === highlightDocumentRef)) {
       setNoPeriodExpanded(true);
     }
-  }, [highlightDocumentRef, groups, noPeriodRows]);
+  }, [highlightDocumentRef, groups, noPeriodRows, rows, filteredRows]);
 
   // Deep-link target contract (ADR 0107): scroll to the row once it exists
   // (after the expand effect above); the mark is the prop itself, never a

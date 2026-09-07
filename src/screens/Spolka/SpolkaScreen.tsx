@@ -64,11 +64,12 @@ export const SPOLKA_TOOL_COMMANDS: ReadonlyArray<{ tool: Tool | null; label: str
 // Company picker (dogfooding #3): filter by ticker or name, case- AND
 // diacritics-insensitive ("xt" matches "XTB", a Polish name with diacritics
 // matches its plain-ASCII typed form too).
-function foldDiacritics(value: string): string {
-  // NFD decomposes e.g. "ó" into "o" + a combining acute (U+0300–U+036F);
-  // stripping that range folds it to plain "o" ("ł" has no combining form,
-  // so it stays "ł" — an accepted limitation of this simple fold).
+export function foldDiacritics(value: string): string {
+  // NFD strips combining marks (ó → o); ł/Ł have no decomposition, so they
+  // fold explicitly.
   return value
+    .replace(/ł/g, "l")
+    .replace(/Ł/g, "L")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLocaleLowerCase();

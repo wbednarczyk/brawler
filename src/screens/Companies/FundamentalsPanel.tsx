@@ -9,7 +9,7 @@ import { buildFactMatrix, buildStatementTabs, type StatementTabKey } from "./fac
 import { FundamentalsPeriodsSection } from "./FundamentalsPeriodsSection";
 import { FundamentalsFactsMatrix } from "./FundamentalsFactsMatrix";
 import { factQualityLabel, factQualityTone, tierLabel } from "./factLabels";
-import { useVisiblePeriods } from "./useVisiblePeriods";
+import { useVisiblePeriods, naturalCellWidth } from "./useVisiblePeriods";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { DriftDiff, parseDrift } from "../../shared/components/DriftDiff";
@@ -111,8 +111,6 @@ export function factsRecordedLabel(count: number, locale: LocaleCode): string {
 // margin; the mockup's 96 was measured against a synthetic 10px preview font).
 const FACTS_KPI_COLUMN_WIDTH = 140;
 const FACTS_EXPANDER_COLUMN_WIDTH = 44;
-// `.facts-matrix-trend` min-width (companies.css) — the absorber column.
-const FACTS_TREND_COLUMN_WIDTH = 108;
 
 /**
  * Display label for a {@link StatementTabKey} (epic #398 statement switcher):
@@ -343,12 +341,26 @@ export function FundamentalsPanel({
   // measured period-group width (one <th>) and fixed sticky-column width
   // (KPI column + the expander column itself, both fixed in CSS below).
   const factsScrollRef = useRef<HTMLDivElement | null>(null);
-  const factsPeriodHeaderRef = useRef<HTMLTableCellElement | null>(null);
   const factsPeriods = useVisiblePeriods({
     scrollerRef: factsScrollRef,
     total: factMatrix.periods.length,
-    measurePeriodWidth: () => factsPeriodHeaderRef.current?.offsetWidth ?? 0,
-    stickyWidth: FACTS_KPI_COLUMN_WIDTH + FACTS_EXPANDER_COLUMN_WIDTH + FACTS_TREND_COLUMN_WIDTH,
+    // Widest natural period cell (header label/chip or any body value) —
+    // columns stretch to fill the table, so their rendered width is circular.
+    measurePeriodWidth: () => {
+      const scroller = factsScrollRef.current;
+      if (!scroller) return 0;
+      let widest = 0;
+      for (const cell of scroller.querySelectorAll<HTMLElement>("[data-period-cell]")) {
+        widest = Math.max(widest, naturalCellWidth(cell, cell.querySelector<HTMLElement>(".facts-matrix-cell")));
+      }
+      return widest;
+    },
+    // The trend column's floor is a rendered value (folded at the S tier).
+    stickyWidth: () => {
+      const trend = factsScrollRef.current?.querySelector<HTMLElement>(".facts-matrix-trend-head");
+      const trendWidth = trend && getComputedStyle(trend).display !== "none" ? Number.parseFloat(getComputedStyle(trend).minWidth) || 0 : 0;
+      return FACTS_KPI_COLUMN_WIDTH + FACTS_EXPANDER_COLUMN_WIDTH + trendWidth;
+    },
   });
   const visibleFactPeriods = factMatrix.periods.slice(
     factsPeriods.visibleStart,
@@ -496,7 +508,7 @@ export function FundamentalsPanel({
       ) : null}
 
       {/* Section order (owner request 2026-07-14): price context first, the
-          financial-facts matrix second, everything else (periods, autopilot,
+          financial-facts matrix second, everything else (positions × periods,
           custom KPIs, forms) after. Sector and the IR reports URL live in the
           Basic info panel, not here. */}
       {priceContext ? (
@@ -562,8 +574,7 @@ export function FundamentalsPanel({
                 visibleMatrixRows={visibleMatrixRows}
                 visibleFactPeriods={visibleFactPeriods}
                 factsScrollRef={factsScrollRef}
-                factsPeriodHeaderRef={factsPeriodHeaderRef}
-                factsPeriods={factsPeriods}
+                          factsPeriods={factsPeriods}
                 factsShowExpanderColumn={factsShowExpanderColumn}
                 selectedFinancialFactId={selectedFinancialFactId}
                 selectFinancialFact={selectFinancialFact}

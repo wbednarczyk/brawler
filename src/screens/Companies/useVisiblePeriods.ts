@@ -9,7 +9,6 @@ import type { LocaleCode } from "../../shared/locale";
 // round 1). Shared logic; each host measures its own period-group width and
 // sticky-column width (facts: one <th>; Pozycje: value + delta headers).
 const MIN_CAPACITY = 1;
-const MAX_CAPACITY = 8;
 
 export type UseVisiblePeriodsOptions = {
   // Ref to the host's horizontally-scrolling container (`.facts-matrix-scroll`
@@ -21,9 +20,10 @@ export type UseVisiblePeriodsOptions = {
   // Pozycje: the value + delta headers of one period) — never a constant.
   // Returns 0 before anything is measurable.
   measurePeriodWidth: () => number;
-  // Combined width of the sticky column(s) preceding the period columns
-  // (KPI/expander), subtracted from the scroller's client width.
-  stickyWidth: number;
+  // Combined width of the non-period columns (sticky KPI/expander, a trend
+  // column), subtracted from the scroller's client width; a function when it
+  // depends on the rendered tier.
+  stickyWidth: number | (() => number);
 };
 
 export type UseVisiblePeriodsResult = {
@@ -58,9 +58,9 @@ export function useVisiblePeriods({
       setCapacity(MIN_CAPACITY);
       return;
     }
-    const available = scroller.clientWidth - stickyWidth;
-    const next = Math.floor(available / periodWidth);
-    setCapacity(Math.min(MAX_CAPACITY, Math.max(MIN_CAPACITY, next)));
+    const available = scroller.clientWidth - (typeof stickyWidth === "function" ? stickyWidth() : stickyWidth);
+    // No upper cap (owner 2026-09-07): the table fills the width it has.
+    setCapacity(Math.max(MIN_CAPACITY, Math.floor(available / periodWidth)));
   }, [scrollerRef, stickyWidth]);
 
   useEffect(() => {
@@ -88,6 +88,23 @@ export function useVisiblePeriods({
     expanded,
     toggle: () => setExpanded((value) => !value),
   };
+}
+
+/** Natural (unstretched) width of a cell's content plus the cell's own
+ * horizontal padding — table columns stretch to fill the table, so a cell's
+ * `offsetWidth` is circular; the content's ink extent is not. `inner` is the
+ * element whose contents to measure when the cell wraps them in a stretched
+ * control (a `width: 100%` button). */
+export function naturalCellWidth(cell: HTMLElement, inner: HTMLElement | null = null): number {
+  const target = inner ?? cell;
+  const range = document.createRange();
+  range.selectNodeContents(target);
+  const content = range.getBoundingClientRect().width;
+  const pad = (el: HTMLElement) => {
+    const style = getComputedStyle(el);
+    return Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+  };
+  return content + pad(cell) + (inner ? pad(inner) : 0);
 }
 
 // The expander column's accessible name/visible label combines an adjective

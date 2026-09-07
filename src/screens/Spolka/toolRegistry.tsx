@@ -157,8 +157,8 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
         />
       );
     case "dokumenty":
-      // KPI provenance ticket navigation (sol-review finding 8, ADR 0104 dec.
-      // 7): the target document scrolls into view + flashes once loaded.
+      // Deep-link target (ADR 0107): the document row is selected and
+      // scrolled into view for as long as the tool holds the target.
       return <CompanyReportDocumentsPanel companyId={ctx.companyId} highlightDocumentRef={tool.documentId} />;
     case "feed":
       return <CompanyFeedPanel company={ctx.company} feedItems={ctx.feedItems} onOpenTool={ctx.onOpenTool} />;

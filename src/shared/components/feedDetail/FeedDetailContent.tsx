@@ -21,20 +21,9 @@ export type FeedDetailContentProps = {
   onRejectSignal: (signalId: string) => Promise<void> | void;
 };
 
-// Kind chip per presentation kind (mockup artboards InboxMedia/ESPI/Raport),
-// delegated to the host-neutral `feedPresentation` module (dogfooding #8) so
-// every render site agrees on the label/tone. `redFlag` stays routed to the
-// unchanged generic fallback below — unlike the row hosts, THIS dispatcher
-// still needs a "kind unhandled here" signal (redFlag has no dedicated body
-// component), not just a chip.
-function kindChip(kind: FeedItem["presentationKind"], text: (value: string) => string): FeedKindChip | null {
-  return kind === "redFlag" ? null : feedKindChip(kind, text);
-}
-
-// Dispatches the Inbox detail body by `presentationKind` (F1 S4, ADR 0104).
-// media/filing/report get the redesigned host-neutral body; redFlag (and any
-// future kind this switch doesn't yet cover) falls back to the pre-redesign
-// generic rendering, unchanged.
+// Dispatches the Inbox detail body by `presentationKind` (F1 S4, ADR 0104):
+// media/filing/report get the host-neutral bodies; redFlag keeps the generic
+// body under the same shared kind chip (`feedPresentation`).
 export function FeedDetailContent({
   item,
   signals,
@@ -45,11 +34,16 @@ export function FeedDetailContent({
   onRejectSignal,
 }: FeedDetailContentProps) {
   const { text } = useLocale();
-  const chip = kindChip(item.presentationKind, text);
+  const chip: FeedKindChip = feedKindChip(item.presentationKind, text);
 
-  if (!chip) {
+  if (item.presentationKind === "redFlag") {
     return (
-      <FeedDetailGeneric
+      <>
+        <div className="feed-detail-kind-row">
+          <StatusChip tone={chip.tone}>{chip.label}</StatusChip>
+          <span className="feed-detail-kind-source">{item.source}</span>
+        </div>
+        <FeedDetailGeneric
         item={item}
         signals={signals}
         actions={actions}
@@ -58,6 +52,7 @@ export function FeedDetailContent({
         onConfirmSignal={onConfirmSignal}
         onRejectSignal={onRejectSignal}
       />
+      </>
     );
   }
 

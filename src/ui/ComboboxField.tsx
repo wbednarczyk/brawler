@@ -83,7 +83,9 @@ function ComboboxFieldInner<T>(
           onChange={(event) => controller.setQuery(event.target.value)}
           onKeyDown={(event) => {
             controller.inputProps.onKeyDown(event);
-            if (event.key === "Enter") inputRef.current?.blur();
+            // Blur only after a committed selection (the controller consumes
+            // Enter only while its list is open).
+            if (event.key === "Enter" && event.defaultPrevented) inputRef.current?.blur();
             if (event.key === "Escape" && !event.defaultPrevented) onEscapeBubble?.();
           }}
           onFocus={() => setFocused(true)}

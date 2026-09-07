@@ -21,7 +21,6 @@ export type FundamentalsFactsMatrixProps = {
   visibleMatrixRows: FactMatrixRow[];
   visibleFactPeriods: FinancialPeriod[];
   factsScrollRef: RefObject<HTMLDivElement | null>;
-  factsPeriodHeaderRef: RefObject<HTMLTableCellElement | null>;
   factsPeriods: UseVisiblePeriodsResult;
   factsShowExpanderColumn: boolean;
   selectedFinancialFactId: string | null;
@@ -41,7 +40,6 @@ export function FundamentalsFactsMatrix({
   visibleMatrixRows,
   visibleFactPeriods,
   factsScrollRef,
-  factsPeriodHeaderRef,
   factsPeriods,
   factsShowExpanderColumn,
   selectedFinancialFactId,
@@ -61,6 +59,8 @@ export function FundamentalsFactsMatrix({
     <div
       className="facts-matrix-scroll"
       data-hscroll
+      data-expanded={factsPeriods.expanded || undefined}
+      data-visible-periods={visibleFactPeriods.length}
       aria-label={text("Financial facts matrix")}
       ref={factsScrollRef}
     >
@@ -71,21 +71,29 @@ export function FundamentalsFactsMatrix({
               {text("KPI")}
             </th>
             {/* No column at all when nothing is hidden (owner storyboard). */}
-            {factsShowExpanderColumn ? <th className="facts-matrix-expander" aria-hidden="true" /> : null}
-            {visibleFactPeriods.map((period, index) => (
-              <th key={period.id} scope="col" ref={index === 0 ? factsPeriodHeaderRef : undefined}>
-                {period.fiscalYear} {period.periodType.toUpperCase()}
-                {period.id === latestPeriodId ? (
-                  originTier ? (
-                    <StatusChip tone="accent" className="facts-matrix-origin-chip">
-                      {tierLabel(originTier, text)}
-                    </StatusChip>
-                  ) : originIsMixed ? (
-                    <StatusChip tone="neutral" className="facts-matrix-origin-chip">
-                      {text("Mixed sources")}
-                    </StatusChip>
-                  ) : null
-                ) : null}
+            {factsShowExpanderColumn ? (
+              <th className="facts-matrix-expander" scope="col">
+                <span className="visually-hidden">{text("Earlier periods")}</span>
+              </th>
+            ) : null}
+            {visibleFactPeriods.map((period) => (
+              <th key={period.id} scope="col" data-period-cell>
+                {/* Inline-flex wrapper: the header's natural width is measurable
+                    even though the column stretches. */}
+                <span className="facts-matrix-period">
+                  {period.fiscalYear} {period.periodType.toUpperCase()}
+                  {period.id === latestPeriodId ? (
+                    originTier ? (
+                      <StatusChip tone="accent" className="facts-matrix-origin-chip">
+                        {tierLabel(originTier, text)}
+                      </StatusChip>
+                    ) : originIsMixed ? (
+                      <StatusChip tone="neutral" className="facts-matrix-origin-chip">
+                        {text("Mixed sources")}
+                      </StatusChip>
+                    ) : null
+                  ) : null}
+                </span>
               </th>
             ))}
             <th className="facts-matrix-trend-head" scope="col">
@@ -128,13 +136,13 @@ export function FundamentalsFactsMatrix({
                 const fact = row.cells[period.id];
                 if (!fact) {
                   return (
-                    <td key={period.id} className="facts-matrix-cell-empty">
+                    <td key={period.id} className="facts-matrix-cell-empty" data-period-cell>
                       <span aria-hidden="true">—</span>
                     </td>
                   );
                 }
                 return (
-                  <td key={period.id}>
+                  <td key={period.id} data-period-cell>
                     <button
                       aria-label={`${localizedKpiLabel(row.definition, locale)}, ${period.fiscalYear} ${period.periodType.toUpperCase()}`}
                       className={[

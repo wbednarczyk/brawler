@@ -8,8 +8,7 @@ import { formatFinancialValue, groupFormat } from "../../shared/format/financial
 import {
   periodExpanderAccessibleName,
   periodExpanderVisibleLabel,
-  useVisiblePeriods,
-} from "./useVisiblePeriods";
+  useVisiblePeriods, naturalCellWidth } from "./useVisiblePeriods";
 import {
   ActionButton,
   Button,
@@ -78,11 +77,6 @@ export function FundamentalsPeriodsSection({
   const [status, setStatus] = useState<LoadState>("idle");
   const requestSeq = useRef(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  // Measures ONE rendered period group's width: the value <th> through the
-  // last delta <th> (YoY, or QoQ+YoY when quarterly) of the FIRST visible
-  // period — the group's outer span, never a constant.
-  const periodGroupStartRef = useRef<HTMLTableCellElement | null>(null);
-  const periodGroupEndRef = useRef<HTMLTableCellElement | null>(null);
 
   const metricKeysKey = metricKeys.join(",");
   useEffect(() => {
@@ -119,11 +113,19 @@ export function FundamentalsPeriodsSection({
   const periodsVisible = useVisiblePeriods({
     scrollerRef,
     total: axis.length,
+    // One period group = value + delta column(s); each column's width is the
+    // widest natural cell in it (columns stretch, so rendered widths are circular).
     measurePeriodWidth: () => {
-      const start = periodGroupStartRef.current;
-      const end = periodGroupEndRef.current;
-      if (!start || !end) return 0;
-      return end.offsetLeft + end.offsetWidth - start.offsetLeft;
+      const scroller = scrollerRef.current;
+      if (!scroller) return 0;
+      const widest = new Map<string, number>();
+      for (const cell of scroller.querySelectorAll<HTMLElement>("[data-period-col]")) {
+        const col = cell.dataset.periodCol as string;
+        widest.set(col, Math.max(widest.get(col) ?? 0, naturalCellWidth(cell)));
+      }
+      let group = 0;
+      for (const width of widest.values()) group += width;
+      return group;
     },
     stickyWidth: PERIODS_KPI_COLUMN_WIDTH + PERIODS_EXPANDER_COLUMN_WIDTH,
   });
@@ -234,6 +236,8 @@ export function FundamentalsPeriodsSection({
           <div
             className="fundamentals-periods-scroll"
             data-hscroll
+            data-expanded={periodsVisible.expanded || undefined}
+            data-visible-periods={shownIndices.length}
             aria-label={text("Positions and period deltas")}
             ref={scrollerRef}
           >
@@ -245,37 +249,37 @@ export function FundamentalsPeriodsSection({
                   </th>
                   {/* No column at all when nothing is hidden (owner storyboard). */}
                   {showExpanderColumn ? (
-                    <th className="fundamentals-periods-expander" aria-hidden="true" />
+                    <th className="fundamentals-periods-expander" scope="col">
+                      <span className="visually-hidden">{text("Earlier periods")}</span>
+                    </th>
                   ) : null}
-                  {shownIndices.flatMap((index, position) => {
+                  {shownIndices.flatMap((index) => {
                     const period = axis[index];
                     const focus = index === focusIndex;
-                    const first = position === 0;
                     const cells = [
                       <th
                         key={`${period.key}-value`}
                         scope="col"
                         className={focus ? "fundamentals-periods-focus" : undefined}
-                        ref={first ? periodGroupStartRef : undefined}
+                        data-period-col="value"
                       >
                         {periodLabel(period.fiscalYear, period.periodType)}
                       </th>,
                       ...(quarterly
                         ? [
-                            <th key={`${period.key}-qoq`} scope="col">
+                            <th key={`${period.key}-qoq`} scope="col" data-period-col="qoq">
                               {text("Δ QoQ")}
                             </th>,
                           ]
                         : []),
                     ];
                     cells.push(
-                      <th key={`${period.key}-yoy`} scope="col" ref={first ? periodGroupEndRef : undefined}>
+                      <th key={`${period.key}-yoy`} scope="col" data-period-col="yoy">
                         {text("Δ YoY")}
                       </th>,
                     );
                     return cells;
                   })}
-                  <th className="fundamentals-periods-fill" aria-hidden="true" />
                 </tr>
               </thead>
               <tbody>
@@ -322,7 +326,11 @@ export function FundamentalsPeriodsSection({
                             flag === "currency_unknown",
                         );
                         const valueCell = (
-                          <td key={`${row.metricKey}-${index}-value`} className={`fundamentals-periods-value-cell${focusClass}`}>
+                          <td
+                            key={`${row.metricKey}-${index}-value`}
+                            className={`fundamentals-periods-value-cell${focusClass}`}
+                            data-period-col="value"
+                          >
                             {gapFlag ? (
                               <StatusChip tone="warn" className="fundamentals-periods-flag">
                                 {flagLabel(gapFlag)}
@@ -362,7 +370,11 @@ export function FundamentalsPeriodsSection({
                           valueCell,
                           ...(quarterly
                             ? [
-                                <td key={`${row.metricKey}-${index}-qoq`} className={`fundamentals-periods-delta-cell${focusClass}`}>
+                                <td
+                                  key={`${row.metricKey}-${index}-qoq`}
+                                  className={`fundamentals-periods-delta-cell${focusClass}`}
+                                  data-period-col="qoq"
+                                >
                                   {renderDelta(
                                     cell?.deltaQoQ ?? null,
                                     cell?.flags.includes("delta_qoq_undefined") ?? false,
@@ -371,7 +383,11 @@ export function FundamentalsPeriodsSection({
                                 </td>,
                               ]
                             : []),
-                          <td key={`${row.metricKey}-${index}-yoy`} className={`fundamentals-periods-delta-cell${focusClass}`}>
+                          <td
+                            key={`${row.metricKey}-${index}-yoy`}
+                            className={`fundamentals-periods-delta-cell${focusClass}`}
+                            data-period-col="yoy"
+                          >
                             {renderDelta(
                               cell?.deltaYoY ?? null,
                               cell?.flags.includes("delta_yoy_undefined") ?? false,
@@ -380,7 +396,6 @@ export function FundamentalsPeriodsSection({
                           </td>,
                         ];
                       })}
-                      <td className="fundamentals-periods-fill" aria-hidden="true" />
                     </tr>
                   );
                 })}

@@ -41,37 +41,16 @@ async function openManyPeriodsFundamentals(page: Page, locale: "en" | "pl" = "en
   await expect(page.getByLabel(matrixLabel)).toBeVisible();
 }
 
-/** Mirrors useVisiblePeriods.ts's own capacity formula so the test's
- * expectation is derived from the SAME measured numbers the app used —
- * never a hardcoded count (plan requirement). */
-function expectedCapacity(scrollerWidth: number, periodWidth: number, stickyWidth: number): number {
-  if (!periodWidth) return 1;
-  const available = scrollerWidth - stickyWidth;
-  const raw = Math.floor(available / periodWidth);
-  return Math.min(8, Math.max(1, raw));
-}
-
+/** The app's own measured outcome (`data-visible-periods`, written by the
+ * host) — the expectations below derive from it and from the geometry the
+ * measurement must satisfy (no overflow, newest header inside the box). */
 async function measure(page: Page) {
   const scroller = page.locator(".facts-matrix-scroll");
-  const scrollerWidth = await scroller.evaluate((el) => el.clientWidth);
-  const stickyWidth = await page
-    .locator(".facts-matrix-corner")
-    .evaluate((el) => (el as HTMLElement).offsetWidth) +
-    (await page
-      .locator(".facts-matrix-expander")
-      .first()
-      .evaluate((el) => (el as HTMLElement).offsetWidth)) +
-    // The Trend column absorbs the table's slack; its min-width is the floor
-    // the host subtracts (`FACTS_TREND_COLUMN_WIDTH`).
-    (await page
-      .locator(".facts-matrix-trend-head")
-      .evaluate((el) => Number.parseFloat(getComputedStyle(el).minWidth)));
+  const capacity = Number(await scroller.getAttribute("data-visible-periods"));
   const periodHeaders = page.locator(
-    '.facts-matrix thead th[scope="col"]:not(.facts-matrix-corner):not(.facts-matrix-trend-head)',
+    '.facts-matrix thead th[scope="col"]:not(.facts-matrix-corner):not(.facts-matrix-expander):not(.facts-matrix-trend-head)',
   );
-  const periodWidth = await periodHeaders.first().evaluate((el) => (el as HTMLElement).offsetWidth);
-  const capacity = expectedCapacity(scrollerWidth, periodWidth, stickyWidth);
-  return { scrollerWidth, stickyWidth, periodWidth, capacity, periodHeaders };
+  return { capacity, periodHeaders };
 }
 
 for (const [tierName, size] of Object.entries(TIER_SIZE)) {
@@ -90,11 +69,17 @@ for (const [tierName, size] of Object.entries(TIER_SIZE)) {
     const expectedHidden = TOTAL_PERIODS - capacity;
 
     // Newest period header's right edge lies inside the scroller's client box
-    // BEFORE any interaction — no horizontal scroll needed to see it.
+    // BEFORE any interaction — no horizontal scroll needed to see it — and the
+    // collapsed table fills but never overflows its box (columns stretch;
+    // the capacity came from natural widths).
     const scroller = page.locator(".facts-matrix-scroll");
     const scrollerBox = (await scroller.boundingBox())!;
     const newestHeaderBox = (await periodHeaders.last().boundingBox())!;
     expect(newestHeaderBox.x + newestHeaderBox.width).toBeLessThanOrEqual(scrollerBox.x + scrollerBox.width + 1);
+    await expect(periodHeaders).toHaveCount(capacity);
+    const tableWidth = (await page.locator(".facts-matrix").boundingBox())!.width;
+    expect(tableWidth, "collapsed table does not overflow its box").toBeLessThanOrEqual(scrollerBox.width + 1);
+    expect(tableWidth, "collapsed table fills its box").toBeGreaterThanOrEqual(scrollerBox.width - 2);
 
     if (expectedHidden > 0) {
       const expander = page.locator(".facts-matrix-expander-button");
@@ -107,9 +92,6 @@ for (const [tierName, size] of Object.entries(TIER_SIZE)) {
       const tbodyBox = (await page.locator(".facts-matrix tbody").boundingBox())!;
       expect(expanderBox.height).toBeGreaterThanOrEqual(tbodyBox.height * 0.9);
     } else {
-      // 8 is the max capacity — a wide enough tier can fit all 14 only if the
-      // clamp were absent, which it never is, so this branch documents intent
-      // rather than being reachable with today's fixture; kept for safety.
       await expect(page.locator(".facts-matrix-expander-button")).toHaveCount(0);
     }
 
@@ -135,7 +117,7 @@ test("expanding shows every period, scrolls to the newest, and the column stays 
 
   await expect(page.locator(".facts-matrix-expander-button")).toHaveAccessibleName("Collapse earlier");
   const periodHeaders = page.locator(
-    '.facts-matrix thead th[scope="col"]:not(.facts-matrix-corner):not(.facts-matrix-trend-head)',
+    '.facts-matrix thead th[scope="col"]:not(.facts-matrix-corner):not(.facts-matrix-expander):not(.facts-matrix-trend-head)',
   );
   await expect(periodHeaders).toHaveCount(TOTAL_PERIODS);
 
@@ -160,6 +142,9 @@ test("expanding shows every period, scrolls to the newest, and the column stays 
 
 test("Tab reaches the expander column control, with a visible focus ring", async ({ page }) => {
   await openManyPeriodsFundamentals(page);
+  // A wide pane fits every period (no cap) — force a tier that hides some.
+  await setPaneSize(page, { ...TIER_SIZE.M, pane: page.locator(".spolka-layout") });
+  await page.waitForTimeout(300);
 
   await page.getByRole("textbox", { name: "Find a position" }).focus();
   await page.keyboard.press("Tab");
@@ -219,7 +204,7 @@ test("a four-period company at L shows every period, no expander column, compact
   await setPaneSize(page, { ...TIER_SIZE.L, pane: page.locator(".spolka-layout") });
   await page.waitForTimeout(400);
   const periodHeaders = page.locator(
-    '.facts-matrix thead th[scope="col"]:not(.facts-matrix-corner):not(.facts-matrix-trend-head)',
+    '.facts-matrix thead th[scope="col"]:not(.facts-matrix-corner):not(.facts-matrix-expander):not(.facts-matrix-trend-head)',
   );
   await expect(periodHeaders).toHaveCount(4);
   await expect(page.locator(".facts-matrix-expander")).toHaveCount(0);
