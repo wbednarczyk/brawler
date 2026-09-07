@@ -512,8 +512,9 @@
   letter-spacing: normal;
 }
 
-.facts-matrix-corner,
-.facts-matrix-kpi {
+/* `th` in the selector: outranks `.facts-matrix th { text-align: right }`. */
+.facts-matrix th.facts-matrix-corner,
+.facts-matrix th.facts-matrix-kpi {
   text-align: left;
   position: sticky;
   left: 0;
@@ -753,8 +754,8 @@ td.facts-matrix-expander {
   background: var(--surface-raised);
 }
 
-.fundamentals-periods-corner,
-.fundamentals-periods-kpi {
+.fundamentals-periods-table th.fundamentals-periods-corner,
+.fundamentals-periods-table th.fundamentals-periods-kpi {
   text-align: left;
   position: sticky;
   left: 0;

@@ -195,3 +195,62 @@ test("both locales' expander names render correctly", async ({ page }) => {
   await expect(expander).toHaveAccessibleName(expectedName);
   await expect(expander).toHaveText("Rozwiń starsze");
 });
+
+// Guardrail harvest (integration 2026-09-07): three defects the gates above
+// let through — a percentage-height label in the rowSpan cell inflated every
+// row to hundreds of px, the single visible period header stretched to the
+// table width so the measured capacity stayed at 1 on any tier, and the zebra
+// tint was imperceptible. The base "rich" company (4 short periods) must show
+// them all at L with compact rows, and the stripe must be visible.
+async function openSmokeCompanyFundamentals(page: Page) {
+  await openApp(page);
+  await nav(page).getByRole("button", { name: "Companies" }).click();
+  await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
+  await page.getByRole("region", { name: "Company view" }).waitFor();
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill("Open fundamentals");
+  await palette.getByRole("option", { name: "Open fundamentals", exact: true }).first().click();
+  await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
+}
+
+test("a four-period company at L shows every period, no expander column, compact rows", async ({ page }) => {
+  await openSmokeCompanyFundamentals(page);
+  await setPaneSize(page, { ...TIER_SIZE.L, pane: page.locator(".spolka-layout") });
+  await page.waitForTimeout(400);
+  const periodHeaders = page.locator(
+    '.facts-matrix thead th[scope="col"]:not(.facts-matrix-corner):not(.facts-matrix-trend-head)',
+  );
+  await expect(periodHeaders).toHaveCount(4);
+  await expect(page.locator(".facts-matrix-expander")).toHaveCount(0);
+  const rowHeights = await page.locator(".facts-matrix tbody tr").evaluateAll((rows) =>
+    rows.map((row) => row.getBoundingClientRect().height),
+  );
+  expect(rowHeights.length).toBeGreaterThan(0);
+  for (const height of rowHeights) expect(height).toBeLessThanOrEqual(48);
+});
+
+function luminance(color: string): number {
+  // `rgb(r, g, b)` or `color(srgb r g b)` — Chromium returns the latter for
+  // `color-mix()` results.
+  const numbers = color.match(/[\d.]+/g)?.map(Number) ?? [];
+  const [r, g, b] = color.startsWith("color(") ? numbers.slice(0, 3) : numbers.slice(0, 3).map((v) => v / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+test("zebra rows are perceptible and continuous under the sticky column", async ({ page }) => {
+  await openManyPeriodsFundamentals(page);
+  await setPaneSize(page, { ...TIER_SIZE.L, pane: page.locator(".spolka-layout") });
+  await page.waitForTimeout(400);
+  const backgrounds = await page.locator(".facts-matrix tbody tr").evaluateAll((rows) =>
+    rows.slice(0, 2).map((row) => Array.from(row.children).map((cell) => getComputedStyle(cell).backgroundColor)),
+  );
+  const [odd, even] = backgrounds;
+  const oddSticky = luminance(odd[0]);
+  const evenSticky = luminance(even[0]);
+  expect(Math.abs(evenSticky - oddSticky)).toBeGreaterThanOrEqual(0.02);
+  // The sticky KPI cell and the value cells share the row's tint.
+  const evenValue = even.find((_, index) => index > 0 && !even[index].startsWith("rgba(0, 0, 0, 0)"));
+  expect(evenValue).toBeDefined();
+  expect(luminance(evenValue!)).toBeCloseTo(evenSticky, 2);
+});
