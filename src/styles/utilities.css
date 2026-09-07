@@ -34,5 +34,5 @@
    opaque background (the stripe stays continuous); `:where` keeps the
    specificity at one class so hover/selected rules still win. */
 .ui-zebra :where(tbody tr:nth-child(even)) > * {
-  background: color-mix(in srgb, var(--surface-raised) 55%, var(--surface));
+  background: color-mix(in srgb, var(--text) 6%, var(--surface));
 }

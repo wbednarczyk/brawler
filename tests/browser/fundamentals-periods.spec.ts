@@ -60,7 +60,12 @@ async function measure(page: Page) {
     (await page
       .locator(".facts-matrix-expander")
       .first()
-      .evaluate((el) => (el as HTMLElement).offsetWidth));
+      .evaluate((el) => (el as HTMLElement).offsetWidth)) +
+    // The Trend column absorbs the table's slack; its min-width is the floor
+    // the host subtracts (`FACTS_TREND_COLUMN_WIDTH`).
+    (await page
+      .locator(".facts-matrix-trend-head")
+      .evaluate((el) => Number.parseFloat(getComputedStyle(el).minWidth)));
   const periodHeaders = page.locator(
     '.facts-matrix thead th[scope="col"]:not(.facts-matrix-corner):not(.facts-matrix-trend-head)',
   );

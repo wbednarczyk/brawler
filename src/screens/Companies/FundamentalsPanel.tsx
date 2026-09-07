@@ -111,6 +111,8 @@ export function factsRecordedLabel(count: number, locale: LocaleCode): string {
 // margin; the mockup's 96 was measured against a synthetic 10px preview font).
 const FACTS_KPI_COLUMN_WIDTH = 140;
 const FACTS_EXPANDER_COLUMN_WIDTH = 44;
+// `.facts-matrix-trend` min-width (companies.css) — the absorber column.
+const FACTS_TREND_COLUMN_WIDTH = 108;
 
 /**
  * Display label for a {@link StatementTabKey} (epic #398 statement switcher):
@@ -346,7 +348,7 @@ export function FundamentalsPanel({
     scrollerRef: factsScrollRef,
     total: factMatrix.periods.length,
     measurePeriodWidth: () => factsPeriodHeaderRef.current?.offsetWidth ?? 0,
-    stickyWidth: FACTS_KPI_COLUMN_WIDTH + FACTS_EXPANDER_COLUMN_WIDTH,
+    stickyWidth: FACTS_KPI_COLUMN_WIDTH + FACTS_EXPANDER_COLUMN_WIDTH + FACTS_TREND_COLUMN_WIDTH,
   });
   const visibleFactPeriods = factMatrix.periods.slice(
     factsPeriods.visibleStart,

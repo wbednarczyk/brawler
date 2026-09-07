@@ -275,6 +275,7 @@ export function FundamentalsPeriodsSection({
                     );
                     return cells;
                   })}
+                  <th className="fundamentals-periods-fill" aria-hidden="true" />
                 </tr>
               </thead>
               <tbody>
@@ -379,6 +380,7 @@ export function FundamentalsPeriodsSection({
                           </td>,
                         ];
                       })}
+                      <td className="fundamentals-periods-fill" aria-hidden="true" />
                     </tr>
                   );
                 })}
