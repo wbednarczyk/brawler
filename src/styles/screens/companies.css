@@ -512,10 +512,15 @@
   letter-spacing: normal;
 }
 
-/* `th` in the selector: outranks `.facts-matrix th { text-align: right }`. */
+/* `th` in the selector: outranks `.facts-matrix th { text-align: right }`;
+   nothing else here, so the low-specificity zebra tint still reaches the cell. */
 .facts-matrix th.facts-matrix-corner,
 .facts-matrix th.facts-matrix-kpi {
   text-align: left;
+}
+
+.facts-matrix-corner,
+.facts-matrix-kpi {
   position: sticky;
   left: 0;
   background: var(--surface);
@@ -757,6 +762,10 @@ td.facts-matrix-expander {
 .fundamentals-periods-table th.fundamentals-periods-corner,
 .fundamentals-periods-table th.fundamentals-periods-kpi {
   text-align: left;
+}
+
+.fundamentals-periods-corner,
+.fundamentals-periods-kpi {
   position: sticky;
   left: 0;
   background: var(--surface);
