@@ -67,17 +67,15 @@ const PANEL_CONTRACTS: PanelContract[] = [
     panel: "Fundamentals",
     open: (page) => openCompanyTool(page, "Open fundamentals"),
     tiers: {
-      // S: Autopilot section collapses to one row + expand (summary toggle shown,
-      // full field folded); sections stack; matrix scrolls.
+      // S: the Autopilot fold is retired (dogfooding #4 — Companies > Manage
+      // settings is the only autopilot editor now); sections stack, matrix scrolls.
       S: async (_page, pane) => {
-        await expect(pane.locator(".fundamentals-autopilot-toggle")).toBeVisible();
-        await expect(pane.locator(".fundamentals-autopilot-body")).toBeHidden();
+        await expect(pane.locator(".fundamentals-autopilot")).toHaveCount(0);
         await expect(pane.getByLabel("Financial facts matrix")).toBeVisible();
       },
-      // M: Autopilot expanded (no toggle); the two forms stack in one column.
+      // M: no Autopilot fold either; the two forms stack in one column.
       M: async (_page, pane) => {
-        await expect(pane.locator(".fundamentals-autopilot-toggle")).toBeHidden();
-        await expect(pane.locator(".fundamentals-autopilot-body")).toBeVisible();
+        await expect(pane.locator(".fundamentals-autopilot")).toHaveCount(0);
         const create = await box(pane.getByLabel("Create reporting period"));
         const add = await box(pane.getByLabel("Add financial fact"));
         expect(add.y, "add-fact form stacked below the period form at M").toBeGreaterThan(create.y + 10);

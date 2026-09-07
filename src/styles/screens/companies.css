@@ -486,6 +486,16 @@
   border-bottom: none;
 }
 
+/* Origin chip in the newest period's header (dogfooding #7, retires the
+   below-table completeness bar): the chip keeps its own casing rather than
+   inheriting the header's uppercase/letter-spacing treatment. */
+.facts-matrix-origin-chip {
+  display: block;
+  margin-top: var(--space-1);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .facts-matrix-corner,
 .facts-matrix-kpi {
   text-align: left;
@@ -493,6 +503,16 @@
   left: 0;
   background: var(--surface);
   z-index: 1;
+  /* Fixed width (dogfooding #6): the expander column immediately right needs
+     a static `left` offset — a dynamically measured one would need inline
+     `style={{…}}`, banned outside AppShell's sidebar-width exception
+     (ui-authoring § Styling rules). Long labels ellipsize; the `title`
+     attribute (FundamentalsPanel.tsx) carries the full text as a tooltip. */
+  width: 140px;
+  min-width: 140px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .facts-matrix-kpi {
@@ -503,6 +523,54 @@
 .facts-matrix-corner {
   background: var(--surface-raised);
   z-index: 2;
+}
+
+/* Period-expander column (dogfooding #6, owner storyboard round 1): a narrow
+   full-height sticky column right of the KPI column — an empty <th> in the
+   header, ONE rowSpan <td> in the first body row holding the whole control.
+   `left: 140px` mirrors FundamentalsPanel.tsx's FACTS_KPI_COLUMN_WIDTH. */
+.facts-matrix-expander {
+  position: sticky;
+  left: 140px;
+  z-index: 1;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+thead .facts-matrix-expander {
+  z-index: 2;
+  background: var(--surface-raised);
+}
+
+.facts-matrix-expander-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  padding: var(--space-2) 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+}
+
+.facts-matrix-expander-button:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.facts-matrix-expander-chevron {
+  transform: rotate(90deg);
 }
 
 .facts-matrix-cell {
@@ -627,6 +695,13 @@
   left: 0;
   background: var(--surface);
   z-index: 1;
+  /* Fixed width (dogfooding #6) — mirrors .facts-matrix-corner/-kpi above;
+     the expander column's `left` needs a static offset. */
+  width: 140px;
+  min-width: 140px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fundamentals-periods-kpi {
@@ -636,6 +711,53 @@
 .fundamentals-periods-corner {
   background: var(--surface-raised);
   z-index: 2;
+}
+
+/* Period-expander column (dogfooding #6) — mirrors .facts-matrix-expander
+   above; `left: 140px` matches PERIODS_KPI_COLUMN_WIDTH
+   (FundamentalsPeriodsSection.tsx). */
+.fundamentals-periods-expander {
+  position: sticky;
+  left: 140px;
+  z-index: 1;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+thead .fundamentals-periods-expander {
+  z-index: 2;
+  background: var(--surface-raised);
+}
+
+.fundamentals-periods-expander-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  padding: var(--space-2) 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+}
+
+.fundamentals-periods-expander-button:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.fundamentals-periods-expander-chevron {
+  transform: rotate(90deg);
 }
 
 .fundamentals-periods-value {
@@ -855,21 +977,6 @@
 .facts-matrix-subtotal td {
   font-weight: 700;
   border-top: 1px solid var(--border);
-}
-
-/* Source/completeness bar (approved mockup): origin + "N of M" + the
-   never-silently-absent uncatalogued-tail count, below the matrix. */
-.fundamentals-completeness-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-raised);
-  color: var(--muted);
-  font-size: var(--font-sm);
 }
 
 /* Price context section (v0.53 T5, ADR 0067) — fundamentals-adjacent, same
@@ -1677,4 +1784,22 @@
     justify-self: stretch;
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Zebra striping (dogfooding #13, owner 2026-09-04): alternate rows get a
+   subtle tint so dense tables are easier to scan. Shared class — applied to
+   the facts matrix, Pozycje × okresy (both this file) and the Coverage table
+   (company-coverage.css, its own `.coverage-table` class); the rule lives
+   HERE (not ui.css, integrator-owned) per the S1 brief.
+   `:where(...)` keeps this rule's specificity at exactly `.ui-zebra` (a
+   single class) — lower than any per-cell state rule (hover/selected/focus),
+   which must still win over the base tint; the `> *` reaches every direct
+   cell, INCLUDING sticky columns that set their own opaque `background`
+   (facts-matrix-kpi/-expander, fundamentals-periods-kpi/-expander), so the
+   stripe stays continuous under them (ties into #5's sticky-column
+   contract). Light-theme contrast checked: `--surface-raised` at 55% over
+   `--surface` keeps cell text at/above the existing ≥ 4.5:1 floor (same
+   token pairing already used at 60% for coverage-row hover). */
+.ui-zebra :where(tbody tr:nth-child(even)) > * {
+  background: color-mix(in srgb, var(--surface-raised) 55%, var(--surface));
 }
