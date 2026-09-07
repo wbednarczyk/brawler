@@ -208,27 +208,60 @@ function applyPreliminaryFundamentals(data: ScenarioData): ScenarioData {
 }
 
 /**
+ * Six KPI rows for `applyManyPeriodsFundamentals` below — a mix of short and
+ * deliberately long labels so the fixture forces BOTH horizontal overflow
+ * (14 periods) and vertical overflow (six rows) in the same repro, per
+ * dogfooding #5 (sticky first column bleeds under scrolled cells in either
+ * direction). `metricKey` doubles as the fixed-id suffix.
+ */
+const MANY_PERIODS_METRICS: Array<{ metricKey: string; label: string; unit: string; base: number; step: number }> = [
+  { metricKey: "revenue", label: "Revenue", unit: "PLN", base: 1_000_000_000, step: 50_000_000 },
+  { metricKey: "netProfit", label: "Net profit", unit: "PLN", base: 120_000_000, step: 6_000_000 },
+  { metricKey: "ebitda", label: "EBITDA", unit: "PLN", base: 210_000_000, step: 9_000_000 },
+  {
+    metricKey: "ownersEquityAttributableToParent",
+    label: "Owners' equity attributable to parent company shareholders",
+    unit: "PLN",
+    base: 2_400_000_000,
+    step: 40_000_000,
+  },
+  {
+    metricKey: "freeCashFlowAfterMaintenanceCapex",
+    label: "Free cash flow after maintenance capital expenditures",
+    unit: "PLN",
+    base: 95_000_000,
+    step: 3_000_000,
+  },
+  { metricKey: "netDebtToEbitda", label: "Net debt to EBITDA ratio", unit: "x", base: 2, step: 0 },
+];
+
+/**
  * Dogfooding wave 2026-09 (#6): a company with 14 annual periods — far more
  * than fit at any width tier — so the facts-matrix / Pozycje × okresy
  * period-expander column (useVisiblePeriods.ts) has something to collapse.
  * The base "rich" scenario's companies carry only 2 periods each
  * (entities.ts `makeFinancialPeriod` calls in scenarios.ts), never enough to
- * exercise the collapsed state. `fundamentals-periods.spec.ts` is the sole
- * consumer.
+ * exercise the collapsed state.
+ *
+ * Six KPI rows (`MANY_PERIODS_METRICS`, dogfooding #5) so the facts matrix
+ * also overflows vertically, not just horizontally — the sticky-first-column
+ * repro needs both scroll directions at once. `fundamentals-periods.spec.ts`
+ * and `fundamentals-sticky.spec.ts` are the consumers.
  */
 function applyManyPeriodsFundamentals(data: ScenarioData): ScenarioData {
   const company = makeCompany(MANY_PERIODS_SPEC);
   const years = Array.from({ length: 14 }, (_, index) => 2013 + index);
   const periods = years.map((year) => makeFinancialPeriod(MANY_PERIODS_SPEC, year));
-  const definition: KpiDefinition = {
-    id: "kpidef_overlay_many_periods_revenue",
+
+  const definitions: KpiDefinition[] = MANY_PERIODS_METRICS.map((metric) => ({
+    id: `kpidef_overlay_many_periods_${metric.metricKey}`,
     scope: "global",
     companyId: null,
     sector: null,
-    metricKey: "revenue",
-    label: "Revenue",
+    metricKey: metric.metricKey,
+    label: metric.label,
     valueKind: "monetary",
-    unit: "PLN",
+    unit: metric.unit,
     computation: "reported",
     formula: null,
     displayFormat: null,
@@ -237,34 +270,38 @@ function applyManyPeriodsFundamentals(data: ScenarioData): ScenarioData {
     periodNature: "duration",
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
-  };
-  const facts: FinancialFact[] = periods.map((period, index) => ({
-    id: `fact_overlay_many_periods_${period.fiscalYear}`,
-    companyId: company.id,
-    periodId: period.id,
-    definitionId: definition.id,
-    metricKey: definition.metricKey,
-    valueNumeric: String(1_000_000_000 + index * 50_000_000),
-    currency: "PLN",
-    statementBasis: "consolidated",
-    attribution: "total",
-    variant: "reported",
-    measureWindow: "flow",
-    dataQuality: "final",
-    asReportedValue: null,
-    asReportedScale: null,
-    reportingStandard: "IFRS",
-    extractionMethod: "esef",
-    confidence: null,
-    confirmationState: "confirmed",
-    supersedesId: null,
-    sourceDocumentRef: null,
-    annotation: null,
-    createdAt: SAMPLE_NOW,
-    updatedAt: SAMPLE_NOW,
   }));
-  const relevance: KpiRelevance = {
-    id: "kpi_rel_overlay_many_periods",
+
+  const facts: FinancialFact[] = MANY_PERIODS_METRICS.flatMap((metric, metricIndex) =>
+    periods.map((period, periodIndex) => ({
+      id: `fact_overlay_many_periods_${metric.metricKey}_${period.fiscalYear}`,
+      companyId: company.id,
+      periodId: period.id,
+      definitionId: definitions[metricIndex].id,
+      metricKey: metric.metricKey,
+      valueNumeric: String(metric.base + periodIndex * metric.step),
+      currency: metric.unit === "PLN" ? "PLN" : null,
+      statementBasis: "consolidated",
+      attribution: "total",
+      variant: "reported",
+      measureWindow: "flow",
+      dataQuality: "final",
+      asReportedValue: null,
+      asReportedScale: null,
+      reportingStandard: "IFRS",
+      extractionMethod: "esef",
+      confidence: null,
+      confirmationState: "confirmed",
+      supersedesId: null,
+      sourceDocumentRef: null,
+      annotation: null,
+      createdAt: SAMPLE_NOW,
+      updatedAt: SAMPLE_NOW,
+    })),
+  );
+
+  const relevance: KpiRelevance[] = definitions.map((definition) => ({
+    id: `kpi_rel_overlay_many_periods_${definition.metricKey}`,
     companyId: company.id,
     definitionId: definition.id,
     status: "active",
@@ -274,14 +311,15 @@ function applyManyPeriodsFundamentals(data: ScenarioData): ScenarioData {
     lastSeenPeriod: periods[periods.length - 1].id,
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
-  };
+  }));
+
   return {
     ...data,
     companies: [company, ...data.companies],
     financialPeriods: [...periods, ...data.financialPeriods],
     financialFacts: [...facts, ...data.financialFacts],
-    kpiDefinitions: [definition, ...data.kpiDefinitions],
-    kpiRelevance: [relevance, ...data.kpiRelevance],
+    kpiDefinitions: [...definitions, ...data.kpiDefinitions],
+    kpiRelevance: [...relevance, ...data.kpiRelevance],
   };
 }
 
