@@ -611,7 +611,7 @@ Rules:
 
 ### AI Analysis Results — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-In-app feed-item AI analysis is removed; `ai_analysis_results`/`ai_analysis_jobs`/`ai_analysis_tags`/`ai_analysis_source_references` were dropped by migration `0102` (decision 5 — no readable history survives). Intelligence over feed items arrives via the MCP port (BYOA).
+Retired — intelligence over feed items arrives via the MCP port (BYOA) instead; decision and rationale: [ADR 0084](adr/0084-retire-in-app-ai-layer.md).
 
 ### Research Evidence Boundary
 
@@ -1081,7 +1081,7 @@ Rules:
 
 ### Research Cockpit Layouts (retired)
 
-The docking engine and its saved-layout table are retired ([ADR 0108](adr/0108-retire-docking-engine.md)); migration `0152_drop_cockpit_layouts.sql` drops the table.
+Retired — the docking engine's saved-layout table is dropped (migration `0152_drop_cockpit_layouts.sql`); decision and rationale: [ADR 0108](adr/0108-retire-docking-engine.md).
 
 ### Jobs (legacy table — retired in prose)
 
@@ -1266,20 +1266,7 @@ Rules:
 
 ### Retired AI Artifacts (ADR 0084 clean cut)
 
-Migration `0102_clean_cut_ai_artifacts.sql` dropped the in-app AI analysis
-layer's stored artifacts (18 tables, several dead columns on surviving
-tables, and AI-sourced `financial_facts` + their provenance) —
-[ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5.
-
-**KEPT — measured as NOT AI despite their names**: `criterion_results` (all
-`source='engine'`; deterministic DSL evaluations per ADR 0046 — the AI-assessor
-path never wrote to the owner's database), `company_extraction_profile`
-(deterministic PDF layouts as of this migration; its read/write code was later
-retired by [ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1 —
-the table itself stays kept, append-only), `morning_briefings` / `morning_briefing_items` rows,
-`management_claims` (the manual path — rows and every surviving column),
-`history_sweeps` rows, deterministic-tier `financial_facts` and their
-provenance, and the `youtube_transcription_*` settings.
+Retired — migration `0102_clean_cut_ai_artifacts.sql` dropped the in-app AI analysis layer's stored artifacts (18 tables); which tables were kept despite AI-sounding names is enumerated in the ADR itself; decision and rationale: [ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5.
 
 ### Settings
 
