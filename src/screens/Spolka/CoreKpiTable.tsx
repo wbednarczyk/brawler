@@ -83,7 +83,7 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExt
         <EmptyState>{text("No confirmed annual figures yet — read a report to populate this table.")}</EmptyState>
       ) : (
         <>
-          <table className="spolka-kpi-table">
+          <table className="spolka-kpi-table ui-zebra">
             <thead>
               <tr>
                 <th>{text("Line item")}</th>

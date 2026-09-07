@@ -198,12 +198,6 @@
   text-align: left;
 }
 
-/* Zebra rows (ADR 0104 amendment 2026-09); the thread cell's dotted border
-   stays visible on the tinted row. */
-.spolka-kpi-table tbody tr:nth-child(even) > * {
-  background: color-mix(in srgb, var(--surface-raised) 55%, var(--surface));
-}
-
 /* The provenance thread (ADR 0104 dec. 7): the newest KPI cell — the one the
    footer ticket points at — sits on a dotted underline in the quiet-cyan
    provenance tone, never the plain border every other cell gets. */

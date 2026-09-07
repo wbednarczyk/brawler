@@ -154,7 +154,7 @@ describe("CoreKpiTable", () => {
     );
     const rows = document.querySelectorAll(".spolka-kpi-table tbody tr");
     expect(rows).toHaveLength(3);
-    // nth-child is 1-based and CSS-driven (`spolka.css`'s
+    // nth-child is 1-based and CSS-driven (`utilities.css`'s `.ui-zebra`
     // `tbody tr:nth-child(even) > *` rule) — this pins the ROW
     // ORDER/PARITY the selector keys off (jsdom does not apply CSS, so the
     // computed background itself is the visual gate's job, not a unit test's).

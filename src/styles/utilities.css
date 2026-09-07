@@ -28,3 +28,11 @@
     transform: rotate(360deg);
   }
 }
+
+/* Zebra rows for data tables (ADR 0104 amendment 2026-09-04, dogfooding #13).
+   Loaded last so the tint also reaches sticky cells that paint their own
+   opaque background (the stripe stays continuous); `:where` keeps the
+   specificity at one class so hover/selected rules still win. */
+.ui-zebra :where(tbody tr:nth-child(even)) > * {
+  background: color-mix(in srgb, var(--surface-raised) 55%, var(--surface));
+}

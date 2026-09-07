@@ -1785,21 +1785,3 @@ thead .fundamentals-periods-expander {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-
-/* Zebra striping (dogfooding #13, owner 2026-09-04): alternate rows get a
-   subtle tint so dense tables are easier to scan. Shared class — applied to
-   the facts matrix, Pozycje × okresy (both this file) and the Coverage table
-   (company-coverage.css, its own `.coverage-table` class); the rule lives
-   HERE (not ui.css, integrator-owned) per the S1 brief.
-   `:where(...)` keeps this rule's specificity at exactly `.ui-zebra` (a
-   single class) — lower than any per-cell state rule (hover/selected/focus),
-   which must still win over the base tint; the `> *` reaches every direct
-   cell, INCLUDING sticky columns that set their own opaque `background`
-   (facts-matrix-kpi/-expander, fundamentals-periods-kpi/-expander), so the
-   stripe stays continuous under them (ties into #5's sticky-column
-   contract). Light-theme contrast checked: `--surface-raised` at 55% over
-   `--surface` keeps cell text at/above the existing ≥ 4.5:1 floor (same
-   token pairing already used at 60% for coverage-row hover). */
-.ui-zebra :where(tbody tr:nth-child(even)) > * {
-  background: color-mix(in srgb, var(--surface-raised) 55%, var(--surface));
-}
