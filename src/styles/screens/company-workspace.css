@@ -369,12 +369,22 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1);
+  border: 1px solid transparent;
   border-radius: 6px;
   min-width: 0;
 }
 
 .doc-row:hover {
   background: color-mix(in srgb, var(--surface-raised) 55%, transparent);
+}
+
+/* Deep-link target contract (dogfooding #11, ADR 0107 amendment): the row a
+   navigation from Activity/notebook landed on stays visibly marked for as
+   long as the tool holds the target — `claims.css`'s `.claim-row-highlighted`
+   idiom (`--tone-official` border + 12% tint), never a transient flash. */
+.doc-row[data-document-highlighted="true"] {
+  border-color: var(--tone-official);
+  background: color-mix(in srgb, var(--tone-official) 12%, var(--surface-raised));
 }
 
 .doc-row-icon {

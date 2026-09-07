@@ -2,15 +2,27 @@ import type { Company, FeedItem } from "../api/types";
 import type { NotebookDraft, NotebookToolIntent } from "../screens/Spolka/route";
 import { notebookTagFromFeedValue } from "./notebookForms";
 
-// Shared root for every render site (Inbox, Spółka, Company feed): a
-// "filing" is a bare official-report notice with no attachments, so its
-// stored summary is the dead "Komunikat ESPI/EBI" literal — suppress it here
-// once rather than forking a guard into each caller.
+// The dead ESPI/EBI filing-notice literal (F1 #413) — a bare official-report
+// NOTICE (`presentationKind: "filing"`) always carries it, but an
+// attachment-bearing `report` item can ALSO carry it verbatim when its own
+// summary hasn't been parsed yet (`report_documents.rs:212`); dogfooding #9
+// caught it leaking through the Company feed row because the old guard only
+// checked `presentationKind === "filing"`.
+const DEAD_FILING_SUMMARY_LITERAL = "Komunikat ESPI/EBI";
+
+// Shared root for every render site (Inbox, Spółka, Company feed): suppress
+// the dead literal — by kind (filing, always) and by exact match (any kind
+// that happens to carry it verbatim) — once here rather than forking a guard
+// into each caller. A meaningful summary is never touched.
 export function feedItemSummary(item: FeedItem) {
   if (item.presentationKind === "filing") {
     return "";
   }
-  return item.summary.trim() || item.title;
+  const summary = item.summary.trim();
+  if (summary === DEAD_FILING_SUMMARY_LITERAL) {
+    return "";
+  }
+  return summary || item.title;
 }
 
 // The origin-attributed draft a feed item seeds into the `notatnik` composer

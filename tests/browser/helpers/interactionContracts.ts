@@ -158,3 +158,46 @@ export async function expectFilledAtRest(root: Locator, { max = 1 }: { max?: num
     `Expected at most ${max} visible filled (variant="primary") element(s) at rest, found ${visibleCount}.`,
   ).toBeLessThanOrEqual(max);
 }
+
+/**
+ * Asserts `action`'s right edge stays inside `scroller`'s CLIENT box — the
+ * content box a scroller actually renders into, excluding a rendered
+ * scrollbar's own track — not merely inside its border-box bounding
+ * rectangle (dogfooding #10: a right-aligned row action sat flush against
+ * `.activity-panel`'s own scrollbar with no reserved gutter, clipping it).
+ * `clientWidth` is what excludes the scrollbar track; `boundingBox().width`
+ * would not. The formula: `actionBox.right <= scrollerBox.left +
+ * scroller.clientWidth − 1`.
+ */
+export async function expectActionInsideScroller(action: Locator, scroller: Locator): Promise<void> {
+  await expect(action).toBeVisible();
+  let scrollerBox: Awaited<ReturnType<Locator["boundingBox"]>> = null;
+  let actionBox: Awaited<ReturnType<Locator["boundingBox"]>> = null;
+  let clientWidth = 0;
+  await expect
+    .poll(
+      async () => {
+        [scrollerBox, actionBox, clientWidth] = await Promise.all([
+          scroller.boundingBox(),
+          action.boundingBox(),
+          scroller.evaluate((el) => el.clientWidth),
+        ]);
+        return scrollerBox !== null && actionBox !== null;
+      },
+      {
+        message:
+          "expectActionInsideScroller: scroller/action never yielded a stable bounding box (not visible/rendered)",
+      },
+    )
+    .toBe(true);
+  const scrollerRect = scrollerBox!;
+  const actionRect = actionBox!;
+  const clientRight = scrollerRect.x + clientWidth;
+  const actionRight = actionRect.x + actionRect.width;
+  expect(
+    actionRight,
+    `Row action's right edge (${actionRight.toFixed(0)}) must stay inside the scroller's client box ` +
+      `(right edge ${clientRight.toFixed(0)} = boundingBox x ${scrollerRect.x.toFixed(0)} + clientWidth ${clientWidth}) ` +
+      `— a scrollbar occupying the last ${(scrollerRect.width - clientWidth).toFixed(0)}px must not clip it.`,
+  ).toBeLessThanOrEqual(clientRight - 1);
+}

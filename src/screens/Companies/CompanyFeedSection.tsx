@@ -10,6 +10,7 @@ import type { Company, FeedItem } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { FeedDetailContent } from "../../shared/components/feedDetail/FeedDetailContent";
 import { CompanyContextSection } from "../../shared/components/feedDetail/CompanyContextSection";
+import { feedKindChip } from "../../shared/components/feedDetail/feedPresentation";
 import { useLocale } from "../../shared/locale";
 import { formatListTimestamp } from "../../shared/format/datetime";
 import { ActionRow, Button, DenseRow, EmptyState, StatusChip } from "../../ui";
@@ -151,7 +152,9 @@ export function CompanyFeedSection({
       data-company-feed-list="true"
     >
       {leadWithDetail && selectedFeedItem ? renderDetail(selectedFeedItem) : null}
-      {feedItems.map((item) => (
+      {feedItems.map((item) => {
+        const kindChip = feedKindChip(item.presentationKind, text);
+        return (
         <div className="company-feed-row-block" key={item.id}>
           <DenseRow
             as="button"
@@ -175,7 +178,7 @@ export function CompanyFeedSection({
               {/* U7-A density row: badge (type) + date stay at every tier; the
                   source folds at S (container query in companies.css). */}
               <div className="feed-meta">
-                <span className="feed-meta-type">{item.type}</span>
+                <StatusChip tone={kindChip.tone}>{kindChip.label}</StatusChip>
                 <span className="feed-meta-source">{item.source}</span>
                 <span className="num-tabular">{formatListTimestamp(item.time, locale, text("Unknown"))}</span>
               </div>
@@ -189,7 +192,8 @@ export function CompanyFeedSection({
 
           {!leadWithDetail && selectedFeedItem?.id === item.id ? renderDetail(selectedFeedItem) : null}
         </div>
-      ))}
+        );
+      })}
       {feedItems.length === 0 ? (
         <EmptyState className="company-feed-empty" wrapText={false}>
           <div>

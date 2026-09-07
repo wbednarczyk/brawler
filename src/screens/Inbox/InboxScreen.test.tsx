@@ -149,6 +149,27 @@ describe("Inbox screen workflows", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
+  // Dogfooding wave 2026-09 #8: the company-feed row host was fixed to route
+  // its kind chip through `feedPresentation.ts`, but the Inbox row rendered
+  // the raw `item.type` too — same class of bug, same shared module fixes it.
+  it("shows the localized kind chip in the row, never the raw 'Official report' item.type", async () => {
+    appTestState.feedItemsResponse = [
+      {
+        ...initialFeedItems[0],
+        type: "Official report",
+        presentationKind: "filing",
+      },
+    ];
+
+    renderApp();
+
+    const row = await screen.findByRole("button", {
+      name: `Select feed item: ${initialFeedItems[0].title}`,
+    });
+    expect(within(row).getByText("ESPI notice")).toBeInTheDocument();
+    expect(within(row).queryByText("Official report")).not.toBeInTheDocument();
+  });
+
   // ADR 0084 decision 5: the detail rail must render no AI-analysis surface at
   // all, and no retired AI command may be reachable from it.
   it("renders no AI-analysis surface in the detail rail (ADR 0084 clean cut)", async () => {

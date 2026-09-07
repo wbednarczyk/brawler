@@ -2303,4 +2303,13 @@ export const plText: Record<string, string> = {
   "Finished with an error": "nie udało się",
   "Partially finished": "częściowo",
   // ---- /F3d fixT2 ----
+  // ---- wave S3 ----
+  // Dogfooding wave 2026-09-04 (#8, #12): `feedPresentation.ts`'s exhaustive
+  // presentation-kind chip needs a real label for `redFlag` (the old
+  // detail-only map returned `null`); the Activity "Otwórz dokument"
+  // destination is renamed to name where it actually lands (the Documents
+  // tool, not the file itself).
+  "Red flag": "Sygnał ostrzegawczy",
+  "Open in documents": "Otwórz w dokumentach",
+  // ---- /wave S3 ----
 };
