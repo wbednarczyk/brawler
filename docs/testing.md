@@ -92,6 +92,10 @@ literal metadata-based repair would have deleted 36 legitimate rows).
 The cost of the up-front measurement is an afternoon; the cost of skipping it is a
 fully-built feature that has to be reverted.
 
+### Acceptance corpus (owner decision 2026-09-07)
+
+Real-data scoring, benchmark checks (M02 daily review, extraction measurement v2 — epic #470) and any ground-truth set draw from this **owner-chosen corpus**; do not substitute other issuers. GPW: XTB, Synektik, cyber_Folks, Vercom, PZU (insurance), PKO BP (commercial bank — IFRS 9 credit-loss case), Orlen, Grupa Kęty, LPP, Atrem, Benefit Systems, Mo-BRUK, CD Projekt, Develia, Dom Development, Newag, Digital Network, Grupa Kapitałowa Immobile, Scanway, Creotech Instruments, Creotech Quantum (sparse-history microcap case — 4 periods), Allegro, Decora, Inter Cars. NewConnect: Excellence (EBI-only periodic reporting; also the Polish-GAAP case — verify `reporting_standard` on first backfill, the tracked row defaults to `ifrs`). 24 issuers; label actual report periods, accounting basis and consolidated/standalone scope per sample.
+
 ### Fundamentals structured-extraction recall/precision harness
 
 *Planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md):* coverage reporting splits into **deterministic coverage** (ESEF+WDF+BR — this harness, unchanged) and **acquisition coverage** (agent ingest runs, measured by the epic #355 conformance suite); the two are never blended into one number.
