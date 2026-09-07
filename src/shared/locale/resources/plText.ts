@@ -1926,8 +1926,6 @@ export const plText: Record<string, string> = {
   "Undefined change (non-positive or sign-flipped base) — an honest gap, not a fabricated number.":
     "Zmiana nieokreślona (podstawa niedodatnia lub zmiana znaku) — uczciwa luka, nie zmyślona liczba.",
   "Show evidence": "Pokaż dowód",
-  "Show all periods": "Pokaż wszystkie okresy",
-  "Show fewer periods": "Pokaż mniej okresów",
 
   // Inbox v2 per-kind detail + company-context block (F1 S4, ADR 0104/0106).
   "Media": "Media",
@@ -2303,4 +2301,8 @@ export const plText: Record<string, string> = {
   "Finished with an error": "nie udało się",
   "Partially finished": "częściowo",
   // ---- /F3d fixT2 ----
+  // ---- wave S1 ----
+  "Expand earlier": "Rozwiń starsze",
+  "Collapse earlier": "Zwiń starsze",
+  // ---- /wave S1 ----
 };

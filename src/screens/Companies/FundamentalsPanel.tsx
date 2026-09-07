@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Pencil, Save, Trash2, X } from "lucide-react";
 import type { FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
 import { useLocale, type LocaleCode } from "../../shared/locale";
 import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
 import { AWAITS_NAMING_FORMS, FACT_FORMS, ITEM_FORMS, pluralNoun, type PluralForms } from "../../shared/locale/plural";
 import { formatFinancialValue } from "../../shared/format/financialValue";
-import { buildFactMatrix, buildStatementTabs, isSubtotalRow, type StatementTabKey } from "./factMatrix";
+import { buildFactMatrix, buildStatementTabs, type StatementTabKey } from "./factMatrix";
 import { FundamentalsPeriodsSection } from "./FundamentalsPeriodsSection";
+import { FundamentalsFactsMatrix } from "./FundamentalsFactsMatrix";
+import { factQualityLabel, factQualityTone } from "./factLabels";
+import { useVisiblePeriods } from "./useVisiblePeriods";
 import { CompanyAutopilotField } from "../../shared/components/CompanyAutopilotField";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
 import { TickerLabel } from "../../shared/components/TickerLabel";
@@ -23,7 +26,6 @@ import {
   SectionHeader,
   SegmentedControl,
   SegmentedControlOption,
-  Sparkline,
   StatusChip,
   TextField,
   TrendChart,
@@ -98,6 +100,19 @@ export function factsRecordedLabel(count: number, locale: LocaleCode): string {
   return `${count} ${pluralNoun(locale, count, FACT_FORMS)} ${pluralNoun(locale, count, RECORDED_FORMS)}`;
 }
 
+// Facts-matrix sticky column widths (dogfooding #6): the KPI column is fixed
+// (not auto — a fixed width lets the expander column's CSS `left` be a
+// matching static value, since dynamic per-render measurement would require
+// inline `style={{…}}`, banned outside AppShell's sidebar-width exception —
+// docs/ui-authoring.md § Styling rules). Long labels ellipsize with a native
+// `title` tooltip. Mirrored in companies.css `.facts-matrix-kpi`/`-expander`.
+// 140px (not the mockup's 96 — real localized labels run longer than "KPI")
+// still leaves room for at least one period column at the narrowest S tier
+// (measured: a ~320px scroller, ~86px period width — 140+44+86=270 fits with
+// margin; the mockup's 96 was measured against a synthetic 10px preview font).
+const FACTS_KPI_COLUMN_WIDTH = 140;
+const FACTS_EXPANDER_COLUMN_WIDTH = 44;
+
 export function tierLabel(tier: string, text: (value: string) => string): string {
   switch (tier) {
     case "esef":
@@ -117,38 +132,6 @@ export function tierLabel(tier: string, text: (value: string) => string): string
       return text("AI");
     default:
       return tier;
-  }
-}
-
-/**
- * Human-readable `data_quality` label (ADR 0093 dec. 2: `final | preliminary
- * | estimated`, canonical vocabulary). A pure module-level function (mirrors
- * `tierLabel`) so it is unit-testable without rendering. Any unrecognized
- * token (a future addition to the vocabulary, or a legacy row) falls back to
- * "Final" — matching the storage-layer default and never blocking the value.
- */
-export function factQualityLabel(quality: string, text: (value: string) => string): string {
-  switch (quality) {
-    case "preliminary":
-      return text("Preliminary");
-    case "estimated":
-      return text("Estimated");
-    default:
-      return text("Final");
-  }
-}
-
-/** Chip tone for {@link factQualityLabel} — caution for preliminary (issuer-
- * published, pending the audited figure), accent for estimated (third-party
- * derived), neutral for the default final. */
-function factQualityTone(quality: string): "warn" | "accent" | "neutral" {
-  switch (quality) {
-    case "preliminary":
-      return "warn";
-    case "estimated":
-      return "accent";
-    default:
-      return "neutral";
   }
 }
 
@@ -388,6 +371,36 @@ export function FundamentalsPanel({
       )
     : activeTab.rows;
 
+  // Period-expander column (dogfooding #6): the newest MEASURED-capacity
+  // periods show by default, oldest hidden behind a full-height clickable
+  // column (owner storyboard round 1) — shared logic, this host's own
+  // measured period-group width (one <th>) and fixed sticky-column width
+  // (KPI column + the expander column itself, both fixed in CSS below).
+  const factsScrollRef = useRef<HTMLDivElement | null>(null);
+  const factsPeriodHeaderRef = useRef<HTMLTableCellElement | null>(null);
+  const factsPeriods = useVisiblePeriods({
+    scrollerRef: factsScrollRef,
+    total: factMatrix.periods.length,
+    measurePeriodWidth: () => factsPeriodHeaderRef.current?.offsetWidth ?? 0,
+    stickyWidth: FACTS_KPI_COLUMN_WIDTH + FACTS_EXPANDER_COLUMN_WIDTH,
+  });
+  const visibleFactPeriods = factMatrix.periods.slice(
+    factsPeriods.visibleStart,
+    factsPeriods.visibleStart + factsPeriods.visibleCount,
+  );
+  // The column stays visible while expanded (showing "Collapse earlier") even
+  // though `hiddenCount` is then 0 — "no column at all" only applies when
+  // there was never anything to hide in the first place.
+  const factsShowExpanderColumn = factsPeriods.expanded || factsPeriods.hiddenCount > 0;
+  // Autoscroll to the newest period only on the transition INTO the expanded
+  // state (owner decision) — never on mount, never on a later resize.
+  useEffect(() => {
+    if (!factsPeriods.expanded) return;
+    const scroller = factsScrollRef.current;
+    if (!scroller) return;
+    scroller.scrollLeft = scroller.scrollWidth;
+  }, [factsPeriods.expanded]);
+
   // Completeness bar (epic #398): "N of M" = how many of the active
   // statement's rows carry a value in the most recent period column — never
   // "M of M" by construction, since every matrix row already has a fact
@@ -572,105 +585,19 @@ export function FundamentalsPanel({
                 value={findQuery}
               />
 
-              {visibleMatrixRows.length > 0 ? (
-                /* The KPI × period matrix is DELIBERATE wide content: it scrolls inside
-                   this bounded wrapper (data-hscroll exempts it from the layout gate). */
-                <div className="facts-matrix-scroll" data-hscroll aria-label={text("Financial facts matrix")}>
-                  <table className="facts-matrix">
-                    <thead>
-                      <tr>
-                        <th className="facts-matrix-corner" scope="col">
-                          {text("KPI")}
-                        </th>
-                        {factMatrix.periods.map((period) => (
-                          <th key={period.id} scope="col">
-                            {period.fiscalYear} {period.periodType.toUpperCase()}
-                          </th>
-                        ))}
-                        <th className="facts-matrix-trend-head" scope="col">
-                          {text("Trend")}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleMatrixRows.map((row) => (
-                        // Subtotal emphasis (approved mockup): a statement's own
-                        // subtotal lines render heavier with a top rule — the
-                        // hierarchy that makes ~38 rows in one statement legible.
-                        <tr key={row.definition.id} className={isSubtotalRow(row) ? "facts-matrix-subtotal" : undefined}>
-                          <th className="facts-matrix-kpi" scope="row">
-                            {localizedKpiLabel(row.definition, locale)}
-                          </th>
-                          {factMatrix.periods.map((period) => {
-                            const fact = row.cells[period.id];
-                            if (!fact) {
-                              return (
-                                <td key={period.id} className="facts-matrix-cell-empty">
-                                  <span aria-hidden="true">—</span>
-                                </td>
-                              );
-                            }
-                            return (
-                              <td key={period.id}>
-                                <button
-                                  aria-label={`${localizedKpiLabel(row.definition, locale)}, ${period.fiscalYear} ${period.periodType.toUpperCase()}`}
-                                  className={[
-                                    "facts-matrix-cell",
-                                    selectedFinancialFactId === fact.id ? "facts-matrix-cell-selected" : "",
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" ")}
-                                  onClick={() => selectFinancialFact(fact.id)}
-                                  type="button"
-                                >
-                                  {formatFinancialValue(
-                                    {
-                                      valueNumeric: fact.valueNumeric,
-                                      currency: fact.currency,
-                                      asReportedValue: fact.asReportedValue,
-                                      asReportedScale: fact.asReportedScale,
-                                      valueKind: row.definition.valueKind,
-                                      unit: row.definition.unit,
-                                      metricKey: row.definition.metricKey,
-                                    },
-                                    locale,
-                                  )}
-                                  {fact.annotation ? (
-                                    <span
-                                      className="fact-annotation-marker"
-                                      title={fact.annotation}
-                                      aria-label={`${text("Annotation")}: ${fact.annotation}`}
-                                    >
-                                      *
-                                    </span>
-                                  ) : null}
-                                  {fact.dataQuality !== "final" ? (
-                                    <span
-                                      className="fact-quality-marker"
-                                      title={factQualityLabel(fact.dataQuality, text)}
-                                      aria-label={`${text("Data quality")}: ${factQualityLabel(fact.dataQuality, text)}`}
-                                    >
-                                      ‡
-                                    </span>
-                                  ) : null}
-                                </button>
-                              </td>
-                            );
-                          })}
-                          <td className="facts-matrix-trend">
-                            <Sparkline
-                              values={seriesValuesFor(row)}
-                              ariaLabel={`${localizedKpiLabel(row.definition, locale)} ${text("trend")}`}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <EmptyState>{text("No positions match your search.")}</EmptyState>
-              )}
+              <FundamentalsFactsMatrix
+                text={text}
+                locale={locale}
+                visibleMatrixRows={visibleMatrixRows}
+                visibleFactPeriods={visibleFactPeriods}
+                factsScrollRef={factsScrollRef}
+                factsPeriodHeaderRef={factsPeriodHeaderRef}
+                factsPeriods={factsPeriods}
+                factsShowExpanderColumn={factsShowExpanderColumn}
+                selectedFinancialFactId={selectedFinancialFactId}
+                selectFinancialFact={selectFinancialFact}
+                seriesValuesFor={seriesValuesFor}
+              />
 
               {/* Source/completeness bar (epic #398): origin of the active statement's
                   latest-period facts, "N of M positions" filled, and the honest

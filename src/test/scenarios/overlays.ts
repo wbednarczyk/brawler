@@ -28,13 +28,14 @@ import {
   type CompanySpec,
 } from "./entities";
 import type { ScenarioData } from "./scenarios";
-import type { FinancialFact, KpiDefinition } from "../../api/financialsTypes";
+import type { FinancialFact, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
 
 export type ScenarioOverlayName =
   | "hostile-content"
   | "dense-history"
   | "partial-data"
   | "preliminary-fundamentals"
+  | "many-periods-fundamentals"
   | "stale-processing"
   | "conflicting-statuses"
   | "mixed-locale"
@@ -60,6 +61,7 @@ const HOSTILE_SPEC: CompanySpec = {
 const DENSE_SPEC: CompanySpec = { key: "dense", ticker: "ZZZD", name: "Dense History Test Sp. z o.o.", sector: "Technology" };
 const PARTIAL_SPEC: CompanySpec = { key: "partial", ticker: "ZZZP", name: "Partial Data Test S.A.", sector: "Financials" };
 const PRELIMINARY_SPEC: CompanySpec = { key: "preliminary", ticker: "ZZZQ", name: "Preliminary Fundamentals Test S.A.", sector: "Technology" };
+const MANY_PERIODS_SPEC: CompanySpec = { key: "manyperiods", ticker: "ZZZN", name: "Many Periods Test S.A.", sector: "Technology" };
 const STALE_SPEC: CompanySpec = { key: "stale", ticker: "ZZZS", name: "Stale Processing Test S.A.", sector: "Energy" };
 const MIXED_SPEC: CompanySpec = { key: "mixed", ticker: "ZZZM", name: "Mieszany Test Lokalizacji S.A.", sector: "Consumer Staples" };
 
@@ -202,6 +204,84 @@ function applyPreliminaryFundamentals(data: ScenarioData): ScenarioData {
     financialPeriods: [supersededPeriod, openPeriod, ...data.financialPeriods],
     kpiDefinitions: [definition, ...data.kpiDefinitions],
     financialFacts: [preliminaryOnly, supersedingFinal, supersededPreliminary, ...data.financialFacts],
+  };
+}
+
+/**
+ * Dogfooding wave 2026-09 (#6): a company with 14 annual periods — far more
+ * than fit at any width tier — so the facts-matrix / Pozycje × okresy
+ * period-expander column (useVisiblePeriods.ts) has something to collapse.
+ * The base "rich" scenario's companies carry only 2 periods each
+ * (entities.ts `makeFinancialPeriod` calls in scenarios.ts), never enough to
+ * exercise the collapsed state. `fundamentals-periods.spec.ts` is the sole
+ * consumer.
+ */
+function applyManyPeriodsFundamentals(data: ScenarioData): ScenarioData {
+  const company = makeCompany(MANY_PERIODS_SPEC);
+  const years = Array.from({ length: 14 }, (_, index) => 2013 + index);
+  const periods = years.map((year) => makeFinancialPeriod(MANY_PERIODS_SPEC, year));
+  const definition: KpiDefinition = {
+    id: "kpidef_overlay_many_periods_revenue",
+    scope: "global",
+    companyId: null,
+    sector: null,
+    metricKey: "revenue",
+    label: "Revenue",
+    valueKind: "monetary",
+    unit: "PLN",
+    computation: "reported",
+    formula: null,
+    displayFormat: null,
+    origin: "seed",
+    statementGroup: "other",
+    periodNature: "duration",
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
+  };
+  const facts: FinancialFact[] = periods.map((period, index) => ({
+    id: `fact_overlay_many_periods_${period.fiscalYear}`,
+    companyId: company.id,
+    periodId: period.id,
+    definitionId: definition.id,
+    metricKey: definition.metricKey,
+    valueNumeric: String(1_000_000_000 + index * 50_000_000),
+    currency: "PLN",
+    statementBasis: "consolidated",
+    attribution: "total",
+    variant: "reported",
+    measureWindow: "flow",
+    dataQuality: "final",
+    asReportedValue: null,
+    asReportedScale: null,
+    reportingStandard: "IFRS",
+    extractionMethod: "esef",
+    confidence: null,
+    confirmationState: "confirmed",
+    supersedesId: null,
+    sourceDocumentRef: null,
+    annotation: null,
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
+  }));
+  const relevance: KpiRelevance = {
+    id: "kpi_rel_overlay_many_periods",
+    companyId: company.id,
+    definitionId: definition.id,
+    status: "active",
+    source: "seed",
+    rank: "primary",
+    firstSeenPeriod: periods[0].id,
+    lastSeenPeriod: periods[periods.length - 1].id,
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
+  };
+  return {
+    ...data,
+    companies: [company, ...data.companies],
+    financialPeriods: [...periods, ...data.financialPeriods],
+    financialFacts: [...facts, ...data.financialFacts],
+    kpiDefinitions: [definition, ...data.kpiDefinitions],
+    kpiRelevance: [relevance, ...data.kpiRelevance],
   };
 }
 
@@ -829,6 +909,7 @@ function applyJobFailedEvent(data: ScenarioData): ScenarioData {
 const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData> = {
   "partial-data": applyPartialData,
   "preliminary-fundamentals": applyPreliminaryFundamentals,
+  "many-periods-fundamentals": applyManyPeriodsFundamentals,
   "stale-processing": applyStaleProcessing,
   "conflicting-statuses": applyConflictingStatuses,
   "hostile-content": applyHostileContent,
@@ -855,6 +936,7 @@ const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData
 export const SCENARIO_OVERLAY_NAMES: readonly ScenarioOverlayName[] = [
   "partial-data",
   "preliminary-fundamentals",
+  "many-periods-fundamentals",
   "stale-processing",
   "conflicting-statuses",
   "hostile-content",

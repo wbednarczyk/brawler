@@ -11,6 +11,28 @@ import type { KpiComparison } from "../../api/comparison";
 import { listFactProvenance } from "../../api/fundamentalsExtraction";
 import type { FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
 import { buildScenario } from "../../test/scenarios/scenarios";
+import { useVisiblePeriods } from "./useVisiblePeriods";
+
+// Period-expander column (dogfooding #6): jsdom measures every DOM node's
+// width as 0, which would collapse the REAL hook's capacity to 1 in every
+// test below and hide periods none of them are testing for. Mock it so the
+// default behavior matches the panel's pre-#6 rendering (every period
+// visible, no expander column) — the dedicated "period-expander column"
+// describe block below overrides this per test for the capacity-3 scenario.
+vi.mock("./useVisiblePeriods", async () => {
+  const actual = await vi.importActual<typeof import("./useVisiblePeriods")>("./useVisiblePeriods");
+  return { ...actual, useVisiblePeriods: vi.fn() };
+});
+
+beforeEach(() => {
+  vi.mocked(useVisiblePeriods).mockImplementation(({ total }) => ({
+    visibleStart: 0,
+    visibleCount: total,
+    hiddenCount: 0,
+    expanded: false,
+    toggle: vi.fn(),
+  }));
+});
 
 // The Autopilot / custom-KPI child fields load state via the mocked `invoke`
 // on mount (out of scope here); stub them so the render exercises only the
@@ -875,5 +897,109 @@ describe("FundamentalsPanel primary action (sol R1 finding 9)", () => {
       "primary",
     );
     expect(screen.queryByRole("button", { name: /Add fact/ })).not.toBeInTheDocument();
+  });
+});
+
+// Period-expander column (dogfooding wave 2026-09, #6): a mocked capacity of
+// 3 (real measurement is browser-only — fundamentals-periods.spec.ts) drives
+// the facts matrix down to its own newest-N-visible + column-control
+// behavior. The mock's `toggle` is a real `useState` setter (not a `vi.fn()`
+// stub) so expand/collapse renders exactly as the real hook would.
+describe("FundamentalsPanel period-expander column (dogfooding #6)", () => {
+  function periodsRange(count: number, startYear: number): FinancialPeriod[] {
+    return Array.from({ length: count }, (_, index) => period(`p_${startYear + index}`, startYear + index));
+  }
+
+  const twelvePeriods = periodsRange(12, 2013);
+  const facts12 = twelvePeriods.map((p) => fact(`f_${p.id}`, "def_revenue", p.id));
+  const expanderProps = {
+    ...panelProps,
+    financialPeriods: twelvePeriods,
+    financialFacts: facts12,
+    kpiDefinitions: [kpiDef("def_revenue", "revenue", "monetary")],
+    kpiRelevance: [keyRelevance("def_revenue")],
+  };
+
+  beforeEach(() => {
+    vi.mocked(getKpiComparison).mockResolvedValue({
+      granularity: "annual",
+      metricKeys: [],
+      axis: [],
+      series: [],
+    });
+    vi.mocked(useVisiblePeriods).mockImplementation(({ total }) => {
+      const [expanded, setExpanded] = useState(false);
+      const capacity = 3;
+      const visibleCount = expanded ? total : Math.min(capacity, total);
+      return {
+        visibleStart: Math.max(0, total - visibleCount),
+        visibleCount,
+        hiddenCount: Math.max(0, total - visibleCount),
+        expanded,
+        toggle: () => setExpanded((value) => !value),
+      };
+    });
+  });
+
+  it("shows only the 3 newest periods, with the column named for the hidden count", async () => {
+    render(<FundamentalsPanel {...expanderProps} />);
+
+    expect(await screen.findByRole("button", { name: /revenue, 2024 ANNUAL/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /revenue, 2023 ANNUAL/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /revenue, 2022 ANNUAL/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /revenue, 2021 ANNUAL/i })).toBeNull();
+
+    expect(screen.getByRole("button", { name: "Expand 9 earlier periods" })).toBeInTheDocument();
+    expect(screen.getByText("Expand earlier")).toBeInTheDocument();
+    // The KPI header's accessible name is unchanged by the expander column.
+    expect(screen.getByRole("columnheader", { name: "KPI" })).toBeInTheDocument();
+  });
+
+  it("expands on click, shows every period, and scrolls the matrix to the right edge (none on mount)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<FundamentalsPanel {...expanderProps} />);
+
+    const scroller = container.querySelector(".facts-matrix-scroll") as HTMLElement;
+    Object.defineProperty(scroller, "scrollWidth", { value: 999, configurable: true });
+    let scrollLeftValue = 0;
+    Object.defineProperty(scroller, "scrollLeft", {
+      get: () => scrollLeftValue,
+      set: (value) => {
+        scrollLeftValue = value;
+      },
+      configurable: true,
+    });
+
+    const expander = await screen.findByRole("button", { name: "Expand 9 earlier periods" });
+    expect(scrollLeftValue, "no scroll on mount").toBe(0);
+
+    await user.click(expander);
+
+    expect(await screen.findByRole("button", { name: "Collapse earlier" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /revenue, 2013 ANNUAL/i })).toBeInTheDocument();
+    expect(scrollLeftValue, "scrolled to the right edge on expand").toBe(999);
+  });
+
+  it("activates the column control with Enter", async () => {
+    const user = userEvent.setup();
+    render(<FundamentalsPanel {...expanderProps} />);
+
+    const expander = await screen.findByRole("button", { name: "Expand 9 earlier periods" });
+    expander.focus();
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("button", { name: "Collapse earlier" })).toBeInTheDocument();
+  });
+
+  it("renders no expander column when nothing is hidden", async () => {
+    const fitsProps = {
+      ...expanderProps,
+      financialPeriods: twelvePeriods.slice(0, 3),
+      financialFacts: facts12.slice(0, 3),
+    };
+    render(<FundamentalsPanel {...fitsProps} />);
+
+    await screen.findByRole("button", { name: /revenue, 2015 ANNUAL/i });
+    expect(screen.queryByRole("button", { name: /earlier periods/ })).toBeNull();
   });
 });
