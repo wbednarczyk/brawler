@@ -198,10 +198,8 @@
   text-align: left;
 }
 
-/* Zebra striping (dogfooding #13, storyboard `tbody tr:nth-child(even) > *`
-   formula): alternate body rows get a token tint so rows are easier to tell
-   apart. The threaded cell's dotted border (above) stays visible on top —
-   it's a border, independent of the row's background. */
+/* Zebra rows (ADR 0104 amendment 2026-09); the thread cell's dotted border
+   stays visible on the tinted row. */
 .spolka-kpi-table tbody tr:nth-child(even) > * {
   background: color-mix(in srgb, var(--surface-raised) 55%, var(--surface));
 }
@@ -214,9 +212,8 @@
   padding-bottom: var(--space-0);
 }
 
-/* The ONE provenance action (dogfooding #1b): the thread cell's figure IS a
-   button — bare, inheriting the table's own typography/alignment, never
-   looking like a generic control until hovered/focused. */
+/* The one provenance action (ADR 0104 dec. 7): the thread cell's figure is a
+   bare button inheriting the table's typography. */
 .spolka-kpi-thread-button {
   border: none;
   background: none;
@@ -228,9 +225,7 @@
   text-align: inherit;
 }
 
-/* Hover/focus on the thread button OR the footer ticket lights the PAIR
-   (`data-thread-hot` on the card, ADR 0104 dec. 7 wording: "hover/focus
-   highlights the pair") — the global focus ring stays untouched. */
+/* Hover/focus on either side lights the pair (ADR 0104 dec. 7). */
 .spolka-kpi[data-thread-hot="true"] .spolka-kpi-thread {
   border-bottom-color: var(--primary);
 }
@@ -259,10 +254,7 @@
   border-radius: 4px;
   padding: var(--space-0) var(--space-2);
   min-height: 0;
-  /* Non-interactive (dogfooding #1b — the thread button is the only control
-     that opens the source), but the pointer cursor still hints "this pairs
-     with the thread cell above" (the whole cluster is one provenance
-     action). */
+  /* Static twin of the thread button; the cursor still says "one action". */
   cursor: pointer;
 }
 
@@ -439,17 +431,10 @@
   align-items: flex-start;
 }
 
-/* Header layout (dogfooding #2, ADR 0107 amendment): `identity · picker ·
-   actions` — the base `.ui-panel-header` is flex `space-between` (ui.css),
-   so this OVERRIDES it to a 3-column grid scoped to Spółka only. The
-   `.ui-panel-header-actions` wrapper (the ONLY other slot `PanelHeader`
-   exposes) is unwrapped via `display: contents` so its child — the company
-   picker, the sole occupant of `actions` today — becomes a direct grid item
-   and lands in the middle column via normal flow (identity is the first
-   child, column 1; the picker is the second, column 2). The empty third
-   column still reserves an equal `1fr` share, which is what actually keeps
-   the picker centred regardless of the identity block's width (both `1fr`
-   tracks size equally, independent of their content). */
+/* Header anatomy (ADR 0107): `identity · picker · actions` on a 3-column
+   grid; the equal outer `1fr` tracks keep the picker centred regardless of
+   the identity's width. `.ui-panel-header-actions` is unwrapped
+   (`display: contents`) so the picker is a direct grid item. */
 .ui-panel-header.spolka-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -467,65 +452,17 @@
   width: min(320px, 100%);
 }
 
-/* Single column below the S tier (`@container pane`, the codebase-wide S
-   breakpoint — companies.css/claims.css/notebook-shared.css all key off the
-   same 419px; resolves against `.workspace`'s size container, since
-   `PanelHeader` sits outside `.spolka-layout`'s own `pane` container). */
+/* Single column below the S tier (resolves against `.workspace`'s container;
+   `PanelHeader` sits outside `.spolka-layout`). */
 @container pane (max-width: 419px) {
   .ui-panel-header.spolka-header {
     grid-template-columns: 1fr;
   }
 
   .spolka-header .ui-combobox {
-    /* The default layout's unconditional `grid-column: 2` (below) would
-       otherwise force an IMPLICIT second column here even though the parent
-       now defines only one explicit track — `grid-column: auto` lets it flow
-       into that single column like every other row. */
+    /* `grid-column: 2` above would force an implicit second column. */
     grid-column: auto;
     justify-self: stretch;
     width: 100%;
   }
-}
-
-/* The company picker's popup listbox (`ComboboxField`, dogfooding #3) — the
-   ONLY consumer of `.ui-combobox*` today, so its floating skin lives here;
-   `GlobalSearch`'s migration onto the same primitive (tracked follow-up) is
-   the natural point to promote it to a shared sheet. Styled like the ⌘K
-   palette's own list (`command-palette.css`). */
-.ui-combobox-anchor {
-  position: relative;
-}
-
-.ui-combobox-listbox {
-  position: absolute;
-  top: calc(100% + var(--space-1));
-  left: 0;
-  right: 0;
-  z-index: 20;
-  list-style: none;
-  margin: 0;
-  padding: var(--space-1);
-  max-height: 20rem;
-  overflow: auto;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px color-mix(in srgb, black 30%, transparent);
-}
-
-.ui-combobox-option {
-  padding: var(--space-2) var(--space-3);
-  border-radius: 6px;
-  cursor: pointer;
-  color: var(--text);
-}
-
-.ui-combobox-option[aria-selected="true"],
-.ui-combobox-option:hover {
-  background: color-mix(in srgb, var(--primary) 16%, transparent);
-}
-
-.ui-combobox-empty {
-  color: var(--muted);
-  padding: var(--space-2) var(--space-3);
 }

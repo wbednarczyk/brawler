@@ -1,20 +1,9 @@
 import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
 
-// Headless APG combobox+listbox controller (dogfooding wave 2026-09, #3):
-// query/open/active-option state, filtering, and keyboard navigation shared
-// by every typed-filter picker in the app. TWO consumers land in this wave —
-// the Spółka header company picker (`ComboboxField`) and the ⌘K palette
-// (`CommandPalette.tsx`, which keeps its own markup but drives it off this
-// same hook) — so behavior lives here once instead of drifting per call site.
-//
-// Escape is host-specific (a picker vs. a modal-hosted palette resolve it
-// differently), so the HOST supplies `escapePolicy`: given the current
-// {query, isOpen}, it names the action to take. When the policy resolves to
-// anything but "bubble" the controller consumes the event
-// (`preventDefault()` + `stopPropagation()`, the `SearchField.tsx` idiom) so
-// it never also reaches an ancestor's own Escape handler (the Spółka tool
-// frame, `Modal`'s own listener). "bubble" touches the event at all — the
-// host (or nothing) decides what Escape means from there.
+// Headless APG combobox + listbox controller shared by every typed-filter
+// picker (`ComboboxField`, the command palette). Escape is host-specific: the
+// host's `escapePolicy` names the action; anything but "bubble" consumes the
+// event (`preventDefault` + `stopPropagation`) so no ancestor handles it too.
 
 export type ComboboxEscapeAction = "close-list" | "clear" | "bubble" | "close-host";
 
@@ -55,10 +44,7 @@ export function useComboboxListbox<T>({
 
   const activeIndex = activeId === null ? -1 : filtered.findIndex((option) => getId(option) === activeId);
 
-  // Active-option reset/clamp (plan § S2 item 1): the previously active
-  // option fell out of the filtered/live set (a keystroke narrowed the list,
-  // or the host removed/reordered its options) — land on the first entry
-  // rather than keep pointing at a vanished id.
+  // The active option fell out of the filtered set → land on the first entry.
   useEffect(() => {
     if (filtered.length === 0) {
       if (activeId !== null) setActiveId(null);
@@ -132,7 +118,6 @@ export function useComboboxListbox<T>({
     "aria-controls": listId,
     "aria-activedescendant": isOpen && activeOption ? optionId(activeOption) : undefined,
     value: query,
-    onFocus: () => setIsOpen(true),
     onKeyDown: handleKeyDown,
   };
 

@@ -13,14 +13,9 @@ function mergeRefs<T>(...refs: Array<Ref<T> | undefined>): (node: T | null) => v
   };
 }
 
-// A labelled type-ahead combobox (dogfooding wave 2026-09, #3): APG
-// combobox + listbox, driven by the shared `useComboboxListbox` controller
-// (the SAME controller the ⌘K palette uses). Structure only, reusing the
-// existing generic `.ui-text-field`/`.ui-text-input` shell (ui.css) for the
-// input — the popup listbox's own floating position/skin currently lives in
-// `spolka.css` (its only consumer today, the Spółka company picker);
-// GlobalSearch's migration onto this primitive (tracked follow-up) is the
-// natural point to promote that CSS into the shared sheet.
+// A labelled type-ahead combobox (APG combobox + listbox) on the
+// `useComboboxListbox` controller; skin: `.ui-text-input` + `.ui-combobox-*`
+// (ui.css).
 export type ComboboxFieldProps<T> = {
   label: ReactNode;
   className?: string;
@@ -34,13 +29,9 @@ export type ComboboxFieldProps<T> = {
   displayValue: string;
   onSelect: (option: T) => void;
   escapePolicy: (state: ComboboxEscapeState) => ComboboxEscapeAction;
-  /** Called when the controller's `escapePolicy` resolves "bubble" for an
-   * Escape keydown — i.e. the controller touched neither the event nor its
-   * own state, and the HOST decides what happens next (the company picker's
-   * "closed + empty" state, plan § S2 item 2: returns to the workshop tool
-   * frame's Overview). Detected generically off `!event.defaultPrevented`
-   * after the controller's own handler ran, so this needs no coupling to
-   * `escapePolicy`'s specific action names. */
+  /** Called for an Escape the controller left unconsumed ("bubble") — the
+   * host decides what it means (the field is not a DOM descendant of the
+   * host's own Escape scope). */
   onEscapeBubble?: () => void;
   placeholder?: string;
 };
@@ -67,11 +58,8 @@ function ComboboxFieldInner<T>(
   const inputRef = useRef<HTMLInputElement>(null);
   const controller = useComboboxListbox({ options, getId, filter, onSelect, escapePolicy });
 
-  // Storyboard frame 1 feedback: "po Enter — focus lands on the tool
-  // heading/Overview" — blurring here (not left on stale typed text) hands
-  // focus to <body>, which the existing "none" focus-intent fallback
-  // (`focusScreenHeadingIfBody`) already picks up for a plain company
-  // switch (`useSpolkaNavigate`) — no new focus plumbing needed.
+  // Blur after a selection: focus lands on <body>, which the "none" focus
+  // intent fallback (`focusScreenHeadingIfBody`) routes to the screen heading.
   function selectAndBlur(option: T) {
     controller.select(option);
     inputRef.current?.blur();
@@ -89,23 +77,14 @@ function ComboboxFieldInner<T>(
           value={focused ? controller.query : displayValue}
           onChange={(event) => controller.setQuery(event.target.value)}
           onKeyDown={(event) => {
-            // The hook's own handler already runs the Enter → select() path
-            // (it owns activeOption); this only adds the post-selection blur
-            // (see `selectAndBlur` above) without re-selecting.
             controller.inputProps.onKeyDown(event);
             if (event.key === "Enter") inputRef.current?.blur();
             if (event.key === "Escape" && !event.defaultPrevented) onEscapeBubble?.();
           }}
           onFocus={() => setFocused(true)}
-          // Opens on CLICK (storyboard frame 2: "click the field → the list
-          // [appears]"), not on every focus: a `.focus()` that lands here
-          // programmatically (Shift+J/K's "company" focus intent) must NOT
-          // pop the list open — besides being noisy for a keyboard user who
-          // hasn't asked for it, an open list with an `aria-activedescendant`
-          // changes this field's OWN accessible name (accname step 2H folds
-          // the active option's text into it), which breaks "focused but
-          // otherwise untouched" as a stable state. A keyboard user can still
-          // reach the list with ArrowDown (the controller's own handler).
+          // Opens on click, never on focus: a programmatic focus (Shift+J/K)
+          // must not pop the list, and an open list's activedescendant folds
+          // into the field's accessible name. ArrowDown opens it by keyboard.
           onClick={() => controller.open()}
           onBlur={() => {
             setFocused(false);
@@ -113,10 +92,8 @@ function ComboboxFieldInner<T>(
           }}
         />
         {controller.isOpen ? (
-          // Keeps the input focused through a mouse selection (the standard
-          // combobox pattern) — without this, the mousedown's default focus
-          // shift blurs the input before the click's onClick ever fires,
-          // which would unmount this list before the selection registers.
+          // Keep the input focused through a mouse selection (mousedown would
+          // blur it and unmount the list before click fires).
           <ul {...controller.listboxProps} className="ui-combobox-listbox" onMouseDown={(event) => event.preventDefault()}>
             {controller.filtered.length === 0 ? (
               <li className="ui-combobox-empty">{text("No matches")}</li>

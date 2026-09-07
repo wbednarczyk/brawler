@@ -2004,7 +2004,6 @@ export const plText: Record<string, string> = {
   "PLN million · consolidated": "mln PLN · skonsolidowane",
   "Line item": "Pozycja",
   "y/y": "r/r",
-  "Open source document": "Otwórz dokument źródłowy",
   "Every figure leads to its source": "Każda liczba prowadzi do źródła",
   "Couldn't load the KPI table. The rest of the view is up to date.":
     "Nie udało się wczytać tabeli KPI. Reszta widoku jest aktualna.",

@@ -25,15 +25,9 @@ import {
 import type { FocusIntent } from "./ToolHost";
 import type { Tool } from "./route";
 
-// GENUINELY native popups whose OWN Escape closes their popup — the frame's
-// Escape-to-close must not also fire underneath them (plan § Design 2).
-// `[role=listbox]`/`[role=combobox]` were dropped here (dogfooding wave
-// 2026-09, #3): a composite widget that wants to consume its own Escape now
-// does so explicitly (`preventDefault()` — `useComboboxListbox`'s
-// controller, `SearchField`'s own idiom), which this frame already honours
-// below (`event.defaultPrevented`) — a blanket selector exemption was
-// redundant AND wrong (it exempted a CLOSED combobox too, which should hand
-// Escape on to the frame).
+// Native popups whose OWN Escape closes them — the frame's Escape-to-close
+// must not also fire underneath. Composite widgets (combobox) consume their
+// Escape via `preventDefault`, honoured below.
 const NATIVE_PICKER_SELECTOR =
   "select, input[type=date], input[type=time], input[type=datetime-local], input[type=month], input[type=week]";
 

@@ -133,9 +133,7 @@ export function SpolkaScreen({
   const bodyScrollRef = useRef<HTMLDivElement>(null);
   const lastCoreScrollTopRef = useRef(0);
   // The header company picker (F3c S1, plan § Design 3) — the "company"
-  // focus intent's target after a Shift+J/K company switch. An
-  // `HTMLInputElement` since dogfooding #3 (a `ComboboxField`, not a plain
-  // `<select>`).
+  // focus intent's target after a Shift+J/K company switch.
   const companyPickerRef = useRef<HTMLInputElement>(null);
 
   // A tool only belongs to THIS render if it was opened for THIS company — a
@@ -191,12 +189,8 @@ export function SpolkaScreen({
     spolkaTool.closeTool("overview");
   }
 
-  // Company picker Escape contract (dogfooding #3, plan § S2 item 2): list
-  // open → close the list; closed + non-empty query → clear it; closed +
-  // empty → "bubble" (the controller touches nothing) — `onEscapeBubble`
-  // below then closes the open tool back to Overview, the SAME `closeTool`
-  // used everywhere else (so a dirty tool still asks stay/discard; a
-  // no-tool state just re-focuses the Overview entry, harmlessly).
+  // Picker Escape (ADR 0107): open list → close; non-empty → clear; empty →
+  // bubble to the tool frame (`onEscapeBubble` → Overview, dirty-guarded).
   function companyPickerEscapePolicy({ query, isOpen }: ComboboxEscapeState): ComboboxEscapeAction {
     if (isOpen) return "close-list";
     if (query.trim() !== "") return "clear";

@@ -476,8 +476,9 @@ describe("Spółka atomic company transitions (sol R1 finding 3)", () => {
     await user.click(within(nav).getByRole("button", { name: "KGH" }));
     const spolka = await screen.findByRole("region", { name: "Company view" });
 
-    const ticket = await within(spolka).findByRole("button", { name: "Open source document" });
-    const ticketRef = ticket.textContent;
+    const ticket = await within(spolka).findByRole("button", { name: /^Open source:/ });
+    const ticketRef = spolka.querySelector(".spolka-provenance-ticket")?.textContent;
+    expect(ticketRef).toBeTruthy();
     await user.click(ticket);
 
     const tool = await within(spolka).findByRole("group", { name: "Workshop tool" });

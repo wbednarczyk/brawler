@@ -47,10 +47,8 @@ export type CoreKpiTableProps = {
 // SAME cell carries the dotted provenance thread (ADR 0104 dec. 7).
 export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExternalUrl }: CoreKpiTableProps) {
   const { text, locale } = useLocale();
-  // The provenance thread + its footer ticket light up together on hover/focus
-  // of EITHER (dogfooding #1b, ADR 0104 dec. 7 wording: "one provenance
-  // action with one focus target and one accessible name") — a single piece
-  // of state on the card, flipped by both sides.
+  // Hover/focus on the thread button or the ticket lights the pair (ADR 0104
+  // dec. 7).
   const [threadHot, setThreadHot] = useState(false);
 
   const newestCell = (() => {
@@ -113,10 +111,8 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExt
                             locale,
                           );
                     if (isThreadCell && newestTicket) {
-                      // The ONE provenance action (dogfooding #1b): the
-                      // threaded cell holds the only interactive control that
-                      // opens the source — the footer ticket below is its
-                      // non-interactive twin.
+                      // The one provenance action (ADR 0104 dec. 7); the
+                      // footer ticket is its static twin.
                       const sourceLabel = isExternalUrl(newestTicket) ? humanSourceLabel(newestTicket) : newestTicket;
                       const openSourceLabel = text("Open source: {metric} · {period} · {source}")
                         .replace("{metric}", metricLabel)
@@ -159,10 +155,7 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExt
           </table>
           <div className="spolka-kpi-footer">
             {newestTicket ? (
-              // The thread cell's button (above) is the ONLY control that
-              // opens the source — this is its non-interactive twin (the
-              // `ProvenanceFigure` "static span when no handler" idiom):
-              // hovering it still lights the pair via `threadHot`.
+              // Static twin of the thread button (ADR 0104 dec. 7).
               <span
                 className="spolka-provenance-ticket"
                 onMouseEnter={() => setThreadHot(true)}

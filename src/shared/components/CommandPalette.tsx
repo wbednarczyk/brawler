@@ -44,13 +44,8 @@ export function CommandPalette({
     });
   }
 
-  // Driven by the SAME headless controller the Spółka company picker uses
-  // (dogfooding wave 2026-09, #3) — command execution, the Modal's own
-  // lifecycle, the empty state and this file's CSS stay palette-specific;
-  // filtering/keyboard-nav/activedescendant live in the shared hook. Policy
-  // "close-host": ONE Escape always closes the modal and restores the
-  // invoker — never a closed-list-but-open-modal state (the palette has no
-  // "closed list" state of its own to begin with).
+  // Shared combobox controller; "close-host": one Escape closes the modal and
+  // restores the invoker (never a closed-list-but-open-modal state).
   const controller = useComboboxListbox({
     options: commands,
     getId: (command) => command.id,
@@ -60,10 +55,7 @@ export function CommandPalette({
     onCloseHost: onClose,
   });
 
-  // Reset to a blank, first-option-active, open list on every open (matches
-  // the previous `setQuery("")`/`setActive(0)` reset) — `CommandPalette`
-  // itself stays mounted across opens (only `Modal`'s own render toggles),
-  // so the controller's state would otherwise carry over from the last use.
+  // The palette stays mounted across opens — reset the controller each time.
   useEffect(() => {
     if (open) {
       controller.reset();
