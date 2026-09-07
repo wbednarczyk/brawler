@@ -40,6 +40,9 @@ describe("periodsMeasureKey", () => {
     const edited = structuredClone(comparison) as KpiComparison;
     edited.series[0].cells[0].value = "1234000000000";
     expect(periodsMeasureKey({ locale: "pl", granularity: "annual", comparison: edited })).not.toBe(key);
+    const shifted = structuredClone(comparison) as KpiComparison;
+    shifted.series[0].cells[0].deltaYoY = "+1234.5";
+    expect(periodsMeasureKey({ locale: "pl", granularity: "annual", comparison: shifted })).not.toBe(key);
     const flagged = structuredClone(comparison) as KpiComparison;
     (flagged.series[0].cells[0].flags as string[]).push("no_fact");
     expect(periodsMeasureKey({ locale: "pl", granularity: "annual", comparison: flagged })).not.toBe(key);
