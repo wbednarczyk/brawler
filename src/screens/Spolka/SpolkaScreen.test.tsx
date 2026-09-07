@@ -467,7 +467,11 @@ describe("SpolkaScreen", () => {
     getCompanyViewMock.mockResolvedValue(fullView());
     const onOpenDocument = vi.fn();
     renderScreen({ onOpenDocument });
-    await user.click(await screen.findByRole("button", { name: "Open source document" }));
+    // dogfooding #1b: the threaded cell IS the button now — the footer ticket
+    // is its non-interactive twin.
+    await user.click(
+      await screen.findByRole("button", { name: "Open source: Revenue · 2026 · Raport roczny 2026 · s. 44" }),
+    );
     expect(onOpenDocument).toHaveBeenCalledWith("Raport roczny 2026 · s. 44");
   });
 

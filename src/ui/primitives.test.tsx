@@ -3,7 +3,7 @@ import { createRef, type ReactElement } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { ActionButton, Button, CandlestickChart, Checkbox, DateField, EmptyState, ErrorText, ExpandableRow, Figure, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SearchField, SectionHeader, SegmentedControl, SegmentedControlOption, StatusChip, StatusPill, TextareaField } from "./index";
+import { ActionButton, Button, CandlestickChart, Checkbox, ComboboxField, DateField, EmptyState, ErrorText, ExpandableRow, Figure, FilterToolbar, Hint, ListRow, PanelHeader, ProvenanceFigure, RangeBarChart, SearchField, SectionHeader, SegmentedControl, SegmentedControlOption, StatusChip, StatusPill, TextareaField } from "./index";
 import { PrimitiveGallery } from "./PrimitiveGallery";
 
 // ADR 0081 Q4: Button emits stable data-ui-button-variant metadata so scoped
@@ -318,6 +318,85 @@ describe("SearchField", () => {
     );
     fireEvent.keyDown(screen.getByLabelText("Search"), { key: "ArrowDown" });
     expect(onKeyDown).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Dogfooding wave 2026-09, #3: the labelled input + listbox shell over
+// `useComboboxListbox` (behavior pinned in `useComboboxListbox.test.tsx`;
+// the axe smoke test over the whole gallery, `primitives.a11y.test.tsx`,
+// covers this once it's in `PrimitiveGallery`).
+describe("ComboboxField", () => {
+  type GalleryOption = { id: string; label: string };
+  const COMBOBOX_OPTIONS: GalleryOption[] = [
+    { id: "a", label: "Alpha" },
+    { id: "b", label: "Beta" },
+  ];
+  function comboboxFilter(option: GalleryOption, query: string) {
+    return option.label.toLowerCase().includes(query.toLowerCase());
+  }
+
+  it("renders a labelled combobox input showing the display value when unfocused", () => {
+    render(
+      <ComboboxField
+        label="Company"
+        options={COMBOBOX_OPTIONS}
+        getId={(o) => o.id}
+        getLabel={(o) => o.label}
+        filter={comboboxFilter}
+        displayValue="Alpha"
+        onSelect={vi.fn()}
+        escapePolicy={() => "bubble"}
+      />,
+    );
+    const input = screen.getByRole("combobox", { name: "Company" });
+    expect(input).toHaveValue("Alpha");
+  });
+
+  it("clicking opens the list; typing filters it; clicking an option calls onSelect", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(
+      <ComboboxField
+        label="Company"
+        options={COMBOBOX_OPTIONS}
+        getId={(o) => o.id}
+        getLabel={(o) => o.label}
+        filter={comboboxFilter}
+        displayValue="Alpha"
+        onSelect={onSelect}
+        escapePolicy={() => "bubble"}
+      />,
+    );
+    const input = screen.getByRole("combobox", { name: "Company" });
+    await user.click(input);
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+
+    await user.type(input, "be");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    await user.click(screen.getByRole("option", { name: "Beta" }));
+    expect(onSelect).toHaveBeenCalledWith(COMBOBOX_OPTIONS[1]);
+  });
+
+  it("an unconsumed Escape (closed, empty query) calls onEscapeBubble", () => {
+    const onEscapeBubble = vi.fn();
+    render(
+      <ComboboxField
+        label="Company"
+        options={COMBOBOX_OPTIONS}
+        getId={(o) => o.id}
+        getLabel={(o) => o.label}
+        filter={comboboxFilter}
+        displayValue="Alpha"
+        onSelect={vi.fn()}
+        escapePolicy={() => "bubble"}
+        onEscapeBubble={onEscapeBubble}
+      />,
+    );
+    const event = fireEvent.keyDown(screen.getByRole("combobox", { name: "Company" }), { key: "Escape" });
+    expect(onEscapeBubble).toHaveBeenCalledTimes(1);
+    // `event` false ⇒ `preventDefault()` was called; "bubble" must consume
+    // nothing, so the raw keydown stays unprevented.
+    expect(event).toBe(true);
   });
 });
 

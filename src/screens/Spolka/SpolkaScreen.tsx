@@ -8,7 +8,20 @@ import { useLocale } from "../../shared/locale";
 import { CALENDAR_EVENT_FORMS, CLAIM_FORMS, SIGNAL_FORMS, pluralNoun } from "../../shared/locale/plural";
 import { deltaToneClass, formatFinancialValue } from "../../shared/format/financialValue";
 import { formatLocalIsoDate } from "../../shared/format/datetime";
-import { Button, CandlestickChart, DenseRow, EmptyState, ErrorText, PanelHeader, SectionHeader, SelectField, Skeleton, StatusChip } from "../../ui";
+import {
+  Button,
+  CandlestickChart,
+  ComboboxField,
+  DenseRow,
+  EmptyState,
+  ErrorText,
+  PanelHeader,
+  SectionHeader,
+  Skeleton,
+  StatusChip,
+  type ComboboxEscapeState,
+  type ComboboxEscapeAction,
+} from "../../ui";
 import { focusScreenHeadingIfBody } from "../../shared/focus/focusScreenHeading";
 import { useRovingToolbar, type RovingToolbarItemProps } from "../../shared/focus/useRovingToolbar";
 import { TickerLabel } from "../../shared/components/TickerLabel";
@@ -47,6 +60,28 @@ export const SPOLKA_TOOL_COMMANDS: ReadonlyArray<{ tool: Tool | null; label: str
   { tool: { t: "dokumenty" }, label: "Open documents", actionKey: "tool.open.dokumenty" },
   { tool: { t: "wydarzenia" }, label: "Open events", actionKey: "tool.open.wydarzenia" },
 ];
+
+// Company picker (dogfooding #3): filter by ticker or name, case- AND
+// diacritics-insensitive ("xt" matches "XTB", a Polish name with diacritics
+// matches its plain-ASCII typed form too).
+function foldDiacritics(value: string): string {
+  // NFD decomposes e.g. "ó" into "o" + a combining acute (U+0300–U+036F);
+  // stripping that range folds it to plain "o" ("ł" has no combining form,
+  // so it stays "ł" — an accepted limitation of this simple fold).
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase();
+}
+
+function companyPickerLabel(company: Company): string {
+  return `${company.qualifiedTicker} · ${company.displayName}`;
+}
+
+function companyPickerFilter(company: Company, query: string): boolean {
+  const needle = foldDiacritics(query);
+  return foldDiacritics(company.qualifiedTicker).includes(needle) || foldDiacritics(company.displayName).includes(needle);
+}
 
 export type SpolkaScreenProps = {
   companyId: string;
@@ -98,8 +133,10 @@ export function SpolkaScreen({
   const bodyScrollRef = useRef<HTMLDivElement>(null);
   const lastCoreScrollTopRef = useRef(0);
   // The header company picker (F3c S1, plan § Design 3) — the "company"
-  // focus intent's target after a Shift+J/K company switch.
-  const companyPickerRef = useRef<HTMLSelectElement>(null);
+  // focus intent's target after a Shift+J/K company switch. An
+  // `HTMLInputElement` since dogfooding #3 (a `ComboboxField`, not a plain
+  // `<select>`).
+  const companyPickerRef = useRef<HTMLInputElement>(null);
 
   // A tool only belongs to THIS render if it was opened for THIS company — a
   // late `get_company_view` response, or a tool left open from a prior
@@ -154,6 +191,18 @@ export function SpolkaScreen({
     spolkaTool.closeTool("overview");
   }
 
+  // Company picker Escape contract (dogfooding #3, plan § S2 item 2): list
+  // open → close the list; closed + non-empty query → clear it; closed +
+  // empty → "bubble" (the controller touches nothing) — `onEscapeBubble`
+  // below then closes the open tool back to Overview, the SAME `closeTool`
+  // used everywhere else (so a dirty tool still asks stay/discard; a
+  // no-tool state just re-focuses the Overview entry, harmlessly).
+  function companyPickerEscapePolicy({ query, isOpen }: ComboboxEscapeState): ComboboxEscapeAction {
+    if (isOpen) return "close-list";
+    if (query.trim() !== "") return "clear";
+    return "bubble";
+  }
+
   function openTool(tool: Tool) {
     // Capture the core's scroll position at the moment it's about to be
     // hidden — jsdom (and the "set scrollTop directly" test scenario) does
@@ -180,6 +229,7 @@ export function SpolkaScreen({
   return (
     <section className="feed-panel spolka-screen" role="region" aria-label={text("Company view")} data-company-id={companyId}>
       <PanelHeader
+        className="spolka-header"
         title={company.displayName}
         titleId="spolka-title"
         description={
@@ -190,18 +240,18 @@ export function SpolkaScreen({
         }
         actions={
           companies.length > 1 ? (
-            <SelectField
+            <ComboboxField
               ref={companyPickerRef}
               label={text("Company")}
-              value={companyId}
-              onChange={(event) => onSwitchCompany(event.target.value)}
-            >
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.qualifiedTicker} · {c.displayName}
-                </option>
-              ))}
-            </SelectField>
+              options={companies}
+              getId={(c) => c.id}
+              getLabel={companyPickerLabel}
+              filter={companyPickerFilter}
+              displayValue={companyPickerLabel(company)}
+              onSelect={(c) => onSwitchCompany(c.id)}
+              escapePolicy={companyPickerEscapePolicy}
+              onEscapeBubble={overview}
+            />
           ) : undefined
         }
       />

@@ -43,6 +43,28 @@ describe("Modal", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  // Dogfooding wave 2026-09, #3: a descendant composite widget (the ⌘K
+  // palette's combobox, driven by `useComboboxListbox`) may consume its own
+  // Escape (closing its list, clearing its query) — the modal must not ALSO
+  // close underneath it. An UNCONSUMED descendant Escape still closes, as
+  // "closes on Escape and on the close button" above already covers for a
+  // bare `user.keyboard` press with no descendant in the way.
+  it("a consumed descendant Escape (defaultPrevented) keeps the modal open; an unconsumed one closes it", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open onClose={onClose} title="Review">
+        <input aria-label="consuming field" onKeyDown={(e) => e.preventDefault()} />
+        <input aria-label="plain field" />
+      </Modal>,
+    );
+
+    fireEvent.keyDown(screen.getByLabelText("consuming field"), { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(screen.getByLabelText("plain field"), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps focus in an input while typing, even with an unstable onClose", async () => {
     // Regression: a fresh onClose arrow on each render must not re-run the
     // focus-on-open effect and steal focus back to the dialog after each letter.

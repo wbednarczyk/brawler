@@ -56,9 +56,13 @@ describe("visual-update-core", () => {
   // registered ahead of its baseline PNGs, which the S3 integrator shoots in
   // the pinned renderer (never committed by a slice subagent) — the
   // `existsSync` loop below stays red for those 2 files until then.
-  it("every catalog cell (92 today) has an existing baseline file", () => {
+  // Dogfooding wave 2026-09 S2 (#3): 92 → 94 — `command-palette` (M_ONLY: 1
+  // dark + 1 light cell) registered ahead of its baseline PNGs, same
+  // precedent — the S4 integrator shoots them via `make visual-update`; the
+  // `existsSync` loop stays red for those 2 files until then.
+  it("every catalog cell (94 today) has an existing baseline file", () => {
     const cells = allExpectedCells();
-    expect(cells.length).toBe(92);
+    expect(cells.length).toBe(94);
     // Sol R2 blocker: every cell maps to a DISTINCT file — a state-less
     // filename would alias "empty" cells onto the default PNGs and the
     // existence check below would prove nothing.
