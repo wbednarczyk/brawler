@@ -83,6 +83,12 @@ ticker, or the tool's ✕) brings back the untouched core in one click.
 Opening a feed item from the Inbox ("Open company") lands you straight on
 that item's detail, with the rest of the feed reachable below it.
 
+## Switching company and reading the numbers
+
+- **Company picker** (top of the screen, centred): type a ticker or a name — the list narrows as you type; `Enter` opens the company (a draft you are editing asks to stay or discard first). `Shift+J` / `Shift+K` also jump to the next/previous company. `Escape` closes the list, then clears what you typed, then returns you to the Overview.
+- **Period tables** (Fundamentals › facts matrix and Positions × periods) show as many of the **newest** periods as fit the width, in chronological order, so the latest figures never hide behind a scroll. The full-height **`Rozwiń starsze`** column on the left opens the older periods (the table jumps to the newest column); **`Zwiń starsze`** folds them back. Alternate rows carry a slightly different background so long tables stay readable.
+- **Figures lead to their source**: the dotted thread under the newest revenue figure and the source ticket beneath the annual table are one control — hover lights both, click or `Enter` opens the filing.
+
 ## Keyboard
 
 The whole screen works without the mouse. Every binding below is rebindable

@@ -69,6 +69,10 @@ styleguide mockup: `docs/mockups/frontend-v2-styleguide/` (canvas + five artboar
 
 - **Decision 3 — two verbs added.** `link` (Link/Powiąż) = attach a piece of evidence to a research question. `snooze` (Snooze/Odłóż) = defer a reminder without completing it. `Delete` is retired from Research screen copy (4 sites: the reminder row, the question row, and their two confirm labels) — the same collection-removal unification as F4a S1's `remove`. **Tooltip-only icon buttons are not labelled actions**: an icon button whose only accessible name comes from a `title`/`aria-label` attribute, with no visible text, fails the "an action is a label, not a guess" bar the dictionary exists to enforce — every icon action gets a visible label alongside its icon.
 
+### Amendment (2026-09-04, owner dogfooding v0.79 #1b)
+
+- **Decision 7 — the thread and its ticket are ONE provenance action.** A thesis figure's dotted thread and the source ticket it leads to form a single control: one keyboard focus target, one accessible name (`Otwórz źródło: <metric> · <period> · <source>`), hover/focus on either highlights the pair, activation navigates to the source. A bare dotted underline with no hover, focus or cursor affordance read as a rendering glitch on the live app; a thread must *look* interactive, not only be interactive.
+
 ## Foundations review (question-everything doctrine, owner 2026-08-19)
 
 Every foundation gets an explicit verdict; "keep" also needs evidence. Gated studies block their

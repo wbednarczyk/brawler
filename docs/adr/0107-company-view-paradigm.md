@@ -70,6 +70,20 @@ four vocabularies over an unguessable preset↔save↔reset model.
   (approved experience contract); mockups:
   `docs/mockups/frontend-v2-widok-spolki/`.
 
+- **Amendment (2026-09-04, owner dogfooding v0.79 #2/#3, v0.81 #11):** the Spółka
+  header anatomy is `identity · company picker · header actions` on a three-column
+  grid (the picker centred, independent of the identity's width; stacked in one
+  column below the S tier), and the picker is an APG combobox with type-ahead over
+  the tracked companies (`ComboboxField`, shared with the ⌘K palette) — `Shift+J/K`
+  land on its input; Escape closes the list / clears the query / bubbles to the tool
+  frame in that order. **Deep-link target contract** (Documents and Claims tools): a
+  tool opened with a target (`{t:"dokumenty", documentId}`, `{t:"tezy", claimId}`)
+  keeps focus on the tool heading (F3c), scrolls the target row into view and marks
+  it as the current row (`aria-current="true"` + a persistent selected state) for as
+  long as the tool stays open; a new target moves the mark, closing the tool clears
+  it — never a transient flash. Where a claim renders twice (main list + review queue)
+  the main-list row is the canonical target.
+
 ## Rejected
 
 - **Fixing freeform persistence now** — work on a surface whose engine fate is
