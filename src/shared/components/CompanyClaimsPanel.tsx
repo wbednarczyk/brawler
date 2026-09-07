@@ -114,18 +114,10 @@ export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: Compa
     void reload();
   }, [reload]);
 
-  // Scroll the targeted claim into view once it's actually rendered. Deep-
-  // link target contract (dogfooding #11, ADR 0107 amendment): the MAIN-LIST
-  // row is the canonical target (`.claims-list`, never the review-queue
-  // twin, which the same claim can also render as — see `data-claim-match`
-  // below); the mark itself is driven directly by the `highlightClaimId`
-  // prop, not local state — persists for as long as the tool holds this
-  // target, no 4s fade. Also lifts the short pane-height tier's collapse
-  // (`claims.css` "short height tier": the full `.claims-body` — where the
-  // row lives — is `display:none` behind `data-short-expanded` under 480px)
-  // — a highlight the user cannot see defeats the whole seam (sol R1 finding
-  // 9 browser-proof caught this: the Claims tab activated and the row got
-  // the highlight class, but the row stayed CSS-hidden in a short dock pane).
+  // Deep-link target contract (ADR 0107): the main-list row is the canonical
+  // target (the review-queue twin only gets `data-claim-match`); the mark is
+  // the prop itself, never a timer. Lifts the short-height collapse first —
+  // the row is `display:none` behind `data-short-expanded` under 480px.
   useEffect(() => {
     if (!highlightClaimId) return;
     const row = panelRef.current?.querySelector<HTMLElement>(`.claims-list [data-claim-id="${highlightClaimId}"]`);
@@ -334,11 +326,8 @@ export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: Compa
                     <div
                       className="claim-queue-row"
                       data-claim-id={entry.claim.id}
-                      // The review-queue twin of a claim that ALSO renders in
-                      // the main list (the canonical target above) gets only
-                      // this match marker — never the highlight class or
-                      // `aria-current` (dogfooding #11: exactly one current
-                      // row per panel).
+                      // Twin of the canonical main-list row: match marker only,
+                      // never `aria-current` (ADR 0107 deep-link target).
                       data-claim-match={entry.claim.id === highlightClaimId ? "true" : undefined}
                       key={entry.claim.id}
                     >

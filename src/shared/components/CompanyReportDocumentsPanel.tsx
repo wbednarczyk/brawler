@@ -341,13 +341,9 @@ export function CompanyReportDocumentsPanel({
     }
   }, [highlightDocumentRef, groups, noPeriodRows]);
 
-  // Scroll the targeted document into view once its row actually exists in
-  // the DOM (after the expand effect above runs). Deep-link target contract
-  // (dogfooding #11, ADR 0107 amendment): the mark itself (`data-document-
-  // highlighted` / `aria-current` below) is driven directly by the
-  // `highlightDocumentRef` prop, not local state — it persists for as long
-  // as the tool holds this target, no 4s fade; retargeting moves it,
-  // closing/remounting without a target clears it, all for free.
+  // Deep-link target contract (ADR 0107): scroll to the row once it exists
+  // (after the expand effect above); the mark is the prop itself, never a
+  // timer.
   useEffect(() => {
     if (!highlightDocumentRef) return;
     const row = panelRef.current?.querySelector<HTMLElement>(`[data-document-id="${highlightDocumentRef}"]`);

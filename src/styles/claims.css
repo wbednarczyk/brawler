@@ -67,9 +67,7 @@
   border-radius: 8px;
 }
 
-/* Deep-link target contract (dogfooding #11, ADR 0107 amendment): the
-   main-list row's persistent mark for as long as the tool holds this claim
-   as its target — no timer, never a transient flash. */
+/* Deep-link target (ADR 0107): persistent while the tool holds this claim. */
 .claim-row-highlighted {
   border-color: var(--tone-official);
   background: color-mix(in srgb, var(--tone-official) 12%, var(--surface-raised));

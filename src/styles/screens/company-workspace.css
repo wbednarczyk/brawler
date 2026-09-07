@@ -378,10 +378,8 @@
   background: color-mix(in srgb, var(--surface-raised) 55%, transparent);
 }
 
-/* Deep-link target contract (dogfooding #11, ADR 0107 amendment): the row a
-   navigation from Activity/notebook landed on stays visibly marked for as
-   long as the tool holds the target — `claims.css`'s `.claim-row-highlighted`
-   idiom (`--tone-official` border + 12% tint), never a transient flash. */
+/* Deep-link target (ADR 0107): persistent while the tool holds the target —
+   the `.claim-row-highlighted` idiom. */
 .doc-row[data-document-highlighted="true"] {
   border-color: var(--tone-official);
   background: color-mix(in srgb, var(--tone-official) 12%, var(--surface-raised));

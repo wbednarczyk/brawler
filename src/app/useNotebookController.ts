@@ -2,18 +2,11 @@ import type { Company, FeedItem } from "../api/types";
 import type { NotebookDraft, NotebookToolIntent } from "../screens/Spolka/route";
 import { notebookTagFromFeedValue } from "./notebookForms";
 
-// The dead ESPI/EBI filing-notice literal (F1 #413) — a bare official-report
-// NOTICE (`presentationKind: "filing"`) always carries it, but an
-// attachment-bearing `report` item can ALSO carry it verbatim when its own
-// summary hasn't been parsed yet (`report_documents.rs:212`); dogfooding #9
-// caught it leaking through the Company feed row because the old guard only
-// checked `presentationKind === "filing"`.
+// The backend's placeholder summary for an unparsed official notice; any
+// kind may carry it verbatim (`report_documents.rs`), so it is suppressed by
+// exact match here, the one root every render site shares.
 const DEAD_FILING_SUMMARY_LITERAL = "Komunikat ESPI/EBI";
 
-// Shared root for every render site (Inbox, Spółka, Company feed): suppress
-// the dead literal — by kind (filing, always) and by exact match (any kind
-// that happens to carry it verbatim) — once here rather than forking a guard
-// into each caller. A meaningful summary is never touched.
 export function feedItemSummary(item: FeedItem) {
   if (item.presentationKind === "filing") {
     return "";

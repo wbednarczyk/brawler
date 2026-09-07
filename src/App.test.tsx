@@ -758,12 +758,12 @@ describe("focus never falls to <body> (F3c)", () => {
   });
 });
 
-// F3d S2 (#133, plan § D4 item 5): the Activity panel's "Open document" row
+// F3d S2 (#133, plan § D4 item 5): the Activity panel's "Open in documents" row
 // action routes through the SAME guarded `navigate()` every other deep link
 // uses — a dirty Spółka draft raises exactly one stay/discard dialog, AFTER
 // the panel itself has already closed.
 describe("Activity panel dirty-draft handoff (F3d S2, #133)", () => {
-  it("Open document on a dirty draft closes Activity, opens exactly one stay/discard dialog; Escape stays, Discard completes the navigation", async () => {
+  it("Open in documents on a dirty draft closes Activity, opens exactly one stay/discard dialog; Escape stays, Discard completes the navigation", async () => {
     const user = userEvent.setup();
     renderApp();
     const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
@@ -776,7 +776,7 @@ describe("Activity panel dirty-draft handoff (F3d S2, #133)", () => {
 
     await user.click(await screen.findByRole("button", { name: "Open activity" }));
     const activityDialog = await screen.findByRole("dialog", { name: "Activity" });
-    await user.click(within(activityDialog).getAllByRole("button", { name: "Open document" })[0]);
+    await user.click(within(activityDialog).getAllByRole("button", { name: "Open in documents" })[0]);
 
     // Activity closed; exactly one dialog (the stay/discard confirm) is open.
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Activity" })).not.toBeInTheDocument());
@@ -791,7 +791,7 @@ describe("Activity panel dirty-draft handoff (F3d S2, #133)", () => {
     // Re-open Activity and Discard this time — the deferred navigation completes.
     await user.click(await screen.findByRole("button", { name: "Open activity" }));
     const activityAgain = await screen.findByRole("dialog", { name: "Activity" });
-    await user.click(within(activityAgain).getAllByRole("button", { name: "Open document" })[0]);
+    await user.click(within(activityAgain).getAllByRole("button", { name: "Open in documents" })[0]);
     const confirmAgain = await screen.findByRole("dialog", { name: "Unsaved changes in this tool" });
     await user.click(within(confirmAgain).getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

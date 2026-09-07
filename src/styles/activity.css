@@ -7,12 +7,9 @@
   container-type: inline-size;
 }
 
-/* Dogfooding #10: this used to be its own padding-less nested scroller
-   inside the padded `.ui-modal-body` (`ui.css`) — a row's right-aligned
-   destination action sat flush against ITS OWN scrollbar with no gutter,
-   clipping it. `.ui-modal-body` is the sole scroll owner now (already
-   padded on every side); the height cap moved to `.ui-modal.activity-modal`
-   below. */
+/* Never a scroller of its own: the padded `.ui-modal-body` owns the scroll,
+   so row actions keep a gutter from the scrollbar (`.activity-modal` caps
+   the height). */
 .activity-panel {
   display: flex;
   flex-direction: column;

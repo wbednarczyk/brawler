@@ -259,7 +259,6 @@ export const plText: Record<string, string> = {
   "Mark as read": "Oznacz jako przeczytane",
   "Couldn't load attention signals.": "Nie udało się wczytać sygnałów uwagi.",
   "Reverted": "Cofnięto",
-  "Open document": "Otwórz dokument",
   "From your alert rule": "Z reguły alertu",
   "Routine": "Rutynowe",
   "What do the severity levels mean?": "Co oznaczają poziomy ważności?",
@@ -2252,7 +2251,7 @@ export const plText: Record<string, string> = {
   // ---- F3d S2 ----
   // Activity center (ADR 0109, #133): topbar indicator + panel copy. Family
   // labels (`activityLabels.ts`); "Source refresh"/"Morning briefing"/
-  // "Transcript"/"Try again"/"Open document"/"Open company" reuse their
+  // "Transcript"/"Try again"/"Open company" reuse their
   // existing exact-match entries above instead of duplicating a key. Status
   // labels moved to the "F3d fixT2" block below (sol diff R2 finding 6).
   "Company refresh": "Odświeżanie komunikatów spółki",
