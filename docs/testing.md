@@ -58,7 +58,21 @@ Realistic test data comes from a **canonical sample-data factory**, not a checke
 
 Suites run in parallel within and across frameworks to keep the loop fast, with isolation (above) as the precondition that keeps quality intact. Within frameworks: Rust uses `cargo nextest`, Vitest uses its default pool, Playwright runs `fullyParallel`. Across frameworks: `make check` is a staged concurrent orchestrator (fast-fail typecheck/fmt/lint stage, then heavy suites concurrently), the main win being the Rust compile overlapping the JS suites. Worker counts are capped so the sum ≈ core count (oversubscription causes false-timeout flakiness), output is grouped with hard-stop on first failure, and changes are kept only on a measured win. See [Engineering Workflow](engineering-workflow.md) and [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
 
-**Resource discipline (WSL OOM guardrail, 2026-07-10).** The WSL VM has ~15 GB RAM vs 24 cores; parallel `rustc` test builds saturate it and can kill the whole VM. Rules for every agent and script running tests OUTSIDE `make check` (whose orchestrator already stages suites): run **one heavy build/test invocation at a time** — never two cargo/nextest/vitest processes concurrently; bound compile parallelism with `CARGO_BUILD_JOBS=8` (or `-j 8`); scope `cargo nextest` to touched modules, never the whole suite ad hoc. A crashed VM can leave a **corrupted test binary** behind — a SIGSEGV in `nextest --list` right after a crash means delete the stale `target/debug/deps/<crate>-*` binary and relink, not a code bug. **Mechanical since 2026-09-07 (hard gate G2):** the `one-heavy-build` PreToolUse hook (`.claude/hooks/one-heavy-build.sh`, wired in `.claude/settings.json`) denies a Bash command that would start cargo/nextest/vitest/playwright/`make check*` while another such run is alive on the machine — for every agent and subagent, regardless of what they read; `BRAWLER_ALLOW_PARALLEL_BUILD=1` is the deliberate escape hatch.
+**Resource discipline (WSL OOM guardrail, 2026-07-10).** The WSL VM has ~15 GB
+RAM vs 24 cores; parallel `rustc` test builds saturate it and can kill the whole
+VM. Rules for every agent and script running tests OUTSIDE `make check` (whose
+orchestrator already stages suites): run **one heavy build/test invocation at a
+time** — never two cargo/nextest/vitest processes concurrently; bound compile
+parallelism with `CARGO_BUILD_JOBS=8` (or `-j 8`); scope `cargo nextest` to
+touched modules, never the whole suite ad hoc. A crashed VM can leave a
+**corrupted test binary** behind — a SIGSEGV in `nextest --list` right after a
+crash means delete the stale `target/debug/deps/<crate>-*` binary and relink,
+not a code bug. **Mechanical since 2026-09-07 (hard gate G2):** the
+`one-heavy-build` PreToolUse hook (`.claude/hooks/one-heavy-build.sh`, wired in
+`.claude/settings.json`) denies a Bash command that would start
+cargo/nextest/vitest/playwright/`make check*` while another such run is alive on
+the machine — for every agent and subagent, regardless of what they read;
+`BRAWLER_ALLOW_PARALLEL_BUILD=1` is the deliberate escape hatch.
 
 **Delegation contracts name the consumers of a changed boundary (harvested 2026-07-10, ADR 0045).** When a delegated slice changes what a creation/normalization boundary produces (e.g. a create call starts folding a legacy label), scoped module tests miss the OTHER modules whose seeds or reads assumed the old shape — the collision surfaces only at the full gate. The slice contract must enumerate the boundary's consumers (`repoctx callers <fn>` / `rdeps`) as modules the agent runs tests for, and any test that needs the legacy shape seeds it via raw SQL like migration tests do, never through the now-normalizing public surface.
 
@@ -811,7 +825,8 @@ hold regardless of either side's id-derivation scheme. **Add a journey to the
 corpus when you add or change a command's observable behavior.**
 
 **Membership gate.** Every `#[tauri::command]` must land in the corpus, be
-declared in `src/test/scenarios/headless-only.json` (a reason per entry: MCP-only
+declared in `src/test/scenarios/headless-only.json` (a reason per entry:
+MCP-only
 — no frontend/mock caller, verified against `src-tauri/src/mcp` and `src/api` —
 or a headless acquisition driver per the scope exemption above), or be a
 `fidelity-membership.baseline.json` entry — the ratchet floor of pre-existing
@@ -821,7 +836,8 @@ out of the baseline in the same change). Enforced from both sides: the Vitest
 `src-tauri/src/**/*.rs` and checks it against the same three manifests; the Rust
 `source_tree_guards::every_registered_command_is_reachable_from_the_frontend_or_declared_headless`
 separately parses `tauri::generate_handler![...]` and requires each name appear
-either as a `"<name>"` literal under `src/api/**/*.ts` or in `headless-only.json`
+either as a `"<name>"` literal under `src/api/**/*.ts` or in
+`headless-only.json`
 (a command can be both `headless-only` for frontend-reachability and in the
 corpus for backend dual-execution coverage — the two manifests answer different
 questions and are not mutually exclusive).
@@ -990,7 +1006,27 @@ Every behavior lives at the **cheapest authoritative layer** — the layer that 
 
 **Rules.** (1) A cross-screen case is **moved** to Playwright only when the browser is genuinely the cheaper authoritative layer *and* churn is justified by **measured flake**, never speculatively (Q8 STOP-AND-ASK). (2) Playwright coverage does **not** count toward Vitest V8 line coverage — retain/extract equivalent component coverage before deleting any Vitest assertion, and **never lower `coverage-baseline.json`**. (3) A multi-slice task names its layer split in planning via the [experience-contract template](plans/EXPERIENCE-CONTRACT-TEMPLATE.md) § 12, not at the gate. (4) **An absence assertion about a transition converges, it never samples**: `expect(queryBy…).toBeNull()` written straight after an `await findBy…` on a *different* element reads a single tick, and the outgoing node (a swapped tab, a replaced row) can outlive its replacement by one render — green locally, red under gate load. Wrap it in `waitFor`; what is asserted stays the same, only its synchronization changes (harvest 2026-08-02, `CockpitScreen.test.tsx` unpin/retarget). **The wrap alone was not enough** — Testing Library's default budget is **1 second**, generous locally but marginal on a 4-vCPU runner with four workers over a full app render, and the same test flaked again in CI with the `waitFor` in place. The budget is therefore set centrally in `src/test/setup.ts` (`configure({ asyncUtilTimeout: 5_000 })`); do **not** sprinkle per-call `{ timeout }` overrides, and treat a *new* need for one as a signal the code is slow, not the test (second harvest 2026-08-02, PR #316).
 
-**Test hygiene gates** (owner-approved hard gates 2026-09-07). A committed `.only()` and an undocumented `.skip()`/`.fixme()`/`.todo()` both let a suite silently shrink; `eslint.config.js` bans the former outright and requires a reason on the latter (a `// skip-ok: <reason>` comment for Vitest, a string last argument for Playwright) across `src/**/*.test.{ts,tsx}`, `src/test/**`, and `tests/**/*.ts`. `src/test/testHygiene.test.ts` ratchets a stronger property: every `it()`/`test()` block must contain an `expect*`/`assert*` call (or an exempt title/comment) — an assertion-less test's green checkmark proves nothing. **Paint, not attribute** (dogfooding #11: `data-document-highlighted` was set for 4s with no CSS rule ever painting it, and the spec asserting the attribute stayed green): `tests/browser/helpers/paint.ts` exports `expectVisiblyMarked`/`expectOpaqueSticky`/`expectInsideScroller`, which assert the rendered computed style or geometry instead; `toHaveAttribute` on a `data-*-highlighted/-selected/-active/-marked` literal is an ESLint error in `tests/**` (Playwright only — jsdom computes no colors, so the equivalent Vitest assertions stay legitimate). **English-in-PL detector** (dogfooding #8 class, retro F4c's fix was instance-only): `translationCompleteness.test.ts` also fails when a `plText.ts` entry is byte-identical to its EN key and not listed in `identicalEntries.json` with a reason (brand/acronym/loanword stays; plainly-English prose gets translated instead), ratcheted the same way as the untranslated-string baseline.
+**Test hygiene gates** (owner-approved hard gates 2026-09-07). A committed
+`.only()` and an undocumented `.skip()`/`.fixme()`/`.todo()` both let a suite
+silently shrink; `eslint.config.js` bans the former outright and requires a
+reason on the latter (a `// skip-ok: <reason>` comment for Vitest, a string last
+argument for Playwright) across `src/**/*.test.{ts,tsx}`, `src/test/**`, and
+`tests/**/*.ts`. `src/test/testHygiene.test.ts` ratchets a stronger property:
+every `it()`/`test()` block must contain an `expect*`/`assert*` call (or an
+exempt title/comment) — an assertion-less test's green checkmark proves nothing.
+**Paint, not attribute** (dogfooding #11: `data-document-highlighted` was set
+for 4s with no CSS rule ever painting it, and the spec asserting the attribute
+stayed green): `tests/browser/helpers/paint.ts` exports
+`expectVisiblyMarked`/`expectOpaqueSticky`/`expectInsideScroller`, which assert
+the rendered computed style or geometry instead; `toHaveAttribute` on a
+`data-*-highlighted/-selected/-active/-marked` literal is an ESLint error in
+`tests/**` (Playwright only — jsdom computes no colors, so the equivalent Vitest
+assertions stay legitimate). **English-in-PL detector** (dogfooding #8 class,
+retro F4c's fix was instance-only): `translationCompleteness.test.ts` also fails
+when a `plText.ts` entry is byte-identical to its EN key and not listed in
+`identicalEntries.json` with a reason (brand/acronym/loanword stays;
+plainly-English prose gets translated instead), ratcheted the same way as the
+untranslated-string baseline.
 
 ## User-journey E2E and step budgets (ADR 0074)
 
