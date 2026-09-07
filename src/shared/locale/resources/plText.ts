@@ -205,8 +205,6 @@ export const plText: Record<string, string> = {
   "Off — manual": "Wyłączony — ręcznie",
   "Assist — auto-extract, you confirm": "Asysta — auto-ekstrakcja, Ty potwierdzasz",
   "Autopilot — auto-confirm (unreviewed)": "Autopilot — auto-zatwierdzanie (niezweryfikowane)",
-  "Automatically process this company's new reports on the next source refresh. Off keeps everything manual; Assist auto-fetches and extracts but you confirm each value; Autopilot also auto-confirms extracted values as unreviewed (cited and reversible).":
-    "Automatycznie przetwarzaj nowe raporty tej spółki przy następnym odświeżeniu źródeł. Wyłączony zostawia wszystko ręcznie; Asysta auto-pobiera i wyciąga dane, ale każdą wartość potwierdzasz Ty; Autopilot dodatkowo auto-zatwierdza wyciągnięte wartości jako niezweryfikowane (cytowane i odwracalne).",
   "Checking autopilot runs…": "Sprawdzanie przebiegów autopilota…",
   "New report processed.": "Przetworzono nowy raport.",
   "New report processed": "Przetworzono nowy raport",
@@ -1207,8 +1205,6 @@ export const plText: Record<string, string> = {
   "Failed to load price context": "Nie udało się wczytać kontekstu ceny",
   "New reporting period": "Nowy okres sprawozdawczy",
   "Create reporting period": "Utwórz okres sprawozdawczy",
-  "Reporting periods": "Okresy sprawozdawcze",
-  "No reporting periods yet.": "Brak okresów sprawozdawczych.",
   "Financial facts": "Fakty finansowe",
   "Financial fact": "Fakt finansowy",
   "Financial fact detail": "Szczegóły faktu finansowego",

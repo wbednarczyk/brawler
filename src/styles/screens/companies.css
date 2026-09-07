@@ -486,6 +486,16 @@
   border-bottom: none;
 }
 
+/* Origin chip in the newest period's header (dogfooding #7, retires the
+   below-table completeness bar): the chip keeps its own casing rather than
+   inheriting the header's uppercase/letter-spacing treatment. */
+.facts-matrix-origin-chip {
+  display: block;
+  margin-top: var(--space-1);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .facts-matrix-corner,
 .facts-matrix-kpi {
   text-align: left;
@@ -967,21 +977,6 @@ thead .fundamentals-periods-expander {
 .facts-matrix-subtotal td {
   font-weight: 700;
   border-top: 1px solid var(--border);
-}
-
-/* Source/completeness bar (approved mockup): origin + "N of M" + the
-   never-silently-absent uncatalogued-tail count, below the matrix. */
-.fundamentals-completeness-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-raised);
-  color: var(--muted);
-  font-size: var(--font-sm);
 }
 
 /* Price context section (v0.53 T5, ADR 0067) — fundamentals-adjacent, same
@@ -1789,4 +1784,22 @@ thead .fundamentals-periods-expander {
     justify-self: stretch;
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Zebra striping (dogfooding #13, owner 2026-09-04): alternate rows get a
+   subtle tint so dense tables are easier to scan. Shared class — applied to
+   the facts matrix, Pozycje × okresy (both this file) and the Coverage table
+   (company-coverage.css, its own `.coverage-table` class); the rule lives
+   HERE (not ui.css, integrator-owned) per the S1 brief.
+   `:where(...)` keeps this rule's specificity at exactly `.ui-zebra` (a
+   single class) — lower than any per-cell state rule (hover/selected/focus),
+   which must still win over the base tint; the `> *` reaches every direct
+   cell, INCLUDING sticky columns that set their own opaque `background`
+   (facts-matrix-kpi/-expander, fundamentals-periods-kpi/-expander), so the
+   stripe stays continuous under them (ties into #5's sticky-column
+   contract). Light-theme contrast checked: `--surface-raised` at 55% over
+   `--surface` keeps cell text at/above the existing ≥ 4.5:1 floor (same
+   token pairing already used at 60% for coverage-row hover). */
+.ui-zebra :where(tbody tr:nth-child(even)) > * {
+  background: color-mix(in srgb, var(--surface-raised) 55%, var(--surface));
 }

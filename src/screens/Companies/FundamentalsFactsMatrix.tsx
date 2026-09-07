@@ -7,8 +7,8 @@ import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
 import { formatFinancialValue } from "../../shared/format/financialValue";
 import type { LocaleCode } from "../../shared/locale";
 import { periodExpanderAccessibleName, periodExpanderVisibleLabel, type UseVisiblePeriodsResult } from "./useVisiblePeriods";
-import { ActionButton, EmptyState, Sparkline } from "../../ui";
-import { factQualityLabel } from "./factLabels";
+import { ActionButton, EmptyState, Sparkline, StatusChip } from "../../ui";
+import { factQualityLabel, tierLabel } from "./factLabels";
 
 // The KPI × period fact matrix (extracted from FundamentalsPanel.tsx, ADR
 // 0103 file-size ratchet, dogfooding wave 2026-09 #6): the newest
@@ -27,6 +27,12 @@ export type FundamentalsFactsMatrixProps = {
   selectedFinancialFactId: string | null;
   selectFinancialFact: (id: string) => void;
   seriesValuesFor: (row: FactMatrixRow) => number[];
+  // Origin chip (epic #398, moved off the retired completeness bar —
+  // dogfooding #7): the newest period's source tier, rendered in ITS header
+  // instead of a separate footer bar that competed with the table.
+  latestPeriodId: string | null;
+  originTier: string | null;
+  originIsMixed: boolean;
 };
 
 export function FundamentalsFactsMatrix({
@@ -41,6 +47,9 @@ export function FundamentalsFactsMatrix({
   selectedFinancialFactId,
   selectFinancialFact,
   seriesValuesFor,
+  latestPeriodId,
+  originTier,
+  originIsMixed,
 }: FundamentalsFactsMatrixProps) {
   if (visibleMatrixRows.length === 0) {
     return <EmptyState>{text("No positions match your search.")}</EmptyState>;
@@ -55,7 +64,7 @@ export function FundamentalsFactsMatrix({
       aria-label={text("Financial facts matrix")}
       ref={factsScrollRef}
     >
-      <table className="facts-matrix">
+      <table className="facts-matrix ui-zebra">
         <thead>
           <tr>
             <th className="facts-matrix-corner" scope="col">
@@ -66,6 +75,17 @@ export function FundamentalsFactsMatrix({
             {visibleFactPeriods.map((period, index) => (
               <th key={period.id} scope="col" ref={index === 0 ? factsPeriodHeaderRef : undefined}>
                 {period.fiscalYear} {period.periodType.toUpperCase()}
+                {period.id === latestPeriodId ? (
+                  originTier ? (
+                    <StatusChip tone="accent" className="facts-matrix-origin-chip">
+                      {tierLabel(originTier, text)}
+                    </StatusChip>
+                  ) : originIsMixed ? (
+                    <StatusChip tone="neutral" className="facts-matrix-origin-chip">
+                      {text("Mixed sources")}
+                    </StatusChip>
+                  ) : null
+                ) : null}
               </th>
             ))}
             <th className="facts-matrix-trend-head" scope="col">

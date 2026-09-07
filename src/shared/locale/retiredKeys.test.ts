@@ -49,11 +49,22 @@ const RETIRED_PLTEXT_KEYS = [
   "Starting a transcript job sends the YouTube URL and video content to Gemini.",
 ];
 
-// Dogfooding wave 2026-09, S1 commit 1 (#6): the Pozycje × okresy "Show all
+// Dogfooding wave 2026-09, S1. Commit 1 (#6): the Pozycje × okresy "Show all
 // periods" / "Show fewer periods" disclosure button is replaced by the
-// shared period-expander column (useVisiblePeriods.ts) — both plText-only
-// keys.
-const RETIRED_PLTEXT_KEYS_WAVE_S1 = ["Show all periods", "Show fewer periods"];
+// shared period-expander column (useVisiblePeriods.ts). Commit 2 (#4): the
+// read-only Reporting periods list (restated the matrix headers) and the
+// Fundamentals Autopilot fold both retire — Companies → Manage settings is
+// the only autopilot editor now (ADR 0056 amendment); its description text
+// was exclusive to the retired `CompanyAutopilotField` (the option-label
+// keys "Off — manual" etc. stay — CompanySettingsManager.tsx still uses
+// them). All plText-only keys.
+const RETIRED_PLTEXT_KEYS_WAVE_S1 = [
+  "Show all periods",
+  "Show fewer periods",
+  "Reporting periods",
+  "No reporting periods yet.",
+  "Automatically process this company's new reports on the next source refresh. Off keeps everything manual; Assist auto-fetches and extracts but you confirm each value; Autopilot also auto-confirms extracted values as unreviewed (cited and reversible).",
+];
 
 const SCAN_ROOT = "src";
 const SCAN_EXTENSIONS = [".ts", ".tsx"];
@@ -175,7 +186,7 @@ const RETIRED_PLTEXT_KEYS_F4C = [
 // Pinned here so it can't quietly reappear.
 const RETIRED_PLTEXT_KEYS_S4 = ["AI workers"];
 
-describe("retired Fundamentals periods-cap vocabulary stays retired (dogfooding wave 2026-09, S1)", () => {
+describe("retired Fundamentals vocabulary stays retired (dogfooding wave 2026-09, S1)", () => {
   it("is absent from the plText resource table", () => {
     const hits = RETIRED_PLTEXT_KEYS_WAVE_S1.filter((key) => key in plText).map((key) => `plText.ts: ${key}`);
     expect(hits, `Retired keys still present:\n${hits.join("\n")}`).toEqual([]);

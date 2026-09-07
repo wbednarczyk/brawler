@@ -237,7 +237,7 @@ export function FundamentalsPeriodsSection({
             aria-label={text("Positions and period deltas")}
             ref={scrollerRef}
           >
-            <table className="fundamentals-periods-table">
+            <table className="fundamentals-periods-table ui-zebra">
               <thead>
                 <tr>
                   <th className="fundamentals-periods-corner" scope="col">
