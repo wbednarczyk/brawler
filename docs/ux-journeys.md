@@ -6,6 +6,8 @@ Format per journey: **Trigger** (why the user shows up) → **Steps** → **Scre
 
 Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey) with the ratchet floors in `tests/browser/journeys/budgets.json`; the budget numbers below are the normative **ceilings** those floors must never exceed ([testing.md](testing.md#user-journey-e2e-and-step-budgets-adr-0074)).
 
+**Owner-protected workflows (2026-09-07):** the three recurring tasks the owner named as the ones that must save time are **J1** (morning ESPI review across the watchlist), **J2** (checking a company right after its quarterly report) and **J3** (researching a new company before investing). They are measured first on the acceptance corpus ([testing.md § Acceptance corpus](testing.md#acceptance-corpus-owner-decision-2026-09-07)) and are the first read of the usage gate (#466) after serious use starts in October 2026.
+
 ## J1 — Morning review
 
 - **Trigger:** opening the app at the start of the day.
