@@ -2303,4 +2303,15 @@ export const plText: Record<string, string> = {
   "Finished with an error": "nie udało się",
   "Partially finished": "częściowo",
   // ---- /F3d fixT2 ----
+  // ---- wave S2 ----
+  // Dogfooding wave 2026-09, #3: `useComboboxListbox`/`ComboboxField`'s
+  // empty-results state (the company picker, shared with the ⌘K palette's
+  // own controller).
+  "No matches": "Brak dopasowań",
+  // #1b: the ONE provenance action's accessible name (ADR 0104 dec. 7
+  // wording) — `{metric}`/`{period}`/`{source}` are filled in by the caller
+  // (`CoreKpiTable.tsx`, the `text(...).replace(...)` idiom already used for
+  // `"prior fiscal year (needed before FY{year})"`).
+  "Open source: {metric} · {period} · {source}": "Otwórz źródło: {metric} · {period} · {source}",
+  // ---- /wave S2 ----
 };

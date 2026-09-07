@@ -397,7 +397,10 @@ describe("Spółka tool host — dirty guard", () => {
     await screen.findByText("CD Projekt");
     await openDirtyNotebookTool(user);
 
-    await user.selectOptions(screen.getByLabelText("Company"), companyB.id);
+    // dogfooding #3: the picker is a type-ahead `ComboboxField` now — type +
+    // Enter selects, in place of the old `<select>`'s `selectOptions`.
+    await user.type(screen.getByLabelText("Company"), "PKN");
+    await user.keyboard("{Enter}");
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("CD Projekt")).toBeInTheDocument();

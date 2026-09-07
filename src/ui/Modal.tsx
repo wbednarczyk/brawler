@@ -81,6 +81,11 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        // A descendant composite widget (a combobox listbox) that already
+        // consumed this Escape for its own purpose (closing its list,
+        // clearing its query) sets `defaultPrevented` — the modal must not
+        // ALSO close underneath it (dogfooding #3, plan § S2 item 1).
+        if (event.defaultPrevented) return;
         event.stopPropagation();
         onCloseRef.current();
         return;

@@ -128,6 +128,14 @@ const RAW_CATALOG = [
     tiers: M_ONLY,
     figures: { selector: "[data-figure]", min: 3 },
   },
+  {
+    // The ⌘K command palette (dogfooding wave 2026-09, #3) — no cell existed
+    // before this wave; a topbar-launched dialog like Activity, so M-only.
+    screen: "command-palette",
+    spec: "visual-command-palette.spec.ts",
+    states: ["default"],
+    tiers: M_ONLY,
+  },
 ];
 
 /** Validates a catalog list: rejects duplicate or empty screen ids and entries with no states. */
