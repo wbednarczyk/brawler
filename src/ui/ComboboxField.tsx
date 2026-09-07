@@ -1,4 +1,4 @@
-import { forwardRef, useRef, useState, type ReactElement, type ReactNode, type Ref } from "react";
+import { forwardRef, useId, useRef, useState, type ReactElement, type ReactNode, type Ref } from "react";
 
 import { useLocale } from "../shared/locale";
 import { useComboboxListbox, type ComboboxEscapeAction, type ComboboxEscapeState } from "./useComboboxListbox";
@@ -57,6 +57,10 @@ function ComboboxFieldInner<T>(
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const controller = useComboboxListbox({ options, getId, filter, onSelect, escapePolicy });
+  // `label htmlFor`, never a wrapping label: a combobox embedded in its own
+  // label folds the active option into its accessible name (accname 2E), so
+  // the name would change every time the list opens.
+  const inputId = useId();
 
   // Blur after a selection: focus lands on <body>, which the "none" focus
   // intent fallback (`focusScreenHeadingIfBody`) routes to the screen heading.
@@ -66,11 +70,12 @@ function ComboboxFieldInner<T>(
   }
 
   return (
-    <label className={["ui-text-field ui-combobox", className].filter(Boolean).join(" ")}>
-      {label}
+    <div className={["ui-text-field ui-combobox", className].filter(Boolean).join(" ")}>
+      <label htmlFor={inputId}>{label}</label>
       <div className="ui-combobox-anchor">
         <input
           {...controller.inputProps}
+          id={inputId}
           ref={mergeRefs(inputRef, ref)}
           className="ui-text-input"
           placeholder={placeholder}
@@ -112,7 +117,7 @@ function ComboboxFieldInner<T>(
           </ul>
         ) : null}
       </div>
-    </label>
+    </div>
   );
 }
 

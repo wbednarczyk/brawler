@@ -377,6 +377,28 @@ describe("ComboboxField", () => {
     expect(onSelect).toHaveBeenCalledWith(COMBOBOX_OPTIONS[1]);
   });
 
+  it("keeps its accessible name while the list is open (label htmlFor, never a wrapping label)", async () => {
+    const user = userEvent.setup();
+    render(
+      <ComboboxField
+        label="Company"
+        options={COMBOBOX_OPTIONS}
+        getId={(o) => o.id}
+        getLabel={(o) => o.label}
+        filter={comboboxFilter}
+        displayValue="Alpha"
+        onSelect={vi.fn()}
+        escapePolicy={() => "bubble"}
+      />,
+    );
+    const input = screen.getByRole("combobox", { name: "Company" });
+    await user.click(input);
+    // A wrapping <label> folds the active option into the name (accname 2E):
+    // the live drive's picker locator hung on "Company GPW:ABE · …".
+    expect(input).toHaveAttribute("aria-activedescendant");
+    expect(screen.getByRole("combobox", { name: "Company" })).toBe(input);
+  });
+
   it("an unconsumed Escape (closed, empty query) calls onEscapeBubble", () => {
     const onEscapeBubble = vi.fn();
     render(
