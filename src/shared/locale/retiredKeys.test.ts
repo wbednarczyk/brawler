@@ -64,6 +64,11 @@ const RETIRED_PLTEXT_KEYS_WAVE_S1 = [
   "Reporting periods",
   "No reporting periods yet.",
   "Automatically process this company's new reports on the next source refresh. Off keeps everything manual; Assist auto-fetches and extracts but you confirm each value; Autopilot also auto-confirms extracted values as unreviewed (cited and reversible).",
+  // Wave S2/S3 (dogfooding #1b, #12): the Activity destination is "Open in
+  // documents"; the KPI ticket's control is the thread button named
+  // "Open source: …" — both old keys lost their last call site.
+  "Open document",
+  "Open source document",
 ];
 
 const SCAN_ROOT = "src";
