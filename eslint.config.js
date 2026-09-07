@@ -128,6 +128,90 @@ const API_LAYER_RESTRICTION = {
     "src/api is the IPC bottom layer — it imports only its own modules and the Tauri API, never app/screens/shared/ui (docs/modularization-design.md § Frontend layer contract).",
 };
 
+// Test hygiene (G10, docs/testing.md § Frontend test responsibilities): a
+// committed `.only()` silently skips the rest of the suite — it must never
+// reach the gate. One selector catches it.only/test.only/describe.only AND
+// the nested test.describe.only (its outer call's callee.property is also
+// "only", so the same selector matches all four spellings from CLAUDE.md).
+const ONLY_BAN = {
+  selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='only']",
+  message:
+    'No .only() in committed tests — it.only/test.only/describe.only/test.describe.only silently skips the rest of the suite (docs/testing.md § Frontend test responsibilities).',
+};
+
+// G11 (dogfooding #11): a `data-*-highlighted/-selected/-active/-marked`
+// attribute is not proof of a visible mark — CompanyReportDocumentsPanel set
+// `data-document-highlighted` for 4s with no CSS rule ever painting it, and
+// the browser spec that asserted the attribute stayed green throughout.
+// Scoped to tests/** (Playwright, a real layout engine) only: jsdom computes
+// no colors (docs/testing.md § Frontend test responsibilities), so the
+// equivalent Vitest assertions in src/**/*.test.* (App.test.tsx,
+// CompanyReportDocumentsPanel.test.tsx) are legitimate and must not be
+// flagged (ADR 0045 — never flag legitimate code).
+const TO_HAVE_ATTRIBUTE_PAINT_BAN = {
+  selector:
+    "CallExpression[callee.property.name='toHaveAttribute'][arguments.0.type='Literal'][arguments.0.value=/^data-.*(highlighted|selected|active|marked)/]",
+  message: "assert the paint via tests/browser/helpers/paint.ts, not the attribute (dogfooding #11)",
+};
+
+// Skip/fixme/todo hygiene (G10): an undocumented skip is a silently-shrinking
+// suite. Two small local rules (no plugin dependency) rather than a single
+// no-restricted-syntax selector, because "does it carry a reason" needs
+// argument-shape/comment inspection that esquery selectors can't express.
+const testHygienePlugin = {
+  rules: {
+    // Vitest: it.skip/test.skip/describe.skip/it.todo/test.todo take no
+    // reason slot, so the reason lives in a preceding comment instead.
+    "skip-needs-reason-comment": {
+      meta: { type: "problem" },
+      create(context) {
+        const sourceCode = context.sourceCode ?? context.getSourceCode();
+        return {
+          CallExpression(node) {
+            const callee = node.callee;
+            if (callee.type !== "MemberExpression" || callee.property.type !== "Identifier") return;
+            if (!["skip", "todo", "fixme"].includes(callee.property.name)) return;
+            const hasReason = sourceCode
+              .getCommentsBefore(node)
+              .some((comment) => /skip-ok:\s*\S/.test(comment.value));
+            if (!hasReason) {
+              context.report({
+                node,
+                message:
+                  "Vitest .skip()/.todo() needs a preceding `// skip-ok: <reason>` comment (docs/testing.md § Frontend test responsibilities).",
+              });
+            }
+          },
+        };
+      },
+    },
+    // Playwright: test.skip/.fixme/.todo take the reason as their last
+    // argument (test.skip(condition, "reason")).
+    "skip-needs-reason-arg": {
+      meta: { type: "problem" },
+      create(context) {
+        return {
+          CallExpression(node) {
+            const callee = node.callee;
+            if (callee.type !== "MemberExpression" || callee.property.type !== "Identifier") return;
+            if (!["skip", "fixme", "todo"].includes(callee.property.name)) return;
+            const args = node.arguments;
+            const last = args[args.length - 1];
+            const hasStringReason = last && last.type === "Literal" && typeof last.value === "string";
+            if (!hasStringReason) {
+              context.report({
+                node,
+                message:
+                  "Playwright test.skip()/.fixme()/.todo() needs a string reason as the last argument (docs/testing.md § Frontend test responsibilities).",
+              });
+            }
+          },
+        };
+      },
+    },
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -165,12 +249,28 @@ export default tseslint.config(
     // idioms unwritable; `prefer-find-by` additionally collapses
     // waitFor+getBy* into the equivalent findBy*.
     files: ["src/**/*.test.{ts,tsx}", "src/test/**/*.{ts,tsx}"],
-    plugins: { "testing-library": testingLibrary },
+    plugins: { "testing-library": testingLibrary, local: testHygienePlugin },
     rules: {
       "testing-library/await-async-queries": "error",
       // userEvent only: React's fireEvent is synchronous by design.
       "testing-library/await-async-events": ["error", { eventModule: "userEvent" }],
       "testing-library/prefer-find-by": "error",
+      "no-restricted-syntax": ["error", ONLY_BAN],
+      "local/skip-needs-reason-comment": "error",
+    },
+  },
+  {
+    // Playwright browser/live specs (G10/G11, docs/testing.md § Frontend test
+    // responsibilities). Not a subset of the "src/**" block above, so it gets
+    // its own minimal parser wiring rather than the full js/tseslint
+    // recommended sets — this stays a targeted hygiene gate, not a new lint
+    // surface over 50+ existing spec files (ADR 0045: precise gates only).
+    files: ["tests/**/*.ts"],
+    languageOptions: { parser: tseslint.parser },
+    plugins: { local: testHygienePlugin },
+    rules: {
+      "no-restricted-syntax": ["error", ONLY_BAN, TO_HAVE_ATTRIBUTE_PAINT_BAN],
+      "local/skip-needs-reason-arg": "error",
     },
   },
   {

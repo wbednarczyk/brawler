@@ -169,7 +169,6 @@ export function journey(page: Page, id: string): Journey {
       for (const metric of JOURNEY_METRIC_NAMES) {
         const limit = entry.byProject?.[project]?.[metric] ?? entry[metric];
         const suggestion = tightenSuggestion(id, metric, metrics[metric], limit, project, viewport);
-        // eslint-disable-next-line no-console
         if (suggestion) console.log(suggestion);
       }
     },

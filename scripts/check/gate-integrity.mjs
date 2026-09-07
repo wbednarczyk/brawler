@@ -57,6 +57,7 @@ const MANDATORY_SUITES = [
   { target: "check-docs-gates", marker: "file-size-ratchet", label: "file-size ratchet — oversized-file fitness function (ADR 0103)" },
   { target: "check-visual", marker: "--project=chromium-visual --project=chromium-visual-light", label: "pinned-renderer visual baselines (both projects, #448)" },
   { target: "check-docs-gates", marker: '"scripts/ux/*.test.mjs"', label: "scripts/ux unit tests (pinned-renderer predicate, contact sheet)" },
+  { target: "check-docs-gates", marker: "escaped-defects-report.mjs --validate", label: "escaped-defect table schema gate (ADR 0081 Q7 follow-up, G4)" },
 ];
 
 // Targets whose recipes must never contain an exit-ignored (`-`-prefixed) step.
@@ -231,6 +232,29 @@ for (const dir of ["scripts/check", "scripts/ux"]) {
   }
 }
 
+// (2d) Advisory workflows must have an addressee (G13, ADR 0096 dec. 5 +
+// owner 2026-09-07): "advisory" must never mean "silent" — mutation-audit
+// runs 33203998627/32237111937 each reported 2 missed mutants with no card
+// filed, because an advisory result had nowhere to go. Any workflow whose
+// `name:` contains "advisory" (case-insensitive) must carry a `gh issue
+// create` step so a finding always gets a tracked addressee.
+const workflowsDir = resolve(repoRoot, ".github/workflows");
+for (const name of readdirSync(workflowsDir)) {
+  if (!name.endsWith(".yml") && !name.endsWith(".yaml")) continue;
+  const rel = `.github/workflows/${name}`;
+  const content = readFileSync(resolve(repoRoot, rel), "utf8");
+  const nameMatch = content.match(/^name:\s*(.+)$/m);
+  const workflowName = (nameMatch ? nameMatch[1] : "").trim();
+  if (!/advisory/i.test(workflowName)) continue;
+  if (!content.includes("gh issue create")) {
+    errors.push(
+      `\`${rel}\` is an advisory workflow (name: "${workflowName}") but has no \`gh issue create\` step.\n` +
+        `    Advisory ≠ silent (ADR 0096 dec. 5 + owner 2026-09-07): a finding with no addressee rots\n` +
+        `    unaddressed. Add a carding step that opens/reuses a tracked issue for its findings.`,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // context-architecture (ADR 0063)
 //
@@ -303,6 +327,19 @@ if (hookContent === null) {
       );
     }
   }
+}
+
+// (4b) Hard gate G2 (tests audit, owner 2026-09-07): the one-heavy-build
+// PreToolUse hook must stay wired for Bash — it is the mechanical form of
+// testing.md § Resource discipline for every agent/subagent.
+const heavyBuildHookSettings = readIfExists(".claude/settings.json");
+if (heavyBuildHookSettings === null || !heavyBuildHookSettings.includes("one-heavy-build.sh")) {
+  contextArchErrors.push(
+    "`.claude/settings.json` does not wire `.claude/hooks/one-heavy-build.sh` as a Bash PreToolUse hook (hard gate G2, ADR 0038 amendment 2026-09-07).",
+  );
+}
+if (readIfExists(".claude/hooks/one-heavy-build.sh") === null) {
+  contextArchErrors.push("`.claude/hooks/one-heavy-build.sh` not found (hard gate G2).");
 }
 
 const claudeMdContent = readIfExists("CLAUDE.md");
