@@ -476,12 +476,26 @@ function applyMorningReview(data: ScenarioData): ScenarioData {
     fetchedAt: "2026-06-07T17:19:00Z",
   };
 
+  // An attachment-bearing `report` item (presentationKind "report", NOT
+  // "filing") that still carries the exact dead "Komunikat ESPI/EBI" summary
+  // literal — the real shape `report_documents.rs:212` produces when a
+  // report's own summary hasn't been parsed yet (dogfooding #9): the row
+  // hosts must suppress it by exact match, not just by kind.
+  const reportWithLiteralSummaryFeedItem = {
+    ...makeFeedItem(COMPANY_SPECS.find((spec) => spec.key === "pzu")!, 0),
+    id: "feed_overlay_mr_report_literal",
+    title: "PZU: raport bieżący bez sparsowanego podsumowania",
+    summary: "Komunikat ESPI/EBI",
+    publishedAt: "2026-06-06T08:00:00Z",
+    fetchedAt: "2026-06-06T08:00:00Z",
+  };
+
   return {
     ...data,
     alertRules: [insiderRule, ...data.alertRules],
     attentionEvents: [insider, reconciliation, ...group, ...data.attentionEvents],
     autopilotRuns: [...runs, ...data.autopilotRuns],
-    feedItems: [filingFeedItem, reportFeedItem, ...data.feedItems],
+    feedItems: [filingFeedItem, reportFeedItem, reportWithLiteralSummaryFeedItem, ...data.feedItems],
     // Dziś v2 visit anchor (F2 S4): one day before `filingFeedItem`/SAMPLE_NOW so
     // the delta header has a non-empty "since your last visit" sentence and the
     // morning-review items land inside the visible window.

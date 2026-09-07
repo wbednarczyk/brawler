@@ -248,4 +248,76 @@ describe("CompanyClaimsPanel", () => {
     });
     expect(document.querySelector(".claim-row-highlighted")).toBeNull();
   });
+
+  // Deep-link target contract (dogfooding #11, ADR 0107 amendment): the mark
+  // persists for as long as the tool holds the target — no 4s flash.
+  it("stays marked past the old 4s flash window", async () => {
+    const target = claim({ id: "claim_target", statement: "Target claim" });
+    listManagementClaimsMock.mockResolvedValue([target]);
+    render(<CompanyClaimsPanel companyId="company_gpw_cdr" highlightClaimId="claim_target" />);
+    await screen.findByText("Target claim");
+    expect(screen.getByText("Target claim").closest("[data-claim-id]")).toHaveClass("claim-row-highlighted");
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(10_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(screen.getByText("Target claim").closest("[data-claim-id]")).toHaveClass("claim-row-highlighted");
+  });
+
+  it("retargeting moves the highlight to the new claim", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const a = claim({ id: "claim_a", statement: "Claim A" });
+    const b = claim({ id: "claim_b", statement: "Claim B" });
+    listManagementClaimsMock.mockResolvedValue([a, b]);
+
+    const { rerender } = render(<CompanyClaimsPanel companyId="company_gpw_cdr" highlightClaimId="claim_a" />);
+    await screen.findByText("Claim A");
+    expect(screen.getByText("Claim A").closest("[data-claim-id]")).toHaveClass("claim-row-highlighted");
+    expect(screen.getByText("Claim B").closest("[data-claim-id]")).not.toHaveClass("claim-row-highlighted");
+
+    rerender(<CompanyClaimsPanel companyId="company_gpw_cdr" highlightClaimId="claim_b" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Claim B").closest("[data-claim-id]")).toHaveClass("claim-row-highlighted");
+    });
+    expect(screen.getByText("Claim A").closest("[data-claim-id]")).not.toHaveClass("claim-row-highlighted");
+  });
+
+  it("clears the highlight when re-rendered without a target (close without retarget)", async () => {
+    const target = claim({ id: "claim_target", statement: "Target claim" });
+    listManagementClaimsMock.mockResolvedValue([target]);
+    const { rerender } = render(<CompanyClaimsPanel companyId="company_gpw_cdr" highlightClaimId="claim_target" />);
+    await screen.findByText("Target claim");
+    expect(screen.getByText("Target claim").closest("[data-claim-id]")).toHaveClass("claim-row-highlighted");
+
+    rerender(<CompanyClaimsPanel companyId="company_gpw_cdr" highlightClaimId={null} />);
+
+    expect(document.querySelector(".claim-row-highlighted")).toBeNull();
+  });
+
+  it("exactly one aria-current — the review-queue twin gets data-claim-match only, never aria-current or the highlight class", async () => {
+    const target = claim({ id: "claim_target", statement: "Target claim", status: "pending" });
+    listManagementClaimsMock.mockResolvedValue([target]);
+    listClaimsToVerifyMock.mockResolvedValue({
+      due: [{ claim: target, arrivedPeriodId: null, verifyingFactCandidate: null }],
+      overdue: [],
+      upcoming: [],
+    });
+
+    render(<CompanyClaimsPanel companyId="company_gpw_cdr" highlightClaimId="claim_target" />);
+    await screen.findAllByText("Target claim");
+
+    const current = document.querySelectorAll('[aria-current="true"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]).toHaveClass("claim-row");
+
+    const queueRow = document.querySelector(".claim-queue-row");
+    expect(queueRow).toHaveAttribute("data-claim-match", "true");
+    expect(queueRow).not.toHaveAttribute("aria-current");
+    expect(queueRow).not.toHaveClass("claim-row-highlighted");
+  });
 });

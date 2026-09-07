@@ -67,9 +67,9 @@
   border-radius: 8px;
 }
 
-/* Today's `openCompanyClaims` nav seam (F2 S3): a transient flash on arrival,
-   in either the main list or the review queue — fades on its own (component
-   clears the state after a few seconds), never a permanent style. */
+/* Deep-link target contract (dogfooding #11, ADR 0107 amendment): the
+   main-list row's persistent mark for as long as the tool holds this claim
+   as its target — no timer, never a transient flash. */
 .claim-row-highlighted {
   border-color: var(--tone-official);
   background: color-mix(in srgb, var(--tone-official) 12%, var(--surface-raised));

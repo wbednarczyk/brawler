@@ -7,6 +7,7 @@ import { FeedDetailGeneric } from "./FeedDetailGeneric";
 import { FeedDetailMedia } from "./FeedDetailMedia";
 import { FeedDetailReport } from "./FeedDetailReport";
 import { FeedSignalsSection } from "./FeedSignalsSection";
+import { feedKindChip, type FeedKindChip } from "./feedPresentation";
 
 export type FeedDetailContentProps = {
   item: FeedItem;
@@ -20,22 +21,14 @@ export type FeedDetailContentProps = {
   onRejectSignal: (signalId: string) => Promise<void> | void;
 };
 
-type KindChip = { label: string; tone: "media" | "official" };
-
-// Kind chip per presentation kind (mockup artboards InboxMedia/ESPI/Raport).
-// `text(...)` calls stay literal here (not a lookup table indexed by a
-// variable) so the translation-completeness ratchet's static scan can see them.
-function kindChip(kind: FeedItem["presentationKind"], text: (value: string) => string): KindChip | null {
-  switch (kind) {
-    case "media":
-      return { label: text("Media"), tone: "media" };
-    case "filing":
-      return { label: text("ESPI notice"), tone: "official" };
-    case "report":
-      return { label: text("Periodic report"), tone: "official" };
-    default:
-      return null;
-  }
+// Kind chip per presentation kind (mockup artboards InboxMedia/ESPI/Raport),
+// delegated to the host-neutral `feedPresentation` module (dogfooding #8) so
+// every render site agrees on the label/tone. `redFlag` stays routed to the
+// unchanged generic fallback below — unlike the row hosts, THIS dispatcher
+// still needs a "kind unhandled here" signal (redFlag has no dedicated body
+// component), not just a chip.
+function kindChip(kind: FeedItem["presentationKind"], text: (value: string) => string): FeedKindChip | null {
+  return kind === "redFlag" ? null : feedKindChip(kind, text);
 }
 
 // Dispatches the Inbox detail body by `presentationKind` (F1 S4, ADR 0104).
