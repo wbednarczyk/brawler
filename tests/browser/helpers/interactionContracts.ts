@@ -201,3 +201,59 @@ export async function expectActionInsideScroller(action: Locator, scroller: Loca
       `— a scrollbar occupying the last ${(scrollerRect.width - clientWidth).toFixed(0)}px must not clip it.`,
   ).toBeLessThanOrEqual(clientRight - 1);
 }
+
+/**
+ * Owner guardrail (2026-09-07): text never touches a table cell's edge. For
+ * every `th`/`td` under `table` the ink of its TEXT NODES (a Range per node,
+ * so stretched wrappers like a `width: 100%` button don't count) stays at
+ * least `minInset` px inside the cell's edges — left/right for horizontal
+ * text, top/bottom for a vertical writing mode. Visually hidden text is
+ * skipped; an ellipsized cell (content wider than its box) checks only its
+ * leading edge, `text-overflow` already keeps the ellipsis inside the padding.
+ */
+export async function expectTableCellTextInset(table: Locator, minInset = 6): Promise<void> {
+  const offenders = await table.evaluate((root, min) => {
+    const bad: string[] = [];
+    for (const cell of Array.from(root.querySelectorAll<HTMLElement>("th, td"))) {
+      const cellStyle = getComputedStyle(cell);
+      if (cellStyle.display === "none" || cellStyle.visibility === "hidden") continue;
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      let ink: DOMRect | null = null;
+      let vertical = false;
+      let ellipsized = cell.scrollWidth > cell.clientWidth + 1;
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent?.trim()) continue;
+        const parent = node.parentElement as HTMLElement;
+        if (parent.closest(".visually-hidden")) continue;
+        const style = getComputedStyle(parent);
+        if (style.writingMode.startsWith("vertical")) vertical = true;
+        for (let el: HTMLElement | null = parent; el && el !== cell; el = el.parentElement) {
+          if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX !== "visible") ellipsized = true;
+        }
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const rect = range.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) continue;
+        ink = ink
+          ? new DOMRect(
+              Math.min(ink.left, rect.left),
+              Math.min(ink.top, rect.top),
+              Math.max(ink.right, rect.right) - Math.min(ink.left, rect.left),
+              Math.max(ink.bottom, rect.bottom) - Math.min(ink.top, rect.top),
+            )
+          : rect;
+      }
+      if (!ink) continue;
+      const box = cell.getBoundingClientRect();
+      const lead = vertical ? ink.top - box.top : ink.left - box.left;
+      const trail = vertical ? box.bottom - ink.bottom : box.right - ink.right;
+      if (lead < min || (!ellipsized && trail < min)) {
+        bad.push(
+          `${cell.tagName.toLowerCase()}.${cell.className || "-"} "${cell.textContent?.trim().slice(0, 24)}" lead=${lead.toFixed(1)} trail=${trail.toFixed(1)}`,
+        );
+      }
+    }
+    return bad;
+  }, minInset);
+  expect(offenders, `cells whose text touches an edge (< ${minInset}px inset):\n${offenders.join("\n")}`).toEqual([]);
+}

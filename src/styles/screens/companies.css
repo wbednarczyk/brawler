@@ -533,6 +533,8 @@
 .facts-matrix th.facts-matrix-corner,
 .facts-matrix th.facts-matrix-kpi {
   text-align: left;
+  /* `.facts-matrix th { padding: 0 }` outranks the class rules below. */
+  padding: var(--space-2) var(--space-3);
 }
 
 .facts-matrix-corner,
