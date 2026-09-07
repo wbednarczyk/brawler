@@ -506,7 +506,7 @@ Error codes: `claim_not_found`, `company_not_found`, `invalid_due_period`, `inva
 
 ## Claim Extraction — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-In-app AI claim extraction is removed; the `claim_extraction_proposals` and `claim_extraction_jobs` tables were dropped by migration `0102` (decision 5 — no readable history survives). The **manual claims path stays** — creating a management claim (see [Management Claims](#management-claims)) is how a claim is recorded now. Agent-proposed claims with mandatory provenance return via MCP write-tools (v0.60.0).
+Retired — manual claim creation ([Management Claims](#management-claims)) and MCP write-tools (agent-proposed claims with mandatory provenance) replace in-app AI extraction; decision and rationale: [ADR 0084](adr/0084-retire-in-app-ai-layer.md).
 
 ## Claims Review Queue
 
@@ -728,7 +728,7 @@ Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandErro
 
 ## Research Cockpit (retired)
 
-The docking engine and its four saved-layout commands are retired ([ADR 0108](adr/0108-retire-docking-engine.md)); the company surface's tools are documented under Spółka in the UI information architecture.
+Retired — the company surface's tools are documented under Spółka in the UI information architecture; decision and rationale: [ADR 0108](adr/0108-retire-docking-engine.md).
 
 ## Report-Over-Report Diff
 
@@ -1352,7 +1352,7 @@ Commands:
 
 ## AI Analysis Result / AI Analysis Job — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-In-app feed-item AI analysis is removed; the `ai_analysis_results` and `ai_analysis_jobs` tables were dropped by migration `0102` (no readable history survives). No new feed-item analysis is produced in-app — intelligence arrives through the MCP port (BYOA) — and `list_ai_analysis` no longer exists as a command.
+Retired — intelligence over feed items arrives via the MCP port (BYOA) instead; decision and rationale: [ADR 0084](adr/0084-retire-in-app-ai-layer.md).
 
 ## Video Transcript Job
 
@@ -2030,11 +2030,7 @@ Rules:
 
 ## AI Provider Catalog — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-The selectable analysis-provider catalog, `list_ai_provider_catalog()`, and
-capability-provider routing are removed with the in-app AI analysis layer
-(decisions 1/7). The **only** remaining AI dependency is the Gemini transcript
-provider (see [Credentials](#credentials)) — data acquisition, not analysis.
-The app runs fully featured with zero API keys.
+Retired — the only remaining AI dependency is the Gemini transcript provider (see [Credentials](#credentials)), data acquisition rather than analysis; decision and rationale: [ADR 0084](adr/0084-retire-in-app-ai-layer.md).
 
 ## Research Evidence Boundary
 
@@ -2661,7 +2657,7 @@ The in-app AI assessment run — the durable `qualitative_assessment` job, the p
 
 ### AI KPI Extraction — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-AI-generated KPI extraction is removed entirely (decision 5): generation, the staging ledger, and the review surface are gone, with `kpi_extraction_jobs`/`kpi_extraction_proposals` dropped by migration `0102`. The deterministic fundamentals pipeline (ESEF → EspiCoverNote → `html_aggregator` BiznesRadar-primary) is the only extractor now — the PDF fact-extraction arm and the positional/tier-3b arm are both retired too ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) decision 1, [ADR 0095](adr/0095-retire-html-positional-tier.md)) — so a stored PDF or a bare non-iXBRL render takes no rung at all, and a document no surviving tier parses is flagged rather than guessed.
+Retired — the deterministic fundamentals pipeline (`run_structured_extraction` above) is the only extractor now; decision and rationale: [ADR 0084](adr/0084-retire-in-app-ai-layer.md).
 
 ### IR-Page Report Resolution
 

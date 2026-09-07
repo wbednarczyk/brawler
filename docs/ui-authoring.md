@@ -19,7 +19,7 @@ Every screen touched from v0.72 on follows ADR 0104; approved visual reference: 
 Two process rules for anything beyond a mechanical change:
 
 - **Mockup-first.** A new panel/screen or a functional redesign starts as an HTML mockup the owner approves BEFORE code, and the approved mockup is **saved under `docs/mockups/`** (gitignored, local-only — owner decision 2026-07-15) — never left in a session scratchpad (the v0.50 U0 mockups were approved but lost with the scratchpad; the ADR prose had to stand in for them).
-- **No design decision without a spec.** Implementers (human or agent) execute normative specs — ADR tables, density-contract rows, approved mockups. If a spec is missing, ambiguous, or two rules conflict, STOP and escalate with the conflict spelled out; do not pick a design silently. Harvested from v0.50: every fan-out defect traced back to a gap or contradiction in the task spec, not to implementer judgment being too weak.
+- **No design decision without a spec** — CLAUDE.md § Doc-first applies; in UI the normative specs are ADR tables, density-contract rows and approved mockups (harvest v0.50: every fan-out defect traced to a spec gap, not to implementer judgment).
 
 ## Experience contracts, storyboards & discoverability (ADR 0081, adopted)
 

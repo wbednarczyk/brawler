@@ -11,5 +11,5 @@ Three always-on rules (full statements in CLAUDE.md):
 
 Git: do NOT commit or push unless the user explicitly asks. Edit, stop, wait.
 
-Load per task: `gh issue view <n>` (active work; `gh issue list` / the "Brawler board" for the board) → only the area's canonical doc(s) from the CLAUDE.md map. UI work → docs/ui-authoring.md first. Epic closure: docs/kanban.md § Epic closure. Packaging → the packaging skill.
+Load per task: `gh issue view <n>` (active work; `gh issue list` / the "Brawler board" for the board) → only the area's canonical doc(s) from the CLAUDE.md map. UI work → docs/ui-authoring.md first. ANY product/UI/analysis/planning work → the `investing-domain` skill first (.claude/skills/investing-domain/SKILL.md — who the user is; without it every feature judgment is an engineer's, not an investor's). IPC/MCP work → docs/contracts.md § Command Conventions (headless-only / MCP-only applicability). Epic closure: docs/kanban.md § Epic closure. Packaging → the packaging skill.
 EOF

@@ -36,9 +36,9 @@ VISUAL_DOCKER = docker run --rm --init --ipc=host --user "$$(id -u):$$(id -g)" -
 help:
 	@printf "Brawler developer commands\n\n"
 	@printf "  make install             Install npm dependencies inside nix develop\n"
-	@printf "  make check               The single mandatory gate: all deterministic suites, hard-fail (pre-commit runs this)\n"
+	@printf "  make check               The single mandatory gate: all deterministic suites, hard-fail (CI only — the PR's required checks)\n"
 	@printf "  make check-local         Developer inner-loop / pre-handover check (parallel core, no browser) — NOT proof of done\n"
-	@printf "  make check-docs          Docs-only gate: mandatory-read budgets + docs drift, no code suites (pre-commit uses this for docs-only commits)\n"
+	@printf "  make check-docs          Docs-only gate: mandatory-read budgets + docs drift, no code suites (docs-only PRs)\n"
 	@printf "  make check-rust-lint / check-rust-test / check-frontend-static / check-frontend-test / check-frontend-build / check-browser [SHARD=i/N] / check-visual / check-docs-gates\n"
 	@printf "                            Granular CI-parity gate targets — each is one full-check.yml job; 'make check' composes them\n"
 	@printf "  make check-commits RANGE=<base>..<head>\n"
