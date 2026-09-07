@@ -1,3 +1,4 @@
+import { periodsMeasureKey } from "./periodMeasureKeys";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, ExternalLink } from "lucide-react";
 
@@ -111,9 +112,18 @@ export function FundamentalsPeriodsSection({
   const periodsVisible = useVisiblePeriods({
     scrollerRef,
     total: axis.length,
-    measureKey: `${locale}|${granularity}|${axis.map((period) => period.key).join(",")}|${(comparison?.series ?? [])
-      .map((row) => row.metricKey)
-      .join(",")}`,
+    measureKey: periodsMeasureKey({ locale, granularity, comparison }),
+    // The tier folds the Δ columns (S); a flip re-measures with the new set.
+    measureVariant: () => {
+      const scroller = scrollerRef.current;
+      if (!scroller) return "";
+      return ["value", "qoq", "yoy"]
+        .filter((col) => {
+          const cell = scroller.querySelector<HTMLElement>(`[data-period-col="${col}"]`);
+          return cell ? getComputedStyle(cell).display !== "none" : false;
+        })
+        .join(",");
+    },
     // One period group = value + delta column(s); each column's width is the
     // widest natural cell in it across ALL periods (the measuring pass renders
     // them all; a column folded by the tier measures 0).
@@ -243,6 +253,7 @@ export function FundamentalsPeriodsSection({
             data-expanded={periodsVisible.expanded || undefined}
             data-measuring={periodsVisible.measuring || undefined}
             data-visible-periods={periodsVisible.measuring ? undefined : shownIndices.length}
+            data-total-periods={axis.length}
             aria-label={text("Positions and period deltas")}
             ref={scrollerRef}
           >

@@ -30,6 +30,9 @@ export type UseVisiblePeriodsOptions = {
   // Rendered width of the expander column, reserved only when some periods
   // must hide (re-read on every resize).
   measureExpanderWidth: () => number;
+  // Names the tier-dependent column set currently displayed (e.g. which Δ
+  // columns a container query shows); a change re-runs the measuring pass.
+  measureVariant?: () => string;
 };
 
 export type UseVisiblePeriodsResult = {
@@ -50,6 +53,7 @@ export function useVisiblePeriods({
   measurePeriodWidth,
   measureFixedWidth,
   measureExpanderWidth,
+  measureVariant,
 }: UseVisiblePeriodsOptions): UseVisiblePeriodsResult {
   const [capacity, setCapacity] = useState(MIN_CAPACITY);
   const [expanded, setExpanded] = useState(false);
@@ -57,13 +61,20 @@ export function useVisiblePeriods({
   const periodWidthRef = useRef(0);
   // Latest measurers in refs so the callbacks' identity never re-triggers
   // an effect (a new closure per render is the norm).
-  const measurers = useRef({ measurePeriodWidth, measureFixedWidth, measureExpanderWidth });
-  measurers.current = { measurePeriodWidth, measureFixedWidth, measureExpanderWidth };
+  const measuredVariantRef = useRef("");
+  const measurers = useRef({ measurePeriodWidth, measureFixedWidth, measureExpanderWidth, measureVariant });
+  measurers.current = { measurePeriodWidth, measureFixedWidth, measureExpanderWidth, measureVariant };
   const measuring = total > 0 && measuredKey !== measureKey;
 
   const recompute = useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
+    // A tier flip that folds/unfolds columns invalidates the cached width.
+    const variant = measurers.current.measureVariant?.() ?? "";
+    if (variant !== measuredVariantRef.current) {
+      setMeasuredKey(null);
+      return;
+    }
     const periodWidth = periodWidthRef.current;
     if (!periodWidth) {
       setCapacity(MIN_CAPACITY);
@@ -86,6 +97,7 @@ export function useVisiblePeriods({
   useLayoutEffect(() => {
     if (!measuring) return;
     periodWidthRef.current = measurers.current.measurePeriodWidth();
+    measuredVariantRef.current = measurers.current.measureVariant?.() ?? "";
     setMeasuredKey(measureKey);
     recompute();
   }, [measuring, measureKey, recompute]);

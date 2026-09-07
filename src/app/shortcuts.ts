@@ -80,8 +80,8 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     group: "Global actions",
     scope: "app",
     verb: "open",
-    // Ctrl+K has no editing meaning; a focused company picker (`<select>`,
-    // where a company switch lands focus) must not swallow it (F3c).
+    // Ctrl+K has no editing meaning; a focused company picker (the combobox
+    // input, where a company switch lands focus) must not swallow it (F3c).
     suppressWhenEditable: false,
     binding: {
       ctrlKey: true,

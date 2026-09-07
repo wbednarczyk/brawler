@@ -1,3 +1,4 @@
+import { factsMeasureKey } from "./periodMeasureKeys";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Save, Trash2, X } from "lucide-react";
 import type { FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
@@ -333,18 +334,46 @@ export function FundamentalsPanel({
       )
     : activeTab.rows;
 
-  // Period-expander column (dogfooding #6): the newest MEASURED-capacity
-  // periods show by default, oldest hidden behind a full-height clickable
-  // column (owner storyboard round 1) — shared logic, this host's own
-  // measured period-group width (one <th>) and fixed sticky-column width
-  // (KPI column + the expander column itself, both fixed in CSS below).
+  // Period-expander column (dogfooding #6): as many newest periods as fit
+  // show by default, the rest hidden behind a full-height clickable column —
+  // shared logic (`useVisiblePeriods`): a hidden measuring pass over every
+  // period, the sticky KPI + trend widths read from the DOM, the expander
+  // width reserved separately and only when periods must hide.
+  // The never-silently-absent count of rows still awaiting a catalog name
+  // (dogfooding #7: moved into the section header as a warn chip, the old
+  // completeness bar is gone — it competed with the table for attention and
+  // duplicated per-cell provenance).
+  const latestMatrixPeriod = factMatrix.periods[factMatrix.periods.length - 1];
+  const uncataloguedCount = activeTab.rows.filter((row) => row.isSynthetic).length;
+
+  // Origin chip (epic #398): the source tier of the active statement's
+  // current-period facts, when they agree — a mixed statement (e.g. some
+  // rows still aggregator-sourced, others issuer-tagged) says so explicitly
+  // rather than picking one tier and implying uniform provenance.
+  const currentPeriodSourceTiers = latestMatrixPeriod
+    ? new Set(
+        activeTab.rows
+          .map((row) => row.cells[latestMatrixPeriod.id])
+          .filter((fact): fact is NonNullable<typeof fact> => Boolean(fact))
+          .map((fact) => provenanceById[fact.id]?.sourceTier)
+          .filter((tier): tier is string => Boolean(tier)),
+      )
+    : new Set<string>();
+  const originTier = currentPeriodSourceTiers.size === 1 ? [...currentPeriodSourceTiers][0] : null;
+  const originIsMixed = currentPeriodSourceTiers.size > 1;
+
   const factsScrollRef = useRef<HTMLDivElement | null>(null);
   const factsPeriods = useVisiblePeriods({
     scrollerRef: factsScrollRef,
     total: factMatrix.periods.length,
-    measureKey: `${locale}|${factMatrix.periods.map((period) => period.id).join(",")}|${visibleMatrixRows
-      .map((row) => row.definition.id)
-      .join(",")}`,
+    measureKey: factsMeasureKey({
+      locale,
+      periods: factMatrix.periods,
+      rows: visibleMatrixRows,
+      latestPeriodId: latestMatrixPeriod?.id ?? null,
+      originTier,
+      originIsMixed,
+    }),
     // Widest natural period cell (header label + origin chip, every body
     // value) across ALL periods — the measuring pass renders them all.
     measurePeriodWidth: () => {
@@ -388,28 +417,6 @@ export function FundamentalsPanel({
     scroller.scrollLeft = scroller.scrollWidth;
   }, [factsPeriods.expanded]);
 
-  // The never-silently-absent count of rows still awaiting a catalog name
-  // (dogfooding #7: moved into the section header as a warn chip, the old
-  // completeness bar is gone — it competed with the table for attention and
-  // duplicated per-cell provenance).
-  const latestMatrixPeriod = factMatrix.periods[factMatrix.periods.length - 1];
-  const uncataloguedCount = activeTab.rows.filter((row) => row.isSynthetic).length;
-
-  // Origin chip (epic #398): the source tier of the active statement's
-  // current-period facts, when they agree — a mixed statement (e.g. some
-  // rows still aggregator-sourced, others issuer-tagged) says so explicitly
-  // rather than picking one tier and implying uniform provenance.
-  const currentPeriodSourceTiers = latestMatrixPeriod
-    ? new Set(
-        activeTab.rows
-          .map((row) => row.cells[latestMatrixPeriod.id])
-          .filter((fact): fact is NonNullable<typeof fact> => Boolean(fact))
-          .map((fact) => provenanceById[fact.id]?.sourceTier)
-          .filter((tier): tier is string => Boolean(tier)),
-      )
-    : new Set<string>();
-  const originTier = currentPeriodSourceTiers.size === 1 ? [...currentPeriodSourceTiers][0] : null;
-  const originIsMixed = currentPeriodSourceTiers.size > 1;
 
   // Trends must compare like-for-like periods: mixing a full-year figure with
   // quarters distorts the line. When any quarterly/half-year period exists, the

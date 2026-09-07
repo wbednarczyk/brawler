@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   useVisiblePeriods,
@@ -38,6 +38,7 @@ function Harness(props: {
   stickyWidth: number;
   expanderWidth?: number;
   measureKey?: string;
+  variant?: string;
   onResult: (result: ReturnType<typeof useVisiblePeriods>) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -46,6 +47,7 @@ function Harness(props: {
     total: props.total,
     measureKey: props.measureKey ?? "k",
     measureExpanderWidth: () => props.expanderWidth ?? 0,
+    measureVariant: () => props.variant ?? "",
     measurePeriodWidth: () => props.periodWidth,
     measureFixedWidth: () => props.stickyWidth,
   });
@@ -85,6 +87,40 @@ describe("useVisiblePeriods", () => {
     render(<Harness total={20} clientWidth={1000} periodWidth={100} stickyWidth={100} onResult={() => {}} />);
     expect(screen.getByText("visibleCount:9")).toBeInTheDocument();
     expect(screen.getByText("hiddenCount:11")).toBeInTheDocument();
+  });
+
+  it("reserves the expander column only when some periods must hide", () => {
+    // available = 1000 - 100 = 900; 9 periods × 100 fit exactly → all shown,
+    // no expander; a tenth period forces the reservation (900 - 44 → 8).
+    const { rerender } = render(
+      <Harness total={9} clientWidth={1000} periodWidth={100} stickyWidth={100} expanderWidth={44} onResult={() => {}} />,
+    );
+    expect(screen.getByText("visibleCount:9")).toBeInTheDocument();
+    expect(screen.getByText("hiddenCount:0")).toBeInTheDocument();
+    rerender(
+      <Harness total={10} clientWidth={1000} periodWidth={100} stickyWidth={100} expanderWidth={44} onResult={() => {}} />,
+    );
+    expect(screen.getByText("visibleCount:8")).toBeInTheDocument();
+    expect(screen.getByText("hiddenCount:2")).toBeInTheDocument();
+  });
+
+  it("re-measures when the presentation key or the displayed column set changes", () => {
+    const { rerender } = render(
+      <Harness total={20} clientWidth={1000} periodWidth={100} stickyWidth={100} measureKey="a" variant="value" onResult={() => {}} />,
+    );
+    expect(screen.getByText("visibleCount:9")).toBeInTheDocument();
+    // Wider cells under a new key (a value edit, a late provenance chip).
+    rerender(
+      <Harness total={20} clientWidth={1000} periodWidth={150} stickyWidth={100} measureKey="b" variant="value" onResult={() => {}} />,
+    );
+    expect(screen.getByText("visibleCount:6")).toBeInTheDocument();
+    // A tier flip that unfolds columns (wider group) under the SAME key: the
+    // resize recompute notices the variant and measures again.
+    rerender(
+      <Harness total={20} clientWidth={1000} periodWidth={300} stickyWidth={100} measureKey="b" variant="value,qoq,yoy" onResult={() => {}} />,
+    );
+    act(() => FakeResizeObserver.instances[FakeResizeObserver.instances.length - 1]?.fire());
+    expect(screen.getByText("visibleCount:3")).toBeInTheDocument();
   });
 
   it("clamps a tiny available width up to the minimum capacity of 1", () => {

@@ -277,3 +277,62 @@ test("zebra rows are perceptible and continuous under the sticky column", async 
   expect(evenValue).toBeDefined();
   expect(luminance(evenValue!)).toBeCloseTo(evenSticky, 2);
 });
+
+// Pozycje × okresy across tiers (sol R3 blocker 2): the S tier folds the Δ
+// columns, so a width cached at S must not drive the capacity at M/L (and the
+// reverse). The oracle re-measures the DISPLAYED columns at every tier.
+async function measurePositions(page: Page) {
+  const scroller = page.locator(".fundamentals-periods-scroll");
+  const groups = page.locator('.fundamentals-periods-table thead th[data-period-col="value"]');
+  const total = Number(await scroller.evaluate((el) => el.dataset.totalPeriods ?? "0"));
+  const expander = page.locator(".fundamentals-periods-expander-button");
+  const hadExpander = (await expander.count()) > 0;
+  if (hadExpander) {
+    await expander.click();
+    await expect(groups).toHaveCount(total);
+  }
+  const capacity = await scroller.evaluate((el, total) => {
+    const pad = (node: Element) => {
+      const style = getComputedStyle(node);
+      return ["paddingLeft", "paddingRight", "borderLeftWidth", "borderRightWidth"]
+        .map((key) => Number.parseFloat(style[key as keyof CSSStyleDeclaration] as string) || 0)
+        .reduce((a, b) => a + b, 0);
+    };
+    const widest = new Map<string, number>();
+    for (const cell of el.querySelectorAll<HTMLElement>("[data-period-col]")) {
+      if (getComputedStyle(cell).display === "none") continue;
+      const range = document.createRange();
+      range.selectNodeContents(cell);
+      const width = range.getBoundingClientRect().width + pad(cell);
+      const col = cell.dataset.periodCol as string;
+      widest.set(col, Math.max(widest.get(col) ?? 0, width));
+    }
+    let group = 0;
+    for (const width of widest.values()) group += width;
+    const corner = el.querySelector(".fundamentals-periods-corner") as HTMLElement;
+    const expanderWidth = Number.parseFloat(getComputedStyle(el).getPropertyValue("--period-expander-width")) || 0;
+    const available = el.clientWidth - corner.offsetWidth;
+    if (total * group <= available) return total;
+    return Math.max(1, Math.floor((available - expanderWidth) / group));
+  }, total);
+  if (hadExpander) {
+    await expander.click();
+    await page.waitForTimeout(150);
+  }
+  return { capacity, groups, scroller };
+}
+
+for (const order of [["S", "M", "L"], ["L", "M", "S"]] as const) {
+  test(`Pozycje × okresy collapsed capacity follows the tier ${order.join("→")}`, async ({ page }) => {
+    await openManyPeriodsFundamentals(page);
+    const pane = page.locator(".spolka-layout");
+    for (const tier of order) {
+      await setPaneSize(page, { ...TIER_SIZE[tier], pane });
+      await page.waitForTimeout(400);
+      const { capacity, groups, scroller } = await measurePositions(page);
+      await expect(groups).toHaveCount(capacity);
+      const box = await scroller.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+      expect(box.scrollWidth, `collapsed Pozycje never overflows at ${tier}`).toBeLessThanOrEqual(box.clientWidth + 1);
+    }
+  });
+}

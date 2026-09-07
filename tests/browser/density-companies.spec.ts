@@ -153,11 +153,12 @@ test.describe("company panel density matrix", { tag: "@clickable" }, () => {
 });
 
 // Periods × deltas section (v0.61 §A5, ADR 0089 dec. 1). The quarterly view is
-// deliberate wide content (value + Δ QoQ + Δ YoY per period); the narrow-window
-// rule requires it to scroll inside its own bounded, contained scroller so it
-// never forces a pane- or page-level horizontal scrollbar.
+// wide content (value + Δ QoQ + Δ YoY per period); collapsed it shows as many
+// newest periods as fit (clipped wrapper, no scroll — the S tier folds the Δ
+// columns), expanded it scrolls inside its own bounded box, and neither state
+// forces a pane- or page-level horizontal scrollbar.
 test.describe("Fundamentals periods × deltas layout", { tag: "@clickable" }, () => {
-  test("the wide quarterly table scrolls inside its own container, not the pane", async ({
+  test("the collapsed quarterly table fits its wrapper at S and never overflows the pane", async ({
     page,
   }) => {
     await openApp(page);
