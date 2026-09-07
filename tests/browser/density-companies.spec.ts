@@ -177,15 +177,19 @@ test.describe("Fundamentals periods × deltas layout", { tag: "@clickable" }, ()
     // No global horizontal scroll despite the wide table.
     await expectNoPageOverflow(page);
 
-    // The table overflows its OWN scroller (proving it is genuinely wide)…
+    // Owner round 2 (2026-09-07): a collapsed period table never overflows —
+    // at S the Δ columns fold and the sticky column narrows so one value
+    // column fits; the table fills the width it has.
     const inner = await scroller.evaluate((el) => ({
       scrollWidth: el.scrollWidth,
       clientWidth: el.clientWidth,
+      overflowX: getComputedStyle(el).overflowX,
     }));
-    expect(
-      inner.scrollWidth,
-      "the quarterly table is wide enough to exercise its scroller",
-    ).toBeGreaterThan(inner.clientWidth);
+    expect(inner.overflowX, "collapsed wrapper clips instead of scrolling").toBe("clip");
+    expect(inner.scrollWidth, "the collapsed quarterly table fits its wrapper").toBeLessThanOrEqual(inner.clientWidth + 1);
+    await expect(section.locator('[data-period-col="qoq"]').first()).toBeHidden();
+    await expect(section.locator('[data-period-col="yoy"]').first()).toBeHidden();
+    await expect(section.locator('[data-period-col="value"]').first()).toBeVisible();
 
     // …while the pane itself never overflows horizontally (containment holds).
     const paneBox = await pane.evaluate((el) => ({
@@ -238,5 +242,20 @@ test.describe("Companies library density (companies-library cell)", { tag: "@cli
       expect(addBox!.x + addBox!.width).toBeLessThanOrEqual(paneBox!.x + paneBox!.width + 1);
       await resetPaneSize(page, pane);
     }
+  });
+});
+
+// Fundamentals facts matrix: the Trend sparkline column folds at S (so one
+// period always fits beside the sticky KPI + expander columns) and shows at M.
+test.describe("Fundamentals trend column per tier", { tag: "@clickable" }, () => {
+  test("Trend folds at S and shows at M", async ({ page }) => {
+    await openApp(page);
+    const pane = await openCompanyTool(page, "Open fundamentals");
+    const trend = pane.locator(".facts-matrix-trend-head");
+    await setPaneSize(page, { width: 380, height: 700, pane });
+    await expect(trend).toBeHidden();
+    await setPaneSize(page, { width: 600, height: 700, pane });
+    await expect(trend).toBeVisible();
+    await resetPaneSize(page, pane);
   });
 });

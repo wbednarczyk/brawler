@@ -9,7 +9,7 @@ import { buildFactMatrix, buildStatementTabs, type StatementTabKey } from "./fac
 import { FundamentalsPeriodsSection } from "./FundamentalsPeriodsSection";
 import { FundamentalsFactsMatrix } from "./FundamentalsFactsMatrix";
 import { factQualityLabel, factQualityTone, tierLabel } from "./factLabels";
-import { useVisiblePeriods, naturalCellWidth } from "./useVisiblePeriods";
+import { useVisiblePeriods, naturalCellWidth, cssLengthVar } from "./useVisiblePeriods";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { DriftDiff, parseDrift } from "../../shared/components/DriftDiff";
@@ -109,8 +109,6 @@ export function factsRecordedLabel(count: number, locale: LocaleCode): string {
 // still leaves room for at least one period column at the narrowest S tier
 // (measured: a ~320px scroller, ~86px period width — 140+44+86=270 fits with
 // margin; the mockup's 96 was measured against a synthetic 10px preview font).
-const FACTS_KPI_COLUMN_WIDTH = 140;
-const FACTS_EXPANDER_COLUMN_WIDTH = 44;
 
 /**
  * Display label for a {@link StatementTabKey} (epic #398 statement switcher):
@@ -344,8 +342,11 @@ export function FundamentalsPanel({
   const factsPeriods = useVisiblePeriods({
     scrollerRef: factsScrollRef,
     total: factMatrix.periods.length,
-    // Widest natural period cell (header label/chip or any body value) —
-    // columns stretch to fill the table, so their rendered width is circular.
+    measureKey: `${locale}|${factMatrix.periods.map((period) => period.id).join(",")}|${visibleMatrixRows
+      .map((row) => row.definition.id)
+      .join(",")}`,
+    // Widest natural period cell (header label + origin chip, every body
+    // value) across ALL periods — the measuring pass renders them all.
     measurePeriodWidth: () => {
       const scroller = factsScrollRef.current;
       if (!scroller) return 0;
@@ -355,12 +356,20 @@ export function FundamentalsPanel({
       }
       return widest;
     },
-    // The trend column's floor is a rendered value (folded at the S tier).
-    stickyWidth: () => {
-      const trend = factsScrollRef.current?.querySelector<HTMLElement>(".facts-matrix-trend-head");
-      const trendWidth = trend && getComputedStyle(trend).display !== "none" ? Number.parseFloat(getComputedStyle(trend).minWidth) || 0 : 0;
-      return FACTS_KPI_COLUMN_WIDTH + FACTS_EXPANDER_COLUMN_WIDTH + trendWidth;
+    // Sticky KPI column as rendered + the trend column's natural width when
+    // the tier shows it (its min-width is the floor; it stretches otherwise).
+    measureFixedWidth: () => {
+      const scroller = factsScrollRef.current;
+      if (!scroller) return 0;
+      const corner = scroller.querySelector<HTMLElement>(".facts-matrix-corner");
+      const trend = scroller.querySelector<HTMLElement>(".facts-matrix-trend-head");
+      const trendShown = trend && getComputedStyle(trend).display !== "none";
+      const trendWidth = trendShown
+        ? Math.max(Number.parseFloat(getComputedStyle(trend).minWidth) || 0, naturalCellWidth(trend))
+        : 0;
+      return (corner?.offsetWidth ?? 0) + trendWidth;
     },
+    measureExpanderWidth: () => cssLengthVar(factsScrollRef.current, "--period-expander-width"),
   });
   const visibleFactPeriods = factMatrix.periods.slice(
     factsPeriods.visibleStart,
@@ -369,7 +378,7 @@ export function FundamentalsPanel({
   // The column stays visible while expanded (showing "Collapse earlier") even
   // though `hiddenCount` is then 0 — "no column at all" only applies when
   // there was never anything to hide in the first place.
-  const factsShowExpanderColumn = factsPeriods.expanded || factsPeriods.hiddenCount > 0;
+  const factsShowExpanderColumn = !factsPeriods.measuring && (factsPeriods.expanded || factsPeriods.hiddenCount > 0);
   // Autoscroll to the newest period only on the transition INTO the expanded
   // state (owner decision) — never on mount, never on a later resize.
   useEffect(() => {

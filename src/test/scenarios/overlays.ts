@@ -217,6 +217,10 @@ function applyPreliminaryFundamentals(data: ScenarioData): ScenarioData {
  */
 const MANY_PERIODS_METRICS: Array<{ metricKey: string; label: string; unit: string; base: number; step: number }> = [
   { metricKey: "revenue", label: "Revenue", unit: "PLN", base: 1_000_000_000, step: 50_000_000 },
+  // Shrinking series: the OLDEST period carries the widest value ("1 234 mld
+  // PLN" vs "64 mld PLN"), so a capacity measured from the newest slice only
+  // would overflow — the measuring pass must see every period.
+  { metricKey: "goodwillLegacy", label: "Goodwill (legacy, shrinking)", unit: "PLN", base: 1_234_000_000_000, step: -90_000_000_000 },
   { metricKey: "netProfit", label: "Net profit", unit: "PLN", base: 120_000_000, step: 6_000_000 },
   { metricKey: "ebitda", label: "EBITDA", unit: "PLN", base: 210_000_000, step: 9_000_000 },
   {

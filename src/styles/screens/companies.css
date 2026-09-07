@@ -413,7 +413,7 @@
   font-size: var(--font-base);
 }
 
-/* Reporting periods as chips rather than a cramped column. */
+/* Custom KPI definitions as chips (CustomKpiManager). */
 .periods-list {
   display: flex;
   flex-wrap: wrap;
@@ -441,6 +441,8 @@
 }
 
 .facts-matrix-scroll {
+  --period-kpi-width: 140px;
+  --period-expander-width: 44px;
   /* Collapsed: NOT a scroll container (`clip` + `visible`), so the sticky
      header pins to the tool body's scroll — the visible periods fit by
      construction (`useVisiblePeriods`). Expanded: a bounded 2-axis scroller
@@ -461,9 +463,16 @@
 .facts-matrix-scroll[data-expanded="true"],
 .fundamentals-periods-scroll[data-expanded="true"] {
   overflow: auto;
-  /* Pane-relative (`cqh` against `.spolka-layout`'s size container), never
-     taller than the pane; `60vh` is the fallback outside a container. */
-  max-height: min(60vh, 80cqh);
+  max-height: 60vh;
+}
+
+/* Pane-relative cap (`cqh` against `.spolka-layout`'s size container) where
+   supported — never taller than the pane. */
+@supports (max-height: 1cqh) {
+  .facts-matrix-scroll[data-expanded="true"],
+  .fundamentals-periods-scroll[data-expanded="true"] {
+    max-height: min(60vh, 80cqh);
+  }
 }
 
 .facts-matrix {
@@ -553,9 +562,9 @@
      `style={{…}}`, banned outside AppShell's sidebar-width exception
      (ui-authoring § Styling rules). Long labels ellipsize; the `title`
      attribute (FundamentalsPanel.tsx) carries the full text as a tooltip. */
-  width: 140px;
-  min-width: 140px;
-  max-width: 140px;
+  width: var(--period-kpi-width);
+  min-width: var(--period-kpi-width);
+  max-width: var(--period-kpi-width);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -581,7 +590,7 @@
 /* Period-expander column (dogfooding #6, owner storyboard round 1): a narrow
    full-height sticky column right of the KPI column — an empty <th> in the
    header, ONE rowSpan <td> in the first body row holding the whole control.
-   `left: 140px` mirrors FundamentalsPanel.tsx's FACTS_KPI_COLUMN_WIDTH. */
+   `left` = the sticky KPI column's width (`--period-kpi-width`). */
 td.facts-matrix-expander {
   /* Floor for the spanned rows (the label is absolute, so it adds no height). */
   height: 120px;
@@ -589,10 +598,10 @@ td.facts-matrix-expander {
 
 .facts-matrix-expander {
   position: sticky;
-  left: 140px;
+  left: var(--period-kpi-width);
   z-index: 1;
-  width: 44px;
-  min-width: 44px;
+  width: var(--period-expander-width);
+  min-width: var(--period-expander-width);
   padding: 0;
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -730,6 +739,8 @@ td.facts-matrix-expander {
 }
 
 .fundamentals-periods-scroll {
+  --period-kpi-width: 140px;
+  --period-expander-width: 44px;
   overflow-x: clip;
   overflow-y: visible;
   /* Same containment contract as .facts-matrix-scroll: an overflow-x scroller in
@@ -787,9 +798,9 @@ td.facts-matrix-expander {
   border-right: 1px solid var(--border);
   /* Fixed width (dogfooding #6) — mirrors .facts-matrix-corner/-kpi above;
      the expander column's `left` needs a static offset. */
-  width: 140px;
-  min-width: 140px;
-  max-width: 140px;
+  width: var(--period-kpi-width);
+  min-width: var(--period-kpi-width);
+  max-width: var(--period-kpi-width);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -807,18 +818,17 @@ td.facts-matrix-expander {
 }
 
 /* Period-expander column (dogfooding #6) — mirrors .facts-matrix-expander
-   above; `left: 140px` matches PERIODS_KPI_COLUMN_WIDTH
-   (FundamentalsPeriodsSection.tsx). */
+   above. */
 td.fundamentals-periods-expander {
   height: 120px;
 }
 
 .fundamentals-periods-expander {
   position: sticky;
-  left: 140px;
+  left: var(--period-kpi-width);
   z-index: 1;
-  width: 44px;
-  min-width: 44px;
+  width: var(--period-expander-width);
+  min-width: var(--period-expander-width);
   padding: 0;
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -1699,34 +1709,6 @@ td.fundamentals-periods-expander {
   font-size: var(--font-sm);
 }
 
-/* Autopilot disclosure. The summary toggle is hidden at tall/wide tiers (the
-   field renders inline via .fundamentals-autopilot-body); it only surfaces —
-   and can fold the field — at the S tier. */
-.fundamentals-autopilot-toggle,
-.fundamentals-forms-toggle {
-  display: none;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: var(--font-base);
-  text-align: left;
-  cursor: pointer;
-}
-
-.fundamentals-autopilot-chevron,
-.fundamentals-forms-chevron {
-  display: inline-flex;
-  transition: transform 120ms ease;
-}
-
-.fundamentals-autopilot.is-expanded .fundamentals-autopilot-chevron,
-.fundamentals-forms.is-expanded .fundamentals-forms-chevron {
-  transform: rotate(90deg);
-}
 
 /* Reporting forms: one column by default (M/S), toggle hidden (forms inline). */
 .fundamentals-forms {
@@ -1756,17 +1738,6 @@ td.fundamentals-periods-expander {
 
   .price-context-ratio-grid {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  }
-}
-
-/* S (<420px): Autopilot folds to a summary row + expand. */
-@container pane (max-width: 419px) {
-  .fundamentals-autopilot-toggle {
-    display: inline-flex;
-  }
-
-  .fundamentals-autopilot:not(.is-expanded) .fundamentals-autopilot-body {
-    display: none;
   }
 }
 
@@ -1883,5 +1854,25 @@ td.fundamentals-periods-expander {
   .company-row-context {
     justify-self: stretch;
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The measuring pass (`useVisiblePeriods`): every period is rendered once,
+   hidden, so the capacity is derived from ALL periods' natural widths. */
+.facts-matrix-scroll[data-measuring="true"],
+.fundamentals-periods-scroll[data-measuring="true"] {
+  visibility: hidden;
+}
+
+/* S tier: Pozycje × okresy keeps one period group reachable — values only
+   (the Δ columns fold) beside a narrower sticky column. */
+@container pane (max-width: 419px) {
+  .fundamentals-periods-scroll {
+    --period-kpi-width: 110px;
+  }
+
+  .fundamentals-periods-table [data-period-col="qoq"],
+  .fundamentals-periods-table [data-period-col="yoy"] {
+    display: none;
   }
 }

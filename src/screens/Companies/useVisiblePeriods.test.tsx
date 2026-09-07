@@ -36,14 +36,18 @@ function Harness(props: {
   clientWidth: number;
   periodWidth: number;
   stickyWidth: number;
+  expanderWidth?: number;
+  measureKey?: string;
   onResult: (result: ReturnType<typeof useVisiblePeriods>) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const result = useVisiblePeriods({
     scrollerRef,
     total: props.total,
+    measureKey: props.measureKey ?? "k",
+    measureExpanderWidth: () => props.expanderWidth ?? 0,
     measurePeriodWidth: () => props.periodWidth,
-    stickyWidth: props.stickyWidth,
+    measureFixedWidth: () => props.stickyWidth,
   });
   props.onResult(result);
   return (

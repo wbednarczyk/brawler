@@ -41,15 +41,53 @@ async function openManyPeriodsFundamentals(page: Page, locale: "en" | "pl" = "en
   await expect(page.getByLabel(matrixLabel)).toBeVisible();
 }
 
-/** The app's own measured outcome (`data-visible-periods`, written by the
- * host) — the expectations below derive from it and from the geometry the
- * measurement must satisfy (no overflow, newest header inside the box). */
+/** Independent expectation: expand the matrix so EVERY period renders,
+ * measure each period column's natural width (text ink + padding + borders,
+ * the same definition the app uses but computed here, from all periods),
+ * read the fixed/expander widths from the rendered CSS, apply the contract
+ * (all fit without the expander → all; else reserve the expander), then
+ * collapse again. */
 async function measure(page: Page) {
   const scroller = page.locator(".facts-matrix-scroll");
-  const capacity = Number(await scroller.getAttribute("data-visible-periods"));
   const periodHeaders = page.locator(
     '.facts-matrix thead th[scope="col"]:not(.facts-matrix-corner):not(.facts-matrix-expander):not(.facts-matrix-trend-head)',
   );
+  const expander = page.locator(".facts-matrix-expander-button");
+  const hadExpander = (await expander.count()) > 0;
+  if (hadExpander) {
+    await expander.click();
+    await expect(periodHeaders).toHaveCount(TOTAL_PERIODS);
+  }
+  const capacity = await scroller.evaluate((el, total) => {
+    const pad = (node: Element) => {
+      const style = getComputedStyle(node);
+      return ["paddingLeft", "paddingRight", "borderLeftWidth", "borderRightWidth"]
+        .map((key) => Number.parseFloat(style[key as keyof CSSStyleDeclaration] as string) || 0)
+        .reduce((a, b) => a + b, 0);
+    };
+    const natural = (cell: Element) => {
+      const inner = cell.querySelector(".facts-matrix-cell") ?? cell;
+      const range = document.createRange();
+      range.selectNodeContents(inner);
+      return range.getBoundingClientRect().width + pad(cell) + (inner === cell ? 0 : pad(inner));
+    };
+    let widest = 0;
+    for (const cell of el.querySelectorAll("[data-period-cell]")) widest = Math.max(widest, natural(cell));
+    const corner = el.querySelector(".facts-matrix-corner") as HTMLElement;
+    const trend = el.querySelector(".facts-matrix-trend-head") as HTMLElement | null;
+    const trendShown = trend && getComputedStyle(trend).display !== "none";
+    const fixed =
+      corner.offsetWidth +
+      (trendShown ? Math.max(Number.parseFloat(getComputedStyle(trend).minWidth) || 0, natural(trend)) : 0);
+    const expanderWidth = Number.parseFloat(getComputedStyle(el).getPropertyValue("--period-expander-width")) || 0;
+    const available = el.clientWidth - fixed;
+    if (total * widest <= available) return total;
+    return Math.max(1, Math.floor((available - expanderWidth) / widest));
+  }, TOTAL_PERIODS);
+  if (hadExpander) {
+    await expander.click();
+    await page.waitForTimeout(150);
+  }
   return { capacity, periodHeaders };
 }
 

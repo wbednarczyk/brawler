@@ -87,7 +87,7 @@ that item's detail, with the rest of the feed reachable below it.
 
 - **Company picker** (top of the screen, centred): type a ticker or a name — the list narrows as you type; `Enter` opens the company (a draft you are editing asks to stay or discard first). `Shift+J` / `Shift+K` also jump to the next/previous company. `Escape` closes the list, then clears what you typed, then returns you to the Overview.
 - **Period tables** (Fundamentals › facts matrix and Positions × periods) show as many of the **newest** periods as fit the width, in chronological order, so the latest figures never hide behind a scroll. The full-height **`Rozwiń starsze`** column on the left opens the older periods (the table jumps to the newest column); **`Zwiń starsze`** folds them back. The header row stays pinned while you scroll; an expanded table scrolls inside its own box. Alternate rows carry a slightly different background so long tables stay readable.
-- **Figures lead to their source**: the dotted thread under the newest revenue figure and the source ticket beneath the annual table are one control — hover lights both, click or `Enter` opens the filing.
+- **Figures lead to their source**: the newest revenue figure sits on a dotted thread and is the one control that opens the filing (click or `Enter`); the source ticket beneath the table is its label — hovering either lights both.
 
 ## Keyboard
 

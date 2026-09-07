@@ -32,6 +32,7 @@ beforeEach(() => {
     hiddenCount: 0,
     expanded: false,
     toggle: vi.fn(),
+    measuring: false,
   }));
 });
 
@@ -1022,6 +1023,7 @@ describe("FundamentalsPanel period-expander column (dogfooding #6)", () => {
         hiddenCount: Math.max(0, total - visibleCount),
         expanded,
         toggle: () => setExpanded((value) => !value),
+        measuring: false,
       };
     });
   });

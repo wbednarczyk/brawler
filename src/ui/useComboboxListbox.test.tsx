@@ -47,7 +47,9 @@ describe("useComboboxListbox", () => {
     expect(onSelect).not.toHaveBeenCalled();
     expect(enter.preventDefault).not.toHaveBeenCalled();
     act(() => hook.result.current.inputProps.onKeyDown(fakeKeyEvent("End")));
+    act(() => hook.result.current.inputProps.onKeyDown(fakeKeyEvent("Home")));
     expect(hook.result.current.activeOption?.id).toBe("a");
+    expect(hook.result.current.inputProps["aria-expanded"]).toBe(false);
     act(() => hook.result.current.open());
     act(() => hook.result.current.inputProps.onKeyDown(fakeKeyEvent("Enter")));
     expect(onSelect).toHaveBeenCalledTimes(1);

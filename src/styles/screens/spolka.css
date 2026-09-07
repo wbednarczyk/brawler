@@ -248,8 +248,6 @@
   border-radius: 4px;
   padding: var(--space-0) var(--space-2);
   min-height: 0;
-  /* Static twin of the thread button; the cursor still says "one action". */
-  cursor: pointer;
 }
 
 /* Same light-theme contrast fix as .ui-toast-action (feedback.css) /

@@ -60,7 +60,8 @@ export function FundamentalsFactsMatrix({
       className="facts-matrix-scroll"
       data-hscroll
       data-expanded={factsPeriods.expanded || undefined}
-      data-visible-periods={visibleFactPeriods.length}
+      data-measuring={factsPeriods.measuring || undefined}
+      data-visible-periods={factsPeriods.measuring ? undefined : visibleFactPeriods.length}
       aria-label={text("Financial facts matrix")}
       ref={factsScrollRef}
     >

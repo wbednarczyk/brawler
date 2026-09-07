@@ -8,7 +8,7 @@ import { formatFinancialValue, groupFormat } from "../../shared/format/financial
 import {
   periodExpanderAccessibleName,
   periodExpanderVisibleLabel,
-  useVisiblePeriods, naturalCellWidth } from "./useVisiblePeriods";
+  useVisiblePeriods, naturalCellWidth, cssLengthVar } from "./useVisiblePeriods";
 import {
   ActionButton,
   Button,
@@ -27,8 +27,6 @@ type LoadState = "idle" | "loading" | "error";
 // facts matrix (FundamentalsPanel.tsx) — a dynamic `left` offset would need
 // inline `style={{…}}`. Mirrored in companies.css
 // `.fundamentals-periods-kpi`/`-expander`.
-const PERIODS_KPI_COLUMN_WIDTH = 140;
-const PERIODS_EXPANDER_COLUMN_WIDTH = 44;
 
 type FundamentalsPeriodsSectionProps = {
   companyId: string;
@@ -113,13 +111,18 @@ export function FundamentalsPeriodsSection({
   const periodsVisible = useVisiblePeriods({
     scrollerRef,
     total: axis.length,
+    measureKey: `${locale}|${granularity}|${axis.map((period) => period.key).join(",")}|${(comparison?.series ?? [])
+      .map((row) => row.metricKey)
+      .join(",")}`,
     // One period group = value + delta column(s); each column's width is the
-    // widest natural cell in it (columns stretch, so rendered widths are circular).
+    // widest natural cell in it across ALL periods (the measuring pass renders
+    // them all; a column folded by the tier measures 0).
     measurePeriodWidth: () => {
       const scroller = scrollerRef.current;
       if (!scroller) return 0;
       const widest = new Map<string, number>();
       for (const cell of scroller.querySelectorAll<HTMLElement>("[data-period-col]")) {
+        if (getComputedStyle(cell).display === "none") continue;
         const col = cell.dataset.periodCol as string;
         widest.set(col, Math.max(widest.get(col) ?? 0, naturalCellWidth(cell)));
       }
@@ -127,7 +130,8 @@ export function FundamentalsPeriodsSection({
       for (const width of widest.values()) group += width;
       return group;
     },
-    stickyWidth: PERIODS_KPI_COLUMN_WIDTH + PERIODS_EXPANDER_COLUMN_WIDTH,
+    measureFixedWidth: () => scrollerRef.current?.querySelector<HTMLElement>(".fundamentals-periods-corner")?.offsetWidth ?? 0,
+    measureExpanderWidth: () => cssLengthVar(scrollerRef.current, "--period-expander-width"),
   });
   // Autoscroll to the newest period only on the transition INTO the expanded
   // state — never on mount, never on a later resize.
@@ -150,7 +154,7 @@ export function FundamentalsPeriodsSection({
   // The column stays visible while expanded (showing "Collapse earlier") even
   // though `hiddenCount` is then 0 — "no column at all" only applies when
   // there was never anything to hide in the first place.
-  const showExpanderColumn = periodsVisible.expanded || periodsVisible.hiddenCount > 0;
+  const showExpanderColumn = !periodsVisible.measuring && (periodsVisible.expanded || periodsVisible.hiddenCount > 0);
 
   const series = useMemo(
     () => (comparison?.series ?? []).filter((entry) => entry.companyId === companyId),
@@ -237,7 +241,8 @@ export function FundamentalsPeriodsSection({
             className="fundamentals-periods-scroll"
             data-hscroll
             data-expanded={periodsVisible.expanded || undefined}
-            data-visible-periods={shownIndices.length}
+            data-measuring={periodsVisible.measuring || undefined}
+            data-visible-periods={periodsVisible.measuring ? undefined : shownIndices.length}
             aria-label={text("Positions and period deltas")}
             ref={scrollerRef}
           >

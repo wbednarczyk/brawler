@@ -3,26 +3,12 @@ import { primeMockScenario } from "./helpers/mockRuntime";
 
 // Dogfooding wave 2026-09, #5 — sticky first column / header guard.
 //
-// Repro finding (throwaway spec, deleted before shipping): `.facts-matrix-
-// scroll` sets only `overflow-x: auto`. Per the CSS Overflow Module ("if one
-// of overflow-x/overflow-y is a non-visible value and the other is visible,
-// the visible one computes to auto"), the browser silently gives it
-// `overflow-y: auto` too — making THIS element, not the true vertical
-// scroller `.fundamentals-panel`, the sticky positioning containing block
-// for the thead's `position: sticky; top: 0`. Since the element had no
-// bounded height (shrink-to-fit), it never scrolled vertically itself, so
-// the sticky header never engaged at all — a screenshot after scrolling
-// `.fundamentals-panel` showed the header entirely absent, scrolled away
-// with the page. Fix (companies.css): `.facts-matrix-scroll` and
-// `.fundamentals-periods-scroll` get a bounded `max-height` + explicit
-// `overflow-y: auto`, making them genuine 2-axis scroll containers so
-// `position: sticky` (top AND left) resolves against them correctly.
-//
-// This guard asserts the structural fix stays in place (bounded, scrollable
-// container) and that sticky cells keep an opaque background and correct
-// z-index stacking (header above body) — the `many-periods-fundamentals`
-// overlay (src/test/scenarios/overlays.ts) seeds 14 periods × 6 long-label
-// KPI rows so both axes genuinely overflow.
+// Collapsed period tables are NOT scroll containers (`overflow-x: clip;
+// overflow-y: visible`), so their `thead` pins to the tool body's scroll;
+// an expanded table becomes a bounded 2-axis box with the header pinned
+// inside (owner round 2). Sticky cells keep an opaque background and the
+// z-index ladder body 1 / header 2 / corner 3. The `many-periods-fundamentals`
+// overlay seeds 14 periods × 6 long-label KPI rows so both axes overflow.
 
 const MANY_PERIODS_COMPANY_ID = "company_gpw_manyperiods";
 

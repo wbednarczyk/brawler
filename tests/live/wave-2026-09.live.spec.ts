@@ -72,9 +72,7 @@ test("wave 2026-09 on the real app: picker, period tables, document selection, f
   const matrixScroll = page.locator(".facts-matrix-scroll");
   await expect(matrixScroll).toBeVisible({ timeout: 15_000 });
   const geometry = await matrixScroll.evaluate((el) => {
-    const headers = Array.from(el.querySelectorAll("thead th"));
-    const newest = headers.filter((h) => !h.classList.contains("facts-matrix-corner") && !h.matches("[data-expander]"))
-      .at(-2); // the last period header (the trailing column is the trend)
+    const newest = Array.from(el.querySelectorAll("thead th[data-period-cell]")).at(-1); // the newest period header
     const box = newest?.getBoundingClientRect();
     const scroller = el.getBoundingClientRect();
     return { newestRight: box ? box.right : null, clientRight: scroller.left + el.clientWidth, scrollLeft: el.scrollLeft };

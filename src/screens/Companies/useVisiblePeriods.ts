@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { pluralNoun, type PluralForms } from "../../shared/locale/plural";
 import type { LocaleCode } from "../../shared/locale";
@@ -11,19 +11,25 @@ import type { LocaleCode } from "../../shared/locale";
 const MIN_CAPACITY = 1;
 
 export type UseVisiblePeriodsOptions = {
-  // Ref to the host's horizontally-scrolling container (`.facts-matrix-scroll`
-  // / `.fundamentals-periods-scroll`).
+  // Ref to the host's period-table wrapper (`.facts-matrix-scroll` /
+  // `.fundamentals-periods-scroll`).
   scrollerRef: RefObject<HTMLElement | null>;
   // Total period columns available, oldest -> newest.
   total: number;
-  // Measures ONE rendered period header group's width (facts: one <th>;
-  // Pozycje: the value + delta headers of one period) — never a constant.
-  // Returns 0 before anything is measurable.
+  // Changes whenever the data behind the cells changes (periods, rows,
+  // locale, granularity) — triggers a measuring render pass in which the host
+  // renders EVERY period (hidden) so the measurement is independent of the
+  // visible slice.
+  measureKey: string;
+  // Widest natural (unstretched) period group across ALL rendered periods —
+  // called only during the measuring pass. Returns 0 when nothing is rendered.
   measurePeriodWidth: () => number;
-  // Combined width of the non-period columns (sticky KPI/expander, a trend
-  // column), subtracted from the scroller's client width; a function when it
-  // depends on the rendered tier.
-  stickyWidth: number | (() => number);
+  // Rendered width of the non-period columns (sticky KPI column, a trend
+  // column) — re-read on every resize (tiers fold columns).
+  measureFixedWidth: () => number;
+  // Rendered width of the expander column, reserved only when some periods
+  // must hide (re-read on every resize).
+  measureExpanderWidth: () => number;
 };
 
 export type UseVisiblePeriodsResult = {
@@ -33,35 +39,56 @@ export type UseVisiblePeriodsResult = {
   hiddenCount: number;
   expanded: boolean;
   toggle: () => void;
+  // True during the one hidden render pass that measures every period.
+  measuring: boolean;
 };
 
 export function useVisiblePeriods({
   scrollerRef,
   total,
+  measureKey,
   measurePeriodWidth,
-  stickyWidth,
+  measureFixedWidth,
+  measureExpanderWidth,
 }: UseVisiblePeriodsOptions): UseVisiblePeriodsResult {
   const [capacity, setCapacity] = useState(MIN_CAPACITY);
   const [expanded, setExpanded] = useState(false);
-  // Latest measurer in a ref so `recompute`'s identity doesn't have to change
-  // (and re-trigger the observer effect) just because the caller passed a new
-  // closure this render.
-  const measureRef = useRef(measurePeriodWidth);
-  measureRef.current = measurePeriodWidth;
+  const [measuredKey, setMeasuredKey] = useState<string | null>(null);
+  const periodWidthRef = useRef(0);
+  // Latest measurers in refs so the callbacks' identity never re-triggers
+  // an effect (a new closure per render is the norm).
+  const measurers = useRef({ measurePeriodWidth, measureFixedWidth, measureExpanderWidth });
+  measurers.current = { measurePeriodWidth, measureFixedWidth, measureExpanderWidth };
+  const measuring = total > 0 && measuredKey !== measureKey;
 
   const recompute = useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    const periodWidth = measureRef.current();
+    const periodWidth = periodWidthRef.current;
     if (!periodWidth) {
-      // Zero width -> nothing measurable yet (e.g. no periods rendered).
       setCapacity(MIN_CAPACITY);
       return;
     }
-    const available = scroller.clientWidth - (typeof stickyWidth === "function" ? stickyWidth() : stickyWidth);
-    // No upper cap (owner 2026-09-07): the table fills the width it has.
-    setCapacity(Math.max(MIN_CAPACITY, Math.floor(available / periodWidth)));
-  }, [scrollerRef, stickyWidth]);
+    const available = scroller.clientWidth - measurers.current.measureFixedWidth();
+    // Every period fits without the expander → no column, nothing hidden;
+    // otherwise reserve the expander column first (no upper cap, owner
+    // 2026-09-07: the table fills the width it has).
+    if (total * periodWidth <= available) {
+      setCapacity(total);
+      return;
+    }
+    const withExpander = available - measurers.current.measureExpanderWidth();
+    setCapacity(Math.max(MIN_CAPACITY, Math.floor(withExpander / periodWidth)));
+  }, [scrollerRef, total]);
+
+  // The measuring pass: the host has rendered every period (hidden) — read
+  // the widest natural group once, before paint, then settle.
+  useLayoutEffect(() => {
+    if (!measuring) return;
+    periodWidthRef.current = measurers.current.measurePeriodWidth();
+    setMeasuredKey(measureKey);
+    recompute();
+  }, [measuring, measureKey, recompute]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -71,13 +98,11 @@ export function useVisiblePeriods({
     const observer = new ResizeObserver(() => recompute());
     observer.observe(scroller);
     return () => observer.disconnect();
-    // `total` is included so a period-count change (fresh header cells) also
-    // re-measures; `scrollerRef` identity is stable across renders (a ref).
-  }, [recompute, total, scrollerRef]);
+  }, [recompute, scrollerRef]);
 
   // Expanded state ignores capacity changes (owner decision): a resize never
   // yanks a user who expanded and scrolled into history.
-  const visibleCount = expanded ? total : Math.min(capacity, total);
+  const visibleCount = expanded || measuring ? total : Math.min(capacity, total);
   const visibleStart = Math.max(0, total - visibleCount);
   const hiddenCount = Math.max(0, total - visibleCount);
 
@@ -87,14 +112,15 @@ export function useVisiblePeriods({
     hiddenCount,
     expanded,
     toggle: () => setExpanded((value) => !value),
+    measuring,
   };
 }
 
 /** Natural (unstretched) width of a cell's content plus the cell's own
  * horizontal padding — table columns stretch to fill the table, so a cell's
- * `offsetWidth` is circular; the content's ink extent is not. `inner` is the
- * element whose contents to measure when the cell wraps them in a stretched
- * control (a `width: 100%` button). */
+ * `offsetWidth` is circular; the content's ink extent is not. Padding and
+ * borders of the cell (and of `inner`, the element whose contents to measure
+ * when the cell wraps them in a stretched `width: 100%` control) are added. */
 export function naturalCellWidth(cell: HTMLElement, inner: HTMLElement | null = null): number {
   const target = inner ?? cell;
   const range = document.createRange();
@@ -102,9 +128,20 @@ export function naturalCellWidth(cell: HTMLElement, inner: HTMLElement | null = 
   const content = range.getBoundingClientRect().width;
   const pad = (el: HTMLElement) => {
     const style = getComputedStyle(el);
-    return Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+    return (
+      Number.parseFloat(style.paddingLeft) +
+      Number.parseFloat(style.paddingRight) +
+      Number.parseFloat(style.borderLeftWidth) +
+      Number.parseFloat(style.borderRightWidth)
+    );
   };
   return content + pad(cell) + (inner ? pad(inner) : 0);
+}
+
+/** A CSS length custom property of `el` in px (0 when unset). */
+export function cssLengthVar(el: Element | null, name: string): number {
+  if (!el) return 0;
+  return Number.parseFloat(getComputedStyle(el).getPropertyValue(name)) || 0;
 }
 
 // The expander column's accessible name/visible label combines an adjective
