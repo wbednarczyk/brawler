@@ -444,6 +444,18 @@
   contain: inline-size;
   border: 1px solid var(--border);
   border-radius: 8px;
+  /* #5 repro finding (dogfooding wave 2026-09): `overflow-x: auto` alone
+     forces the computed `overflow-y` to `auto` too (CSS Overflow Module —
+     "if one axis is non-visible and the other is visible, visible becomes
+     auto"), which silently makes THIS element — not the true vertical
+     scroller, `.fundamentals-panel` — the sticky positioning containing
+     block for the thead's `position: sticky; top: 0`. Since this element's
+     own height was unbounded (shrink-to-fit), it never scrolled vertically
+     itself, so the sticky header never engaged — it scrolled away with the
+     page. A bounded `max-height` makes this element a genuine 2-axis scroll
+     container, so `top`/`left` sticky both correctly resolve against it. */
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .facts-matrix {
@@ -472,6 +484,10 @@
 .facts-matrix thead th {
   position: sticky;
   top: 0;
+  /* Dogfooding #5 z-index ladder: above plain body cells (z-index 1) so a
+     vertically-scrolled row never paints over the pinned header; below the
+     dual-axis corner cells (z-index 3, see `.facts-matrix-corner` above). */
+  z-index: 2;
   padding: var(--space-2) var(--space-3);
   font-size: var(--font-xs);
   text-transform: uppercase;
@@ -503,6 +519,11 @@
   left: 0;
   background: var(--surface);
   z-index: 1;
+  /* Dogfooding #5: a visible edge between the sticky KPI column and the
+     period values scrolling underneath it — an opaque background alone
+     reads as "blending" without a boundary line (owner: "Zysk netto" and
+     "4 mln PLN" overprint). Mirrors `.facts-matrix-expander`'s border. */
+  border-right: 1px solid var(--border);
   /* Fixed width (dogfooding #6): the expander column immediately right needs
      a static `left` offset — a dynamically measured one would need inline
      `style={{…}}`, banned outside AppShell's sidebar-width exception
@@ -520,9 +541,17 @@
   font-weight: 600;
 }
 
-.facts-matrix-corner {
+/* Dogfooding #5 z-index ladder: this cell is sticky on BOTH axes (top via
+   `.facts-matrix thead th` below, left via `.facts-matrix-corner` above) —
+   the corner needs to paint above plain (top-only) period headers, which in
+   turn must paint above body rows (`.facts-matrix-kpi`/`.facts-matrix-expander`
+   tbody cells, z-index 1). The selector is deliberately prefixed
+   (`.facts-matrix thead th.facts-matrix-corner`) so its specificity beats the
+   general `.facts-matrix thead th` rule below — a bare `.facts-matrix-corner`
+   selector loses that fight and silently drops back to the header's z-index. */
+.facts-matrix thead th.facts-matrix-corner {
   background: var(--surface-raised);
-  z-index: 2;
+  z-index: 3;
 }
 
 /* Period-expander column (dogfooding #6, owner storyboard round 1): a narrow
@@ -540,8 +569,11 @@
   border-right: 1px solid var(--border);
 }
 
-thead .facts-matrix-expander {
-  z-index: 2;
+/* Same dual-axis corner status as `.facts-matrix-corner` (sticky top from
+   `.facts-matrix thead th`, sticky left from `.facts-matrix-expander`) —
+   same z-index-3 tier, same specificity-prefix reasoning. */
+.facts-matrix thead th.facts-matrix-expander {
+  z-index: 3;
   background: var(--surface-raised);
 }
 
@@ -665,6 +697,11 @@ thead .facts-matrix-expander {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
+  /* Same #5 fix as .facts-matrix-scroll — see its comment: a bounded
+     max-height makes this element the genuine 2-axis scroll container its
+     sticky thead/first-column need. */
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .fundamentals-periods-table {
@@ -683,6 +720,15 @@ thead .facts-matrix-expander {
 }
 
 .fundamentals-periods-table thead th {
+  /* Dogfooding #5: this table's header was never vertically sticky (only
+     the first column was, via `.fundamentals-periods-corner`/`-kpi` below),
+     so it scrolled away like ordinary content once `.fundamentals-periods-
+     scroll` became a genuine vertical scroll container (the #5 fix above).
+     Mirrors `.facts-matrix thead th`'s top-sticky + z-index ladder: body
+     sticky cells are z-index 1, plain headers 2, the dual-axis corner 3. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
   color: var(--muted);
   font-weight: 500;
   background: var(--surface-raised);
@@ -695,6 +741,9 @@ thead .facts-matrix-expander {
   left: 0;
   background: var(--surface);
   z-index: 1;
+  /* Dogfooding #5 — mirrors `.facts-matrix-corner`/`-kpi` above: a visible
+     edge between the sticky column and the scrolled-under period cells. */
+  border-right: 1px solid var(--border);
   /* Fixed width (dogfooding #6) — mirrors .facts-matrix-corner/-kpi above;
      the expander column's `left` needs a static offset. */
   width: 140px;
@@ -708,9 +757,12 @@ thead .facts-matrix-expander {
   font-weight: 600;
 }
 
-.fundamentals-periods-corner {
+/* Dual-axis corner (sticky top from `.fundamentals-periods-table thead th`
+   above, sticky left from `.fundamentals-periods-corner` above) — same
+   z-index-3 tier and specificity-prefix reasoning as `.facts-matrix-corner`. */
+.fundamentals-periods-table thead th.fundamentals-periods-corner {
   background: var(--surface-raised);
-  z-index: 2;
+  z-index: 3;
 }
 
 /* Period-expander column (dogfooding #6) — mirrors .facts-matrix-expander
@@ -727,8 +779,9 @@ thead .facts-matrix-expander {
   border-right: 1px solid var(--border);
 }
 
-thead .fundamentals-periods-expander {
-  z-index: 2;
+/* Same dual-axis corner status as `.fundamentals-periods-corner` above. */
+.fundamentals-periods-table thead th.fundamentals-periods-expander {
+  z-index: 3;
   background: var(--surface-raised);
 }
 

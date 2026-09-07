@@ -29,6 +29,7 @@ import {
 } from "./entities";
 import type { ScenarioData } from "./scenarios";
 import type { FinancialFact, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
+import type { KpiComparison, KpiComparisonCell, KpiComparisonPeriod } from "../../api/comparison";
 
 export type ScenarioOverlayName =
   | "hostile-content"
@@ -313,6 +314,46 @@ function applyManyPeriodsFundamentals(data: ScenarioData): ScenarioData {
     updatedAt: SAMPLE_NOW,
   }));
 
+  // Pozycje × okresy (FundamentalsPeriodsSection) calls `get_kpi_comparison`
+  // with this company's own KPI set — the mock only returns a populated axis
+  // when a SEEDED comparison matches the request shape exactly (companyIds,
+  // metricKeys, granularity); otherwise it falls back to an empty axis
+  // (runtime.ts `get_kpi_comparison`), which would leave `fundamentals-
+  // sticky.spec.ts`'s periods-table case with nothing to render.
+  const axis: KpiComparisonPeriod[] = periods.map((period) => ({
+    fiscalYear: period.fiscalYear,
+    periodType: "FY",
+    key: `${period.fiscalYear}:FY`,
+  }));
+  const comparisonSeries = MANY_PERIODS_METRICS.map((metric, metricIndex) => ({
+    companyId: company.id,
+    metricKey: metric.metricKey,
+    valueKind: "currency",
+    cells: periods.map((period, periodIndex): KpiComparisonCell => {
+      const value = String(metric.base + periodIndex * metric.step);
+      const isPln = metric.unit === "PLN";
+      return {
+        fiscalYear: period.fiscalYear,
+        periodType: "FY",
+        factId: facts[metricIndex * periods.length + periodIndex].id,
+        value,
+        currency: isPln ? "PLN" : null,
+        valuePln: isPln ? value : null,
+        fxBasis: isPln ? "native_pln" : null,
+        validationStatus: "confirmed",
+        deltaQoQ: null,
+        deltaYoY: periodIndex > 0 ? "5.00" : null,
+        flags: [],
+      };
+    }),
+  }));
+  const comparison: KpiComparison = {
+    granularity: "annual",
+    metricKeys: MANY_PERIODS_METRICS.map((metric) => metric.metricKey),
+    axis,
+    series: comparisonSeries,
+  };
+
   return {
     ...data,
     companies: [company, ...data.companies],
@@ -320,6 +361,7 @@ function applyManyPeriodsFundamentals(data: ScenarioData): ScenarioData {
     financialFacts: [...facts, ...data.financialFacts],
     kpiDefinitions: [...definitions, ...data.kpiDefinitions],
     kpiRelevance: [...relevance, ...data.kpiRelevance],
+    kpiComparisons: [comparison, ...(data.kpiComparisons ?? [])],
   };
 }
 
