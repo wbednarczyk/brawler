@@ -81,6 +81,11 @@ function runHook(command, { cwd = FEATURE_REPO, env = {}, payloadCwd } = {}) {
 
 // Deny cases that don't depend on which branch is checked out (evaluated on the feature repo).
 const DENY_BRANCH_INDEPENDENT = [
+  // astra r4 #1: a forbidden flag after a consumed value must survive the operand parse
+  'git commit -m "fix: x" --no-verify',
+  'git commit -m "fix: x" -n',
+  'git commit -am "fix: x" --no-verify',
+  'git commit --message "fix: x" -n',
   "git checkout -- tracked.txt",
   "git checkout tracked.txt",
   "git checkout .",
@@ -169,6 +174,10 @@ const DENY_BRANCH_INDEPENDENT = [
 
 // Deny cases that require a specific starting branch or a chain transition.
 const DENY_BRANCH_DEPENDENT = [
+  // astra r4 #2: a `||` chain keeps every reachable branch state; master reachable → deny
+  { cmd: "git checkout master && git commit -m x || true", cwd: FEATURE_REPO },
+  // astra r4 #3: a -C invocation into a master worktree never inherits the chain's assumed branch
+  { cmd: `git checkout -b feat/review-example && git -C ${MASTER_REPO} commit -m x`, cwd: FEATURE_REPO },
   { cmd: "git commit -m x", cwd: MASTER_REPO },
   { cmd: "git push", cwd: MASTER_REPO },
   { cmd: "git merge feature", cwd: MASTER_REPO },
@@ -200,6 +209,9 @@ const DENY_BRANCH_DEPENDENT = [
 ];
 
 const ALLOW_BRANCH_INDEPENDENT = [
+  'git commit --message="--no-verify"',
+  'git commit -m "fix: x" --amend --no-edit',
+  'git commit -F notes.txt -q',
   "git checkout -b feat/x",
   "git checkout -B feat/x",
   "git checkout --orphan feat/x",

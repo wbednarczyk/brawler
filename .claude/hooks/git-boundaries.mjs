@@ -101,15 +101,21 @@ function stripValueOperands(rest, valueFlags) {
   return out;
 }
 
-/** Current branch: a checkout/switch earlier in the same chain wins; else a live `rev-parse`;
- * unknown never denies. A chain containing an unquoted `||` never trusts its own chainBranch
- * assumption — real shell exit-status propagation isn't tracked, so a checkout/switch behind a
- * `||` may never have run; fall back to the live branch instead. */
-function resolveBranch(state) {
-  if (state.chainBranch !== null && !state.branchTrackingDisabled) return state.chainBranch;
-  const r = spawnSync("git", ["-C", state.cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" });
+/** Live branch of `cwd` via `rev-parse`; null when unknown (unknown never denies). */
+function liveBranch(cwd) {
+  const r = spawnSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   return r.stdout.trim() || null;
+}
+
+/** Whether a master-sensitive mutation may run on `master`: every REACHABLE branch state counts.
+ * A checkout/switch earlier in the same chain (same cwd) sets the assumed branch; in a chain with
+ * an unquoted `||` the shell may have skipped that checkout, so the live branch stays reachable
+ * too — a mutation is denied when ANY reachable state is master (never "fall back to one"). */
+function mayBeOnMaster(state) {
+  if (state.chainBranch === "master") return true;
+  if (state.chainBranch !== null && !state.conditional) return false;
+  return liveBranch(state.cwd) === "master";
 }
 
 /** Whether `cmd` contains an unquoted `||` anywhere (top-level or inside a nested eval/$()/
@@ -214,7 +220,7 @@ function checkReset(rest, state) {
   // `git reset <existing-path>` only unstages and never moves HEAD. Only a history-rewrite on
   // `master` (an actual commit-ish operand, HEAD moving) is this rule's concern — an ordinary
   // unstage (`git reset`, `git reset <path>`) stays allowed on any branch.
-  if (resolveBranch(state) !== "master") return null;
+  if (!mayBeOnMaster(state)) return null;
   // Anything after `--` is a path list (git's own syntax): `git reset <commit> -- <paths>` never
   // moves HEAD regardless of what precedes `--` — even a literal `HEAD` there is just the
   // tree-ish paths are reset from, not a HEAD move. So `--` alone settles this as the path form.
@@ -241,20 +247,38 @@ const COMMIT_VALUE_SHORT_LETTERS = "mFcC";
  * after), and consume a separate-token value when the letter carries none attached. Must run
  * BEFORE any bundled-flag scan (`-n`/no-verify) — otherwise a message attached to `-m` (e.g.
  * `-mnonverify`) gets misread as a bundled `-n` flag hiding inside the "value". */
-function stripCommitShortValues(rest) {
+const COMMIT_VALUE_LONG = new Set([
+  "--message", "--file", "--author", "--date", "--reuse-message", "--reedit-message", "--fixup",
+  "--squash", "--trailer", "--cleanup", "--template", "--pathspec-from-file",
+]);
+
+/** ONE pass over commit arguments, consuming every option value exactly once: a long value option
+ * without `=` eats the next token; a short bundle keeps its boolean letters up to the first
+ * value letter (`-am x` → `-a`, value `x`; `-mnonverify` → nothing, attached value). Only the
+ * survivors are flag-checked, so a forbidden flag can never be eaten as a "value" and a value can
+ * never be misread as a flag (astra r4 #1 / r3 #24). */
+function commitFlagTokens(rest) {
   const out = [];
   for (let i = 0; i < rest.length; i++) {
     const t = rest[i];
-    if (/^-[a-zA-Z]+$/.test(t.text)) {
+    if (t.text === "--") break; // pathspecs follow
+    if (t.text.startsWith("--")) {
+      if (COMMIT_VALUE_LONG.has(t.text) && i + 1 < rest.length) i++; // separate value
+      else out.push(t); // `--opt=value` carries its own value; boolean long flags stay
+      continue;
+    }
+    if (/^-[a-zA-Z]+/.test(t.text)) {
       const letters = t.text.slice(1);
       const valueIdx = [...letters].findIndex((ch) => COMMIT_VALUE_SHORT_LETTERS.includes(ch));
-      if (valueIdx !== -1) {
-        const boolPrefix = letters.slice(0, valueIdx);
-        if (boolPrefix) out.push({ ...t, text: `-${boolPrefix}` });
-        const attachedValue = letters.slice(valueIdx + 1);
-        if (!attachedValue && i + 1 < rest.length) i++; // no attached value: next token is it
+      if (valueIdx === -1) {
+        out.push(t);
         continue;
       }
+      const boolPrefix = letters.slice(0, valueIdx);
+      if (boolPrefix) out.push({ ...t, text: `-${boolPrefix}` });
+      const attachedValue = letters.slice(valueIdx + 1);
+      if (!attachedValue && i + 1 < rest.length) i++; // no attached value: next token is it
+      continue;
     }
     out.push(t);
   }
@@ -262,11 +286,11 @@ function stripCommitShortValues(rest) {
 }
 
 function checkCommit(rest, state) {
-  const flags = stripCommitShortValues(stripValueOperands(rest, VALUE_FLAGS.commit));
+  const flags = commitFlagTokens(rest);
   if (hasExact(flags, ["--no-verify"]) || hasBundledShortFlag(flags, "n")) {
     return "git commit --no-verify/-n (incl. combined short flags) skips the commit-msg gate";
   }
-  if (resolveBranch(state) === "master") return "git commit directly on `master` bypasses the PR/CI gate";
+  if (mayBeOnMaster(state)) return "git commit directly on `master` bypasses the PR/CI gate";
   return null;
 }
 
@@ -298,12 +322,12 @@ function checkPush(rest, state) {
     const normalized = dest.replace(/^refs\/heads\//, "");
     if (normalized === "master" || normalized === "*") return `git push refspec \`${r.text}\` targets \`master\``;
     // A bare `HEAD` (or an empty destination, `HEAD:`) pushes the current branch under its own name.
-    if ((normalized === "HEAD" || normalized === "") && resolveBranch(state) === "master") {
+    if ((normalized === "HEAD" || normalized === "") && mayBeOnMaster(state)) {
       return `git push refspec \`${r.text}\` pushes the current branch (\`HEAD\`) while on \`master\``;
     }
   }
   if (refspecs.length === 0) {
-    if (resolveBranch(state) === "master") return "git push with no refspec while on `master` pushes master";
+    if (mayBeOnMaster(state)) return "git push with no refspec while on `master` pushes master";
     // Off master a bare `git push`/`git push <remote>` still resolves to a real destination via
     // the branch's own push/upstream tracking — ask git directly rather than guessing at
     // push.default from static analysis.
@@ -400,7 +424,13 @@ function checkGit(rawArgs, state) {
   // assumes here must still carry forward into the next chain segment — but only when this
   // invocation's cwd IS the chain's cwd. A `-C ../other` checkout is a different worktree/repo;
   // its assumed branch must never leak into a later segment that runs in the chain's own cwd.
-  const localState = { cwd: invocationCwd, chainBranch: state.chainBranch, branchTrackingDisabled: state.branchTrackingDisabled };
+  const localState = {
+    cwd: invocationCwd,
+    // A `-C ../other` invocation is another worktree: it neither inherits nor exports the
+    // chain's assumed branch — its own live branch is resolved instead.
+    chainBranch: invocationCwd === state.cwd ? state.chainBranch : null,
+    conditional: state.conditional,
+  };
   const subcommand = args[0]?.text;
   const rest = args.slice(1);
   let reason;
@@ -434,7 +464,7 @@ function checkGit(rawArgs, state) {
       break;
     default:
       reason =
-        MASTER_ONLY_DENY_SUBS.has(subcommand) && resolveBranch(localState) === "master"
+        MASTER_ONLY_DENY_SUBS.has(subcommand) && mayBeOnMaster(localState)
           ? `git ${subcommand} directly on \`master\` bypasses the PR/CI gate`
           : null;
   }
@@ -691,7 +721,7 @@ function evaluateInner(cmd, state, depth) {
 
 /** Evaluate a whole Bash command line; returns a deny reason, or null to allow. cwd/branch state threads across the chain. */
 export function evaluateCommand(cmd, startCwd) {
-  const state = { cwd: startCwd, chainBranch: null, branchTrackingDisabled: hasUnquotedOr(cmd) };
+  const state = { cwd: startCwd, chainBranch: null, conditional: hasUnquotedOr(cmd) };
   return evaluateInner(cmd, state, 0);
 }
 
