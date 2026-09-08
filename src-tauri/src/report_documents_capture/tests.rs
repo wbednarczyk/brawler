@@ -424,11 +424,18 @@ fn two_captures_of_one_document_publish_one_consistent_file_and_row() {
     // capture B to full completion (write, fsync, publish, DB write) —
     // the exact interleaving that used to let A's slower write clobber
     // B's already-committed bytes.
-    let result = store_fetched_document_with(&state, &doc.id, &doc.url, &fetched_a, || {
-        let fetched_b = fetcher_b.fetch(&doc.url).expect("fake fetch B");
-        store_fetched_document(&state, &doc.id, &doc.url, &fetched_b)
-            .expect("capture B must publish successfully");
-    });
+    let result = store_fetched_document_with(
+        &state,
+        &doc.id,
+        &doc.url,
+        &fetched_a,
+        || {
+            let fetched_b = fetcher_b.fetch(&doc.url).expect("fake fetch B");
+            store_fetched_document(&state, &doc.id, &doc.url, &fetched_b)
+                .expect("capture B must publish successfully");
+        },
+        || {},
+    );
     assert!(
         result.is_ok(),
         "the losing attempt must not error, only report the winning identity: {result:?}"
@@ -463,4 +470,110 @@ fn two_captures_of_one_document_publish_one_consistent_file_and_row() {
         .filter(|entry| entry.path().is_file())
         .count();
     assert_eq!(final_files, 1, "exactly one final file must exist");
+}
+
+/// #487 P1 r3 (second adversarial review): the file+row race in
+/// `two_captures_of_one_document_publish_one_consistent_file_and_row` isn't
+/// the only hole. A can hard-link its bytes then pause before its row
+/// write; a second caller starting in that window used to see the file
+/// already published but the row still `pending`, treat the file as stale
+/// residue of a crashed attempt, delete it, and publish its own — leaving
+/// A to then record ITS hash against B's file (or lose the guarded row
+/// write and report success with the wrong pairing). Compare-and-set on the
+/// row cannot see this: it only arbitrates a write race, not a caller that
+/// starts after the file exists but before the row says so. The
+/// per-document lock closes it by serializing the whole capture: a second
+/// caller for the same document must wait for the first to finish (file AND
+/// row), not observe it mid-flight.
+#[test]
+fn a_second_capture_waits_for_the_first_and_returns_its_published_row() {
+    use crate::document_fetcher::FakeDocumentFetcher;
+    use std::thread;
+    use std::time::Duration;
+
+    let (state, company_id) = fresh_capture_state("lock-waits");
+    let url = "https://x/report.pdf";
+    let doc = state
+        .create_or_find_pending_report_document(capture_input(&company_id, url))
+        .expect("pending document");
+
+    let fetcher_a = FakeDocumentFetcher::new_success(
+        b"%PDF-1.7 bytes from capture A".to_vec(),
+        Some("application/pdf".to_owned()),
+    );
+    let fetched_a = fetcher_a.fetch(&doc.url).expect("fake fetch A");
+
+    // Hold this document's lock exactly as `capture_report_document` would
+    // for its entire body, so capture B below — using the real public API —
+    // has to wait on it instead of racing ahead while the row is still
+    // `pending`.
+    let doc_lock = doc_lock::lock_document(&doc.id);
+    let _guard = doc_lock.lock().unwrap_or_else(|p| p.into_inner());
+
+    let mut b_handle: Option<thread::JoinHandle<StorageResult<DocumentCaptureResult>>> = None;
+    let store_result = store_fetched_document_with(
+        &state,
+        &doc.id,
+        &doc.url,
+        &fetched_a,
+        || {},
+        || {
+            // A's bytes are the ones at the final path now; A's row write
+            // has NOT happened yet — the row is still `pending`. This is
+            // exactly the window #487 P1 r3 named.
+            let state_b = state.clone();
+            let company_id_b = company_id.clone();
+            let fetcher_b = FakeDocumentFetcher::new_success(
+                b"must never be reached: A already holds the document lock".to_vec(),
+                Some("application/pdf".to_owned()),
+            );
+            let handle = thread::spawn(move || {
+                capture_report_document(&state_b, &fetcher_b, capture_input(&company_id_b, url))
+            });
+            thread::sleep(Duration::from_millis(200));
+            assert!(
+                !handle.is_finished(),
+                "capture B must block while capture A still holds the document lock"
+            );
+            b_handle = Some(handle);
+        },
+    );
+    let local_path = store_result.expect("capture A's store must succeed");
+
+    // Release A's lock — only now may B make progress.
+    drop(_guard);
+
+    let b_result = b_handle
+        .expect("capture B must have been spawned")
+        .join()
+        .expect("capture B thread must not panic")
+        .expect("capture B must succeed");
+
+    assert!(b_result.success);
+    assert_eq!(
+        b_result.local_path.as_deref(),
+        Some(local_path.as_str()),
+        "B must return A's published row, not race ahead of it"
+    );
+
+    let document = state.get_report_document(&doc.id).expect("document");
+    assert_eq!(document.fetch_status, "fetched");
+    let full_path = state.data_dir().join(document.local_path.as_ref().unwrap());
+    let on_disk_bytes = std::fs::read(&full_path).expect("exactly one final file must exist");
+    assert_eq!(
+        content_hash_hex(&on_disk_bytes),
+        document
+            .content_hash
+            .clone()
+            .expect("row must carry a hash"),
+        "the row's hash must equal the sha256 of the single final file"
+    );
+
+    let doc_dir = state.data_dir().join("report_documents");
+    let leftover_parts = std::fs::read_dir(&doc_dir)
+        .expect("read the report_documents dir")
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".part"))
+        .count();
+    assert_eq!(leftover_parts, 0, "no .part file must remain");
 }

@@ -3,6 +3,8 @@ use crate::storage::{self, CaptureReportDocumentInput, StorageResult};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+mod doc_lock;
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -39,9 +41,20 @@ pub fn capture_report_document(
     fetcher: &dyn DocumentFetcher,
     input: CaptureReportDocumentInput,
 ) -> StorageResult<DocumentCaptureResult> {
+    // `create_or_find_pending_report_document` is its own atomic upsert on
+    // the (company_id, url) UNIQUE key, so it needs no lock. Once the
+    // document id is known, the ENTIRE rest of this body (inspect →
+    // resolve/heal/reset → fetch → store → row write) runs under that
+    // document's lock (#487 P1 r3, see `doc_lock`): a second caller for the
+    // same document waits here and then takes the `fetch_status ==
+    // "fetched"` short-circuit below against the first caller's already
+    // -published row, instead of interleaving with it.
     let doc = state.create_or_find_pending_report_document(input)?;
-    let doc = resolve_before_fetch(state, doc)?;
     let doc_id = doc.id.clone();
+    let doc_lock = doc_lock::lock_document(&doc_id);
+    let _doc_guard = doc_lock.lock().unwrap_or_else(|p| p.into_inner());
+
+    let doc = resolve_before_fetch(state, doc)?;
 
     if doc.fetch_status == "fetched" {
         return Ok(DocumentCaptureResult {
@@ -205,6 +218,13 @@ pub fn fetch_pending_attachments(
             std::thread::sleep(std::time::Duration::from_secs(1));
         }
 
+        // Same per-document lock as `capture_report_document` /
+        // `fetch_report_document` (#487 P1 r3): this batch path writes the
+        // same file+row pair those do, so it must not interleave with a
+        // concurrent capture of the same document either.
+        let doc_lock = doc_lock::lock_document(&doc.id);
+        let _doc_guard = doc_lock.lock().unwrap_or_else(|p| p.into_inner());
+
         match fetcher.fetch(&doc.url) {
             Ok(fetched) => {
                 store_fetched_document(state, &doc.id, &doc.url, &fetched)?;
@@ -233,6 +253,11 @@ pub fn fetch_report_document(
     fetcher: &dyn DocumentFetcher,
     doc_id: &str,
 ) -> Result<crate::storage::ReportDocument, FetchDocumentError> {
+    // Entire body under this document's lock (#487 P1 r3, see `doc_lock`) —
+    // same reasoning as `capture_report_document`.
+    let doc_lock = doc_lock::lock_document(doc_id);
+    let _doc_guard = doc_lock.lock().unwrap_or_else(|p| p.into_inner());
+
     let document = state
         .get_report_document(doc_id)
         .map_err(FetchDocumentError::fatal)?;
@@ -305,16 +330,22 @@ fn store_fetched_document(
     url: &str,
     fetched: &FetchedDocument,
 ) -> StorageResult<String> {
-    store_fetched_document_with(state, doc_id, url, fetched, || {})
+    store_fetched_document_with(state, doc_id, url, fetched, || {}, || {})
 }
 
-/// [`store_fetched_document`] with a test-only interleaving seam.
+/// [`store_fetched_document`] with two test-only interleaving seams.
 /// `before_publish` runs after this attempt's bytes are durably on disk
 /// under their own unique temp name (written + fsynced) and right before
 /// the no-clobber publish onto the final path — production always passes a
 /// no-op closure; a test can run a second, competing capture of the SAME
 /// document inside it to deterministically reproduce the concurrent-capture
-/// race (#487 P1).
+/// race (#487 P1). `after_publish` runs once THIS attempt's bytes are the
+/// ones at the final path but before the row write that records them —
+/// exactly the window #487 P1 r3 (second adversarial review) named: a
+/// second caller starting here would, pre-lock, see a `pending` row next to
+/// an already-published file and treat the file as stale residue to
+/// reclaim. A test drives that window (while still holding the caller's
+/// document lock) to prove the lock now makes a second caller wait instead.
 ///
 /// **Unique temp name + fsync + no-clobber publish**: two concurrent
 /// captures of the same document must never share one `.part` name (a
@@ -346,6 +377,7 @@ fn store_fetched_document_with(
     url: &str,
     fetched: &FetchedDocument,
     before_publish: impl FnOnce(),
+    after_publish: impl FnOnce(),
 ) -> StorageResult<String> {
     let extension = determine_extension(&fetched.content_type, url);
     let local_path = format!("report_documents/{doc_id}.{extension}");
@@ -388,6 +420,8 @@ fn store_fetched_document_with(
         return Ok(winner.local_path.unwrap_or(local_path));
     }
 
+    after_publish();
+
     let content_hash = content_hash_hex(&fetched.bytes);
     let byte_size = fetched.bytes.len() as i64;
 
@@ -414,23 +448,6 @@ fn store_fetched_document_with(
     Ok(published.local_path.unwrap_or(local_path))
 }
 
-/// Publish `part_path` onto `full_path` without clobbering a concurrent
-/// attempt's already-published bytes (#487 P1). Returns whether THIS call's
-/// bytes are the ones now at `full_path`.
-///
-/// `hard_link` (not `rename`) is the publish primitive: it fails with
-/// `AlreadyExists` instead of silently overwriting, so a slower attempt can
-/// never clobber a faster one's already-published file. But a plain regular
-/// file already sitting at `full_path` is ambiguous — it can be either a
-/// concurrent capture's legitimate publish (must not be touched) or this
-/// SAME document's own stale bytes left over from an earlier fetch this
-/// call is superseding (a corrupted/mismatched file `resolve_before_fetch`
-/// already reset the row away from — see its `local_path`-cleared
-/// `pending` row). The row breaks the tie: re-read it fresh and check
-/// [`local_file_matches_row`] — if the on-disk file still verifies against
-/// a currently-`fetched` row, it is a legitimate concurrent publish and
-/// this attempt lost the race; otherwise it is orphaned/stale and safe to
-/// clear before retrying the publish once.
 /// Publish `part` at `full` without clobbering an existing file. `hard_link`
 /// refuses an existing target on every platform; where the filesystem has no
 /// hard links (exFAT/FAT32 data dirs, some network mounts) fall back to
@@ -445,6 +462,36 @@ fn link_or_rename(part: &std::path::Path, full: &std::path::Path) -> std::io::Re
     }
 }
 
+/// Publish `part_path` onto `full_path` without clobbering another
+/// process's crash residue (#487 P1 r3). Returns whether THIS call's bytes
+/// are the ones now at `full_path`.
+///
+/// `hard_link` (not `rename`) is the publish primitive: it fails with
+/// `AlreadyExists` instead of silently overwriting, so this attempt never
+/// clobbers whatever is already there.
+///
+/// **Under the per-document lock** (`doc_lock`, held by every caller of
+/// [`store_fetched_document_with`] for this document's entire capture
+/// body), a plain regular file already sitting at `full_path` when this
+/// runs is UNAMBIGUOUS: it cannot be a concurrent capture's legitimate,
+/// in-flight publish of a DIFFERENT identity — no other in-process caller
+/// can be inside this document's capture body at the same time, and Brawler
+/// is a single-instance process, so there is no other process either. And
+/// it cannot be the row's own currently-verified `fetched` identity either
+/// — if it were, `resolve_before_fetch` (run earlier in this same locked
+/// call) would already have short-circuited before a fetch was ever
+/// attempted. So the only thing it can be is residue: bytes an earlier,
+/// now-superseded attempt for this SAME document left behind (a
+/// corrupted/mismatched file `resolve_before_fetch` reset the row away from
+/// without deleting, or a crash between an old publish and its row write) —
+/// safe to clear and retry once.
+///
+/// The `local_file_matches_row` re-check is kept anyway as defence in depth
+/// (mirrors the DB layer's compare-and-set guards, `status.rs`): if it were
+/// ever to report a match here, that would mean the lock invariant above
+/// was violated by a bug elsewhere, and the safest response is still to
+/// leave the file untouched and report the row's identity rather than
+/// clobber it.
 fn publish_no_clobber(
     state: &crate::storage::AppState,
     doc_id: &str,
@@ -469,15 +516,17 @@ fn publish_no_clobber(
 
             let fresh_row = state.get_report_document(doc_id)?;
             if local_file_matches_row(state, &fresh_row).is_some() {
-                // A concurrent capture legitimately owns this path. Leave it
-                // alone; this attempt lost the race.
+                // Defence in depth only — see the doc comment above. Under
+                // the per-document lock this should be unreachable; if hit,
+                // treat it the same as a legitimate concurrent owner:
+                // leave the file alone and report the row's identity.
                 let _ = std::fs::remove_file(part_path);
                 return Ok(false);
             }
 
-            // Orphaned/stale bytes at this document's own path (no row
-            // currently claims them as its verified `fetched` identity) —
-            // safe to clear and retry once.
+            // Residue of a superseded earlier attempt for this SAME
+            // document (see the doc comment above) — safe to clear and
+            // retry once.
             let _ = std::fs::remove_file(full_path);
             match link_or_rename(part_path, full_path) {
                 Ok(()) => {
