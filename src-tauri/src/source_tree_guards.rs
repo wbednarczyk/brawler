@@ -3,6 +3,19 @@
 
 use std::path::{Path, PathBuf};
 
+/// Whether the current process is running inside the cargo-mutants scratch
+/// sandbox, which copies only `src-tauri/` — never the sibling
+/// `package.json`/`src/api`/`src/shared` frontend tree (harvest, B5/ADR 0045:
+/// two cross-tree guards below used to no-op on ANY missing sibling path,
+/// which also silently hid a genuinely broken real checkout). A real
+/// checkout always has `../package.json` next to `src-tauri/`; only the
+/// mutants sandbox does not.
+pub(crate) fn is_crate_only_sandbox() -> bool {
+    !Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../package.json")
+        .exists()
+}
+
 /// Guard (#110): no `include_str!`/`include_bytes!` may embed a literal path
 /// that escapes the Cargo workspace (`src-tauri/`). `cargo-mutants` copies only
 /// the workspace into its build sandbox, so a cross-tree literal compiles in
@@ -90,11 +103,10 @@ fn escapes(file: &Path, literal: &str, manifest_dir: &Path) -> bool {
 /// workspace into its build sandbox, so `src/api` does not exist there. Per
 /// `no_runtime_cross_tree_read_escapes_the_workspace` above, cargo-mutants
 /// 24.9.0 exposes no `cfg`/env flag a test can branch on to detect the
-/// sandbox at runtime, so this test detects it the same way build.rs detects
-/// the missing `src/test/scenarios` tree: **absence of the directory itself**
-/// — a real checkout always has `src/api`, so a missing one means we are
-/// running somewhere that only copied `src-tauri/`, and the test degrades to
-/// a no-op rather than a false failure unrelated to any mutant.
+/// sandbox at runtime, so this test detects it via `is_crate_only_sandbox`
+/// (B5/ADR 0045 harvest) instead of independently no-op'ing on any missing
+/// directory: a real checkout always has `src/api`, so a missing one there
+/// panics instead of silently degrading to a no-op unrelated to any mutant.
 /// cross-tree-read-ok: reachability needs src/api; no-ops when the directory
 /// is absent (the mutants sandbox).
 #[test]
@@ -103,8 +115,14 @@ fn every_registered_command_is_reachable_from_the_frontend_or_declared_headless(
     let repo_root = manifest_dir.parent().expect("src-tauri has a parent");
     let api_root = repo_root.join("src/api");
     if !api_root.is_dir() {
+        assert!(
+            is_crate_only_sandbox(),
+            "src/api is missing outside the cargo-mutants sandbox: {} — a real checkout always \
+             has this directory; investigate before trusting this guard's silence",
+            api_root.display()
+        );
         eprintln!(
-            "skipping reachability guard: {} does not exist (cargo-mutants sandbox?)",
+            "skipping reachability guard: {} does not exist (cargo-mutants sandbox)",
             api_root.display()
         );
         return;
@@ -160,6 +178,34 @@ fn every_registered_command_is_reachable_from_the_frontend_or_declared_headless(
          — add a frontend caller, or add an entry (with reason) to \
          src/test/scenarios/headless-only.json:\n{}",
         unreachable.join("\n")
+    );
+
+    // G6b (finding 10, ADR 0045 harvest 2026-09-08): headless-only.json is a
+    // manually-maintained exemption list — a stale key (a renamed/retired
+    // command) or a blank reason silently buys an exemption for nothing,
+    // which the check above can never catch since it only reads the map
+    // forward (does this registered name have an exemption?), never
+    // backward (does this exemption name a real, still-registered command,
+    // with an actual reason?).
+    let registered_set: std::collections::HashSet<&str> =
+        registered.iter().map(String::as_str).collect();
+    let bad_entries: Vec<String> = headless
+        .iter()
+        .filter_map(|(key, reason)| {
+            if !registered_set.contains(key.as_str()) {
+                Some(format!("{key}: not a registered command (stale entry)"))
+            } else if reason.trim().is_empty() {
+                Some(format!("{key}: reason is blank"))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        bad_entries.is_empty(),
+        "src/test/scenarios/headless-only.json entries must each name a live registered \
+         command with a non-empty reason:\n{}",
+        bad_entries.join("\n")
     );
 }
 
@@ -251,6 +297,15 @@ fn no_runtime_cross_tree_read_escapes_the_workspace() {
 /// 1-based line numbers in `content` where a runtime read joins
 /// `CARGO_MANIFEST_DIR` with a literal `..` path segment and none of the
 /// exemptions documented on the guard above apply.
+///
+/// Two literal shapes both escape the workspace and must both be caught
+/// (finding 6, ADR 0045 harvest 2026-09-08): a bare `".."` segment (e.g.
+/// `.join("..").join("src/shared/...")`) AND a single combined literal that
+/// merely STARTS with `../` (e.g. `.join("../src/shared/jobKinds.ts")`) — the
+/// original check matched only the former. Both are tied to an actual
+/// `.join(` call (not a bare quoted-string proximity check) so an unrelated
+/// `include_str!("../other-file-still-inside-src-tauri")` a few lines away
+/// (a real pattern in this crate — `transform-modules.json`) is not swept in.
 fn cross_tree_read_lines(content: &str) -> Vec<usize> {
     let lines: Vec<&str> = content.lines().collect();
     let mut found = Vec::new();
@@ -259,7 +314,10 @@ fn cross_tree_read_lines(content: &str) -> Vec<usize> {
             continue;
         }
         let window_end = (idx + 4).min(lines.len());
-        if !lines[idx..window_end].iter().any(|l| l.contains("\"..\"")) {
+        if !lines[idx..window_end]
+            .iter()
+            .any(|l| l.contains(".join(\"..\")") || l.contains(".join(\"../"))
+        {
             continue;
         }
         let commented = idx > 0
@@ -272,6 +330,40 @@ fn cross_tree_read_lines(content: &str) -> Vec<usize> {
         found.push(idx + 1);
     }
     found
+}
+
+/// Finding 6 (ADR 0045 harvest 2026-09-08): both cross-tree literal shapes
+/// must be caught — a bare `".."` segment and a single literal that starts
+/// with `../` — proven inline so a future edit to the matcher can't silently
+/// drop either shape again.
+///
+/// The fixture text is assembled via `format!` rather than written as a
+/// plain literal: `cross_tree_read_lines` is itself part of the crate-wide
+/// scan `no_runtime_cross_tree_read_escapes_the_workspace` runs, so a fixture
+/// containing the literal substring "CARGO_MANIFEST_DIR" would make THIS
+/// FILE flag itself as a violation.
+#[test]
+fn cross_tree_read_lines_catches_both_dotdot_literal_shapes() {
+    // A leading `#[test]` line is required in the fixture: the enclosing-fn
+    // heuristic (`enclosing_fn_is_mutants_safe`) treats a non-`#[test]` fn as
+    // safe by design (it can never run under a default `cargo test`), so an
+    // un-annotated fixture fn would be silently exempted rather than flagged.
+    let marker = "CARGO_MANIFEST_DIR";
+    let split_join = format!(
+        "#[test]\nfn reads_split() {{\n    let path = Path::new(env!(\"{marker}\")).join(\"..\").join(\"x\");\n}}\n"
+    );
+    assert!(
+        !cross_tree_read_lines(&split_join).is_empty(),
+        "the split `.join(\"..\")` form must be caught"
+    );
+
+    let combined_join = format!(
+        "#[test]\nfn reads_combined() {{\n    let path = Path::new(env!(\"{marker}\")).join(\"../x\");\n}}\n"
+    );
+    assert!(
+        !cross_tree_read_lines(&combined_join).is_empty(),
+        "the combined \"../...\" literal form must be caught"
+    );
 }
 
 /// Whether the innermost `fn` enclosing line `idx` (scanning backward for a
@@ -665,17 +757,66 @@ fn extract_fn_body(content: &str, lines: &[&str], fn_line: usize) -> String {
 }
 
 /// Whether a test body contains one of the accepted assertion markers.
+///
+/// `expect(` and `is_ok()` were dropped (B9/ADR 0045 harvest, 2026-09-08):
+/// both accept ANY body that merely calls `.expect(...)`/`.is_ok()` on a
+/// setup value without checking the value under test — e.g. `state.create_x
+/// (..).expect("created")` proves nothing about `create_x`'s behavior, so a
+/// test built entirely of such calls passed this guard while asserting
+/// nothing.
 fn body_has_assertion(body: &str) -> bool {
     [
         "assert",
-        "expect(",
         "unwrap_err",
         "is_err()",
-        "is_ok()",
         "insta::",
         "prop_assert",
         "panic!",
     ]
     .iter()
     .any(|marker| body.contains(marker))
+}
+
+/// Guard (G11, finding 10, ADR 0045 harvest 2026-09-08): a `// no-assert-ok:`
+/// or `// cross-tree-read-ok:` comment with a BLANK reason defeats the whole
+/// point of the escape hatch — it silences a guard with nothing left for a
+/// reviewer to check, exactly the silent-degradation failure mode this
+/// harvest closes elsewhere (B5, G6b). Every such comment anywhere in the
+/// crate must carry non-empty text after the marker.
+#[test]
+fn escape_hatch_reasons_are_non_empty() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut violations = Vec::new();
+    let mut stack = vec![manifest_dir.join("src")];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("readable source dir") {
+            let path = entry.expect("readable dir entry").path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                let content = std::fs::read_to_string(&path).expect("readable source file");
+                for (line_no, line) in content.lines().enumerate() {
+                    for marker in ["no-assert-ok:", "cross-tree-read-ok:"] {
+                        let Some(pos) = line.find(marker) else {
+                            continue;
+                        };
+                        let reason = line[pos + marker.len()..].trim();
+                        if reason.is_empty() {
+                            violations.push(format!(
+                                "{}:{} blank reason after {marker}",
+                                path.display(),
+                                line_no + 1
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "escape-hatch comment(s) with a blank reason (G11) — a reason with nothing to check \
+         defeats the point of the escape hatch; add a real one:\n{}",
+        violations.join("\n")
+    );
 }

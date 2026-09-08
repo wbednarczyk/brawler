@@ -235,9 +235,12 @@ for (const dir of ["scripts/check", "scripts/ux"]) {
 // (2d) Advisory workflows must have an addressee (G13, ADR 0096 dec. 5 +
 // owner 2026-09-07): "advisory" must never mean "silent" — mutation-audit
 // runs 33203998627/32237111937 each reported 2 missed mutants with no card
-// filed, because an advisory result had nowhere to go. Any workflow whose
-// `name:` contains "advisory" (case-insensitive) must carry a `gh issue
-// create` step so a finding always gets a tracked addressee.
+// filed, because an advisory result had nowhere to go. A workflow is
+// "advisory" when its `name:` contains "advisory" (case-insensitive) OR its
+// header comment (the first 10 lines) does (finding 4, ADR 0045 harvest
+// 2026-09-08: bench-audit.yml says "Advisory" only in its header comment —
+// keying on `name:` alone missed it entirely). Either way it must carry a
+// `gh issue create` step so a finding always gets a tracked addressee.
 const workflowsDir = resolve(repoRoot, ".github/workflows");
 for (const name of readdirSync(workflowsDir)) {
   if (!name.endsWith(".yml") && !name.endsWith(".yaml")) continue;
@@ -245,10 +248,13 @@ for (const name of readdirSync(workflowsDir)) {
   const content = readFileSync(resolve(repoRoot, rel), "utf8");
   const nameMatch = content.match(/^name:\s*(.+)$/m);
   const workflowName = (nameMatch ? nameMatch[1] : "").trim();
-  if (!/advisory/i.test(workflowName)) continue;
+  const headerLines = content.split("\n").slice(0, 10).join("\n");
+  const isAdvisory = /advisory/i.test(workflowName) || /advisory/i.test(headerLines);
+  if (!isAdvisory) continue;
   if (!content.includes("gh issue create")) {
     errors.push(
-      `\`${rel}\` is an advisory workflow (name: "${workflowName}") but has no \`gh issue create\` step.\n` +
+      `\`${rel}\` is an advisory workflow (name: "${workflowName}", or its header comment says so) but ` +
+        `has no \`gh issue create\` step.\n` +
         `    Advisory ≠ silent (ADR 0096 dec. 5 + owner 2026-09-07): a finding with no addressee rots\n` +
         `    unaddressed. Add a carding step that opens/reuses a tracked issue for its findings.`,
     );

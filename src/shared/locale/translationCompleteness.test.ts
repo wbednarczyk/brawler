@@ -87,9 +87,25 @@ describe("Polish translation completeness", () => {
   });
 });
 
+// B1 (owner-approved hard gate 2026-09-07): identicalEntries.json is today's
+// known allowlist, not a way for a NEW identical entry to go green — the
+// only way out of the test below is a translation. This ceiling may only be
+// LOWERED as entries are translated away, never raised to fit a new one.
+const IDENTICAL_ENTRIES_CEILING = 34;
+
 describe("English-in-PL detector (G12, dogfooding #8 class)", () => {
   const resourceEntries = plResourceEntries();
   const identical = [...resourceEntries].filter(([key, value]) => key === value).map(([key]) => key);
+
+  it("the identicalEntries.json ceiling only shrinks, never grows", () => {
+    expect(
+      Object.keys(identicalEntries).length,
+      `identicalEntries.json has ${Object.keys(identicalEntries).length} entries, above ` +
+        `IDENTICAL_ENTRIES_CEILING (${IDENTICAL_ENTRIES_CEILING}) in translationCompleteness.test.ts. ` +
+        "The ceiling may only be lowered as entries are translated away, never raised — a new " +
+        "identical entry must be translated, never allowlisted, to go green.",
+    ).toBeLessThanOrEqual(IDENTICAL_ENTRIES_CEILING);
+  });
 
   it("has no NEW PL entry identical to its EN key beyond identicalEntries.json", () => {
     const missing = identical.filter((key) => !(key in identicalEntries)).sort();

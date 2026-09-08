@@ -924,6 +924,7 @@ mod parent_aggregate;
 /// Advisory (not a CI gate): run once with `--ignored` against a COPY of the
 /// owner's real snapshot and eyeball whether `compute_activity`'s grouping
 /// reads as tasks (S1 handoff evidence).
+// no-assert-ok: advisory eyeball dump against a copied real snapshot, not a correctness assertion.
 #[test]
 #[ignore]
 fn dump_activity_on_real_snapshot() {

@@ -57,29 +57,35 @@ function corpusCommandNames(): Set<string> {
   return names;
 }
 
+// B1 (owner-approved hard gate 2026-09-07): the baseline is today's known
+// offender list, not a way for a NEW offender to go green — the only ways
+// out of the "every command must be accounted for" test below are a corpus
+// step or a headless-only declaration. This ceiling is the second lock: it
+// may only be LOWERED as entries are fixed, never raised to fit a new one.
+const BASELINE_CEILING = 117;
+
 describe("fidelity-corpus membership (ADR 0049)", () => {
-  const registered = extractCommandNames();
+  const registered = new Set(extractCommandNames());
   const inCorpus = corpusCommandNames();
   const headlessNames = new Set(Object.keys(headlessOnly as Record<string, string>));
   const baselineNames = new Set(baseline as string[]);
 
   it("found the expected commands and manifest sizes (sanity check)", () => {
-    expect(registered.length).toBeGreaterThan(0);
+    expect(registered.size).toBeGreaterThan(0);
     expect(inCorpus.size).toBeGreaterThan(0);
   });
 
   it("every #[tauri::command] is a corpus step, declared headless-only, or a known baseline offender", () => {
-    const unaccounted = registered.filter(
+    const unaccounted = [...registered].filter(
       (name) => !inCorpus.has(name) && !headlessNames.has(name) && !baselineNames.has(name),
     );
     expect(
       unaccounted,
       `${unaccounted.length} command(s) have no fidelity-corpus step, no headless-only.json ` +
-        "entry, and are not in the baseline. Fix by (a) adding a journey step " +
-        "to src/test/scenarios/fidelity-corpus.json, (b) declaring the command " +
-        "in src/test/scenarios/headless-only.json with a one-line reason " +
-        "(no mock half — MCP-only or a headless acquisition driver), or (c) if " +
-        "this really is the pre-existing baseline offender list, add it there. " +
+        "entry, and are not in the baseline. The baseline is NOT a way to go green for a NEW " +
+        "offender — fix by (a) adding a journey step to src/test/scenarios/fidelity-corpus.json, " +
+        "or (b) declaring the command in src/test/scenarios/headless-only.json with a one-line " +
+        "reason (no mock half — MCP-only or a headless acquisition driver). " +
         `Unaccounted: ${unaccounted.join(", ")}`,
     ).toEqual([]);
   });
@@ -93,4 +99,41 @@ describe("fidelity-corpus membership (ADR 0049)", () => {
     ).toEqual([]);
   });
 
+  it("the baseline ceiling only shrinks, never grows (BASELINE_CEILING is the floor for new offenders)", () => {
+    expect(
+      baselineNames.size,
+      `fidelity-membership.baseline.json has ${baselineNames.size} entries, above ` +
+        `BASELINE_CEILING (${BASELINE_CEILING}) in fidelity-membership.test.ts. The ceiling may ` +
+        "only be lowered as entries are fixed, never raised — a new offender must go through the " +
+        "corpus or headless-only.json instead, never the baseline.",
+    ).toBeLessThanOrEqual(BASELINE_CEILING);
+  });
+
+  it("every baseline entry is still a real #[tauri::command] (stale entries must be removed)", () => {
+    const stale = [...baselineNames].filter((name) => !registered.has(name));
+    expect(
+      stale,
+      `${stale.length} baseline entr(y/ies) no longer name a #[tauri::command] — remove them ` +
+        `from fidelity-membership.baseline.json: ${stale.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("every headless-only.json key is a real #[tauri::command]", () => {
+    const stale = [...headlessNames].filter((name) => !registered.has(name));
+    expect(
+      stale,
+      `${stale.length} headless-only.json entr(y/ies) no longer name a #[tauri::command] — ` +
+        `remove them: ${stale.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("every headless-only.json value is a non-empty reason", () => {
+    const empty = Object.entries(headlessOnly as Record<string, string>)
+      .filter(([, reason]) => reason.trim().length === 0)
+      .map(([name]) => name);
+    expect(
+      empty,
+      `headless-only.json entr(y/ies) with an empty reason: ${empty.join(", ")}`,
+    ).toEqual([]);
+  });
 });

@@ -7,64 +7,63 @@ import { expect, type Locator } from "@playwright/test";
 // never visibly changed. These helpers assert the rendered computed style
 // instead. See docs/testing.md § Frontend test responsibilities and
 // docs/ui-authoring.md § Enforcement.
+//
+// Usage: capture the element's style with `captureMarkStyle` BEFORE the
+// marking event (the click/navigation that is supposed to highlight it),
+// trigger the event, then pass that snapshot to `expectVisiblyMarked` — it
+// re-captures the style and fails unless at least one of
+// background/outline/box-shadow actually changed on that SAME element. A
+// before/after comparison on one element is used rather than an
+// unmarked-sibling comparison: a sibling can legitimately differ for
+// unrelated reasons (zebra striping, hover, row parity), which let the old
+// sibling-diff form pass without the element itself ever having changed.
+//
+//   const before = await captureMarkStyle(row);
+//   await triggerTheHighlight();
+//   await expectVisiblyMarked(row, before);
+
+/** Computed style fields a "visibly marked" row is expected to change. */
+export interface MarkStyle {
+  background: string;
+  outline: string;
+  boxShadow: string;
+}
+
+/** Snapshots the computed background/outline/box-shadow of `locator`. */
+export async function captureMarkStyle(locator: Locator): Promise<MarkStyle> {
+  return locator.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return {
+      background: style.backgroundColor,
+      outline: `${style.outlineWidth} ${style.outlineStyle} ${style.outlineColor}`,
+      boxShadow: style.boxShadow,
+    };
+  });
+}
 
 /**
- * Asserts `locator` is visibly marked relative to an unmarked sibling/neutral
- * row: a computed-style difference (background-color, outline, or
- * box-shadow) and the element is actually in the viewport. A
- * `data-*-highlighted`/`-selected` attribute alone is not proof of a visible
- * mark. The reference row is a DOM sibling when one exists (a group of one —
- * e.g. a single document under its period — has none), otherwise another
- * element elsewhere in the page sharing the same first CSS class (the same
- * kind of row, rendered unmarked).
+ * Asserts `locator` is visibly marked relative to its OWN state before the
+ * marking event: a computed-style difference (background-color, outline, or
+ * box-shadow) against the `before` snapshot from `captureMarkStyle`, and the
+ * element is actually in the viewport. A `data-*-highlighted`/`-selected`
+ * attribute alone is not proof of a visible mark.
  */
-export async function expectVisiblyMarked(locator: Locator): Promise<void> {
+export async function expectVisiblyMarked(locator: Locator, before: MarkStyle): Promise<void> {
   await expect(locator).toBeVisible();
   await expect(locator).toBeInViewport();
 
-  const diff = await locator.evaluate((el) => {
-    let neutral = (el.previousElementSibling ?? el.nextElementSibling) as Element | null;
-    if (!neutral) {
-      const firstClass = el.classList[0];
-      if (firstClass) {
-        for (const candidate of document.getElementsByClassName(firstClass)) {
-          if (candidate !== el) {
-            neutral = candidate;
-            break;
-          }
-        }
-      }
-    }
-    if (!neutral) return { hasNeutral: false as const };
-    const a = getComputedStyle(el);
-    const b = getComputedStyle(neutral);
-    return {
-      hasNeutral: true as const,
-      background: [a.backgroundColor, b.backgroundColor] as [string, string],
-      outline: [
-        `${a.outlineWidth} ${a.outlineStyle} ${a.outlineColor}`,
-        `${b.outlineWidth} ${b.outlineStyle} ${b.outlineColor}`,
-      ] as [string, string],
-      boxShadow: [a.boxShadow, b.boxShadow] as [string, string],
-    };
-  });
-
-  if (!diff.hasNeutral) {
-    throw new Error(
-      "expectVisiblyMarked: no sibling or same-class row elsewhere on the page to compare against",
-    );
-  }
+  const after = await captureMarkStyle(locator);
 
   const differs =
-    diff.background[0] !== diff.background[1] ||
-    diff.outline[0] !== diff.outline[1] ||
-    diff.boxShadow[0] !== diff.boxShadow[1];
+    after.background !== before.background ||
+    after.outline !== before.outline ||
+    after.boxShadow !== before.boxShadow;
 
   expect(
     differs,
-    "Expected a visible paint difference (background-color/outline/box-shadow) vs. the unmarked " +
-      "sibling row — computed style is identical. A data-*-highlighted/-selected attribute alone " +
-      "is not proof of a visible mark (dogfooding #11).",
+    "Expected a visible paint difference (background-color/outline/box-shadow) vs. this element's " +
+      "own state before the marking event — computed style is identical. A " +
+      "data-*-highlighted/-selected attribute alone is not proof of a visible mark (dogfooding #11).",
   ).toBe(true);
 }
 

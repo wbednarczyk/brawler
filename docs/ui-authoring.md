@@ -289,27 +289,45 @@ Primitive-first authoring is policy ([ADR 0037](adr/0037-ui-component-framework-
 - **Raw-control / inline-style / error-line lint** — `eslint.config.js` (`npm run lint`) bans raw `<input>`/`<select>`/`<textarea>`, inline `style={{…}}`, and a raw element with `className="error-text"` (use `ErrorText`, or `ErrorText as="span"` inline) outside `src/ui/` (the `no-restricted-syntax` rule, an **error**). It is escapable so it never blocks a legitimate native: inherently-native `<input>` types (`checkbox`, `radio`, `file`, `date`, `time`, `datetime-local`, `month`, `week`, `range`, `color`) are exempt by the rule itself, and any other genuinely-native control (a ref-bound/keyboard-driven widget, a composite picker, the dynamic `--sidebar-width` style) carries an inline `// eslint-disable-next-line no-restricted-syntax -- <reason>` documenting why. `src/ui/**` and tests are out of scope. The same config also runs the standard `@typescript-eslint` recommended set and `react-hooks` rules as warnings. The initial backlog was driven to **zero** and the lint script runs with `--max-warnings 0`, so **a warning fails the gate** — there is no silent backlog. Fix a new warning, or for an intentional case (a lifecycle effect that must not re-run, a ref read in cleanup) add a reviewed `// eslint-disable-next-line <rule> -- <reason>`.
 - **Test hygiene lints** (G10, owner-approved hard gate 2026-09-07) —
   `eslint.config.js` bans a committed `.only()`
-  (`it.only`/`test.only`/`describe.only`/`test.describe.only`) across
-  `src/**/*.test.{ts,tsx}`, `src/test/**`, and `tests/**/*.ts` (added to `npm
-  run lint`'s glob), and requires a documented reason on every
-  `.skip()`/`.fixme()`/`.todo()` — a `// skip-ok: <reason>` comment for Vitest
-  (no reason slot in `it.skip(name, fn)`), the string last argument for
-  Playwright's `test.skip(condition, "reason")`. `src/test/testHygiene.test.ts`
-  additionally scans every `it()`/`test()` in `src/**/*.test.{ts,tsx}` for an
-  `expect*`/`assert*` call, exempting a title ending "renders"/"does not throw"
-  or a preceding `// no-assert-ok: <reason>` comment; new offenders redden,
-  `src/test/testHygiene.baseline.json` only shrinks (coverage-baseline pattern).
+  (`it.only`/`test.only`/`describe.only`/`test.describe.only`) and a chained
+  `.only.each()` (`it.only.each`/`test.only.each` — invisible to the plain
+  `.only` selector, since its outer callee property is `each`, not `only`)
+  across `src/**/*.test.{ts,tsx}`, `src/test/**`, and `tests/**/*.ts` (added
+  to `npm run lint`'s glob), and requires a documented reason on every
+  direct `test.<method>`/`it.<method>` `.skip()`/`.fixme()`/`.todo()` — a `//
+  skip-ok: <reason>` comment for Vitest (no reason slot in `it.skip(name,
+  fn)`), the string last argument for Playwright's `test.skip(condition,
+  "reason")`. Scoped to a direct `test`/`it` callee object so a chained
+  `test.describe.skip(...)` (no reason slot at all) and an unrelated
+  `.skip()`/`.fixme()` call on some other object are never flagged.
+  `src/test/testHygiene.test.ts` additionally scans every `it()`/`test()` —
+  including the two-call `it.each(...)(...)`/`test.each(...)(...)` form — in
+  `src/**/*.test.{ts,tsx}` for an `expect*`/`assert*` call, exempting a title
+  ending "renders"/"does not throw" or a preceding `// no-assert-ok:
+  <reason>` comment; new offenders redden,
+  `src/test/testHygiene.baseline.json` only shrinks (coverage-baseline
+  pattern), gated further by a `TEST_HYGIENE_BASELINE_CEILING` constant
+  (currently 0) that may only be lowered, never raised.
 - **Paint, not attribute** (G11, dogfooding #11 — `data-document-highlighted`
   was set for 4s with no CSS rule ever painting it, and the browser spec that
   asserted the attribute stayed green) — `eslint.config.js` bans
-  `toHaveAttribute("data-*-highlighted|-selected|-active|-marked", …)` in
-  `tests/**/*.ts` (Playwright only; jsdom `src/**/*.test.*` computes no colors,
-  so the equivalent Vitest attribute assertions stay legitimate per ADR 0045).
-  Use `tests/browser/helpers/paint.ts`'s
-  `expectVisiblyMarked`/`expectOpaqueSticky`/`expectInsideScroller` instead,
-  which assert the rendered computed style (background/outline/box-shadow,
-  sticky opacity/z-index, an action's position inside its scroller's
-  `clientWidth`) rather than a DOM attribute or position.
+  `toHaveAttribute("data-*(highlighted|marked)", …)` (a plain string or a
+  no-substitution template literal) in `tests/**/*.ts` (Playwright only;
+  jsdom `src/**/*.test.*` computes no colors, so the equivalent Vitest
+  attribute assertions stay legitimate per ADR 0045); `data-*-selected`/
+  `-active` are exempt — they commonly track logic/ARIA state with no visual
+  claim, so banning them flagged legitimate assertions. Use
+  `tests/browser/helpers/paint.ts`'s `captureMarkStyle`/
+  `expectVisiblyMarked`/`expectOpaqueSticky`/`expectInsideScroller` instead:
+  snapshot the element's computed style with `captureMarkStyle` BEFORE the
+  marking event, then pass that snapshot to `expectVisiblyMarked(locator,
+  before)`, which asserts the SAME element's style
+  (background/outline/box-shadow) actually changed and it is in the
+  viewport — a before/after comparison on one element, not an
+  unmarked-sibling comparison (which could pass on an unrelated sibling
+  difference, e.g. zebra striping, with the marked element itself unchanged).
+  `expectOpaqueSticky`/`expectInsideScroller` assert sticky opacity/z-index
+  and an action's position inside its scroller's `clientWidth` respectively.
 
 ## Adding a new primitive
 

@@ -139,19 +139,38 @@ const ONLY_BAN = {
     'No .only() in committed tests — it.only/test.only/describe.only/test.describe.only silently skips the rest of the suite (docs/testing.md § Frontend test responsibilities).',
 };
 
-// G11 (dogfooding #11): a `data-*-highlighted/-selected/-active/-marked`
-// attribute is not proof of a visible mark — CompanyReportDocumentsPanel set
+// G11 (dogfooding #11): a `data-*-highlighted`/`-marked` attribute is not
+// proof of a visible mark — CompanyReportDocumentsPanel set
 // `data-document-highlighted` for 4s with no CSS rule ever painting it, and
 // the browser spec that asserted the attribute stayed green throughout.
 // Scoped to tests/** (Playwright, a real layout engine) only: jsdom computes
 // no colors (docs/testing.md § Frontend test responsibilities), so the
 // equivalent Vitest assertions in src/**/*.test.* (App.test.tsx,
 // CompanyReportDocumentsPanel.test.tsx) are legitimate and must not be
-// flagged (ADR 0045 — never flag legitimate code).
+// flagged (ADR 0045 — never flag legitimate code). Narrowed to
+// highlighted/marked only (dropped selected/active, sol diff finding 8):
+// `data-selected`/`data-active` commonly track pure logic/ARIA state with no
+// visual-mark claim, so banning them flagged legitimate assertions.
+// `-highlighted`/`-marked` name the paint claim itself (matches
+// `data-document-highlighted`, the real #11 case). Matches both a plain
+// string literal and a no-substitution template literal first argument.
+const PAINT_ATTR_REGEX = "/^data-([a-z-]*-)?(highlighted|marked)$/";
 const TO_HAVE_ATTRIBUTE_PAINT_BAN = {
   selector:
-    "CallExpression[callee.property.name='toHaveAttribute'][arguments.0.type='Literal'][arguments.0.value=/^data-.*(highlighted|selected|active|marked)/]",
+    `CallExpression[callee.property.name='toHaveAttribute'][arguments.0.type='Literal'][arguments.0.value=${PAINT_ATTR_REGEX}], ` +
+    `CallExpression[callee.property.name='toHaveAttribute'][arguments.0.type='TemplateLiteral'][arguments.0.quasis.0.value.raw=${PAINT_ATTR_REGEX}]`,
   message: "assert the paint via tests/browser/helpers/paint.ts, not the attribute (dogfooding #11)",
+};
+
+// it.only.each/test.only.each (sol diff finding 8): `.only` one level below
+// the top call is invisible to ONLY_BAN below (its callee.property is
+// `each`, not `only`) but still silently narrows the suite to one
+// parameterized case.
+const ONLY_EACH_BAN = {
+  selector:
+    "CallExpression[callee.type='MemberExpression'][callee.object.type='MemberExpression'][callee.object.property.name='only']",
+  message:
+    "No .only.each() in committed tests — it.only.each/test.only.each silently narrows the suite to one parameterized case (docs/testing.md § Frontend test responsibilities).",
 };
 
 // Skip/fixme/todo hygiene (G10): an undocumented skip is a silently-shrinking
@@ -186,7 +205,12 @@ const testHygienePlugin = {
       },
     },
     // Playwright: test.skip/.fixme/.todo take the reason as their last
-    // argument (test.skip(condition, "reason")).
+    // argument (test.skip(condition, "reason")). Restricted to a direct
+    // `test.<method>(...)`/`it.<method>(...)` callee (sol diff finding 8):
+    // `test.describe.skip(...)`/`.fixme(...)` have no reason slot at all (a
+    // different, comment-based hygiene question this rule must not flag),
+    // and an unrelated `.skip(n)`/`.fixme(...)` call on some other object
+    // (e.g. an iterator/stream helper) is not a test skip at all.
     "skip-needs-reason-arg": {
       meta: { type: "problem" },
       create(context) {
@@ -195,6 +219,7 @@ const testHygienePlugin = {
             const callee = node.callee;
             if (callee.type !== "MemberExpression" || callee.property.type !== "Identifier") return;
             if (!["skip", "fixme", "todo"].includes(callee.property.name)) return;
+            if (callee.object.type !== "Identifier" || !["test", "it"].includes(callee.object.name)) return;
             const args = node.arguments;
             const last = args[args.length - 1];
             const hasStringReason = last && last.type === "Literal" && typeof last.value === "string";
@@ -255,7 +280,7 @@ export default tseslint.config(
       // userEvent only: React's fireEvent is synchronous by design.
       "testing-library/await-async-events": ["error", { eventModule: "userEvent" }],
       "testing-library/prefer-find-by": "error",
-      "no-restricted-syntax": ["error", ONLY_BAN],
+      "no-restricted-syntax": ["error", ONLY_BAN, ONLY_EACH_BAN],
       "local/skip-needs-reason-comment": "error",
     },
   },
@@ -269,7 +294,7 @@ export default tseslint.config(
     languageOptions: { parser: tseslint.parser },
     plugins: { local: testHygienePlugin },
     rules: {
-      "no-restricted-syntax": ["error", ONLY_BAN, TO_HAVE_ATTRIBUTE_PAINT_BAN],
+      "no-restricted-syntax": ["error", ONLY_BAN, ONLY_EACH_BAN, TO_HAVE_ATTRIBUTE_PAINT_BAN],
       "local/skip-needs-reason-arg": "error",
     },
   },

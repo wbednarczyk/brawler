@@ -32,5 +32,5 @@
   "RB {n}": "abbreviation code (Raport Bieżący number), not prose",
   "GPW": "native Polish acronym (Giełda Papierów Wartościowych)",
   "MB": "unit abbreviation (megabyte)",
-  "Feed": "Spółka tool-bar label kept as-is pending the owner's call (tests audit 2026-09-07: every other 'feed' entry is 'kanał' — candidate translation, but it moves the Spółka visual baselines)"
+  "Feed": "kept as-is pending the owner's decision — see #478 (every other 'feed' entry is 'kanał'; translating moves the Spółka visual baselines)"
 }

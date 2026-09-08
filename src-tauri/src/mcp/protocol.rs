@@ -392,6 +392,7 @@ mod tests {
     ///   BRAWLER_MCP_HARNESS_TOKEN (default "harness-token")
     ///   BRAWLER_MCP_HARNESS_SECS  (default 90)
     /// Run: `cargo nextest run -E 'test(real_client_harness)' --run-ignored all`
+    // no-assert-ok: manual harness that serves a live MCP endpoint for external client verification; nothing to assert in-process.
     #[test]
     #[ignore = "manual harness: serves a live MCP endpoint for real-client verification"]
     fn real_client_harness() {

@@ -716,6 +716,7 @@ mod tests {
         assert_eq!(status.storage, "not_configured");
     }
 
+    // no-assert-ok: ignored live OS-keychain smoke test; fails via its Result return (an early Err on mismatch), not an assert! macro.
     #[test]
     #[ignore = "live keyring smoke test; writes to the real OS credential store and restores the previous Gemini key"]
     fn live_keyring_persists_provider_secret() -> Result<(), String> {

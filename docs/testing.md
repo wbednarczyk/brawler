@@ -642,6 +642,10 @@ module directory/file under `src/fundamentals/extraction/` or
 `src/source_adapters/` defining a `parse*`/`normalize*`/`resolve*`/`dedup*`/
 `match*` fn must be listed — a new transform declares itself in the manifest in
 the same change it lands in, even before its property/golden tests follow.
+**Discovery limit**: the guard only lists direct children of those two
+directories (`std::fs::read_dir`, non-recursive) — a transform nested one
+level deeper, or one living outside both roots, is not auto-discovered and
+must be added to the manifest by hand.
 
 ### Property-based & invariant testing
 
@@ -1006,27 +1010,11 @@ Every behavior lives at the **cheapest authoritative layer** — the layer that 
 
 **Rules.** (1) A cross-screen case is **moved** to Playwright only when the browser is genuinely the cheaper authoritative layer *and* churn is justified by **measured flake**, never speculatively (Q8 STOP-AND-ASK). (2) Playwright coverage does **not** count toward Vitest V8 line coverage — retain/extract equivalent component coverage before deleting any Vitest assertion, and **never lower `coverage-baseline.json`**. (3) A multi-slice task names its layer split in planning via the [experience-contract template](plans/EXPERIENCE-CONTRACT-TEMPLATE.md) § 12, not at the gate. (4) **An absence assertion about a transition converges, it never samples**: `expect(queryBy…).toBeNull()` written straight after an `await findBy…` on a *different* element reads a single tick, and the outgoing node (a swapped tab, a replaced row) can outlive its replacement by one render — green locally, red under gate load. Wrap it in `waitFor`; what is asserted stays the same, only its synchronization changes (harvest 2026-08-02, `CockpitScreen.test.tsx` unpin/retarget). **The wrap alone was not enough** — Testing Library's default budget is **1 second**, generous locally but marginal on a 4-vCPU runner with four workers over a full app render, and the same test flaked again in CI with the `waitFor` in place. The budget is therefore set centrally in `src/test/setup.ts` (`configure({ asyncUtilTimeout: 5_000 })`); do **not** sprinkle per-call `{ timeout }` overrides, and treat a *new* need for one as a signal the code is slow, not the test (second harvest 2026-08-02, PR #316).
 
-**Test hygiene gates** (owner-approved hard gates 2026-09-07). A committed
-`.only()` and an undocumented `.skip()`/`.fixme()`/`.todo()` both let a suite
-silently shrink; `eslint.config.js` bans the former outright and requires a
-reason on the latter (a `// skip-ok: <reason>` comment for Vitest, a string last
-argument for Playwright) across `src/**/*.test.{ts,tsx}`, `src/test/**`, and
-`tests/**/*.ts`. `src/test/testHygiene.test.ts` ratchets a stronger property:
-every `it()`/`test()` block must contain an `expect*`/`assert*` call (or an
-exempt title/comment) — an assertion-less test's green checkmark proves nothing.
-**Paint, not attribute** (dogfooding #11: `data-document-highlighted` was set
-for 4s with no CSS rule ever painting it, and the spec asserting the attribute
-stayed green): `tests/browser/helpers/paint.ts` exports
-`expectVisiblyMarked`/`expectOpaqueSticky`/`expectInsideScroller`, which assert
-the rendered computed style or geometry instead; `toHaveAttribute` on a
-`data-*-highlighted/-selected/-active/-marked` literal is an ESLint error in
-`tests/**` (Playwright only — jsdom computes no colors, so the equivalent Vitest
-assertions stay legitimate). **English-in-PL detector** (dogfooding #8 class,
-retro F4c's fix was instance-only): `translationCompleteness.test.ts` also fails
-when a `plText.ts` entry is byte-identical to its EN key and not listed in
-`identicalEntries.json` with a reason (brand/acronym/loanword stays;
-plainly-English prose gets translated instead), ratcheted the same way as the
-untranslated-string baseline.
+**Test hygiene gates** (owner-approved hard gates 2026-09-07): `.only()`/
+`.skip()`/`.fixme()`/`.todo()` discipline, the assertion-required ratchet,
+paint-not-attribute, and the English-in-PL detector are canonically described
+in [ui-authoring.md § Enforcement](ui-authoring.md#enforcement) — not
+duplicated here.
 
 ## User-journey E2E and step budgets (ADR 0074)
 

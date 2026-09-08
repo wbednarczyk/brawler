@@ -27,6 +27,26 @@ type Block = { title: string; line: number; body: string; prevLine: string };
 // enough for a hygiene lint. Ceiling: a title/string containing unbalanced
 // parens would throw the depth count off. Upgrade to an AST walk (the
 // project already depends on typescript-eslint) if that ever bites.
+
+// Returns the index of the `)` matching the `(` at `openParenIdx` — or
+// `src.length` if depth never returns to 0 (an unbalanced paren inside a
+// title/regex literal throws the count off, the documented ceiling above;
+// falling through to EOF rather than a sentinel keeps a real assertion
+// further down still inside the slice, matching this scan's original
+// tolerant behavior).
+function matchingParen(src: string, openParenIdx: number): number {
+  let depth = 0;
+  let i = openParenIdx;
+  for (; i < src.length; i++) {
+    if (src[i] === "(") depth++;
+    else if (src[i] === ")") {
+      depth--;
+      if (depth === 0) break;
+    }
+  }
+  return i;
+}
+
 function findTestBlocks(src: string): Block[] {
   const results: Block[] = [];
   const callRe = /\b(?:it|test)\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g;
@@ -35,24 +55,42 @@ function findTestBlocks(src: string): Block[] {
     const title = match[2];
     const startIdx = match.index;
     const openParenIdx = src.indexOf("(", startIdx);
-    let depth = 0;
-    let i = openParenIdx;
-    for (; i < src.length; i++) {
-      if (src[i] === "(") depth++;
-      else if (src[i] === ")") {
-        depth--;
-        if (depth === 0) break;
-      }
-    }
+    const closeParenIdx = matchingParen(src, openParenIdx);
     const before = src.slice(0, startIdx);
     const lines = before.split("\n");
     results.push({
       title,
       line: lines.length,
-      body: src.slice(openParenIdx, i + 1),
+      body: src.slice(openParenIdx, closeParenIdx + 1),
       prevLine: lines[lines.length - 2] ?? "",
     });
   }
+
+  // it.each([...])("title", fn) / test.each([...])("title", fn): no literal
+  // `it(`/`test(` token exists — the table call and the title+fn call are two
+  // separate `(…)` groups. A nested `it()`/`test()` inside a `describe.each`
+  // callback still matches the plain scan above, so only `.each` on it/test
+  // itself needs handling here.
+  const eachCallRe = /\b(?:it|test)\.each(?:\.\w+)?\(/g;
+  while ((match = eachCallRe.exec(src))) {
+    const tableOpenIdx = match.index + match[0].length - 1;
+    const tableCloseIdx = matchingParen(src, tableOpenIdx);
+    let invOpenIdx = tableCloseIdx + 1;
+    while (invOpenIdx < src.length && /\s/.test(src[invOpenIdx])) invOpenIdx++;
+    if (src[invOpenIdx] !== "(") continue;
+    const titleMatch = src.slice(invOpenIdx).match(/^\(\s*(["'`])((?:\\.|(?!\1).)*)\1/);
+    if (!titleMatch) continue;
+    const invCloseIdx = matchingParen(src, invOpenIdx);
+    const before = src.slice(0, match.index);
+    const lines = before.split("\n");
+    results.push({
+      title: titleMatch[2],
+      line: lines.length,
+      body: src.slice(invOpenIdx, invCloseIdx + 1),
+      prevLine: lines[lines.length - 2] ?? "",
+    });
+  }
+
   return results;
 }
 
@@ -83,8 +121,24 @@ function findOffenders(): string[] {
   return offenders;
 }
 
+// B1 (owner-approved hard gate 2026-09-07): the baseline started empty and
+// is not a way for a NEW assertion-less block to go green — the only fix is
+// to add an assertion, an exempt title, or a `// no-assert-ok:` comment.
+// This ceiling may only be LOWERED, never raised to fit a new offender.
+const TEST_HYGIENE_BASELINE_CEILING = 0;
+
 describe("test hygiene — every it()/test() block asserts something", () => {
   const offenders = findOffenders();
+
+  it("the baseline ceiling only shrinks, never grows", () => {
+    expect(
+      baseline.size,
+      `testHygiene.baseline.json has ${baseline.size} entries, above ` +
+        `TEST_HYGIENE_BASELINE_CEILING (${TEST_HYGIENE_BASELINE_CEILING}) in testHygiene.test.ts. ` +
+        "The ceiling may only be lowered, never raised — a new assertion-less block must be fixed " +
+        "(assertion, exempt title, or a documented no-assert-ok), never baselined to go green.",
+    ).toBeLessThanOrEqual(TEST_HYGIENE_BASELINE_CEILING);
+  });
 
   it("has no NEW assertion-less test blocks beyond the baseline", () => {
     const newOffenders = offenders.filter((entry) => !baseline.has(entry));

@@ -4,13 +4,17 @@
 # ("one cargo/nextest/vitest/playwright at a time — the WSL VM OOM-froze twice")
 # into a mechanical boundary for every agent and subagent in this repo.
 #
-# Precision contract (ADR 0045 — never flag legitimate use):
-# - Intercepts ONLY Bash commands that START a heavy build/test run:
-#   cargo {build,test,nextest,clippy,llvm-cov,check,mutants}, nextest, vitest,
-#   playwright test, make {check*,test,ui-smoke*,coverage*,build,tauri-build,
-#   package-*}, npm run {test,check*,build,coverage*}, npx {vitest,playwright}.
+# Precision contract (ADR 0045 — never flag legitimate use, B3 fix
+# 2026-09-08): classification is delegated to one-heavy-build-classify.mjs,
+# which splits the command into `;`/`&&`/`||`/`|`/newline segments, strips
+# quoted strings and leading `env VAR=val…`/`rtk`/`nix develop … -c`/`cd
+# <dir>` prefixes, and matches only the HEAD TOKENS of each segment (program
+# + subcommand) — so a heavy word inside a commit message or --body string,
+# or a `rtk read`/`cd x && ls` prefix, never trips it.
 # - Denies ONLY while another such run is already alive on this machine
-#   (pgrep on cargo/rustc/nextest/vitest/playwright/tsc/vite/esbuild).
+#   (pgrep on cargo/rustc/cargo-nextest/nextest/vitest/playwright — NOT
+#   rust-analyzer/playwright-mcp/vite/tsc/esbuild, which share substrings
+#   with the real targets but are dev-server/LSP/MCP processes, not builds).
 # - Everything else (rtk read/grep, repoctx, git, gh, node scripts) passes.
 # - Escape hatch for a deliberate second run: BRAWLER_ALLOW_PARALLEL_BUILD=1.
 set -euo pipefail
@@ -21,10 +25,10 @@ tool=$(printf '%s' "$input" | jq -r '.tool_name // empty')
 [ "${BRAWLER_ALLOW_PARALLEL_BUILD:-0}" = "1" ] && exit 0
 
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
-heavy='(^|[[:space:];&|(]|rtk[[:space:]]+)(cargo[[:space:]]+(build|test|nextest|clippy|llvm-cov|check|mutants)|cargo-nextest|nextest[[:space:]]+run|vitest|playwright[[:space:]]+test|make[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?(check|test|ui-smoke|coverage|build|tauri-build|package-)|npm[[:space:]]+(run[[:space:]]+)?(test|check|build|coverage)|npx[[:space:]]+(vitest|playwright))'
-printf '%s' "$cmd" | grep -Eq "$heavy" || exit 0
+hook_dir=$(dirname "${BASH_SOURCE[0]}")
+printf '%s' "$cmd" | node "$hook_dir/one-heavy-build-classify.mjs" || exit 0
 
-running=$(pgrep -af '(^|/)(cargo|rustc|cargo-nextest|nextest|vitest|playwright|tsc|vite|esbuild)( |$)' 2>/dev/null | grep -v 'one-heavy-build' | head -5 || true)
+running=$(pgrep -af '(^|/)(cargo|rustc|cargo-nextest|nextest|vitest|playwright)( |$)' 2>/dev/null | grep -v 'one-heavy-build' | head -5 || true)
 [ -n "$running" ] || exit 0
 
 jq -n --arg r "$running" '{
