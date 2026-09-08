@@ -81,6 +81,10 @@ function runHook(command, { cwd = FEATURE_REPO, env = {}, payloadCwd } = {}) {
 
 // Deny cases that don't depend on which branch is checked out (evaluated on the feature repo).
 const DENY_BRANCH_INDEPENDENT = [
+  // astra r5: a boolean git global before the subcommand must never be read AS the subcommand
+  "git --no-optional-locks reset --hard",
+  "git --literal-pathspecs --no-pager stash",
+  "git --exec-path=/tmp clean -f",
   // astra r4 #1: a forbidden flag after a consumed value must survive the operand parse
   'git commit -m "fix: x" --no-verify',
   'git commit -m "fix: x" -n',
@@ -209,6 +213,8 @@ const DENY_BRANCH_DEPENDENT = [
 ];
 
 const ALLOW_BRANCH_INDEPENDENT = [
+  "git --no-optional-locks status",
+  "git --namespace x log",
   'git commit --message="--no-verify"',
   'git commit -m "fix: x" --amend --no-edit',
   'git commit -F notes.txt -q',

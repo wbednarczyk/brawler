@@ -405,7 +405,14 @@ function parseGitGlobals(args, cwd) {
       i += 1;
       continue;
     }
-    if (t === "--no-pager" || t === "-p" || t === "--paginate") {
+    if (t === "--namespace" || t === "--super-prefix" || t === "--config-env" || t === "--exec-path") {
+      i += 2; // value in the next token
+      continue;
+    }
+    // Any other dash token before the subcommand is a boolean git global (`--no-pager`,
+    // `--no-optional-locks`, `--literal-pathspecs`, `--bare`, `--exec-path=…`, …): consume it,
+    // never mistake it for the subcommand (astra r5: `git --no-optional-locks reset --hard`).
+    if (t.startsWith("-")) {
       i += 1;
       continue;
     }
