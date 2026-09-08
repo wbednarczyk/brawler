@@ -56,7 +56,7 @@ test.describe("Spółka › Documents — deep-link target contract (dogfooding 
     await page.keyboard.press("Enter");
     await expect(page.getByRole("region", { name: "Company view", exact: true })).toBeVisible();
     const openDocuments = await openPalette(page);
-    await openDocuments.getByRole("combobox", { name: "Search commands" }).fill("Open documents");
+    await openDocuments.getByRole("combobox", { name: "Search commands" }).fill("Open tool: Documents");
     await page.keyboard.press("Enter");
     const tool = page.getByRole("group", { name: "Workshop tool" });
     await expect(tool).toHaveAttribute("data-tool", "dokumenty");
