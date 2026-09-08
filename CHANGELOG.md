@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.82.0 - 2026-09-08
+
+
+### Bug Fixes
+
+- **ui**: dogfooding wave 2026-09 — Spółka/Fundamentals findings from v0.79 and Aktywność findings from v0.81 (#1b–#13) (#468)
+
 ## v0.81.0 - 2026-09-04
 
 
