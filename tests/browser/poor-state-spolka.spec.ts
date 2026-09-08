@@ -1,4 +1,4 @@
-import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openPalette, expectNoPageOverflow } from "./helpers/harness";
 import { primeChaos, primeMockScenario } from "./helpers/mockRuntime";
 
 // Epic #40 S2 (ADR 0091) — the company workspace walked on a POOR-STATE
@@ -18,8 +18,7 @@ const PARTIAL_COMPANY_ID = "company_gpw_partial";
 const CHAOS_MESSAGE = "warning-signal index unavailable";
 
 async function openSpolkaTool(page: import("@playwright/test").Page, label: string) {
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill(label);
   await palette.getByRole("option", { name: label, exact: true }).first().click();
   return page.getByRole("group", { name: "Workshop tool" });

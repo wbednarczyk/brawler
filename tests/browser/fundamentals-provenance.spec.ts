@@ -1,4 +1,4 @@
-import { test, expect, openApp } from "./helpers/harness";
+import { test, expect, openApp, openPalette } from "./helpers/harness";
 import type { Page } from "@playwright/test";
 
 // Structured-first provenance UI (ADR 0061). F3a S3 (ADR 0107): opening a
@@ -17,8 +17,7 @@ async function openFundamentals(page: Page) {
   await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Fundamentals");
   await palette.getByRole("option", { name: "Open tool: Fundamentals", exact: true }).first().click();
   await expect(page.getByLabel("Company fundamentals")).toBeVisible();

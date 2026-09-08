@@ -169,6 +169,20 @@ const TO_HAVE_ATTRIBUTE_PAINT_BAN = {
   message: "assert the paint via tests/browser/helpers/paint.ts, not the attribute (dogfooding #11)",
 };
 
+// T3 hard gates wave 2 harvest (2026-09-08): `openPalette(page)` in
+// tests/browser/helpers/harness.ts is the one place every spec is meant to
+// open the ⌘K palette (blur-then-retry against a slow CI runner, PR #432/
+// #452) — the doc comment said so, but 25 call sites pressed `Control+K`
+// bare anyway, and one flaked in CI once retries dropped to 0
+// (j8-keyboard-only-company-review.spec.ts). Ban the literal everywhere
+// under tests/** except harness.ts itself (the block below carves out that
+// exemption via `ignores`).
+const CONTROL_K_BAN = {
+  selector: "Literal[value='Control+K']",
+  message:
+    "Open the ⌘K palette via openPalette(page) from helpers/harness — a bare Control+K races the shortcut listener on a slow runner (retries are 0).",
+};
+
 // it.only.each/test.only.each (sol diff finding 8): `.only` one level below
 // the top call is invisible to ONLY_BAN below (its callee.property is
 // `each`, not `only`) but still silently narrows the suite to one
@@ -297,7 +311,44 @@ export default tseslint.config(
     // its own minimal parser wiring rather than the full js/tseslint
     // recommended sets — this stays a targeted hygiene gate, not a new lint
     // surface over 50+ existing spec files (ADR 0045: precise gates only).
+    // Excludes tests/browser/**: CONTROL_K_BAN (below) is scoped there only
+    // — tests/live/** drives the real app over `./helpers/liveConnect`, a
+    // different runtime with no `openPalette` to route through, so banning
+    // the literal there would flag legitimate code (ADR 0045).
     files: ["tests/**/*.ts"],
+    ignores: ["tests/browser/**/*.ts"],
+    languageOptions: { parser: tseslint.parser },
+    plugins: { local: testHygienePlugin },
+    rules: {
+      "no-restricted-syntax": ["error", ONLY_BAN, ONLY_EACH_BAN, TO_HAVE_ATTRIBUTE_PAINT_BAN],
+      "local/skip-needs-reason-arg": "error",
+    },
+  },
+  {
+    // tests/browser/**: same hygiene bans, plus CONTROL_K_BAN — every spec
+    // here can reach `openPalette` (helpers/harness.ts), the one place meant
+    // to open the ⌘K palette (blur-then-retry against a slow CI runner, PR
+    // #432/#452) — the doc comment said so, but 25 call sites pressed
+    // `Control+K` bare anyway, and one flaked in CI once retries dropped to 0
+    // (j8-keyboard-only-company-review.spec.ts, T3 hard gates wave 2,
+    // 2026-09-08). Excludes harness.ts itself, the one legitimate site for
+    // the literal (split into a third block below rather than an `ignores`
+    // on this one, so harness.ts keeps the other three bans — flat config
+    // REPLACES, not merges, a rule across matching blocks, so the exempt
+    // file needs the full non-Control+K array repeated, not just a
+    // subtraction).
+    files: ["tests/browser/**/*.ts"],
+    ignores: ["tests/browser/helpers/harness.ts"],
+    languageOptions: { parser: tseslint.parser },
+    plugins: { local: testHygienePlugin },
+    rules: {
+      "no-restricted-syntax": ["error", ONLY_BAN, ONLY_EACH_BAN, TO_HAVE_ATTRIBUTE_PAINT_BAN, CONTROL_K_BAN],
+      "local/skip-needs-reason-arg": "error",
+    },
+  },
+  {
+    // harness.ts itself: same hygiene bans, minus CONTROL_K_BAN (see above).
+    files: ["tests/browser/helpers/harness.ts"],
     languageOptions: { parser: tseslint.parser },
     plugins: { local: testHygienePlugin },
     rules: {

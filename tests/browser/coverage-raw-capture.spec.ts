@@ -1,4 +1,4 @@
-import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openPalette, expectNoPageOverflow } from "./helpers/harness";
 
 // The Coverage panel's raw tagged-fact capture proof + promotion (ADR 0100,
 // epic #398 final slice): the funnel compacted to one InfoGrid line, with a
@@ -23,8 +23,7 @@ async function openCoveragePanel(page: import("@playwright/test").Page) {
     .click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Coverage");
   await palette.getByRole("option", { name: "Open tool: Coverage", exact: true }).first().click();
 }

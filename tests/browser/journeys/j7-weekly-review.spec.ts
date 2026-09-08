@@ -25,9 +25,7 @@ async function openScreenViaJourney(j: Journey, page: Page, label: string): Prom
   // prior screen's own text field (e.g. Watchlists' "Create" name input) can
   // still hold focus here. Not a counted journey interaction: it mirrors a
   // real user's mouse move away from a field before reaching for a shortcut.
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await j.press(page, "Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await j.openPalette(page);
   await j.markModal("Command palette");
   await j.fill(palette.getByLabel("Search commands"), `Open screen: ${label}`);
   await j.click(palette.getByRole("option", { name: `Open screen: ${label}`, exact: true }).first());

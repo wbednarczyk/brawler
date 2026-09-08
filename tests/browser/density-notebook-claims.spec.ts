@@ -88,13 +88,34 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
     await openApp(page);
     const pane = await openCompanyTool(page, "Claims", ".company-claims-panel");
 
-    // L: list ∥ verdict detail column; composer inline.
+    // L: list ∥ verdict detail column; composer inline. Converging (rule 6,
+    // docs/testing.md § Browser UI regression smoke): the density tier's
+    // re-layout can land a frame after `setPaneSize` resolves, so poll rather
+    // than sample the boxes once.
     await setPaneSize(page, { width: 900, height: 700, pane });
     {
-      const mainBox = await box(pane.locator(".claims-main"));
-      const colBox = await box(pane.locator(".claims-verdict-column"));
-      expect(colBox.x, "verdict column to the right of the list").toBeGreaterThan(mainBox.x + mainBox.width / 2);
-      expect(Math.abs(colBox.y - mainBox.y), "columns on one row").toBeLessThan(40);
+      const main = pane.locator(".claims-main");
+      const col = pane.locator(".claims-verdict-column");
+      await expect
+        .poll(
+          async () => {
+            const mainBox = await box(main);
+            const colBox = await box(col);
+            return colBox.x - (mainBox.x + mainBox.width / 2);
+          },
+          { message: "verdict column to the right of the list" },
+        )
+        .toBeGreaterThan(0);
+      await expect
+        .poll(
+          async () => {
+            const mainBox = await box(main);
+            const colBox = await box(col);
+            return Math.abs(colBox.y - mainBox.y);
+          },
+          { message: "columns on one row" },
+        )
+        .toBeLessThan(40);
       await expect(pane.locator(".claim-create-form")).toBeVisible();
       await expect(pane.locator(".claims-add-toggle")).toBeHidden();
       await expectNoPageOverflow(page);
@@ -103,10 +124,28 @@ test.describe("density contracts — Notebook + Claims", { tag: "@clickable" }, 
     // M: single column, inline composer; verdict work stacks above the list.
     await setPaneSize(page, { width: 600, height: 700, pane });
     {
-      const mainBox = await box(pane.locator(".claims-main"));
-      const colBox = await box(pane.locator(".claims-verdict-column"));
-      expect(Math.abs(colBox.x - mainBox.x), "verdict column shares the list's column").toBeLessThan(6);
-      expect(colBox.y, "verdict work above the list").toBeLessThan(mainBox.y);
+      const main = pane.locator(".claims-main");
+      const col = pane.locator(".claims-verdict-column");
+      await expect
+        .poll(
+          async () => {
+            const mainBox = await box(main);
+            const colBox = await box(col);
+            return Math.abs(colBox.x - mainBox.x);
+          },
+          { message: "verdict column shares the list's column" },
+        )
+        .toBeLessThan(6);
+      await expect
+        .poll(
+          async () => {
+            const mainBox = await box(main);
+            const colBox = await box(col);
+            return mainBox.y - colBox.y;
+          },
+          { message: "verdict work above the list" },
+        )
+        .toBeGreaterThan(0);
       await expect(pane.locator(".claim-create-form")).toBeVisible();
       await expect(pane.locator(".claims-add-toggle")).toBeHidden();
       await expectNoPageOverflow(page);

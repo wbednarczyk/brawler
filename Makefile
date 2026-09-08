@@ -31,7 +31,7 @@ PLAYWRIGHT_VERSION := $(shell sed -n '/"node_modules\/@playwright\/test": {/{n;s
 PLAYWRIGHT_IMAGE := mcr.microsoft.com/playwright:v$(PLAYWRIGHT_VERSION)-noble
 VISUAL_DOCKER = docker run --rm --init --ipc=host --user "$$(id -u):$$(id -g)" -v $(CURDIR):/work -w /work -e HOME=/tmp -e SCREEN -e ALL -e REASON $(PLAYWRIGHT_IMAGE)
 
-.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-visual check-docs-gates check-commits check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help package-release-linux package-release-windows
+.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-visual check-docs-gates check-commits check-tests-touched check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes license-keygen-author license-author license-friend smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help package-release-linux package-release-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -43,6 +43,8 @@ help:
 	@printf "                            Granular CI-parity gate targets — each is one full-check.yml job; 'make check' composes them\n"
 	@printf "  make check-commits RANGE=<base>..<head>\n"
 	@printf "                            Validate every commit subject in the range against Conventional Commits\n"
+	@printf "  make check-tests-touched RANGE=<base>..<head> [PR_LABELS=a,b]\n"
+	@printf "                            G14: the diff carries a test change (or Rust inline test-span hunk) or the tests:not-needed label\n"
 	@printf "  make check-release-label PR=<n>\n"
 	@printf "                            Assert the PR carries exactly one release:{major,minor,patch,skip} label\n"
 	@printf "  make pr-binary PR=<n>     Download a PR's cross-built Windows .exe to /mnt/d/Brawler/Builds/pr-<n>/\n"
@@ -239,6 +241,18 @@ check-commits:
 	done; \
 	if [ "$$fail" -eq 0 ]; then printf "✓ check-commits: all commits in %s conform to Conventional Commits.\n" "$(RANGE)"; fi; \
 	exit $$fail
+
+# Tests-touched gate (G14, hard gates wave 2, ADR 0045 harvest 2026-09-08): a
+# PR's code diff must carry test evidence (a changed test file, or for Rust an
+# inline #[cfg(test)]/#[test] hunk) or the `tests:not-needed` label — an
+# acknowledgement gate, not proof of behavioral coverage (a pure refactor
+# legitimately keeps its existing tests). PR_LABELS is passed straight from the
+# environment into the recipe (never interpolated into this shell) — the
+# workflow supplies it via `env:` from the PR's label list.
+check-tests-touched:
+	@test -n "$(RANGE)" || { printf "Usage: make check-tests-touched RANGE=<base>..<head>\n" >&2; exit 64; }
+	@base="$(RANGE)"; base="$${base%%..*}"; head="$(RANGE)"; head="$${head##*..}"; \
+	$(NIX) node scripts/check/tests-touched.mjs --base "$$base" --head "$$head"
 
 # Release-label gate (ADR 0090, §D): a PR must carry EXACTLY ONE
 # release:{major,minor,patch,skip} label — the label drives continuous release.

@@ -2,6 +2,7 @@ import {
   test,
   expect,
   openApp,
+  openPalette,
   setPaneSize,
   resetPaneSize,
   expectNoPageOverflow,
@@ -48,8 +49,7 @@ async function openCompanyTool(page: Page, toolLabel: string): Promise<PaneLocat
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill(toolLabel);
   await palette.getByRole("option", { name: toolLabel, exact: true }).first().click();
   await expect(page.getByRole("group", { name: "Workshop tool" })).toBeVisible();
@@ -76,17 +76,53 @@ const PANEL_CONTRACTS: PanelContract[] = [
       // M: no Autopilot fold either; the two forms stack in one column.
       M: async (_page, pane) => {
         await expect(pane.locator(".fundamentals-autopilot")).toHaveCount(0);
-        const create = await box(pane.getByLabel("Create reporting period"));
-        const add = await box(pane.getByLabel("Add financial fact"));
-        expect(add.y, "add-fact form stacked below the period form at M").toBeGreaterThan(create.y + 10);
-        expect(Math.abs(add.x - create.x), "forms share one column at M").toBeLessThan(6);
+        // Converging (rule 6, docs/testing.md § Browser UI regression smoke):
+        // the density tier's re-layout can land a frame after `setPaneSize`
+        // resolves, so a one-shot `box()` sample right after can race it — poll
+        // until the geometry settles instead of reading it once.
+        await expect
+          .poll(
+            async () => {
+              const create = await box(pane.getByLabel("Create reporting period"));
+              const add = await box(pane.getByLabel("Add financial fact"));
+              return add.y - create.y;
+            },
+            { message: "add-fact form stacked below the period form at M" },
+          )
+          .toBeGreaterThan(10);
+        await expect
+          .poll(
+            async () => {
+              const create = await box(pane.getByLabel("Create reporting period"));
+              const add = await box(pane.getByLabel("Add financial fact"));
+              return Math.abs(add.x - create.x);
+            },
+            { message: "forms share one column at M" },
+          )
+          .toBeLessThan(6);
       },
       // L: forms side-by-side beside the matrix.
       L: async (_page, pane) => {
-        const create = await box(pane.getByLabel("Create reporting period"));
-        const add = await box(pane.getByLabel("Add financial fact"));
-        expect(add.x, "add-fact form beside the period form at L").toBeGreaterThan(create.x + create.width / 2);
-        expect(Math.abs(add.y - create.y), "forms on one row at L").toBeLessThan(40);
+        await expect
+          .poll(
+            async () => {
+              const create = await box(pane.getByLabel("Create reporting period"));
+              const add = await box(pane.getByLabel("Add financial fact"));
+              return add.x - (create.x + create.width / 2);
+            },
+            { message: "add-fact form beside the period form at L" },
+          )
+          .toBeGreaterThan(0);
+        await expect
+          .poll(
+            async () => {
+              const create = await box(pane.getByLabel("Create reporting period"));
+              const add = await box(pane.getByLabel("Add financial fact"));
+              return Math.abs(add.y - create.y);
+            },
+            { message: "forms on one row at L" },
+          )
+          .toBeLessThan(40);
       },
       // short: only matrix + section headers; forms fold behind a disclosure.
       short: async (_page, pane) => {
@@ -117,19 +153,55 @@ const PANEL_CONTRACTS: PanelContract[] = [
       },
       // L: detail split-pane — detail sits to the RIGHT of the selected row.
       L: async (_page, pane) => {
-        const row = await box(pane.locator(".company-feed-row-block:has(.company-feed-detail) .company-feed-row"));
-        const detail = await box(pane.locator(".company-feed-detail"));
-        expect(detail.x, "detail beside the row at L").toBeGreaterThan(row.x + row.width / 2);
-        expect(Math.abs(detail.y - row.y), "row and detail on one row at L").toBeLessThan(40);
+        const feedRow = pane.locator(".company-feed-row-block:has(.company-feed-detail) .company-feed-row");
+        const feedDetail = pane.locator(".company-feed-detail");
+        await expect
+          .poll(
+            async () => {
+              const row = await box(feedRow);
+              const detail = await box(feedDetail);
+              return detail.x - (row.x + row.width / 2);
+            },
+            { message: "detail beside the row at L" },
+          )
+          .toBeGreaterThan(0);
+        await expect
+          .poll(
+            async () => {
+              const row = await box(feedRow);
+              const detail = await box(feedDetail);
+              return Math.abs(detail.y - row.y);
+            },
+            { message: "row and detail on one row at L" },
+          )
+          .toBeLessThan(40);
       },
       // short: list only — the split-pane collapses; detail stacks below the row
       // (not the L-tier side column). Base detail styling insets it by a small
       // margin, so assert it is NOT in the right column rather than pixel-aligned.
       short: async (_page, pane) => {
-        const row = await box(pane.locator(".company-feed-row-block:has(.company-feed-detail) .company-feed-row"));
-        const detail = await box(pane.locator(".company-feed-detail"));
-        expect(detail.y, "detail stacked below the row at short").toBeGreaterThan(row.y + 10);
-        expect(detail.x, "detail is not a right-hand side pane at short").toBeLessThan(row.x + row.width / 2);
+        const feedRow = pane.locator(".company-feed-row-block:has(.company-feed-detail) .company-feed-row");
+        const feedDetail = pane.locator(".company-feed-detail");
+        await expect
+          .poll(
+            async () => {
+              const row = await box(feedRow);
+              const detail = await box(feedDetail);
+              return detail.y - (row.y + 10);
+            },
+            { message: "detail stacked below the row at short" },
+          )
+          .toBeGreaterThan(0);
+        await expect
+          .poll(
+            async () => {
+              const row = await box(feedRow);
+              const detail = await box(feedDetail);
+              return detail.x - (row.x + row.width / 2);
+            },
+            { message: "detail is not a right-hand side pane at short" },
+          )
+          .toBeLessThan(0);
       },
     },
   },
@@ -236,11 +308,18 @@ test.describe("Companies library density (companies-library cell)", { tag: "@cli
       // The `Add` action must stay inside the pane's painted extent — the
       // layout hides overflow, so a clipped button reads clean to the
       // scrollbar-based guard (owner tier 1024×1152 clipped it, F4a S2).
+      // Converging (rule 6): poll rather than sample once right after resize.
       const add = form.getByRole("button", { name: "Add", exact: true });
-      const addBox = await add.boundingBox();
-      const paneBox = await pane.boundingBox();
-      expect(addBox, "Add button has a box").not.toBeNull();
-      expect(addBox!.x + addBox!.width).toBeLessThanOrEqual(paneBox!.x + paneBox!.width + 1);
+      await expect
+        .poll(
+          async () => {
+            const addBox = await box(add);
+            const paneBox = await box(pane);
+            return addBox.x + addBox.width - (paneBox.x + paneBox.width);
+          },
+          { message: "Add button stays inside the pane's painted extent" },
+        )
+        .toBeLessThanOrEqual(1);
       await resetPaneSize(page, pane);
     }
   });

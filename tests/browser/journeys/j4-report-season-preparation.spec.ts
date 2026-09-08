@@ -30,8 +30,7 @@ import type { Page } from "@playwright/test";
 // state (F4b S4 label pass).
 
 async function openScreenViaJourney(j: Journey, page: Page, label: string): Promise<void> {
-  await j.press(page, "Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await j.openPalette(page);
   await j.markModal("Command palette");
   await j.fill(palette.getByLabel("Search commands"), `Open screen: ${label}`);
   await j.click(palette.getByRole("option", { name: `Open screen: ${label}`, exact: true }).first());

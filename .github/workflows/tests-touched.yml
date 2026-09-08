@@ -1,0 +1,53 @@
+# Tests-touched gate (G14, hard gates wave 2, ADR 0045 harvest 2026-09-08):
+# a PR's code diff must carry a test change (or, for Rust, an inline
+# #[cfg(test)]/#[test] hunk in the same diff) or the `tests:not-needed` label.
+#
+# Lives OUTSIDE full-check.yml on purpose, same rationale as release-label.yml:
+# this is the only check besides that one that must re-evaluate on
+# labeled/unlabeled events (adding `tests:not-needed` flips a red PR green
+# without a new push). Keeping it here means a label event re-runs a ~seconds
+# job instead of the whole gate — the heavy checks' green on the same SHA
+# stays untouched, and an in-flight full-check run is not cancelled by
+# labeling.
+name: Tests touched
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: tests-touched-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tests-touched:
+    name: Tests touched (test change or tests:not-needed)
+    runs-on: ubuntu-latest
+    container: ghcr.io/wbednarczyk/brawler-devshell:latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fix workspace ownership
+        # Container jobs: the runner mounts the workspace with a uid that differs
+        # from the container user; Nix's libgit2 then refuses the flake git input
+        # ("repository path is not owned by current user"). No-op outside containers.
+        run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
+      - name: Check tests touched
+        # Labels arrive as a JSON array via env — never interpolated into the
+        # shell line (so a label like `foo"; rm -rf /` cannot escape into the
+        # recipe) and never comma-joined (a label whose own name contains a
+        # comma, e.g. "review,tests:not-needed", must not fragment into a
+        # false match — G14).
+        # Labels are fetched LIVE by the script (GH_TOKEN + PR_NUMBER) — never taken
+        # from the triggering event's payload, which a manual re-run replays stale.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: make check-tests-touched RANGE=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}

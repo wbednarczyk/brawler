@@ -1,4 +1,4 @@
-import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openPalette, expectNoPageOverflow } from "./helpers/harness";
 
 // The red-flags panel (v0.57 T7, ADR 0083 Decision 8/9) surfaces derived
 // warning signals — active flags with a fixed-slot severity chip and a per-row
@@ -20,8 +20,7 @@ async function addRedFlagsPanel(page: import("@playwright/test").Page, companyId
     .click();
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Signals");
   await palette.getByRole("option", { name: "Open tool: Signals", exact: true }).first().click();
 }

@@ -119,6 +119,10 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
+        with:
+          # G15 base-baseline comparison needs `git show <base sha>:coverage-baseline.json`
+          # — the default shallow (depth-1) checkout would not have that commit's objects.
+          fetch-depth: 0
       - name: Fix workspace ownership
         # Container jobs: the runner mounts the workspace with a uid that differs
         # from the container user; Nix's libgit2 then refuses the flake git input
@@ -140,6 +144,18 @@ jobs:
         run: rm -rf /opt/hostedtoolcache || true
       - run: make install
       - run: make coverage-rust
+        env:
+          COVERAGE_BASE_REF: ${{ github.event.pull_request.base.sha }}
+      # G15 bootstrap (hard gates wave 2): the per-directory coverage ratchet
+      # seeds/refreshes its pins from this summary via `coverage-ratchet.mjs
+      # --seed` — no coverage run needed locally once it's downloaded.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: rust-coverage-summary
+          path: coverage/rust-summary.json
+          retention-days: 7
+          if-no-files-found: warn
 
   types-check:
     name: ts-rs binding drift
@@ -216,6 +232,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          # G15 base-baseline comparison needs `git show <base sha>:coverage-baseline.json`
+          # — the default shallow (depth-1) checkout would not have that commit's objects.
+          fetch-depth: 0
       - name: Fix workspace ownership
         # Container jobs: the runner mounts the workspace with a uid that differs
         # from the container user; Nix's libgit2 then refuses the flake git input
@@ -228,6 +248,18 @@ jobs:
           restore-keys: ${{ runner.os }}-npm-
       - run: make install
       - run: make coverage-frontend
+        env:
+          COVERAGE_BASE_REF: ${{ github.event.pull_request.base.sha }}
+      # G15 bootstrap (hard gates wave 2): the per-directory coverage ratchet
+      # seeds/refreshes its pins from this summary via `coverage-ratchet.mjs
+      # --seed` — no coverage run needed locally once it's downloaded.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: frontend-coverage-summary
+          path: coverage/frontend/coverage-summary.json
+          retention-days: 7
+          if-no-files-found: warn
 
   frontend-build:
     name: Frontend build

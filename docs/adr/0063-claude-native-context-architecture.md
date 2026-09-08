@@ -45,7 +45,7 @@ Everything enforced at session start/resume/clear/compact before this ADR stays 
 | Re-grounding after compaction | hook on startup/resume/clear/compact | same matchers, slimmer text |
 | Three Always-On Rules (rtk / doc-first / enforcement) | AGENTS.md + hook restatement | CLAUDE.md + hook restatement |
 | Mandatory engineering-workflow.md read | AGENTS.md + hook | CLAUDE.md + hook |
-| Commit/push prohibition | AGENTS.md + hook | CLAUDE.md + hook |
+| Git boundaries (written rule + hook) | AGENTS.md + hook | CLAUDE.md + hook |
 | SSOT map / doc load order | AGENTS.md + hook (2×) | CLAUDE.md (1×), hook points |
 
 Gate-integrity asserts the parity markers: the hook contains `rtk`, `CLAUDE.md`, `engineering-workflow.md`, `spec-driven`; `CLAUDE.md` contains the Three Always-On Rules, Single Source Of Truth, and Required Reading sections; `.claude/settings.json` registers the hook on all four matchers.

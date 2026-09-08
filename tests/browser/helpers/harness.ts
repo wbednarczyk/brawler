@@ -93,7 +93,9 @@ export async function openInbox(page: Page) {
 export async function openPalette(page: Page): Promise<Locator> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
   await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  // Bilingual match (nav-helper convention above): callers on the `?locale=pl`
+  // preview see "Paleta poleceń", not "Command palette".
+  const palette = page.getByRole("dialog", { name: /Command palette|Paleta poleceń/ });
   if (!(await palette.isVisible().catch(() => false))) {
     await page.waitForTimeout(500);
     if (!(await palette.isVisible().catch(() => false))) await page.keyboard.press("Control+K");
@@ -279,6 +281,31 @@ export async function setPaneSize(
     // stretch the pane back to the cell, so the forced size actually holds.
     node.style.flex = "0 0 auto";
   }, { width, height });
+  // The style write above lands synchronously, but the pane's own box (and the
+  // `@container pane (…)` tier it drives) can take an extra layout pass to
+  // settle — a caller reading `boundingBox()` right after this call raced that
+  // settle and flaked under gate load (density-companies.spec at L, retries 0,
+  // harvest 2026-09-08). Block here until the pane itself reports the size we
+  // just asked for, so every caller's very next read sees post-settle geometry.
+  const expected: { width?: number; height?: number } = {};
+  if (width != null) expected.width = Math.round(width);
+  if (height != null) expected.height = Math.round(height);
+  if (Object.keys(expected).length === 0) return;
+  await expect
+    .poll(
+      async () => {
+        const rect = await target.evaluate((el) => {
+          const r = (el as HTMLElement).getBoundingClientRect();
+          return { width: Math.round(r.width), height: Math.round(r.height) };
+        });
+        const actual: { width?: number; height?: number } = {};
+        if (expected.width != null) actual.width = rect.width;
+        if (expected.height != null) actual.height = rect.height;
+        return actual;
+      },
+      { message: "pane did not settle to the requested size" },
+    )
+    .toEqual(expected);
 }
 
 export async function resetPaneSize(page: Page, pane?: Locator) {

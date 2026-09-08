@@ -87,9 +87,21 @@ cannot see a run started outside the Bash tool.
 
 `make coverage-frontend` (Vitest's v8 provider) and `make coverage-rust` (`cargo-llvm-cov`) measure line coverage per layer, then each runs a **ratchet** (`scripts/check/coverage-ratchet.mjs`) that fails if its layer drops below the committed floor in `coverage-baseline.json` — frontend 80.0%, Rust 86.5%. This enforces the full-coverage policy as a *trend* (never regress) without a brittle absolute target; when coverage rises it prints the new floors to commit. Both are **PR required checks** (`Frontend coverage ratchet` / `Rust coverage ratchet`), not periodic — the PR is the only gate under continuous release ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md), amending [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)). The instrumented Rust build's cache uses its own key, distinct from the plain test-build cache (ADR 0096 dec. 4).
 
+**Per-directory floors** (G15, hard gates wave 2, ADR 0096 dec. 4 amendment 2026-09-08) sit alongside the global floor above: `coverage-baseline.json` carries a `dirs` block per layer, aggregated from the per-file entries the coverage tools already produce. Keys — frontend: `src/screens/<name>`, `src/ui`, `src/shared`, `src/app`, `src/api`, or `src/(root)` (catch-all for every other measured file under `src/`, e.g. `src/main.tsx` — mirrors the Rust key below so no measured file is ever silently unbucketed); Rust: `src-tauri/src/<top-level-dir>`, or `src-tauri/src/(root)` for a file directly under `src-tauri/src/` with no subdirectory. A directory with zero executable lines is skipped (nothing to enforce). `dirs` is **required** once present for a layer — a layer with no `dirs` block fails outright, never silently skipped. A measured directory absent from `dirs` is admitted only at/above a **70% admission floor** (below that the PR is rejected outright — a near-zero module cannot buy its way in by editing the baseline); at/above 70% the PR still fails, but the message names the exact pin to add (a reviewed diff line, same idiom as the file-size ratchet's baseline entries). A directory **pinned but producing no measured coverage at all** fails outright unless its directory no longer exists on disk (source deleted — then it's a note to drop the stale pin, not a failure). Pins and measured percentages are validated as finite numbers in `[0, 100]`; a malformed value fails with a clear message.
+
+**Base-baseline comparison** (admission-hole close, 2026-09-08): with `COVERAGE_BASE_REF` set to the PR's base sha (the coverage jobs in `full-check.yml` set it from `github.event.pull_request.base.sha`, with full-history checkouts so `git show <ref>:coverage-baseline.json` resolves), a `dirs` key that is **new** relative to that revision's baseline must both measure and pin `>= 70%` — closing the hole where a new key could be admitted with a pin of `0`. An **existing** key's pin may never read lower than it did at the base revision, even if measured coverage still clears the lowered pin. The comparison walks the **union** of base pins, head pins, and this run's measured keys: a key pinned at base but dropped entirely from the head baseline fails too, unless its directory no longer exists on disk (then a note, same treatment as a pinned-but-unmeasured key). On a non-PR run the ref is left unset and the comparison is skipped with a printed note; when `COVERAGE_BASE_REF` **is** set but the base baseline cannot be read (bad ref, shallow checkout, corrupt JSON), the check fails closed with an error instead of silently skipping (hard gates wave 2).
+
+Bootstrap/refresh: `rust-coverage` and `frontend-coverage` (`full-check.yml`) upload `coverage/rust-summary.json` / `coverage/frontend/coverage-summary.json` as build artifacts (`if: always()`, 7-day retention). Download them, then `node scripts/check/coverage-ratchet.mjs --seed [--layer=frontend|rust]` prints the current `dirs` block from those summaries — no coverage run needed — for hand-pasting into `coverage-baseline.json`. `--write` raises an *existing* pin when measured coverage now clears it; it never lowers a pin (a regression stays red) and never adds a new one (that stays a reviewed `--seed` paste).
+
+**Known blind spot:** a large flat module (e.g. storage, before further submodule split) can mask coverage debt inside one directory bucket behind an aggregate that still clears its floor — revisit if it bites (split the bucket, or lean on the module's own [file-size ratchet](#file-size-ratchet) pin as an independent signal).
+
 ## File-size ratchet
 
 `scripts/check/file-size-ratchet.mjs` (in `make check-docs-gates` + `check-local` Stage 1) is the fitness function for the CLAUDE.md oversized-file rule ([ADR 0103](adr/0103-file-size-ratchet-fitness-function.md)): production source files ≥1000 lines are pinned **exactly** in `file-size-baseline.json` — growth fails (extract as part of the change, or hand-raise the pin in the reviewed diff), shrinking fails until `--write` ratchets the pin down. `--write` never raises or adds entries. Dedicated test files, `src/api/generated/` and locale resource tables are out of scope; colocated `#[cfg(test)]` counts.
+
+## Tests-touched gate
+
+`scripts/check/tests-touched.mjs` (G14, hard gates wave 2, `tests-touched.yml`) is an **acknowledgement** gate, not proof of behavioral coverage: a PR whose diff touches production code must also carry a test change (a changed test file, or, for Rust, an inline `#[cfg(test)]`/`#[test]` hunk in the same diff), or the `tests:not-needed` label — a pure refactor legitimately keeps its existing tests untouched. A deleted or renamed test file counts as evidence too (an obsolete test dropped alongside its production edit is still acknowledged); old-side test-span content is read at the actual merge-base of the PR (`git merge-base base head`), not the base branch's current tip, so an advanced base branch never misattributes evidence. Labels are fetched **live at check time** by the script itself through the GitHub REST API (`GH_TOKEN` + `PR_NUMBER`, `/repos/…/issues/<n>/labels`) (never trusted from the triggering event's payload, which a manual re-run of an old job would replay stale) and travel into the check step as a JSON array, never a comma list — a label whose own name contains a comma must not fragment into a false `tests:not-needed` match. Lives outside `full-check.yml` (same rationale as `release-label.yml`) so a label event re-runs this ~seconds job instead of the whole gate.
 
 ## Real-data validation precedes implementation for matching/ranking features
 
@@ -785,6 +797,65 @@ three gates:
   `mappingSuspects` on the pull summary + a `mapping_suspect` diagnostic + a warn log — the
   systematic signature of a mismapped row, distinct from scattered per-company noise.
 
+### Source-tree guards — storage writes & command shape (hard gates wave 2, G8/G9)
+
+`src-tauri/src/source_tree_guards/` is a directory module: `mod.rs` holds the wave-1 guards
+(`transform_modules_carry_their_property_and_golden_tests` and friends above); `storage_writes.rs`
+and `command_shapes.rs` hold G8/G9; `scan.rs` holds the shared DFS `.rs` walker, the 4-clause
+test-file predicate, and comment/string-safe span stripping (`strip_test_spans`,
+`strip_comments_and_strings`) every guard in the module reuses instead of re-deriving.
+
+- **G8 — own-connection multi-write without a transaction**
+  (`storage_writes::own_connection_multi_writes_are_transactional`): a `src/storage/**` fn that
+  checks out its OWN connection (`.checkout()`) and issues ≥2 write statements with no transaction
+  marker in the real code (comments/strings don't count) is not atomic — a crash/failure between the
+  two writes leaves the database in a state no caller intended (#404's class). Write-statement
+  counting: `.execute(` counts once per call whose argument text carries an INSERT/UPDATE/DELETE
+  literal (case-insensitive); `execute_batch(` counts **per statement** inside the batch SQL (split
+  on `;`, each segment starting with INSERT/UPDATE/DELETE counts), so one `execute_batch` packing two
+  writes counts 2, not 1. Transaction-marker detection is whole-token: `new_unchecked(`,
+  `TransactionBehavior`, `.commit()` literally, or a `transaction` IDENTIFIER token at word
+  boundaries — a similarly-named identifier like `transaction_count` does not exempt a real
+  offender. Frozen pin `FROZEN_UNTRANSACTED_WRITERS` (wave-1 idiom: a fn that gains a transaction
+  must be deleted from the pin, loud; a new offender outside it fails) starts at today's three:
+  `storage/autopilot.rs:create_run_if_absent`, `storage/jobs.rs:mark_failed`,
+  `storage/jobs.rs:reclaim_stale_running`. **Scope is Group A only** (fns that own their
+  `checkout()`); Group B — a fn taking `&Connection` that issues ≥2 writes, e.g.
+  `storage::notebooks::create_notebook_entry` (#461) — is **not scanned**, since the connection's
+  provenance (is the caller already inside a transaction?) is not decidable by name. That rule is
+  written, not enforced: a `&Connection` writer issuing ≥2 statements is wrapped by its CALLER —
+  pass the held transaction in; #461 stays the tracked fix.
+  `ponytail:` known ceiling — counting is textual, not branch-aware: two writes in mutually
+  exclusive `if`/`else` arms (no real path issues both) still flag. Escape hatch, not a silent skip
+  (ADR 0045 precision): a `// multi-write-ok: <reason>` comment on the line directly above the fn
+  signature exempts it, reviewed reason required — a blank reason still fails (G11,
+  `escape_hatch_reasons_are_non_empty`), mirroring G9's `// offload-ok:`. Upgrade path is
+  branch-aware counting (walk the fn body's actual control-flow tree) if a real offender's fix ever
+  gets expensive enough that the IMMEDIATE-transaction wrap isn't the cheaper move.
+  `count_batch_write_statements` decodes the Rust string-literal argument (plain or raw) into its SQL
+  text FIRST, then splits statements single-quote aware — so a raw string's `r#"` wrapper can't
+  swallow the first keyword and a `;` inside a quoted SQL string value isn't mistaken for a statement
+  boundary; a non-literal argument (a variable, `format!(...)`) counts as one write, undecidable but
+  never zero.
+- **G9 — command-shape guard** (`command_shapes::async_state_commands_offload_their_work` +
+  `command_shapes::sync_state_commands_are_pinned`): every `#[tauri::command]` fn over
+  `src/commands/**` taking a `State<'_, ...AppState>` param touches shared storage and must not
+  block the Tauri main thread. (a) Every `async` State command (or `#[tauri::command(async)]`) must
+  contain `spawn_blocking(`/`run_blocking_task(` in its body, checked over comment/string-stripped
+  text — a `spawn_blocking(` mentioned only in a `//` comment does not count — an invariant, asserted
+  empty modulo the escape below. (b) The set of today's SYNC State commands is frozen in
+  `src-tauri/sync-commands-baseline.json` (`include_str!`, like `transform-modules.json`) — a sync
+  command missing from the list fails ("make it `async fn` and offload"); a listed command no longer
+  sync/no longer existing fails asking to drop it (the pin may only shrink; a new command ships async
+  from day one). The `#[tauri::command(async)]` form is detected by parsing the attribute's argument
+  list for a bare `async` identifier token at word boundaries — a string VALUE merely containing
+  "async" (`rename_all = "async_x"`) does not count. Reviewed exception: a `// offload-ok: <reason>`
+  comment on the line above the attribute block exempts a genuinely non-blocking async command from
+  (a) — mirrors wave-1's `// no-assert-ok:` (`mod.rs`); an empty reason does not exempt (G11,
+  `escape_hatch_reasons_are_non_empty`, extended to cover this marker). This is a **shape** guard, not
+  a body auditor: whether an async command's inline work still blocks despite the offload marker
+  being present is review territory, not this scan.
+
 ### Mock-runtime fidelity — the dual-execution contract
 
 **Scope exemption (owner decision, 2026-07-22):** commands with **no frontend
@@ -893,14 +964,25 @@ WSL↔Windows-fragile and the typed refusals are unit-proven ([dogfooding.md](do
 ### Mutation testing scope
 
 `make audit-mutants` (`cargo-mutants`) is the strong signal that the property and
-golden tests actually *kill* defects — line coverage does not prove this. Its
-`-f` scope **follows the highest-risk transform logic**: the five monitored risk
-paths (`src/fundamentals/expr/**`, `src/storage/migrations.rs`,
-`src/storage/feed_matching.rs`, `src/source_adapters/parsing.rs`,
-`src/entity_resolution.rs`, [ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)
-dec. 5), extended as new dedup/matching/normalization modules land. It is a
-**risk-triggered advisory audit** — never the per-change gate — auto-run in CI on
-`master` pushes touching those paths, plus manual dispatch. Policy: [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md).
+golden tests actually *kill* defects — line coverage does not prove this. It is a
+**risk-triggered advisory audit** — never the per-change gate — extended as new
+dedup/matching/normalization modules land. Policy: [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md).
+
+Two related but **distinct** path lists (drift between them shipped once —
+`entity_resolution.rs` documented but not a trigger, `storage/ingestion.rs` a
+trigger but undocumented — `gate-integrity.mjs` now binds them, T2 hard gates
+wave 2, [ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md) dec. 5 amendment 2026-09-08):
+
+- **Mutation execution scope** — the `-f` flags `make audit-mutants` passes to
+  `cargo-mutants` (`src-tauri/Makefile`), relative to the `src-tauri` crate
+  root: `src/fundamentals/expr/**`, `src/storage/migrations.rs`,
+  `src/storage/feed_matching.rs`, `src/source_adapters/parsing.rs`,
+  `src/entity_resolution.rs`.
+- **Trigger paths** — `mutation-audit.yml`'s `paths:` filter, relative to the
+  repo root, that auto-run the sweep on a `master` push (plus manual
+  dispatch): `src-tauri/src/fundamentals/expr/**`,
+  `src-tauri/src/storage/migrations.rs`, `src-tauri/src/storage/feed_matching.rs`,
+  `src-tauri/src/source_adapters/parsing.rs`, `src-tauri/src/storage/ingestion.rs`.
 
 The target is **resource-capped by default** (`nice -19`, `CARGO_BUILD_JOBS=2`,
 `test-threads=2` via the nextest `mutants` profile, one mutant at a time,
@@ -971,7 +1053,7 @@ The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the R
 
 ## Browser UI regression smoke (Playwright)
 
-A small Playwright browser-smoke layer catches UI/layout regressions Vitest/jsdom cannot (overflow, scroll-ownership, clipping, fixed chrome). It targets the Vite preview app in Chromium with deterministic mock data — it does **not** read live sources or the user's local database. Policy: [ADR 0021](adr/0021-browser-ui-regression-testing.md). Under [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) it was extended to **broad clickable coverage of all primary screens** on a stateful, per-test-isolated mock runtime; the ADR 0048 Decision 6 promotion is now **complete** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): the **full suite is a hard-fail step of `make check`**, which runs as the PR's required checks ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md); it parallelizes to ~tens of seconds). It is **no longer opt-in** — a browser-suite failure blocks the merge.
+A small Playwright browser-smoke layer catches UI/layout regressions Vitest/jsdom cannot (overflow, scroll-ownership, clipping, fixed chrome). It targets the Vite preview app in Chromium with deterministic mock data — it does **not** read live sources or the user's local database. Policy: [ADR 0021](adr/0021-browser-ui-regression-testing.md). Under [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) it was extended to **broad clickable coverage of all primary screens** on a stateful, per-test-isolated mock runtime; the ADR 0048 Decision 6 promotion is now **complete** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): the **full suite is a hard-fail step of `make check`**, which runs as the PR's required checks ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md); it parallelizes to ~tens of seconds). It is **no longer opt-in** — a browser-suite failure blocks the merge. CI never retries a failed spec (`retries: 0`, T3 hard gates wave 2, owner 2026-09-08): a flake is red at once — fix the class or card it with its exact signature, never mask it with a second attempt.
 
 Setup and run:
 
@@ -1015,7 +1097,7 @@ Every behavior lives at the **cheapest authoritative layer** — the layer that 
 | Real layout / overflow / density / Spółka tool-host render | **Playwright** viewport matrix | jsdom has no layout engine |
 | Real Tauri backend / real DB / WebView2 / native desktop | **live drive** (`tests/live/`) + native Windows | only the real runtime is authoritative |
 
-**Rules.** (1) A cross-screen case is **moved** to Playwright only when the browser is genuinely the cheaper authoritative layer *and* churn is justified by **measured flake**, never speculatively (Q8 STOP-AND-ASK). (2) Playwright coverage does **not** count toward Vitest V8 line coverage — retain/extract equivalent component coverage before deleting any Vitest assertion, and **never lower `coverage-baseline.json`**. (3) A multi-slice task names its layer split in planning via the [experience-contract template](plans/EXPERIENCE-CONTRACT-TEMPLATE.md) § 12, not at the gate. (4) **An absence assertion about a transition converges, it never samples**: `expect(queryBy…).toBeNull()` written straight after an `await findBy…` on a *different* element reads a single tick, and the outgoing node (a swapped tab, a replaced row) can outlive its replacement by one render — green locally, red under gate load. Wrap it in `waitFor`; what is asserted stays the same, only its synchronization changes (harvest 2026-08-02, `CockpitScreen.test.tsx` unpin/retarget). **The wrap alone was not enough** — Testing Library's default budget is **1 second**, generous locally but marginal on a 4-vCPU runner with four workers over a full app render, and the same test flaked again in CI with the `waitFor` in place. The budget is therefore set centrally in `src/test/setup.ts` (`configure({ asyncUtilTimeout: 5_000 })`); do **not** sprinkle per-call `{ timeout }` overrides, and treat a *new* need for one as a signal the code is slow, not the test (second harvest 2026-08-02, PR #316). (5) **A spy fired by an effect is asserted INSIDE the `waitFor` that observes the render it follows**: `scrollIntoView`, `onNavigate` and friends run in a `useEffect` after the render that paints the class/attribute the `waitFor` polls for, so a bare `expect(spy).toHaveBeenCalled()` on the next line reads one tick too early under gate load — green locally, red in CI (harvest 2026-09-08, `CompanyClaimsPanel.test` / `CompanyReportDocumentsPanel.test` deep-link scroll).
+**Rules.** (1) A cross-screen case is **moved** to Playwright only when the browser is genuinely the cheaper authoritative layer *and* churn is justified by **measured flake**, never speculatively (Q8 STOP-AND-ASK). (2) Playwright coverage does **not** count toward Vitest V8 line coverage — retain/extract equivalent component coverage before deleting any Vitest assertion, and **never lower `coverage-baseline.json`**. (3) A multi-slice task names its layer split in planning via the [experience-contract template](plans/EXPERIENCE-CONTRACT-TEMPLATE.md) § 12, not at the gate. (4) **An absence assertion about a transition converges, it never samples**: `expect(queryBy…).toBeNull()` written straight after an `await findBy…` on a *different* element reads a single tick, and the outgoing node (a swapped tab, a replaced row) can outlive its replacement by one render — green locally, red under gate load. Wrap it in `waitFor`; what is asserted stays the same, only its synchronization changes (harvest 2026-08-02, `CockpitScreen.test.tsx` unpin/retarget). **The wrap alone was not enough** — Testing Library's default budget is **1 second**, generous locally but marginal on a 4-vCPU runner with four workers over a full app render, and the same test flaked again in CI with the `waitFor` in place. The budget is therefore set centrally in `src/test/setup.ts` (`configure({ asyncUtilTimeout: 5_000 })`); do **not** sprinkle per-call `{ timeout }` overrides, and treat a *new* need for one as a signal the code is slow, not the test (second harvest 2026-08-02, PR #316). (5) **A spy fired by an effect is asserted INSIDE the `waitFor` that observes the render it follows**: `scrollIntoView`, `onNavigate` and friends run in a `useEffect` after the render that paints the class/attribute the `waitFor` polls for, so a bare `expect(spy).toHaveBeenCalled()` on the next line reads one tick too early under gate load — green locally, red in CI (harvest 2026-09-08, `CompanyClaimsPanel.test` / `CompanyReportDocumentsPanel.test` deep-link scroll). (6) **A geometric assertion after a programmatic resize (`setPaneSize`) converges via `expect.poll`, it never samples `boundingBox()` once** — the density tier re-layout lands a frame after the style change (harvest 2026-09-08, `density-companies.spec` at L with retries 0). `openPalette` (below) is now lint-enforced: a bare `Control+K` literal under `tests/browser/**` (outside `helpers/harness.ts`) fails `make check`.
 
 **Test hygiene gates** (owner-approved hard gates 2026-09-07): `.only()`/
 `.skip()`/`.fixme()`/`.todo()` discipline, the assertion-required ratchet,

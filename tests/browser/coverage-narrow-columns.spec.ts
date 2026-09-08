@@ -2,6 +2,7 @@ import {
   test,
   expect,
   openApp,
+  openPalette,
   setPaneSize,
   resetPaneSize,
   expectNoHorizontalOverflow,
@@ -25,8 +26,7 @@ async function openCoveragePanel(page: import("@playwright/test").Page, companyI
     .getByRole("button", { name: "Companies" })
     .click();
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Coverage");
   await palette.getByRole("option", { name: "Open tool: Coverage", exact: true }).first().click();
 }

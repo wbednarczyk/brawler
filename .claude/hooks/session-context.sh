@@ -9,7 +9,7 @@ Three always-on rules (full statements in CLAUDE.md):
 2. Doc-first (spec-driven) — read the area's canonical doc before any non-trivial change; update it in the same change; propose + confirm a doc/ADR change when the spec is missing or contradicted.
 3. Enforcement is a hard stop — never weaken/skip/--no-verify a failing gate; fix it or surface it.
 
-Git: do NOT commit or push unless the user explicitly asks. Edit, stop, wait.
+Git: commit + push to the feature branch at slice-green checkpoints without asking (owner 2026-09-08). Master pushes/merges, force pushes, `--no-verify`, and discarding tracked changes are denied by the git-boundaries hook for Claude's Bash tool; Codex peers stay bound by the written rule only.
 
 Load per task: `gh issue view <n>` (active work; `gh issue list` / the "Brawler board" for the board) → only the area's canonical doc(s) from the CLAUDE.md map. UI work → docs/ui-authoring.md first. ANY product/UI/analysis/planning work → the `investing-domain` skill first (.claude/skills/investing-domain/SKILL.md — who the user is; without it every feature judgment is an engineer's, not an investor's). IPC/MCP work → docs/contracts.md § Command Conventions (headless-only / MCP-only applicability). Epic closure: docs/kanban.md § Epic closure. Packaging → the packaging skill.
 EOF

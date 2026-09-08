@@ -1,4 +1,4 @@
-import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openPalette, expectNoPageOverflow } from "./helpers/harness";
 
 // The decision-journal panel (ADR 0071, J3) renders variable, potentially
 // unbreakable content — a long Markdown rationale and evidence rows (long ESPI
@@ -17,8 +17,7 @@ test("decision journal panel does not horizontally overflow at a narrow window",
   await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Decision journal");
   await palette.getByRole("option", { name: "Open tool: Decision journal", exact: true }).first().click();
 

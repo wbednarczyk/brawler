@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { openPalette } from "./helpers/harness";
 
 // Visual iteration harness for the fundamentals views. It is not a hard
 // regression gate — it drives the panels in browser-smoke mode and captures
@@ -20,8 +21,7 @@ test.describe("fundamentals visual harness", () => {
     // F3a S3 (ADR 0107): the row opens Spółka; Fundamentals is the `fundamenty`
     // workshop tool, opened via the ⌘K palette's "Open tool: Fundamentals" entry.
     await page.getByRole("region", { name: "Company view" }).waitFor();
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const palette = await openPalette(page);
     await palette.getByLabel("Search commands").fill("Open tool: Fundamentals");
     await palette.getByRole("option", { name: "Open tool: Fundamentals", exact: true }).first().click();
 
@@ -47,8 +47,7 @@ test.describe("fundamentals visual harness", () => {
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
     // F3a S3 (ADR 0107): the row opens Spółka; open the `fundamenty` tool.
     await page.getByRole("region", { name: "Widok spółki" }).waitFor();
-    await page.keyboard.press("Control+K");
-    const palette = page.getByRole("dialog", { name: "Paleta poleceń" });
+    const palette = await openPalette(page);
     await palette.getByLabel("Szukaj poleceń").fill("Otwórz narzędzie: Fundamenty");
     await palette.getByRole("option", { name: "Otwórz narzędzie: Fundamenty", exact: true }).first().click();
 
