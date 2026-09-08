@@ -406,7 +406,7 @@ mod tests {
     /// BRAWLER_REAL_DB=private/realdata/worktest.sqlite3 \
     ///   cargo test -p brawler --lib history_sweep_candidates_real_data_validation -- --nocapture --ignored
     /// ```
-    #[test] // no-assert-ok: prints the selector's verdict against real coverage for human eyeballing, explicitly never trusted automatically.
+    #[test] // no-assert-ok: prints a real-data verdict for human eyeballing, never asserted
     #[ignore = "real-data validation; needs BRAWLER_REAL_DB (a throwaway copy)"]
     fn history_sweep_candidates_real_data_validation() {
         let Ok(db_path) = std::env::var("BRAWLER_REAL_DB") else {
