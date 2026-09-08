@@ -318,7 +318,8 @@ Primitive-first authoring is policy ([ADR 0037](adr/0037-ui-component-framework-
   `-active` are exempt — they commonly track logic/ARIA state with no visual
   claim, so banning them flagged legitimate assertions. Use
   `tests/browser/helpers/paint.ts`'s `captureMarkStyle`/
-  `expectVisiblyMarked`/`expectOpaqueSticky`/`expectInsideScroller` instead:
+  `expectVisiblyMarked`/`expectOpaqueSticky` (paint.ts) or
+  `expectActionInsideScroller` (interactionContracts.ts) instead:
   snapshot the element's computed style with `captureMarkStyle` BEFORE the
   marking event, then pass that snapshot to `expectVisiblyMarked(locator,
   before)`, which asserts the SAME element's style
@@ -326,7 +327,7 @@ Primitive-first authoring is policy ([ADR 0037](adr/0037-ui-component-framework-
   viewport — a before/after comparison on one element, not an
   unmarked-sibling comparison (which could pass on an unrelated sibling
   difference, e.g. zebra striping, with the marked element itself unchanged).
-  `expectOpaqueSticky`/`expectInsideScroller` assert sticky opacity/z-index
+  `expectOpaqueSticky`/`expectActionInsideScroller` assert sticky opacity/z-index
   and an action's position inside its scroller's `clientWidth` respectively.
 
 ## Adding a new primitive
