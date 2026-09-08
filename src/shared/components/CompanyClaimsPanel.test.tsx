@@ -236,8 +236,11 @@ describe("CompanyClaimsPanel", () => {
       const row = screen.getByText("Target claim").closest("[data-claim-id]");
       expect(row).toHaveAttribute("data-claim-id", "claim_target");
       expect(row).toHaveClass("claim-row-highlighted");
+      // The scroll runs in a layout-independent effect AFTER the render that
+      // paints the class — poll for it too (a bare assertion after the
+      // waitFor flaked under load: CI 2026-09-08, local once).
+      expect(scrollIntoView).toHaveBeenCalled();
     });
-    expect(scrollIntoView).toHaveBeenCalled();
   });
 
   it("does not highlight anything when no claim id is targeted", async () => {
