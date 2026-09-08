@@ -737,7 +737,29 @@ function evaluateInner(cmd, state, depth) {
 }
 
 /** Evaluate a whole Bash command line; returns a deny reason, or null to allow. cwd/branch state threads across the chain. */
+/** Drop heredoc bodies (`<<EOF … EOF`, `<<-'EOF'`, `<<"EOF"`) before any analysis: the body is
+ * data for the command that reads it, never a command line — a memory note or a commit body
+ * that merely MENTIONS `git stash` must not trip the matrix (false deny, harvest 2026-09-09).
+ * The line carrying the `<<` operator stays (it IS the command); every line after it up to the
+ * terminator line is removed. */
+function stripHeredocs(cmd) {
+  const lines = cmd.split("\n");
+  const out = [];
+  let terminator = null;
+  for (const line of lines) {
+    if (terminator !== null) {
+      if (line.trim() === terminator) terminator = null;
+      continue;
+    }
+    out.push(line);
+    const m = line.match(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/);
+    if (m) terminator = m[2];
+  }
+  return out.join("\n");
+}
+
 export function evaluateCommand(cmd, startCwd) {
+  cmd = stripHeredocs(cmd);
   const state = { cwd: startCwd, chainBranch: null, conditional: hasUnquotedOr(cmd) };
   return evaluateInner(cmd, state, 0);
 }

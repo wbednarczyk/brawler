@@ -81,6 +81,8 @@ function runHook(command, { cwd = FEATURE_REPO, env = {}, payloadCwd } = {}) {
 
 // Deny cases that don't depend on which branch is checked out (evaluated on the feature repo).
 const DENY_BRANCH_INDEPENDENT = [
+  // a real command AFTER a heredoc is still evaluated
+  "cat <<EOF\nharmless\nEOF\ngit stash",
   // harvest 2026-09-08: a reverse-applied patch discarded three agents' uncommitted work
   "git apply -R /tmp/x.patch",
   "git apply --reverse /tmp/x.patch",
@@ -216,6 +218,9 @@ const DENY_BRANCH_DEPENDENT = [
 ];
 
 const ALLOW_BRANCH_INDEPENDENT = [
+  // harvest 2026-09-09: heredoc bodies are data, not commands
+  "python3 - <<'EOF'\nprint(\"git stash and git apply -R are just words here\")\nEOF",
+  "cat > note.md <<EOF\ngit reset --hard\nEOF",
   "git apply --check /tmp/x.patch",
   "git apply /tmp/x.patch",
   "git --no-optional-locks status",
