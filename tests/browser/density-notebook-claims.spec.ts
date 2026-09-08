@@ -19,7 +19,7 @@ function nav(page: Page) {
 }
 
 // F3a S2/S3 (ADR 0107): company panels live in the Spółka screen's workshop
-// tools now — `toolButton` is the WorkshopBar's "Open <tool>" label, and
+// tools now — `toolButton` is the WorkshopBar's noun label (e.g. "Claims"), and
 // `.spolka-layout` is the tool's `pane` size container (spolka.css).
 async function openCompanyTool(page: Page, toolButton: string, rootSelector: string): Promise<Locator> {
   await nav(page).getByRole("button", { name: "Companies" }).click();
