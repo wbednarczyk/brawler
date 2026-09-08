@@ -868,8 +868,9 @@ fn body_has_assertion(body: &str) -> bool {
 }
 
 /// Guard (G11, finding 10, ADR 0045 harvest 2026-09-08): a `// no-assert-ok:`,
-/// `// cross-tree-read-ok:`, or (hard gates wave 2, G9 fix 6) `// offload-ok:`
-/// comment with a BLANK reason defeats the whole point of the escape hatch —
+/// `// cross-tree-read-ok:`, `// offload-ok:` (hard gates wave 2, G9 fix 6),
+/// or `// multi-write-ok:` (hard gates wave 2, G8 fix 2) comment with a BLANK
+/// reason defeats the whole point of the escape hatch —
 /// it silences a guard with nothing left for a reviewer to check, exactly the
 /// silent-degradation failure mode this harvest closes elsewhere (B5, G6b).
 /// Every such comment anywhere in the crate must carry non-empty text after
@@ -881,7 +882,12 @@ fn escape_hatch_reasons_are_non_empty() {
     for path in source_files(&manifest_dir.join("src")) {
         let content = std::fs::read_to_string(&path).expect("readable source file");
         for (line_no, line) in content.lines().enumerate() {
-            for marker in ["no-assert-ok:", "cross-tree-read-ok:", "offload-ok:"] {
+            for marker in [
+                "no-assert-ok:",
+                "cross-tree-read-ok:",
+                "offload-ok:",
+                "multi-write-ok:",
+            ] {
                 let Some(pos) = line.find(marker) else {
                     continue;
                 };

@@ -37,9 +37,27 @@ function makeRepo(branch) {
 
 const MASTER_REPO = makeRepo("master");
 const FEATURE_REPO = makeRepo("wave2g/s1-fixture");
+
+/** Item 5's exact recipe: a bare local remote, `master` pushed to it, then a feature branch
+ * whose upstream is set to `origin/master` — so a bare `git push`/`git push origin` off master
+ * still resolves (via `@{push}`/`@{upstream}`) to a destination that IS master. */
+function makePushTrackingRepo() {
+  const remoteDir = mkdtempSync(path.join(tmpdir(), "git-boundaries-remote-"));
+  git(["init", "-q", "--bare"], remoteDir);
+  const dir = makeRepo("master");
+  git(["remote", "add", "origin", remoteDir], dir);
+  git(["push", "-q", "origin", "master"], dir);
+  git(["checkout", "-q", "-b", "feat"], dir);
+  git(["branch", "--set-upstream-to=origin/master", "feat"], dir);
+  return { dir, remoteDir };
+}
+const PUSH_TRACKING = makePushTrackingRepo();
+
 after(() => {
   rmSync(MASTER_REPO, { recursive: true, force: true });
   rmSync(FEATURE_REPO, { recursive: true, force: true });
+  rmSync(PUSH_TRACKING.dir, { recursive: true, force: true });
+  rmSync(PUSH_TRACKING.remoteDir, { recursive: true, force: true });
 });
 
 function runHook(command, { cwd = FEATURE_REPO, env = {}, payloadCwd } = {}) {
@@ -53,8 +71,6 @@ function runHook(command, { cwd = FEATURE_REPO, env = {}, payloadCwd } = {}) {
     env: {
       ...process.env,
       BRAWLER_GIT_BOUNDARIES_OFF: "",
-      BRAWLER_GIT_BOUNDARIES_TEST: "",
-      BRAWLER_GIT_BRANCH_OVERRIDE: "",
       ...env,
     },
   });
@@ -145,6 +161,10 @@ const DENY_BRANCH_INDEPENDENT = [
   "gh api repos/o/r/releases -f tag_name=v1", // I. implicit POST via -f, no explicit -X
   "gh api -f tag_name=v1 repos/o/r/releases", // I. same, endpoint operand after the flag
   'echo "unsafe: $(git push --force)"', // G. double-quoted $() still executes — must still deny
+  // hard-gates wave 2 review (owner 2026-09-08), items 1-3 below
+  'git clean -f -e "-n"', // 1. `-n` here is `-e`'s value, not clean's own dry-run flag
+  "git push --repo=origin HEAD:master", // 2. `--repo=` value must not be read as the remote positional
+  "git push --repo origin HEAD:master", // 2. same, space-separated `--repo` value form
 ];
 
 // Deny cases that require a specific starting branch or a chain transition.
@@ -170,6 +190,13 @@ const DENY_BRANCH_DEPENDENT = [
   // F. `-C` must scope only the ONE git invocation it's attached to, never leak into the next
   // chain segment's cwd — so this commit is still judged against the real (master) cwd.
   { cmd: "git -C ../feature status && git commit -m x", cwd: MASTER_REPO },
+  // hard-gates wave 2 review (owner 2026-09-08), item 4 below
+  // 4a. a `-C ../feature` checkout's assumed branch must never leak into a LATER segment that
+  // runs in the chain's own (unscoped) cwd — the commit is still judged against master.
+  { cmd: "git -C ../feature checkout feat/x && git commit -m x", cwd: MASTER_REPO },
+  // 4b. a `||` anywhere in the raw command disables chain-branch trust entirely: the checkout
+  // may never have run (its `||` guard succeeded), so the commit is judged on the live branch.
+  { cmd: "true || git checkout feat/x; git commit -m x", cwd: MASTER_REPO },
 ];
 
 const ALLOW_BRANCH_INDEPENDENT = [
@@ -220,6 +247,10 @@ const ALLOW_BRANCH_INDEPENDENT = [
   "git commit -m \"fix -n\"", // G. same, a bundled-looking short flag inside the message
   'git commit --message="--no-verify"', // G. inline `--opt=value` form of the same trap
   "echo 'inert: $(git push --force)'", // G. single-quoted $() is inert in bash — must not deny
+  // hard-gates wave 2 review (owner 2026-09-08), items 3 below
+  "git commit -mnonverify", // 3. attached `-m` value that CONTAINS "n" must not read as bundled -n
+  "git commit -amsg", // 3. bundle `-a` + attached `-m` value, same trap
+  "git commit -am msg", // 3. bundle `-a` + separate-token `-m` value
 ];
 
 const ALLOW_BRANCH_DEPENDENT = [
@@ -239,6 +270,11 @@ const ALLOW_BRANCH_DEPENDENT = [
   // commit is judged by FEATURE_REPO's real (non-master) branch and allowed. Denied here would
   // prove the bug: a stale "master" chainBranch surviving the `cd`.
   { cmd: `git checkout master && cd ${FEATURE_REPO} && git commit -m x`, cwd: MASTER_REPO },
+  // hard-gates wave 2 review (owner 2026-09-08), item 3 below
+  // 3. `--` settles a `reset` as the path form regardless of what precedes it (even `HEAD`) —
+  // it never moves HEAD, so it stays allowed on master.
+  { cmd: "git reset HEAD -- tracked.txt", cwd: MASTER_REPO },
+  { cmd: "git reset -- tracked.txt", cwd: MASTER_REPO },
 ];
 
 test("git-boundaries denies the write matrix, allows everything else (branch-independent)", () => {
@@ -285,23 +321,19 @@ test("the escape hatch, malformed input, non-Bash tools, and the un-flagged over
     cwd: FEATURE_REPO,
   });
   assert.equal(nonBash.stdout.trim(), "");
+});
 
-  // BRAWLER_GIT_BRANCH_OVERRIDE without BRAWLER_GIT_BOUNDARIES_TEST=1 must be ignored: the real
-  // (non-master) branch of FEATURE_REPO governs, so a plain commit is still allowed.
-  assert.equal(
-    runHook("git commit -m x", { cwd: FEATURE_REPO, env: { BRAWLER_GIT_BRANCH_OVERRIDE: "master" } }),
-    "allow",
-    "override must be ignored without the TEST flag",
-  );
-  // With the TEST flag, the override does take effect.
-  assert.equal(
-    runHook("git commit -m x", {
-      cwd: FEATURE_REPO,
-      env: { BRAWLER_GIT_BOUNDARIES_TEST: "1", BRAWLER_GIT_BRANCH_OVERRIDE: "master" },
-    }),
-    "deny",
-    "override takes effect only with the TEST flag",
-  );
+test("5. bare push off master denies when @{push}/@{upstream} resolves to <remote>/master", () => {
+  // PUSH_TRACKING.dir is on `feat` (not master), with @{upstream} set to origin/master — a bare
+  // push still lands on master, so both the fully-bare and remote-only forms must deny.
+  assert.equal(runHook("git push", { cwd: PUSH_TRACKING.dir }), "deny");
+  assert.equal(runHook("git push origin", { cwd: PUSH_TRACKING.dir }), "deny");
+  // An explicit refspec off the same repo is unaffected by the tracking check — normal deny/allow
+  // rules (from checkPush's refspec loop) still apply on their own terms.
+  assert.equal(runHook("git push origin feat:feat", { cwd: PUSH_TRACKING.dir }), "allow");
+  // FEATURE_REPO has no remote/tracking at all — @{push}/@{upstream} are unresolvable, so a bare
+  // push stays allowed (unresolvable never denies).
+  assert.equal(runHook("git push", { cwd: FEATURE_REPO }), "allow");
 });
 
 test("6. payload.cwd (not the hook process's own spawn cwd) governs branch resolution", () => {

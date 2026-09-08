@@ -237,9 +237,16 @@ if (!COVERAGE_BASE_REF) {
     const raw = execFileSync("git", ["show", `${COVERAGE_BASE_REF}:coverage-baseline.json`], { encoding: "utf8" });
     baseBaseline = JSON.parse(raw);
   } catch (err) {
-    console.log(
-      `coverage-ratchet: could not read coverage-baseline.json at COVERAGE_BASE_REF=${COVERAGE_BASE_REF} (${err.message}) — skipping base-baseline pin comparison.`,
+    // Fail-closed (hard gates wave 2): COVERAGE_BASE_REF being SET means this
+    // is a PR run that expects the comparison to happen. A read failure here
+    // (bad ref, shallow checkout, corrupt JSON) must never silently degrade
+    // into "skip the check" — that is exactly the admission hole the
+    // base-baseline comparison exists to close, just moved one step earlier.
+    console.error(
+      `coverage-ratchet: COVERAGE_BASE_REF=${COVERAGE_BASE_REF} is set but coverage-baseline.json could not be read at that ref (${err.message}).`,
     );
+    console.error("coverage-ratchet: failing closed rather than silently skipping the base-baseline pin comparison.");
+    process.exit(1);
   }
 }
 
@@ -356,6 +363,36 @@ for (const layer of layers) {
     console.error(
       `  FAIL ${layer} ${key} is pinned at ${dirsBaseline[key]}% but produced no measured coverage, and the directory still exists on disk — fix coverage collection for it, or delete the dead code (not just the pin).`,
     );
+  }
+
+  // Union-of-keys extension (hard gates wave 2): the checks above cover every
+  // key in `aggregated` (measured) and every key in `dirsBaseline` (head
+  // pins) — but a key pinned in the BASE baseline that vanished from BOTH the
+  // head baseline and this run's measured coverage falls through both loops
+  // untouched, silently dropping its pin instead of failing. Close that gap
+  // by walking the union's third member: base-only keys.
+  if (baseDirs !== null) {
+    for (const key of Object.keys(baseDirs)) {
+      if (dirsBaseline[key] !== undefined) continue; // still pinned in head — handled above
+      if (aggregated[key]?.total > 0) continue; // still measured — handled by the "not pinned" branch above
+      const fsPath = dirKeyToFsPath(key);
+      let existsOnDisk = false;
+      try {
+        existsOnDisk = statSync(fsPath).isDirectory();
+      } catch {
+        existsOnDisk = false;
+      }
+      if (!existsOnDisk) {
+        console.log(
+          `  note ${layer} ${key} — pinned at ${baseDirs[key]}% in the base baseline but no longer present in the head baseline; the directory no longer exists on disk, so the dropped pin is expected.`,
+        );
+        continue;
+      }
+      failed = true;
+      console.error(
+        `  FAIL ${layer} ${key} was pinned at ${baseDirs[key]}% in the base baseline but its pin is missing from the head baseline, and the directory still exists on disk — a pin cannot silently disappear (restore it, or delete the directory).`,
+      );
+    }
   }
 }
 

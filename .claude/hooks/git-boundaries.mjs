@@ -21,17 +21,17 @@
 //
 // Escape: BRAWLER_GIT_BOUNDARIES_OFF=1 read from THIS process's own env only
 // (an inline `VAR=1 git …` prefix is stripped as a command token, never this
-// hook's env — it does not disable anything). Test seam: BRAWLER_GIT_BRANCH_
-// OVERRIDE is honoured only together with BRAWLER_GIT_BOUNDARIES_TEST=1.
+// hook's env — it does not disable anything).
 //
 // Known approximations — a review, not this hook's job: a script invoked by
-// path (`bash scripts/x.sh`) is not opened and inspected; `push.default`/
-// upstream config that maps a bare `git push` to `master` from a feature
-// branch is invisible to static analysis; a GraphQL/REST body read from a
-// `--input`/`-F @file` file is not read; a `||` chain is flattened the same
-// as `;`/`&&` — every segment is evaluated as if it always ran, since real
-// shell exit-status propagation isn't tracked (a stricter, false-positive-
-// leaning approximation, never a false-negative one). Nobody should mistake
+// path (`bash scripts/x.sh`) is not opened and inspected; a GraphQL/REST body
+// read from a `--input`/`-F @file` file is not read; a `||` chain is
+// flattened the same as `;`/`&&` — every segment is evaluated as if it always
+// ran, since real shell exit-status propagation isn't tracked; conditional
+// chains fall back to the live branch — a `||` anywhere in the command
+// disables the chain's own checkout/switch-assumed branch, so branch rules
+// are judged against the real `rev-parse` branch instead of an assumption
+// that may never have run. Nobody should mistake
 // a green run here for a proof — it is defence-in-depth for the written
 // rule (CLAUDE.md), not a substitute for it.
 import { spawnSync } from "node:child_process";
@@ -101,15 +101,39 @@ function stripValueOperands(rest, valueFlags) {
   return out;
 }
 
-/** Current branch: a checkout/switch earlier in the same chain wins; else a live `rev-parse`; unknown never denies. */
+/** Current branch: a checkout/switch earlier in the same chain wins; else a live `rev-parse`;
+ * unknown never denies. A chain containing an unquoted `||` never trusts its own chainBranch
+ * assumption — real shell exit-status propagation isn't tracked, so a checkout/switch behind a
+ * `||` may never have run; fall back to the live branch instead. */
 function resolveBranch(state) {
-  if (state.chainBranch !== null) return state.chainBranch;
-  if (process.env.BRAWLER_GIT_BOUNDARIES_TEST === "1" && Object.hasOwn(process.env, "BRAWLER_GIT_BRANCH_OVERRIDE")) {
-    return process.env.BRAWLER_GIT_BRANCH_OVERRIDE;
-  }
+  if (state.chainBranch !== null && !state.branchTrackingDisabled) return state.chainBranch;
   const r = spawnSync("git", ["-C", state.cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   return r.stdout.trim() || null;
+}
+
+/** Whether `cmd` contains an unquoted `||` anywhere (top-level or inside a nested eval/$()/
+ * backtick span, since those are literal substrings of the same raw text) — a real shell only
+ * runs the right side conditionally, which the segment-flattening in this file cannot track. */
+function hasUnquotedOr(cmd) {
+  let quote = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+    if (c === "\\" && quote !== "'" && i + 1 < cmd.length) {
+      i++;
+      continue;
+    }
+    if (quote) {
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      continue;
+    }
+    if (c === "|" && cmd[i + 1] === "|") return true;
+  }
+  return false;
 }
 
 // --- git subcommand rules (each returns a reason string to deny, or null to allow) ---
@@ -191,21 +215,54 @@ function checkReset(rest, state) {
   // `master` (an actual commit-ish operand, HEAD moving) is this rule's concern — an ordinary
   // unstage (`git reset`, `git reset <path>`) stays allowed on any branch.
   if (resolveBranch(state) !== "master") return null;
-  const dashDashIdx = rest.findIndex((t) => t.text === "--");
-  const beforeDashDash = dashDashIdx === -1 ? rest : rest.slice(0, dashDashIdx);
-  const positionals = beforeDashDash.filter((t) => !t.text.startsWith("-"));
+  // Anything after `--` is a path list (git's own syntax): `git reset <commit> -- <paths>` never
+  // moves HEAD regardless of what precedes `--` — even a literal `HEAD` there is just the
+  // tree-ish paths are reset from, not a HEAD move. So `--` alone settles this as the path form.
+  if (rest.some((t) => t.text === "--")) return null;
+  const positionals = rest.filter((t) => !t.text.startsWith("-"));
   if (positionals.length === 0) return null;
   if (positionals.length === 1 && existingPath(state.cwd, positionals[0].text)) return null;
   return "git reset with a commit-ish operand moves HEAD directly on `master`, rewriting its history";
 }
 
 function checkClean(rest) {
-  if (hasExact(rest, ["-n", "--dry-run"]) || hasBundledShortFlag(rest, "n")) return null;
+  const flags = stripValueOperands(rest, VALUE_FLAGS.clean);
+  if (hasExact(flags, ["-n", "--dry-run"]) || hasBundledShortFlag(flags, "n")) return null;
   return "git clean without -n/--dry-run deletes untracked files";
 }
 
+// commit's value-taking short letters (git's own list: -m/-F/-c/-C each take a value, attached
+// to the same token — `-mmsg` — or as the next token — `-m msg`). A bundle of boolean short
+// flags may end in one of these (`-am msg`, `-amsg`) per normal getopt-style bundling.
+const COMMIT_VALUE_SHORT_LETTERS = "mFcC";
+
+/** Split each single-dash all-letter commit token at its first value-taking letter (if any):
+ * keep only the boolean-flag letters before it (dropping the value letter itself and anything
+ * after), and consume a separate-token value when the letter carries none attached. Must run
+ * BEFORE any bundled-flag scan (`-n`/no-verify) — otherwise a message attached to `-m` (e.g.
+ * `-mnonverify`) gets misread as a bundled `-n` flag hiding inside the "value". */
+function stripCommitShortValues(rest) {
+  const out = [];
+  for (let i = 0; i < rest.length; i++) {
+    const t = rest[i];
+    if (/^-[a-zA-Z]+$/.test(t.text)) {
+      const letters = t.text.slice(1);
+      const valueIdx = [...letters].findIndex((ch) => COMMIT_VALUE_SHORT_LETTERS.includes(ch));
+      if (valueIdx !== -1) {
+        const boolPrefix = letters.slice(0, valueIdx);
+        if (boolPrefix) out.push({ ...t, text: `-${boolPrefix}` });
+        const attachedValue = letters.slice(valueIdx + 1);
+        if (!attachedValue && i + 1 < rest.length) i++; // no attached value: next token is it
+        continue;
+      }
+    }
+    out.push(t);
+  }
+  return out;
+}
+
 function checkCommit(rest, state) {
-  const flags = stripValueOperands(rest, VALUE_FLAGS.commit);
+  const flags = stripCommitShortValues(stripValueOperands(rest, VALUE_FLAGS.commit));
   if (hasExact(flags, ["--no-verify"]) || hasBundledShortFlag(flags, "n")) {
     return "git commit --no-verify/-n (incl. combined short flags) skips the commit-msg gate";
   }
@@ -225,8 +282,13 @@ function checkPush(rest, state) {
     return "git push --force/--force-if-includes/--all/--mirror/--delete (incl. combined short flags) rewrites or wipes remote refs";
   }
   if (hasPrefix(flags, ["--force-with-lease"])) return "git push --force-with-lease rewrites remote refs";
-  const positionals = rest.filter((t) => !t.text.startsWith("-"));
-  const refspecs = positionals.slice(1); // git push [<repository>] [<refspec>...] — first positional is the remote
+  // `--repo`/`--receive-pack`/etc already had their value tokens stripped above (`flags`); use
+  // it (not the raw `rest`) for positionals so a `--repo`'s value never gets mistaken for one. A
+  // `--repo`/`--repo=` option supplies the remote itself, so EVERY remaining positional is a
+  // refspec — only without it does the first positional double as the remote.
+  const hasRepoOption = flags.some((t) => t.text === "--repo" || t.text.startsWith("--repo="));
+  const positionals = flags.filter((t) => !t.text.startsWith("-"));
+  const refspecs = hasRepoOption ? positionals : positionals.slice(1); // git push [<repository>] [<refspec>...]
   for (const r of refspecs) {
     // A lone `:` is the empty/"matching" refspec — historically used to push every branch whose
     // name matches on both ends. It can update `master` regardless of the current branch.
@@ -240,8 +302,30 @@ function checkPush(rest, state) {
       return `git push refspec \`${r.text}\` pushes the current branch (\`HEAD\`) while on \`master\``;
     }
   }
-  if (refspecs.length === 0 && resolveBranch(state) === "master") {
-    return "git push with no refspec while on `master` pushes master";
+  if (refspecs.length === 0) {
+    if (resolveBranch(state) === "master") return "git push with no refspec while on `master` pushes master";
+    // Off master a bare `git push`/`git push <remote>` still resolves to a real destination via
+    // the branch's own push/upstream tracking — ask git directly rather than guessing at
+    // push.default from static analysis.
+    const dest = resolvePushDestination(state.cwd);
+    if (dest && /\/master$/.test(dest)) {
+      return `git push with no refspec resolves to \`${dest}\` (via @{push}/@{upstream}) — pushes master`;
+    }
+  }
+  return null;
+}
+
+/** The real destination a bare `git push`/`git push <remote>` would resolve to, as
+ * `<remote>/<branch>` — `@{push}` first (what push.default actually uses), falling back to
+ * `@{upstream}` (e.g. push.default=simple can't resolve `@{push}` when the branch name and its
+ * upstream's differ, even though the push would still go to that upstream). Unresolvable
+ * (detached HEAD, no tracking configured) returns null — this hook never guesses. */
+function resolvePushDestination(cwd) {
+  for (const ref of ["@{push}", "@{upstream}"]) {
+    const r = spawnSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "--symbolic-full-name", ref], {
+      encoding: "utf8",
+    });
+    if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
   }
   return null;
 }
@@ -313,8 +397,10 @@ function checkGit(rawArgs, state) {
   }
   // A local view scoped to this one invocation: `-C` changes ITS cwd only (never the chain's —
   // git itself never touches the shell's directory), while a branch a checkCheckout/checkSwitch
-  // assumes here must still carry forward into the next chain segment.
-  const localState = { cwd: invocationCwd, chainBranch: state.chainBranch };
+  // assumes here must still carry forward into the next chain segment — but only when this
+  // invocation's cwd IS the chain's cwd. A `-C ../other` checkout is a different worktree/repo;
+  // its assumed branch must never leak into a later segment that runs in the chain's own cwd.
+  const localState = { cwd: invocationCwd, chainBranch: state.chainBranch, branchTrackingDisabled: state.branchTrackingDisabled };
   const subcommand = args[0]?.text;
   const rest = args.slice(1);
   let reason;
@@ -352,7 +438,9 @@ function checkGit(rawArgs, state) {
           ? `git ${subcommand} directly on \`master\` bypasses the PR/CI gate`
           : null;
   }
-  state.chainBranch = localState.chainBranch;
+  // Only copy the assumed branch back when this invocation ran in the chain's own cwd — a
+  // `-C ../other` invocation's branch belongs to that other worktree, never this one.
+  if (invocationCwd === state.cwd) state.chainBranch = localState.chainBranch;
   return reason;
 }
 
@@ -603,7 +691,7 @@ function evaluateInner(cmd, state, depth) {
 
 /** Evaluate a whole Bash command line; returns a deny reason, or null to allow. cwd/branch state threads across the chain. */
 export function evaluateCommand(cmd, startCwd) {
-  const state = { cwd: startCwd, chainBranch: null };
+  const state = { cwd: startCwd, chainBranch: null, branchTrackingDisabled: hasUnquotedOr(cmd) };
   return evaluateInner(cmd, state, 0);
 }
 

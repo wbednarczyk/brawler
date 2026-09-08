@@ -61,7 +61,7 @@ const MANDATORY_SUITES = [
 ];
 
 // Targets whose recipes must never contain an exit-ignored (`-`-prefixed) step.
-const GUARDED_TARGETS = ["check", "check-docs", "check-docs-gates"];
+const GUARDED_TARGETS = ["check", "check-docs", "check-docs-gates", "check-tests-touched"];
 
 /**
  * Extract the recipe lines (tab-indented commands) for a Makefile target. The
@@ -306,20 +306,51 @@ if (testsTouchedContent === null) {
         `    not a gate (G14, same class as an exit-ignored Makefile step).`,
     );
   }
-  if (!/PR_LABELS:\s*\$\{\{\s*toJSON\(/.test(testsTouchedContent)) {
+  if (!/gh api\s+"?repos\/\$\{\{\s*github\.repository\s*\}\}\/issues\/.*\/labels"?/.test(testsTouchedContent)) {
     errors.push(
-      `\`${TESTS_TOUCHED_PATH}\` does not pass \`PR_LABELS\` via \`toJSON(...)\` — a comma-joined label\n` +
-        `    list fragments a label whose OWN name contains a comma into a false match (G14).`,
+      `\`${TESTS_TOUCHED_PATH}\` has no \`gh api repos/.../issues/.../labels\` step — labels must be fetched\n` +
+        `    LIVE at check time, not trusted from the (possibly stale, on a manual re-run) triggering event\n` +
+        `    payload (G14).`,
+    );
+  }
+  if (!/PR_LABELS:\s*\$\{\{\s*steps\.labels\.outputs\.labels\s*\}\}/.test(testsTouchedContent)) {
+    errors.push(
+      `\`${TESTS_TOUCHED_PATH}\` does not pass \`PR_LABELS\` from \`steps.labels.outputs.labels\` — the check\n` +
+        `    step must consume the live-fetched labels step's output, not the event payload directly (G14).`,
     );
   }
 }
 
 const checkTestsTouchedRecipe = recipeLines(makefile, "check-tests-touched");
-if (checkTestsTouchedRecipe === null || !checkTestsTouchedRecipe.join("\n").includes("scripts/check/tests-touched.mjs")) {
+const testsTouchedInvocationLine = checkTestsTouchedRecipe?.find((l) => l.includes("scripts/check/tests-touched.mjs")) ?? null;
+if (checkTestsTouchedRecipe === null || testsTouchedInvocationLine === null) {
   errors.push(
     "`Makefile`'s `check-tests-touched` recipe does not invoke `scripts/check/tests-touched.mjs` — the\n" +
       "    gate's Make wrapper must still shell out to the real script (G14).",
   );
+} else {
+  // (a) the invocation line itself must be a live, hard-fail step — not
+  // exit-ignored (covered generically by GUARDED_TARGETS above, re-asserted
+  // here scoped to the exact line), not commented out, not swapped for a
+  // no-op (`@true`/`true`).
+  if (isExitIgnored(testsTouchedInvocationLine)) {
+    errors.push(
+      "`Makefile`'s `check-tests-touched` recipe's `tests-touched.mjs` invocation line is `-`-prefixed\n" +
+        "    (exit-ignored) — a gate step whose exit code is ignored can print FAILURES and still exit 0 (G14).",
+    );
+  }
+  const bareInvocation = testsTouchedInvocationLine.trim().replace(/^@/, "");
+  if (bareInvocation.startsWith("#")) {
+    errors.push(
+      "`Makefile`'s `check-tests-touched` recipe's `tests-touched.mjs` invocation line is commented out —\n" +
+        "    the gate's Make wrapper must actually run the script, not just mention it (G14).",
+    );
+  } else if (/^true\b/.test(bareInvocation)) {
+    errors.push(
+      "`Makefile`'s `check-tests-touched` recipe's `tests-touched.mjs` invocation has been replaced with a\n" +
+        "    no-op (`@true`/`true`) — the gate's Make wrapper must actually run the script (G14).",
+    );
+  }
 }
 
 // (2f) T3 retries->0 (hard gates wave 2, owner 2026-09-08): a CI flake must be
@@ -525,11 +556,20 @@ for (const hookFile of REQUIRED_BASH_HOOKS) {
   }
   const mjsName = hookFile.split("/").pop().replace(/\.sh$/, ".mjs");
   const content = readIfExists(hookFile) ?? "";
-  const execRe = new RegExp(`exec\\s+node\\b.*${mjsName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
-  if (!execRe.test(content)) {
+  // The approved structure: every non-comment, non-blank line (shebang and
+  // `#`-comments excluded) is EXACTLY one line, the bare exec of the paired
+  // .mjs — no other logic, no unanchored substring match that a stray extra
+  // command elsewhere in the file could slip past.
+  const codeLines = content
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "" && !l.startsWith("#"));
+  const expectedExecLine = `exec node "$(dirname "$0")/${mjsName}"`;
+  if (codeLines.length !== 1 || codeLines[0] !== expectedExecLine) {
     contextArchErrors.push(
-      `\`${hookFile}\` does not \`exec node\` its \`${mjsName}\` — the thin-wrapper contract (hard gate\n` +
-        `    G1/G2) is broken (the logic must live in the .mjs; the .sh is a pure exec shim).`,
+      `\`${hookFile}\` is not a pure exec shim for \`${mjsName}\` — the thin-wrapper contract (hard gate\n` +
+        `    G1/G2) requires its non-comment, non-blank lines to be EXACTLY one line: \`${expectedExecLine}\`\n` +
+        `    (the logic must live in the .mjs; the .sh does nothing else).`,
     );
   }
 }

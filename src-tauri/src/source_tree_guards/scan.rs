@@ -150,6 +150,28 @@ pub(super) fn contains_word_token(text: &str, token: &str) -> bool {
     false
 }
 
+/// The reason text of a `// <marker>` comment (e.g. `"// offload-ok:"`,
+/// `"// multi-write-ok:"`) sat directly on the line above `lines[idx]`, if
+/// any — `None` when the line above isn't that comment, `Some("")` when it
+/// is but carries no reason (still fails whatever exemption check the caller
+/// runs on it — a blank reason must not exempt anything; see G11,
+/// `escape_hatch_reasons_are_non_empty`). Shared shape behind every guard's
+/// reviewed-escape-hatch handling (command_shapes.rs's `// offload-ok:`,
+/// storage_writes.rs's `// multi-write-ok:`).
+pub(super) fn escape_hatch_reason_above(
+    lines: &[&str],
+    idx: usize,
+    marker: &str,
+) -> Option<String> {
+    if idx == 0 {
+        return None;
+    }
+    lines[idx - 1]
+        .trim_start()
+        .strip_prefix(marker)
+        .map(|reason| reason.trim().to_string())
+}
+
 /// Byte offset just past the `)`/`}` matching the opening delimiter at
 /// `open`, skipping string/comment content. `open_byte`/`close_byte` are
 /// `b'('`/`b')'` or `b'{'`/`b'}'`.

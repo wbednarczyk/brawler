@@ -18,6 +18,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  issues: read
 
 concurrency:
   group: tests-touched-${{ github.event.pull_request.number }}
@@ -38,14 +39,24 @@ jobs:
         # from the container user; Nix's libgit2 then refuses the flake git input
         # ("repository path is not owned by current user"). No-op outside containers.
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
+      - name: Fetch current PR labels
+        # A manual re-run of an old job replays THAT event's payload, whose
+        # label snapshot can be stale (a label added/removed since). Fetch
+        # the CURRENT labels live at check time instead of trusting the
+        # triggering event's payload, so a re-run always evaluates against
+        # the PR's actual label state.
+        id: labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          labels=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels" --jq '[.[].name]')
+          echo "labels=$labels" >> "$GITHUB_OUTPUT"
       - name: Check tests touched
         # Labels arrive as a JSON array via env — never interpolated into the
         # shell line (so a label like `foo"; rm -rf /` cannot escape into the
         # recipe) and never comma-joined (a label whose own name contains a
         # comma, e.g. "review,tests:not-needed", must not fragment into a
-        # false match — G14). NOTE: a manual re-run of an OLD job here replays
-        # THAT event's label snapshot — only a fresh labeled/unlabeled (or
-        # push) event re-evaluates against the PR's current labels.
+        # false match — G14).
         env:
-          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_LABELS: ${{ steps.labels.outputs.labels }}
         run: make check-tests-touched RANGE=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}

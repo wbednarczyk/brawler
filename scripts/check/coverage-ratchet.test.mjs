@@ -333,3 +333,79 @@ test("a pin above 100% fails with a clear message", () => {
     cleanup(dir);
   }
 });
+
+// --- hard gates wave 2: fail-closed on an unreadable base baseline -----------
+
+test("COVERAGE_BASE_REF set but the base baseline cannot be read fails closed (never silently skips)", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 80.0, dirs: { "src/screens/Today": 90, "src/ui": 70, "src/app": 30 } },
+      rust: { lines: 86.5 },
+    },
+    summary: SUMMARY,
+  });
+  try {
+    // No git repo in `dir` at all — `git show <ref>:...` fails outright.
+    const r = run(dir, [], { COVERAGE_BASE_REF: "deadbeef" });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /COVERAGE_BASE_REF=deadbeef is set but coverage-baseline\.json could not be read/);
+    assert.match(r.stderr, /failing closed/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// --- hard gates wave 2: union-of-keys (base pin dropped from head) -----------
+
+const SUMMARY_NO_APP = {
+  total: { lines: { total: 30, covered: 26, skipped: 0, pct: 86.7 } },
+  "src/screens/Today/TodayScreen.tsx": { lines: { total: 20, covered: 18, skipped: 0, pct: 90 } },
+  "src/ui/Button.tsx": { lines: { total: 10, covered: 8, skipped: 0, pct: 80 } },
+};
+
+test("a base pin dropped from the head baseline fails when its directory still exists on disk", () => {
+  const dir = setup({
+    baseline: {
+      // src/app pinned at base, dropped entirely from head's dirs — not even
+      // a stale unmeasured pin, gone as if it never existed.
+      frontend: { lines: 80.0, dirs: { "src/screens/Today": 90, "src/ui": 70 } },
+      rust: { lines: 86.5 },
+    },
+    summary: SUMMARY_NO_APP, // no src/app files measured this run either
+  });
+  try {
+    mkdirSync(path.join(dir, "src/app"), { recursive: true });
+    writeFileSync(path.join(dir, "src/app/.gitkeep"), "");
+    const baseSha = commitAsBase(dir, {
+      frontend: { lines: 80.0, dirs: { "src/screens/Today": 90, "src/ui": 70, "src/app": 30 } },
+      rust: { lines: 86.5 },
+    });
+    const r = run(dir, [], { COVERAGE_BASE_REF: baseSha });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /src\/app.*pin is missing from the head baseline/s);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("a base pin dropped from the head baseline passes with a note when its directory is gone from disk", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 80.0, dirs: { "src/screens/Today": 90, "src/ui": 70 } },
+      rust: { lines: 86.5 },
+    },
+    summary: SUMMARY_NO_APP,
+  });
+  try {
+    // src/app is never created on disk in this tmp dir — simulates deleted source.
+    const baseSha = commitAsBase(dir, {
+      frontend: { lines: 80.0, dirs: { "src/screens/Today": 90, "src/ui": 70, "src/app": 30 } },
+      rust: { lines: 86.5 },
+    });
+    const r = run(dir, [], { COVERAGE_BASE_REF: baseSha });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /src\/app.*dropped pin is expected/s);
+  } finally {
+    cleanup(dir);
+  }
+});
