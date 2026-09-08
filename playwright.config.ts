@@ -67,9 +67,11 @@ export default defineConfig({
   globalSetup: "./tests/browser/global-setup.ts",
   fullyParallel: true,
   workers: process.env.CI ? 2 : "50%",
-  // Local runs never retry (a flake should be seen and fixed); CI retries once
-  // to absorb the occasional environmental flake without masking real failures.
-  retries: process.env.CI ? 1 : 0,
+  // Never retry, locally or in CI (owner 2026-09-08, T3 hard gates wave 2): a
+  // CI flake is red at once — a retry would mask nondeterminism instead of
+  // surfacing it. Fix the flake's class or card it with its exact signature;
+  // do not paper over it with a second attempt.
+  retries: 0,
   reporter: [["list"]],
   use: {
     baseURL: `http://127.0.0.1:${port}`,

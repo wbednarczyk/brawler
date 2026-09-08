@@ -60,6 +60,26 @@ oranges on hosted runners). Principle 5's advisory owner evidence gains its tool
 `Live-drive hint (advisory)` PR job (dumb path→hint list; says, never checks) and
 `make pr-live-cycle PR=n` (drives the PR's cross-built exe over the real data with no WSL rebuild).
 
+**Amendment (2026-09-08, hard gates wave 2, decision 4).** The coverage ratchet gains
+**per-directory floors** alongside the existing global-per-layer ones: `coverage-baseline.json`
+carries a `dirs` block per layer (frontend `src/screens/<name>`/`src/ui`/`src/shared`/`src/app`/
+`src/api`; Rust `src-tauri/src/<top-level-dir>`/`src-tauri/src/(root)`), required once present,
+enforced by `scripts/check/coverage-ratchet.mjs` (`--seed`/`--write` bootstrap the pins from the
+coverage-summary artifacts each coverage job now uploads). A directory absent from the baseline is
+admitted only at/above a 70% floor — otherwise the PR fails outright. Policy detail:
+[testing.md § Coverage ratchet](../testing.md#coverage-ratchet).
+
+**Amendment (2026-09-08, hard gates wave 2, decision 5).** Two related but distinct path lists for
+the mutation audit had drifted (`entity_resolution.rs` documented as monitored but not a
+`mutation-audit.yml` trigger path; `storage/ingestion.rs` a trigger path but undocumented): the
+**mutation execution scope** (`-f` flags `make audit-mutants` passes to `cargo-mutants`, relative
+to `src-tauri`) and the **trigger paths** (`mutation-audit.yml`'s `paths:` filter, relative to the
+repo root, that auto-run the sweep on a `master` push) are now named separately in
+[testing.md § Mutation testing scope](../testing.md#mutation-testing-scope), and
+`gate-integrity.mjs` (T2) asserts every trigger path is named there so the two cannot drift apart
+silently again. The audit itself is unchanged: still never a PR check, still risk-triggered and
+advisory only.
+
 **Supersedes** the closure-cadence portions of [ADR 0048](0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)
 (coverage as a periodic/closure-cadence run), [ADR 0062](0062-mandatory-test-gate-and-test-driven-loop.md)
 (ratchet placement, hook composition), and [ADR 0090](0090-github-canonical-forge-and-continuous-release.md)

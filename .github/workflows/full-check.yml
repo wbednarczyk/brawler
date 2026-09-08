@@ -140,6 +140,16 @@ jobs:
         run: rm -rf /opt/hostedtoolcache || true
       - run: make install
       - run: make coverage-rust
+      # G15 bootstrap (hard gates wave 2): the per-directory coverage ratchet
+      # seeds/refreshes its pins from this summary via `coverage-ratchet.mjs
+      # --seed` — no coverage run needed locally once it's downloaded.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: rust-coverage-summary
+          path: coverage/rust-summary.json
+          retention-days: 7
+          if-no-files-found: warn
 
   types-check:
     name: ts-rs binding drift
@@ -228,6 +238,16 @@ jobs:
           restore-keys: ${{ runner.os }}-npm-
       - run: make install
       - run: make coverage-frontend
+      # G15 bootstrap (hard gates wave 2): the per-directory coverage ratchet
+      # seeds/refreshes its pins from this summary via `coverage-ratchet.mjs
+      # --seed` — no coverage run needed locally once it's downloaded.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: frontend-coverage-summary
+          path: coverage/frontend/coverage-summary.json
+          retention-days: 7
+          if-no-files-found: warn
 
   frontend-build:
     name: Frontend build

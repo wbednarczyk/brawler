@@ -261,6 +261,109 @@ for (const name of readdirSync(workflowsDir)) {
   }
 }
 
+// (2e) G14 tests-touched.yml (hard gates wave 2): the workflow must exist,
+// re-evaluate on label events (adding `tests:not-needed` must flip a red PR
+// green without a new push — the release-label.yml rationale), and its
+// check-executing step must invoke the gate's own make target. Scoped to this
+// one workflow rather than folded into GATE_WORKFLOW_PATHS/(2b) above, same
+// reason release-label.yml lives outside full-check.yml: it deliberately
+// carries its own trigger `types:`.
+const TESTS_TOUCHED_PATH = ".github/workflows/tests-touched.yml";
+const testsTouchedContent = readIfExists(TESTS_TOUCHED_PATH);
+if (testsTouchedContent === null) {
+  errors.push(`\`${TESTS_TOUCHED_PATH}\` not found — the tests-touched gate (G14) is not wired up.`);
+} else {
+  const typesMatch = testsTouchedContent.match(/^\s*types:\s*\[(.+)\]\s*$/m);
+  const types = typesMatch ? typesMatch[1].split(",").map((t) => t.trim()) : [];
+  for (const required of ["labeled", "unlabeled"]) {
+    if (!types.includes(required)) {
+      errors.push(
+        `\`${TESTS_TOUCHED_PATH}\` pull_request \`types:\` does not include \`${required}\` — the\n` +
+          `    \`tests:not-needed\` label must be able to flip the gate without a new push (G14).`,
+      );
+    }
+  }
+  if (!/run:\s*make check-tests-touched\b/.test(testsTouchedContent)) {
+    errors.push(
+      `\`${TESTS_TOUCHED_PATH}\` has no \`run: make check-tests-touched\` step — every check-executing CI\n` +
+        `    step must be a thin \`make <target>\` wrapper (ADR 0090).`,
+    );
+  }
+}
+
+// (2f) T3 retries->0 (hard gates wave 2, owner 2026-09-08): a CI flake must be
+// seen and fixed at once, never masked by a retry. Positive assertion: every
+// `retries:` occurrence anywhere in playwright.config.ts must be literally
+// `retries: 0` — catches a NEW non-zero retries creeping back in, not just
+// the one CI-conditional branch this replaced.
+const PLAYWRIGHT_CONFIG_PATH = "playwright.config.ts";
+const playwrightConfig = readIfExists(PLAYWRIGHT_CONFIG_PATH);
+if (playwrightConfig === null) {
+  errors.push(`\`${PLAYWRIGHT_CONFIG_PATH}\` not found — cannot verify the retries:0 rule (T3).`);
+} else {
+  // Strip `//` line comments first (this file's only comment style) so a
+  // comment merely MENTIONING "retries: N" (e.g. explaining the rule) is
+  // never mistaken for a live setting.
+  const playwrightConfigCode = playwrightConfig
+    .split("\n")
+    .map((line) => {
+      const idx = line.indexOf("//");
+      return idx === -1 ? line : line.slice(0, idx);
+    })
+    .join("\n");
+  const retriesMatches = playwrightConfigCode.match(/retries:\s*[^,\n]+/g) ?? [];
+  if (retriesMatches.length === 0) {
+    errors.push(`\`${PLAYWRIGHT_CONFIG_PATH}\` has no \`retries:\` setting — expected \`retries: 0\` (T3).`);
+  }
+  for (const m of retriesMatches) {
+    if (!/^retries:\s*0\s*$/.test(m.trim())) {
+      errors.push(
+        `\`${PLAYWRIGHT_CONFIG_PATH}\` has \`${m.trim()}\` — every \`retries:\` must be literally \`retries: 0\`\n` +
+          `    (owner 2026-09-08: a CI flake is red at once; fix the class or card it with the signature, never a retry).`,
+      );
+    }
+  }
+}
+
+// (2g) T2 mutation-audit trigger-path parity (hard gates wave 2, ADR 0096
+// dec. 5 amendment 2026-09-08): every path in mutation-audit.yml's push
+// `paths:` trigger must be named in docs/testing.md § Mutation testing scope
+// — the workflow's TRIGGER paths (what re-runs the sweep on a master push)
+// and the mutation EXECUTION scope (the `-f` flags in `make audit-mutants`,
+// which may legitimately list a different set) are related but distinct;
+// this guard only binds the docs to the workflow's triggers, so the two
+// cannot drift silently again (they had: `entity_resolution.rs` documented
+// but not a trigger path, `storage/ingestion.rs` a trigger path but undocumented).
+const MUTATION_AUDIT_PATH = ".github/workflows/mutation-audit.yml";
+const mutationAuditContent = readIfExists(MUTATION_AUDIT_PATH);
+const testingMdForMutationScope = readIfExists("docs/testing.md");
+if (mutationAuditContent === null) {
+  errors.push(`\`${MUTATION_AUDIT_PATH}\` not found — cannot verify the mutation-audit trigger-path parity (T2).`);
+} else if (testingMdForMutationScope === null) {
+  errors.push("`docs/testing.md` not found — cannot verify the mutation-audit trigger-path parity (T2).");
+} else {
+  const scopeHeaderIdx = testingMdForMutationScope.indexOf("### Mutation testing scope");
+  if (scopeHeaderIdx === -1) {
+    errors.push('`docs/testing.md` has no "### Mutation testing scope" section (T2).');
+  } else {
+    const nextHeaderIdx = testingMdForMutationScope.indexOf("\n## ", scopeHeaderIdx);
+    const scopeSection = testingMdForMutationScope.slice(scopeHeaderIdx, nextHeaderIdx === -1 ? undefined : nextHeaderIdx);
+    const pathsBlockMatch = mutationAuditContent.match(/paths:\n((?:\s*-\s*'[^']+'\n?)+)/);
+    const triggerPaths = pathsBlockMatch ? [...pathsBlockMatch[1].matchAll(/-\s*'([^']+)'/g)].map((m) => m[1]) : [];
+    if (triggerPaths.length === 0) {
+      errors.push(`\`${MUTATION_AUDIT_PATH}\` has no parsable \`paths:\` list under its push trigger (T2).`);
+    }
+    for (const p of triggerPaths) {
+      if (!scopeSection.includes(p)) {
+        errors.push(
+          `\`${MUTATION_AUDIT_PATH}\` trigger path \`${p}\` is not named in docs/testing.md § Mutation testing\n` +
+            `    scope (T2) — keep the workflow's trigger paths and the docs in sync.`,
+        );
+      }
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // context-architecture (ADR 0063)
 //
