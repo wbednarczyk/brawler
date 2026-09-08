@@ -510,7 +510,8 @@ fn a_second_capture_waits_for_the_first_and_returns_its_published_row() {
     let doc_lock = doc_lock::lock_document(&doc.id);
     let _guard = doc_lock.lock().unwrap_or_else(|p| p.into_inner());
 
-    let mut b_handle: Option<thread::JoinHandle<StorageResult<DocumentCaptureResult>>> = None;
+    let mut b_handle: Option<thread::JoinHandle<(StorageResult<DocumentCaptureResult>, usize)>> =
+        None;
     let store_result = store_fetched_document_with(
         &state,
         &doc.id,
@@ -528,7 +529,12 @@ fn a_second_capture_waits_for_the_first_and_returns_its_published_row() {
                 Some("application/pdf".to_owned()),
             );
             let handle = thread::spawn(move || {
-                capture_report_document(&state_b, &fetcher_b, capture_input(&company_id_b, url))
+                let result = capture_report_document(
+                    &state_b,
+                    &fetcher_b,
+                    capture_input(&company_id_b, url),
+                );
+                (result, fetcher_b.calls.get())
             });
             thread::sleep(Duration::from_millis(200));
             assert!(
@@ -543,11 +549,15 @@ fn a_second_capture_waits_for_the_first_and_returns_its_published_row() {
     // Release A's lock — only now may B make progress.
     drop(_guard);
 
-    let b_result = b_handle
+    let (b_result, b_fetches) = b_handle
         .expect("capture B must have been spawned")
         .join()
-        .expect("capture B thread must not panic")
-        .expect("capture B must succeed");
+        .expect("capture B thread must not panic");
+    let b_result = b_result.expect("capture B must succeed");
+    assert_eq!(
+        b_fetches, 0,
+        "B re-reads the row under the lock and never fetches after A published (astra r4)"
+    );
 
     assert!(b_result.success);
     assert_eq!(

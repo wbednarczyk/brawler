@@ -3,7 +3,54 @@ use crate::storage::{self, CaptureReportDocumentInput, StorageResult};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-mod doc_lock;
+/// Per-document capture lock (#487 P1 r3, adversarial review on the
+/// atomicity-wave PR): [`super::capture_report_document`],
+/// [`super::fetch_report_document`], and [`super::fetch_pending_attachments`]
+/// hold this lock across a document's entire capture body (inspect →
+/// resolve/heal/reset → fetch → store → row write), so a second caller for
+/// the same document waits and then observes the first caller's published
+/// row through the normal `fetch_status == "fetched"` short-circuit instead
+/// of interleaving with it. Compare-and-set on the row alone cannot close
+/// this: it can arbitrate who *wins* a race, but it cannot see a concurrent
+/// REPAIR that restores the identical bytes to the same path between another
+/// caller's inspection and its own write — only serializing the whole
+/// capture closes that window.
+///
+/// Brawler is a single-instance process (the Tauri single-instance plugin
+/// plus the in-process MCP server both run inside the one app process), so
+/// this in-process lock is the complete solution — no cross-process lock
+/// file or advisory lock is needed.
+///
+/// Usage: `let doc_lock = doc_lock::lock_document(&doc_id); let _guard =
+/// doc_lock.lock().unwrap_or_else(|p| p.into_inner());` — keep both bindings
+/// alive for the whole capture body; the guard borrows through the `Arc`, so
+/// it must not outlive it.
+mod doc_lock {
+
+    use std::collections::HashMap;
+    use std::sync::{Arc, LazyLock, Mutex};
+
+    static DOC_LOCKS: LazyLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    /// Returns the mutex serializing captures of report document `id`, creating
+    /// it on first use.
+    ///
+    /// ponytail: entries are never evicted — one `Arc<Mutex<()>>` per document id
+    /// ever captured, for the life of the process. Bounded by document count
+    /// (thousands, not millions) and negligible per entry; add `Weak`-based
+    /// cleanup if that stops holding.
+    pub(crate) fn lock_document(id: &str) -> Arc<Mutex<()>> {
+        let mut locks = DOC_LOCKS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Arc::clone(
+            locks
+                .entry(id.to_owned())
+                .or_insert_with(|| Arc::new(Mutex::new(()))),
+        )
+    }
+}
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -54,6 +101,9 @@ pub fn capture_report_document(
     let doc_lock = doc_lock::lock_document(&doc_id);
     let _doc_guard = doc_lock.lock().unwrap_or_else(|p| p.into_inner());
 
+    // Re-read UNDER the lock: the upsert's snapshot may predate a capture that
+    // completed while this caller waited for the lock (astra r4).
+    let doc = state.get_report_document(&doc_id)?;
     let doc = resolve_before_fetch(state, doc)?;
 
     if doc.fetch_status == "fetched" {
@@ -224,6 +274,13 @@ pub fn fetch_pending_attachments(
         // concurrent capture of the same document either.
         let doc_lock = doc_lock::lock_document(&doc.id);
         let _doc_guard = doc_lock.lock().unwrap_or_else(|p| p.into_inner());
+
+        // The pending list was read before the lock: re-read and resolve the
+        // row now, so a document captured meanwhile is skipped, not re-fetched.
+        let doc = resolve_before_fetch(state, state.get_report_document(&doc.id)?)?;
+        if doc.fetch_status == "fetched" {
+            continue;
+        }
 
         match fetcher.fetch(&doc.url) {
             Ok(fetched) => {
@@ -435,6 +492,11 @@ fn store_fetched_document_with(
             byte_size,
         )?;
 
+    // Stamp the container only for the identity the row actually accepted —
+    // a declined (stale) publication must not overwrite the winner's stamp.
+    if published.content_hash.as_deref() != Some(content_hash.as_str()) {
+        return Ok(published.local_path.unwrap_or(local_path));
+    }
     if let Err(error) = state.set_report_document_detected_container(
         doc_id,
         crate::fundamentals::extraction::container::detect_container(&fetched.bytes).as_str(),
@@ -595,4 +657,5 @@ fn determine_extension(content_type: &Option<String>, url: &str) -> String {
 }
 
 #[cfg(test)]
+#[path = "report_documents_capture_tests.rs"]
 mod tests;
