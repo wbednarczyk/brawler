@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 // Global command palette (v0.50 U6): Ctrl/⌘+K opens a shared palette from any
 // screen. It lists app-level commands (derived from the shortcut registry plus
 // every tracked company / global screens) and, on the Spółka screen, that
-// screen's own contextual "Open <tool>" workshop commands. ADR 0108 (retiring
+// screen's own contextual "Open tool: <Name>" workshop commands. ADR 0108 (retiring
 // the docking engine) removed every "Open view: …" / "Open panel: …" entry —
 // the palette dictionary is app-level navigation only.
 

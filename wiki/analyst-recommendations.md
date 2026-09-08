@@ -6,7 +6,7 @@ company — who rated it, what the rating says, the target price, and when — a
 into its own advice, and they never leak into scores or valuation.
 
 The [Spółka screen's](company-view.md) core has a compact Recommendations
-card at rest; open the full history with its **Open recommendations** button
+card at rest; open the full history with its **Recommendations** workshop button
 or the matching workshop-bar tool.
 
 ## What each entry shows

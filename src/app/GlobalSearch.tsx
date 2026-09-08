@@ -152,7 +152,9 @@ export function GlobalSearch({ locale, onNavigate }: GlobalSearchProps) {
         ariaLabel={t("globalSearch.ariaLabel")}
         placeholder={t("globalSearch.placeholder")}
         value={controller.query}
-        onChange={(value) => controller.setQuery(value)}
+        // A blank query (whitespace included) never opens the controller: an
+        // invisible-open state would consume the first Escape.
+        onChange={(value) => (value.trim() === "" ? controller.reset(value) : controller.setQuery(value))}
         onClear={clearQuery}
         clearLabel={t("globalSearch.clear")}
         inputProps={{

@@ -445,6 +445,11 @@ describe("Global search", () => {
     // unconsumed Escape bubbles to whatever the app wants to do with it.
     expect(fireEvent.keyDown(input, { key: "Escape" })).toBe(true);
     expect(input).toHaveAttribute("aria-expanded", "false");
+    // Whitespace only is still a blank query.
+    await user.type(input, "   ");
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("listbox", { name: "Global search" })).toBeNull();
+    expect(fireEvent.keyDown(input, { key: "Escape" })).toBe(true);
   });
 
   // #469 sol re-review: the id space is `${contentType}:${sourceId}`, not the

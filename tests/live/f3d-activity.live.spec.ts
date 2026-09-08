@@ -71,9 +71,9 @@ test("activity panel on the real app: open, read, land on a declared destination
     return;
   }
 
-  // Every row carries exactly one destination action.
+  // Every row carries exactly one `open` action (the dictionary verb, ADR 0104 dec. 3).
   for (let index = 0; index < rowCount; index += 1) {
-    await expect(rows.nth(index).locator("[data-action-kind='destination']")).toHaveCount(1);
+    await expect(rows.nth(index).locator("[data-action-kind='open']")).toHaveCount(1);
   }
 
   // Follow each of the first five rows' declared destinations (a busy database
@@ -92,7 +92,7 @@ test("activity panel on the real app: open, read, land on a declared destination
     const targetKind = await row.getAttribute("data-activity-target");
     const targetTool = await row.getAttribute("data-activity-tool");
     const targetDocument = await row.getAttribute("data-activity-document");
-    const action = row.locator("[data-action-kind='destination']");
+    const action = row.locator("[data-action-kind='open']");
     const label = (await action.textContent())?.trim() ?? "";
     testInfo.annotations.push({ type: `row-${index}-target`, description: `${targetKind} · ${label}` });
     await action.click();

@@ -83,20 +83,23 @@ export function BackupsSettings() {
       <p className="settings-note">
         {text("Local copies of your data. A restore is applied when the app restarts.")}
       </p>
-      <InfoGrid
-        className="settings-grid"
-        items={[
-          {
-            label: text("Last backup"),
-            value: (
-              <span className="num-tabular">
-                {formatListTimestamp(status?.lastBackupAt ?? null, locale, text("None yet"))}
-              </span>
-            ),
-          },
-          { label: text("Backups kept"), value: <Figure value={status?.backupCount ?? 0} /> },
-        ]}
-      />
+      {/* Facts only from a real status — never "None yet"/0 while loading or after an initial failure. */}
+      {status ? (
+        <InfoGrid
+          className="settings-grid"
+          items={[
+            {
+              label: text("Last backup"),
+              value: (
+                <span className="num-tabular">
+                  {formatListTimestamp(status?.lastBackupAt ?? null, locale, text("None yet"))}
+                </span>
+              ),
+            },
+            { label: text("Backups kept"), value: <Figure value={status?.backupCount ?? 0} /> },
+          ]}
+        />
+      ) : null}
       <ActionRow>
         {hasBackups ? createButton : null}
         <ActionButton disabled={inFlight} kind="control" onClick={refreshStatus}>

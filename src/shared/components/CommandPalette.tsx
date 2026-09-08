@@ -12,7 +12,7 @@ import type { Verb } from "../verbs";
 
 // `actionKey`/`verb` (ADR 0104 dec. 3, F3a S3): stable, label-independent
 // identity for a command plus its dictionary verb — the copy gate
-// (src/app/paletteCopy.test.ts) checks every producer's labels against
+// (src/app/paletteCopy.test.tsx) checks every producer's labels against
 // `verb` and that no two verbs share one `actionKey`.
 export type PaletteCommand = { id: string; label: string; run: () => void; actionKey: string; verb: Verb };
 

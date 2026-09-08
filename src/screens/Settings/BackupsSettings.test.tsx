@@ -189,6 +189,17 @@ describe("Settings › Data storage — Backups (#451)", () => {
     renderPl(<BackupsSettings />);
     expect(screen.queryByRole("list", { name: "Kopie zapasowe" })).toBeNull();
     expect(screen.queryByText("Lokalne kopie Twoich danych.")).toBeNull();
+    // No invented facts either: the status grid waits for a real status.
+    expect(screen.queryByText("Brak")).toBeNull();
+    expect(screen.queryByText("Zachowane kopie")).toBeNull();
+  });
+
+  it("an initial status failure shows the error without inventing 'none yet' facts or an empty state", async () => {
+    vi.mocked(backupsApi.backupStatus).mockRejectedValueOnce(new Error("disk unreadable"));
+    renderPl(<BackupsSettings />);
+    await screen.findByText("Error: disk unreadable");
+    expect(screen.queryByText("Zachowane kopie")).toBeNull();
+    expect(screen.queryByText("Lokalne kopie Twoich danych.")).toBeNull();
   });
 
   it("keeps the last-known list when a refresh fails instead of showing an empty state", async () => {
