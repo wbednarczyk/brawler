@@ -425,7 +425,7 @@ if (hookContent === null) {
     "`.claude/hooks/session-context.sh` not found — the session re-grounding hook (ADR 0063) is missing.",
   );
 } else {
-  const HOOK_MARKERS = [/rtk/, /CLAUDE\.md/, /engineering-workflow\.md/, /spec-driven/i];
+  const HOOK_MARKERS = [/rtk/, /CLAUDE\.md/, /engineering-workflow\.md/, /spec-driven/i, /git-boundaries/];
   for (const marker of HOOK_MARKERS) {
     if (!marker.test(hookContent)) {
       contextArchErrors.push(
@@ -438,18 +438,46 @@ if (hookContent === null) {
   }
 }
 
-// (4b) Hard gate G2 (tests audit, owner 2026-09-07): the one-heavy-build
-// PreToolUse hook must stay wired for Bash — it is the mechanical form of
-// testing.md § Resource discipline for every agent/subagent.
-const heavyBuildHookSettings = readIfExists(".claude/settings.json");
-if (heavyBuildHookSettings === null || !heavyBuildHookSettings.includes("one-heavy-build.sh")) {
+// (4b) Hard gates G1 (git-boundaries) and G2 (one-heavy-build), tests audit
+// waves 1-2: both PreToolUse Bash hooks must stay wired — they are the
+// mechanical form of testing.md § Resource discipline and CLAUDE.md § Working
+// Rules (T1) for every agent/subagent. Parses hooks.PreToolUse rather than a
+// plain substring test so a Bash entry with the WRONG matcher can't fool it.
+const REQUIRED_BASH_HOOKS = [".claude/hooks/one-heavy-build.sh", ".claude/hooks/git-boundaries.sh"];
+const preToolUseSettings = readIfExists(".claude/settings.json");
+if (preToolUseSettings === null) {
   contextArchErrors.push(
-    "`.claude/settings.json` does not wire `.claude/hooks/one-heavy-build.sh` as a Bash PreToolUse hook (hard gate G2, ADR 0038 amendment 2026-09-07).",
+    "`.claude/settings.json` not found — cannot verify the PreToolUse Bash hook wiring (hard gates G1/G2).",
   );
+} else {
+  let parsedPreToolUse;
+  try {
+    parsedPreToolUse = JSON.parse(preToolUseSettings);
+  } catch {
+    parsedPreToolUse = null;
+  }
+  const bashEntry = Array.isArray(parsedPreToolUse?.hooks?.PreToolUse)
+    ? parsedPreToolUse.hooks.PreToolUse.find((m) => m.matcher === "Bash")
+    : null;
+  const bashCommands = (bashEntry?.hooks ?? []).map((h) => h.command).filter((c) => typeof c === "string");
+  for (const hookFile of REQUIRED_BASH_HOOKS) {
+    const base = hookFile.split("/").pop();
+    if (!bashCommands.some((c) => c.includes(base))) {
+      contextArchErrors.push(
+        `\`.claude/settings.json\` does not wire \`${hookFile}\` as a Bash PreToolUse hook (hard gates G1/G2, ADR 0038).`,
+      );
+    }
+  }
 }
-for (const hookFile of [".claude/hooks/one-heavy-build.sh", ".claude/hooks/one-heavy-build.mjs", ".claude/hooks/one-heavy-build-classify.mjs"]) {
+for (const hookFile of [
+  ".claude/hooks/one-heavy-build.sh",
+  ".claude/hooks/one-heavy-build.mjs",
+  ".claude/hooks/one-heavy-build-classify.mjs",
+  ".claude/hooks/git-boundaries.sh",
+  ".claude/hooks/git-boundaries.mjs",
+]) {
   if (readIfExists(hookFile) === null) {
-    contextArchErrors.push(`\`${hookFile}\` not found (hard gate G2).`);
+    contextArchErrors.push(`\`${hookFile}\` not found (hard gate G1/G2).`);
   }
 }
 

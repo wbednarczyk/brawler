@@ -14,7 +14,7 @@
 // never trip this — that was the exact B3 false-positive class.
 
 /** Split `cmd` into segments on unquoted `;`, `&&`, `||`, `|`, and newlines. */
-function splitSegments(cmd) {
+export function splitSegments(cmd) {
   const segments = [];
   let cur = "";
   let quote = null;
@@ -292,7 +292,7 @@ function stripRedirections(tokens) {
 }
 
 /** Quote-aware tokenizer keeping the INNER text of quoted spans (for wrapper bodies). */
-function tokenizeRaw(segment) {
+export function tokenizeRaw(segment) {
   const tokens = [];
   let cur = "";
   let quote = null;
@@ -341,7 +341,7 @@ const SHELL_WRAPPERS = new Set(["bash", "sh", "zsh", "dash"]);
  * return the script text so it can be classified as a shell program itself —
  * quoting must not hide a compile (review 2026-09-08).
  */
-function wrappedScript(segment) {
+export function wrappedScript(segment) {
   const raw = tokenizeRaw(segment);
   const texts = stripPrefixes(
     raw.map((t) => {
