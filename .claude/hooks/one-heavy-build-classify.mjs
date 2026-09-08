@@ -242,6 +242,11 @@ function classifyTokens(tokens) {
   }
 }
 
+/** Put whitespace around redirection operators so `run>/tmp/x` tokenizes like `run > /tmp/x`. */
+function spaceOperators(text) {
+  return text.replace(/(\d*>>?&?\d*|&>|<)/g, " $1 ");
+}
+
 /** Drop shell redirections (`> f`, `>>f`, `2>&1`, `< f`, `&> f`) — never scope. */
 function stripRedirections(tokens) {
   const out = [];
@@ -309,7 +314,13 @@ const SHELL_WRAPPERS = new Set(["bash", "sh", "zsh", "dash"]);
  */
 function wrappedScript(segment) {
   const raw = tokenizeRaw(segment);
-  const texts = stripPrefixes(raw.map((t) => (t.quoted ? "__quoted__" : t.text)));
+  const texts = stripPrefixes(
+    raw.map((t) => {
+      if (!t.quoted) return t.text;
+      const m = t.text.match(/^([A-Za-z_][A-Za-z0-9_]*=)/);
+      return m ? `${m[1]}__quoted__` : "__quoted__";
+    }),
+  );
   const offset = raw.length - texts.length;
   if (!SHELL_WRAPPERS.has(texts[0] ?? "")) return null;
   for (let i = 1; i < texts.length; i++) {
@@ -334,7 +345,7 @@ export function classifyCommand(cmd) {
     const c =
       inner !== null
         ? classifyCommand(inner)
-        : classifyTokens(stripPrefixes(stripRedirections(stripQuotes(segment).trim().split(/\s+/).filter(Boolean))));
+        : classifyTokens(stripPrefixes(stripRedirections(spaceOperators(stripQuotes(segment)).trim().split(/\s+/).filter(Boolean))));
     if (c === "full") return "full";
     if (c === "cargo") worst = "cargo";
   }

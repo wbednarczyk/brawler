@@ -114,6 +114,17 @@ test("round-4 bypasses stay closed (redirections are not scope; shell wrappers a
   assert.equal(runHook("bash scripts/x.sh", HEAVY_ALIVE), "allow", "a script file is not inspected (no inline body)");
 });
 
+test("round-5 bypasses stay closed (glued redirections; quoted assignments before a wrapper)", () => {
+  const RUSTC = "200 /usr/bin/rustc --crate-name brawler";
+  for (const cmd of ["npx vitest run>/tmp/vitest.log", "npx playwright test>>log 2>&1", "vitest run</dev/null"]) {
+    assert.equal(runHook(cmd, RUSTC), "deny", `glued redirection: ${cmd}`);
+  }
+  assert.equal(runHook("npx vitest run src/a.test.ts>/tmp/v.log", RUSTC), "allow", "scoped + glued redirect");
+  for (const cmd of ['env CARGO_BUILD_JOBS="8" bash -c "cargo test"', 'CARGO_BUILD_JOBS="8" sh -c \'cargo nextest run x\'', 'rtk env RUST_LOG="debug" bash -lc "cd src-tauri && cargo test"']) {
+    assert.equal(runHook(cmd, RUSTC), "deny", `quoted assignment + wrapper: ${cmd}`);
+  }
+});
+
 test("nothing heavy alive: every command is allowed", () => {
   for (const cmd of [...DENY_COMMANDS, ...ALLOW_COMMANDS]) {
     assert.equal(runHook(cmd, ""), "allow", `expected allow when idle for: ${cmd}`);
