@@ -106,8 +106,12 @@ function isExemptTitle(title: string): boolean {
   return /\b(does not throw|renders)$/i.test(title.trim());
 }
 
+// (c) fix (Astra re-verification of PR #477): require non-empty reason text
+// after the colon — `// no-assert-ok:` with nothing following it must not
+// exempt a block (mirrors the `\S` requirement in eslint.config.js's
+// skip-ok comment check).
 function isExemptComment(prevLine: string): boolean {
-  return /\/\/\s*no-assert-ok:/.test(prevLine);
+  return /\/\/\s*no-assert-ok:\s*\S/.test(prevLine);
 }
 
 function findOffenders(): string[] {
@@ -127,8 +131,26 @@ function findOffenders(): string[] {
 // This ceiling may only be LOWERED, never raised to fit a new offender.
 const TEST_HYGIENE_BASELINE_CEILING = 0;
 
+// B1 fix (owner-approved hard gate 2026-09-07, Astra re-verification of PR
+// #477 finding (a)): same frozen-set pattern as fidelity-membership.test.ts
+// and translationCompleteness.test.ts, for consistency — here the frozen set
+// starts empty (the baseline started empty) so it is trivially implied by
+// TEST_HYGIENE_BASELINE_CEILING = 0 above, but stated explicitly so a future
+// edit to raise the ceiling still has to clear this second lock too.
+const FROZEN_BASELINE = new Set<string>([]);
+
 describe("test hygiene — every it()/test() block asserts something", () => {
   const offenders = findOffenders();
+
+  it("the baseline is a subset of the frozen approved set (no new offender via swap)", () => {
+    const unfrozen = [...baseline].filter((entry) => !FROZEN_BASELINE.has(entry));
+    expect(
+      unfrozen,
+      `${unfrozen.length} testHygiene.baseline.json entr(y/ies) are not in FROZEN_BASELINE — a ` +
+        "new assertion-less block cannot be baselined. Fix it: add an assertion, an exempt title, " +
+        `or a // no-assert-ok comment. Unfrozen: ${unfrozen.join(", ")}`,
+    ).toEqual([]);
+  });
 
   it("the baseline ceiling only shrinks, never grows", () => {
     expect(

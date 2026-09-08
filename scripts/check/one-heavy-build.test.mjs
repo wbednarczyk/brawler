@@ -32,12 +32,15 @@ function runHook(command, running = "") {
 
 const DENY_COMMANDS = [
   'rtk cargo nextest run x',
-  'npm test -- runtime',
   'cd src-tauri && cargo test',
   'make -j4 check-local',
   'env X=1 cargo build',
   './node_modules/.bin/vitest run',
   'yarn test',
+  'make -j 4 check-local',
+  'make -C "src-tauri" check',
+  'rtk proxy cargo test',
+  'make --jobs=4 -C src-tauri check-rust-test',
 ];
 
 const ALLOW_COMMANDS = [
@@ -50,6 +53,9 @@ const ALLOW_COMMANDS = [
   'npm run lint',
   'node scripts/check/x.mjs',
   'make types',
+  'git commit -m "note: \\"quoted\\"; cargo test; more"',
+  "git commit -m 'msg with ; cargo test ; inside'",
+  'echo "make check" > note.txt',
 ];
 
 const HEAVY_ALIVE = "12345 cargo nextest run fake";
@@ -60,6 +66,19 @@ test("one-heavy-build denies heavy commands while a heavy run is alive, allows t
   }
   for (const cmd of ALLOW_COMMANDS) {
     assert.equal(runHook(cmd, HEAVY_ALIVE), "allow", `expected allow for: ${cmd}`);
+  }
+});
+
+const JS_ALIVE = "23456 node /r/node_modules/.bin/vitest run";
+
+test("scoped JS runs are never denied; cargo stacks only on a compile; full suites stack on anything", () => {
+  for (const cmd of ["rtk npx vitest run src/test/x.test.ts", "npx playwright test tests/browser/x.spec.ts --project=chromium", "vitest run src/a.test.ts -t name", "npm test -- runtime"]) {
+    assert.equal(runHook(cmd, HEAVY_ALIVE), "allow", `scoped JS while cargo alive: ${cmd}`);
+  }
+  assert.equal(runHook("rtk cargo nextest run storage", JS_ALIVE), "allow", "cargo while only vitest alive");
+  assert.equal(runHook("rtk cargo nextest run storage", HEAVY_ALIVE), "deny", "cargo while cargo alive");
+  for (const cmd of ["npx vitest run", "vitest", "npx playwright test", "make check-local", "npm run build", "npm test"]) {
+    assert.equal(runHook(cmd, JS_ALIVE), "deny", `full suite while vitest alive: ${cmd}`);
   }
 });
 
@@ -84,9 +103,9 @@ test("the escape hatch BRAWLER_ALLOW_PARALLEL_BUILD=1 allows a deliberate parall
 // heavy. Exercised through the real branch with a synthetic `ps`-style line is
 // impossible (pgrep decides), so pin the pattern instead.
 test("the pgrep pattern excludes dev servers, analyzers and MCP shims", () => {
-  const hook = readFileSync(HOOK_PATH, "utf8");
-  const m = hook.match(/pgrep -af '([^']+)'/);
-  assert.ok(m, "hook still uses pgrep -af '<pattern>'");
+  const hook = readFileSync(path.join(REPO_ROOT, ".claude/hooks/one-heavy-build.mjs"), "utf8");
+  const m = hook.match(/PGREP_PATTERN = "([^"]+)"/);
+  assert.ok(m, "hook still declares PGREP_PATTERN");
   const re = new RegExp(m[1]);
   // pgrep -af lines are "<pid> <cmdline>"; the pattern anchors on ^ or a "/" — so
   // real cmdlines (`node …/.bin/vitest`, `…/.bin/playwright test`) match while a

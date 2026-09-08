@@ -464,6 +464,60 @@ fn transform_modules_carry_their_property_and_golden_tests() {
         }
     }
 
+    // Ratchet floors (review 2026-09-08, B1): the manifest may only gain
+    // property/golden coverage. Counts may only rise, and a module may carry
+    // `proptest: false` only if it was already an offender when the manifest
+    // was frozen — a NEW transform must ship with proptest:true.
+    const PROPTEST_TRUE_FLOOR: usize = 11;
+    const INSTA_TRUE_FLOOR: usize = 13;
+    const FROZEN_NO_PROPTEST: &[&str] = &[
+        "src/fundamentals/extraction/esef.rs",
+        "src/fundamentals/extraction/esef_package.rs",
+        "src/fundamentals/extraction/html.rs",
+        "src/fundamentals/extraction/mod.rs",
+        "src/fundamentals/extraction/text_numbers.rs",
+        "src/fundamentals/extraction/pipeline",
+        "src/source_adapters/bankier_calendar.rs",
+        "src/source_adapters/bankier_company.rs",
+        "src/source_adapters/bankier_rss.rs",
+        "src/source_adapters/biznesradar_fundamentals.rs",
+        "src/source_adapters/biznesradar_ownership.rs",
+        "src/source_adapters/biznesradar_recommendations.rs",
+        "src/source_adapters/company_directory.rs",
+        "src/source_adapters/gpw_company_registry.rs",
+        "src/source_adapters/gpw_market_events.rs",
+        "src/source_adapters/knf_short_selling.rs",
+        "src/source_adapters/newconnect_company_directory.rs",
+        "src/storage/ingestion.rs",
+        "src/report_documents_capture.rs",
+    ];
+    let proptest_true = modules
+        .iter()
+        .filter(|m| m["proptest"].as_bool() == Some(true))
+        .count();
+    let insta_true = modules
+        .iter()
+        .filter(|m| m["insta"].as_bool() == Some(true))
+        .count();
+    if proptest_true < PROPTEST_TRUE_FLOOR {
+        violations.push(format!(
+            "manifest proptest:true count {proptest_true} fell below the floor {PROPTEST_TRUE_FLOOR} — coverage may only rise"
+        ));
+    }
+    if insta_true < INSTA_TRUE_FLOOR {
+        violations.push(format!(
+            "manifest insta:true count {insta_true} fell below the floor {INSTA_TRUE_FLOOR} — coverage may only rise"
+        ));
+    }
+    for module in modules {
+        let path = module["path"].as_str().expect("path");
+        if module["proptest"].as_bool() == Some(false) && !FROZEN_NO_PROPTEST.contains(&path) {
+            violations.push(format!(
+                "{path}: proptest:false is only allowed for the frozen pre-existing offenders — a new transform ships with its properties (ADR 0049)"
+            ));
+        }
+    }
+
     for root in ["src/fundamentals/extraction", "src/source_adapters"] {
         let root_path = manifest_dir.join(root);
         for entry in std::fs::read_dir(&root_path).expect("readable discovery root") {

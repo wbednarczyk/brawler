@@ -20,6 +20,13 @@ function splitSegments(cmd) {
   let quote = null;
   for (let i = 0; i < cmd.length; i++) {
     const c = cmd[i];
+    // Backslash escapes: outside single quotes the next char is literal
+    // (`\"` never opens/closes a string, `\;` never splits).
+    if (c === "\\" && quote !== "'" && i + 1 < cmd.length) {
+      cur += c + cmd[i + 1];
+      i++;
+      continue;
+    }
     if (quote) {
       cur += c;
       if (c === quote) quote = null;
@@ -57,15 +64,21 @@ function splitSegments(cmd) {
 function stripQuotes(segment) {
   let out = "";
   let quote = null;
-  for (const c of segment) {
+  for (let i = 0; i < segment.length; i++) {
+    const c = segment[i];
+    if (c === "\\" && quote !== "'" && i + 1 < segment.length) {
+      // an escaped char is never a quote delimiter; keep it opaque
+      out += quote ? "" : "_";
+      i++;
+      continue;
+    }
     if (quote) {
       if (c === quote) quote = null;
-      out += " ";
       continue;
     }
     if (c === '"' || c === "'") {
       quote = c;
-      out += " ";
+      out += " __quoted__ ";
       continue;
     }
     out += c;
@@ -90,6 +103,7 @@ function stripPrefixes(tokens) {
     }
     if (tokens[0] === "rtk") {
       tokens.shift();
+      if (tokens[0] === "proxy") tokens.shift();
       changed = true;
     }
     if (tokens[0] === "nix") {
@@ -112,55 +126,82 @@ const MAKE_HEAVY_TARGET_RE = /^(check|test|ui-smoke|coverage|build|tauri-build|p
 const NPM_RUN_HEAVY_RE = /^(test|check|build|coverage)/;
 const BIN_HEAVY_RE = /^\.?\/?node_modules\/\.bin\/(vitest|playwright)$/;
 
-/** Whether a command's head tokens (post-prefix-stripping) start a heavy run. */
-function isHeavyTokens(tokens) {
+/**
+ * Classify a command's head tokens (post-prefix-stripping):
+ *  - "cargo": any cargo build/test/clippy/… — compiles the crate (the OOM
+ *    class is two rustc builds at once), denied only while cargo/rustc is alive;
+ *  - "full": an UNSCOPED JS suite or a composite target (`vitest` with no file,
+ *    `playwright test` with no spec, `make check*`/coverage/build, `npm test`,
+ *    `npm run check|build|coverage`, `yarn test|build`) — denied while anything
+ *    heavy is alive;
+ *  - null: light — including SCOPED vitest/playwright runs (a file or pattern
+ *    argument), which may run alongside anything (owner 2026-09-08).
+ */
+function classifyTokens(tokens) {
   const [t0, t1, t2] = tokens;
-  if (!t0) return false;
+  if (!t0) return null;
+  const rest = (from) => tokens.slice(from).filter((t) => !t.startsWith("-") && t !== "__quoted__");
+  const scopedJs = (from) => rest(from).length > 0;
   switch (t0) {
     case "cargo":
-      return /^(build|test|nextest|clippy|llvm-cov|check|mutants|bench|run)$/.test(t1 ?? "");
+      return /^(build|test|nextest|clippy|llvm-cov|check|mutants|bench|run)$/.test(t1 ?? "") ? "cargo" : null;
     case "cargo-nextest":
-      return true;
+      return "cargo";
     case "nextest":
-      return t1 === "run";
+      return t1 === "run" ? "cargo" : null;
     case "vitest":
-      return true;
+      return t1 === "run" ? (scopedJs(2) ? null : "full") : scopedJs(1) ? null : "full";
     case "playwright":
-      return t1 === "test";
+      return t1 === "test" ? (scopedJs(2) ? null : "full") : null;
     case "yarn":
-      return /^(test|build)$/.test(t1 ?? "");
+      return /^(test|build)$/.test(t1 ?? "") ? "full" : null;
     case "npm":
-      if (t1 === "test") return true;
-      if (t1 === "run" && NPM_RUN_HEAVY_RE.test(t2 ?? "")) return true;
-      return false;
+      if (t1 === "test") return scopedJs(2) ? null : "full";
+      if (t1 === "run" && NPM_RUN_HEAVY_RE.test(t2 ?? "")) return t2.startsWith("test") && scopedJs(3) ? null : "full";
+      return null;
     case "npx":
-      return /^(vitest|playwright)$/.test(t1 ?? "");
+      if (t1 === "vitest") return t2 === "run" ? (scopedJs(3) ? null : "full") : scopedJs(2) ? null : "full";
+      if (t1 === "playwright") return t2 === "test" ? (scopedJs(3) ? null : "full") : null;
+      return null;
     case "make": {
       let i = 1;
       while (i < tokens.length) {
-        if (/^-j\d*$/.test(tokens[i])) {
+        if (/^(-j\d+|--jobs=\d+|--directory=.+|-C.+)$/.test(tokens[i])) {
           i += 1;
           continue;
         }
-        if (tokens[i] === "-j" || tokens[i] === "-C") {
+        if (tokens[i] === "-j" || tokens[i] === "-C" || tokens[i] === "--jobs" || tokens[i] === "--directory") {
           i += 2;
           continue;
         }
         break;
       }
-      return MAKE_HEAVY_TARGET_RE.test(tokens[i] ?? "");
+      return MAKE_HEAVY_TARGET_RE.test(tokens[i] ?? "") ? "full" : null;
     }
-    default:
-      return BIN_HEAVY_RE.test(t0);
+    default: {
+      const m = t0.match(BIN_HEAVY_RE);
+      if (!m) return null;
+      if (m[1] === "vitest") return t1 === "run" ? (scopedJs(2) ? null : "full") : scopedJs(1) ? null : "full";
+      return t1 === "test" ? (scopedJs(2) ? null : "full") : null;
+    }
   }
 }
 
-/** Whether `cmd` (a raw Bash command string) starts a heavy build/test run. */
-export function isHeavyCommand(cmd) {
-  return splitSegments(cmd).some((segment) => {
+/** The heaviest class among the command's segments: "cargo" > "full" > null. */
+export function classifyCommand(cmd) {
+  let worst = null;
+  for (const segment of splitSegments(cmd)) {
     const tokens = stripQuotes(segment).trim().split(/\s+/).filter(Boolean);
-    return isHeavyTokens(stripPrefixes(tokens));
-  });
+    const c = classifyTokens(stripPrefixes(tokens));
+    if (c === "cargo") return "cargo";
+    if (c === "full") worst = "full";
+  }
+  return worst;
+}
+
+/** Back-compat: whether `cmd` starts any heavy run. */
+export function isHeavyCommand(cmd) {
+  return classifyCommand(cmd) !== null;
 }
 
 // CLI mode (invoked from one-heavy-build.sh): read the command from stdin,
@@ -170,6 +211,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (chunk) => (input += chunk));
   process.stdin.on("end", () => {
-    process.exit(isHeavyCommand(input) ? 0 : 1);
+    process.stdout.write(classifyCommand(input) ?? "");
+    process.exit(0);
   });
 }

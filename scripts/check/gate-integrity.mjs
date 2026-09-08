@@ -344,8 +344,10 @@ if (heavyBuildHookSettings === null || !heavyBuildHookSettings.includes("one-hea
     "`.claude/settings.json` does not wire `.claude/hooks/one-heavy-build.sh` as a Bash PreToolUse hook (hard gate G2, ADR 0038 amendment 2026-09-07).",
   );
 }
-if (readIfExists(".claude/hooks/one-heavy-build.sh") === null) {
-  contextArchErrors.push("`.claude/hooks/one-heavy-build.sh` not found (hard gate G2).");
+for (const hookFile of [".claude/hooks/one-heavy-build.sh", ".claude/hooks/one-heavy-build.mjs", ".claude/hooks/one-heavy-build-classify.mjs"]) {
+  if (readIfExists(hookFile) === null) {
+    contextArchErrors.push(`\`${hookFile}\` not found (hard gate G2).`);
+  }
 }
 
 const claudeMdContent = readIfExists("CLAUDE.md");

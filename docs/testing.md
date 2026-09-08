@@ -67,11 +67,15 @@ parallelism with `CARGO_BUILD_JOBS=8` (or `-j 8`); scope `cargo nextest` to
 touched modules, never the whole suite ad hoc. A crashed VM can leave a
 **corrupted test binary** behind — a SIGSEGV in `nextest --list` right after a
 crash means delete the stale `target/debug/deps/<crate>-*` binary and relink,
-not a code bug. **Mechanical since 2026-09-07 (hard gate G2):** the
-`one-heavy-build` PreToolUse hook (`.claude/hooks/one-heavy-build.sh`, wired in
-`.claude/settings.json`) denies a Bash command that would start
-cargo/nextest/vitest/playwright/`make check*` while another such run is alive on
-the machine — for every agent and subagent, regardless of what they read;
+not a code bug. **Mechanical since 2026-09-07 (hard gate G2):** the `one-heavy-build` PreToolUse
+hook (`.claude/hooks/one-heavy-build.{sh,mjs}` + `-classify.mjs`, wired in
+`.claude/settings.json`, self-tested by `scripts/check/one-heavy-build.test.mjs`)
+applies the matrix the owner set on 2026-09-08 for every agent and subagent:
+a `cargo …` run (it compiles — two `rustc` builds at once is the OOM class) is
+denied only while another cargo/rustc/nextest is alive; a FULL JS suite or a
+composite target (`vitest`/`playwright test` with no file, `make check*`,
+coverage, `npm test`/`run build`) is denied while anything heavy is alive;
+SCOPED vitest/playwright runs (a file or pattern argument) always pass.
 `BRAWLER_ALLOW_PARALLEL_BUILD=1` is the deliberate escape hatch.
 
 **Delegation contracts name the consumers of a changed boundary (harvested 2026-07-10, ADR 0045).** When a delegated slice changes what a creation/normalization boundary produces (e.g. a create call starts folding a legacy label), scoped module tests miss the OTHER modules whose seeds or reads assumed the old shape — the collision surfaces only at the full gate. The slice contract must enumerate the boundary's consumers (`repoctx callers <fn>` / `rdeps`) as modules the agent runs tests for, and any test that needs the legacy shape seeds it via raw SQL like migration tests do, never through the now-normalizing public surface.

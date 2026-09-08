@@ -93,6 +93,51 @@ describe("Polish translation completeness", () => {
 // LOWERED as entries are translated away, never raised to fit a new one.
 const IDENTICAL_ENTRIES_CEILING = 34;
 
+// B1 fix (owner-approved hard gate 2026-09-07, Astra re-verification of PR
+// #477 finding (a)): the ceiling alone permits regrowth-by-replacement — drop
+// a translated key, add a different new identical entry, and the count still
+// passes <= IDENTICAL_ENTRIES_CEILING. This frozen set is the primary lock:
+// the exact 34 approved keys as of today (from identicalEntries.json,
+// sorted). Any identicalEntries.json key outside this set is a NEW entry —
+// it must be translated, never allowlisted, to go green. Edit this set only
+// to REMOVE a key once it is translated away.
+const FROZEN_IDENTICAL_KEYS = new Set([
+  "AI",
+  "Agent (MCP)",
+  "Altman Z",
+  "Autopilot",
+  "BiznesRadar",
+  "Claude Code (HTTP)",
+  "Digest",
+  "EV/EBITDA",
+  "Feed",
+  "Free float",
+  "GPW",
+  "Gemini",
+  "ISIN",
+  "Import",
+  "KPI",
+  "MB",
+  "Media",
+  "Model",
+  "OCR bootstrap",
+  "Panel",
+  "Piotroski F",
+  "Port",
+  "Preset",
+  "RB {n}",
+  "Research",
+  "Status",
+  "System",
+  "Ticker",
+  "Trend",
+  "URL",
+  "Weekend",
+  "free float",
+  "s",
+  "trend",
+]);
+
 describe("English-in-PL detector (G12, dogfooding #8 class)", () => {
   const resourceEntries = plResourceEntries();
   const identical = [...resourceEntries].filter(([key, value]) => key === value).map(([key]) => key);
@@ -105,6 +150,16 @@ describe("English-in-PL detector (G12, dogfooding #8 class)", () => {
         "The ceiling may only be lowered as entries are translated away, never raised — a new " +
         "identical entry must be translated, never allowlisted, to go green.",
     ).toBeLessThanOrEqual(IDENTICAL_ENTRIES_CEILING);
+  });
+
+  it("identicalEntries.json is a subset of the frozen approved set (no new entry via swap)", () => {
+    const unfrozen = Object.keys(identicalEntries).filter((key) => !FROZEN_IDENTICAL_KEYS.has(key));
+    expect(
+      unfrozen,
+      `${unfrozen.length} identicalEntries.json key(s) are not in FROZEN_IDENTICAL_KEYS — a new ` +
+        "identical entry cannot be added by swapping out a translated one. Translate it instead. " +
+        `Unfrozen: ${unfrozen.join(", ")}`,
+    ).toEqual([]);
   });
 
   it("has no NEW PL entry identical to its EN key beyond identicalEntries.json", () => {

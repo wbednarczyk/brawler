@@ -155,10 +155,17 @@ const ONLY_BAN = {
 // `data-document-highlighted`, the real #11 case). Matches both a plain
 // string literal and a no-substitution template literal first argument.
 const PAINT_ATTR_REGEX = "/^data-([a-z-]*-)?(highlighted|marked)$/";
+// (b) fix (Astra re-verification of PR #477 finding 8): the TemplateLiteral
+// branch only ever looked at the first quasi, so
+// `` `data-highlighted${suffix}` `` was banned even though a non-empty
+// `suffix` (e.g. "-reason") can make the resulting attribute name legitimate.
+// Restrict the TemplateLiteral branch to a literal with ZERO expressions
+// (`expressions.length=0`) — a plain no-substitution template — so an
+// interpolated attribute name is never matched by this selector at all.
 const TO_HAVE_ATTRIBUTE_PAINT_BAN = {
   selector:
     `CallExpression[callee.property.name='toHaveAttribute'][arguments.0.type='Literal'][arguments.0.value=${PAINT_ATTR_REGEX}], ` +
-    `CallExpression[callee.property.name='toHaveAttribute'][arguments.0.type='TemplateLiteral'][arguments.0.quasis.0.value.raw=${PAINT_ATTR_REGEX}]`,
+    `CallExpression[callee.property.name='toHaveAttribute'][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0][arguments.0.quasis.0.value.raw=${PAINT_ATTR_REGEX}]`,
   message: "assert the paint via tests/browser/helpers/paint.ts, not the attribute (dogfooding #11)",
 };
 

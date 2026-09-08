@@ -91,8 +91,11 @@ export async function expectOpaqueSticky(locator: Locator): Promise<void> {
     }, 0);
 
     const style = getComputedStyle(el);
-    const alphaMatch = style.backgroundColor.match(/rgba?\([^)]*,\s*([\d.]+)\)/);
-    const alpha = alphaMatch ? Number(alphaMatch[1]) : style.backgroundColor === "transparent" ? 0 : 1;
+    // `rgb(r, g, b)` is fully opaque; `rgba(r, g, b, a)` carries the alpha as
+    // the 4th value; `transparent` is alpha 0.
+    const bg = style.backgroundColor.trim();
+    const rgba = bg.match(/^rgba\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*([\d.]+)\s*\)$/);
+    const alpha = rgba ? Number(rgba[1]) : bg === "transparent" ? 0 : 1;
 
     return {
       scrollLeft,
