@@ -30,15 +30,15 @@ async function openTool(page: Page, label: string): Promise<Locator> {
 }
 
 async function openQuality(page: Page): Promise<Locator> {
-  return openTool(page, "Open quality");
+  return openTool(page, "Open tool: Quality");
 }
 
 async function openDocuments(page: Page): Promise<Locator> {
-  return openTool(page, "Open documents");
+  return openTool(page, "Open tool: Documents");
 }
 
 async function openCoverage(page: Page): Promise<Locator> {
-  return openTool(page, "Open coverage");
+  return openTool(page, "Open tool: Coverage");
 }
 
 test.describe("visual — quality + report documents", () => {

@@ -15,6 +15,7 @@ import type { FeedItem } from "../../api/types";
 import type { Tool } from "./route";
 import { TOOL_KINDS } from "./route";
 import { COMPANY_SPECS, makeCompany } from "../../test/scenarios/entities";
+import { LocaleContext, makeTextTranslator, makeTranslator } from "../../shared/locale";
 
 vi.mock("../../api/companyView", () => ({
   getCompanyView: vi.fn(),
@@ -876,5 +877,37 @@ describe("SpolkaScreen keyboard model (F3c S1)", () => {
 describe("company picker type-ahead folding", () => {
   it("folds Polish letters without a decomposition (ł/Ł) as well as combining marks", () => {
     expect(foldDiacritics("ŁÓDŹ Spółka")).toBe("lodz spolka");
+  });
+});
+
+// #478: "Feed" reads "Kanał" in Polish across every consumer of the ONE
+// plText key — the workshop-bar destination (route.ts's WORKSHOP_TOOLS), the
+// core-card destination button (SpolkaScreen.tsx), and the opened tool's
+// heading (toolRegistry.tsx's TOOL_TITLES). All three call `text("Feed")`
+// (directly or via a shared `label`/`TOOL_TITLES` lookup), so a single
+// plText.ts entry drives all three — pinned here so a future split of that
+// key can't silently desync them.
+describe("Feed tool reads 'Kanał' in Polish (#478)", () => {
+  it("translates the workshop-bar button, the core-card button, and the opened tool's heading", async () => {
+    const user = userEvent.setup();
+    getCompanyViewMock.mockResolvedValue(fullView());
+    render(
+      <LocaleContext.Provider value={{ locale: "pl", t: makeTranslator("pl"), text: makeTextTranslator("pl") }}>
+        <Harness />
+      </LocaleContext.Provider>,
+    );
+    await screen.findByText("CD Projekt");
+
+    const bar = screen.getByRole("toolbar", { name: "Warsztat" });
+    expect(within(bar).getByRole("button", { name: "Kanał" })).toBeInTheDocument();
+
+    const feedArticle = screen.getByRole("article", { name: "Kanał spółki" });
+    const coreCardButton = within(feedArticle).getByRole("button", { name: "Kanał" });
+    expect(coreCardButton).toBeInTheDocument();
+
+    await user.click(coreCardButton);
+    const frame = await screen.findByRole("group", { name: "Narzędzie warsztatu" });
+    expect(frame).toHaveAttribute("data-tool", "feed");
+    expect(within(frame).getByRole("heading", { name: "Kanał" })).toBeInTheDocument();
   });
 });

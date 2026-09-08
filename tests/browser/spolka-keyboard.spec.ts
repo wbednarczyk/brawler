@@ -9,12 +9,12 @@ import { WORKSHOP_TOOLS } from "../../src/screens/Spolka/route";
 // with a tool open, and with the palette open.
 
 // The palette's tool commands (`SPOLKA_TOOL_COMMANDS`, SpolkaScreen.tsx) are
-// `Open <entry label, lower-cased>` plus `Open overview`; derived here rather
-// than imported — a browser spec must not pull the screen module (and its
-// `import.meta.env` chart) into the tests tsconfig.
+// `Open tool: <entry label>` plus `Open tool: Overview` (#454); derived here
+// rather than imported — a browser spec must not pull the screen module (and
+// its `import.meta.env` chart) into the tests tsconfig.
 const SPOLKA_TOOL_COMMANDS = [
-  { tool: null as { t: string } | null, label: "Open overview" },
-  ...WORKSHOP_TOOLS.map(({ tool, label }) => ({ tool: tool as { t: string } | null, label: `Open ${label.toLowerCase()}` })),
+  { tool: null as { t: string } | null, label: "Open tool: Overview" },
+  ...WORKSHOP_TOOLS.map(({ tool, label }) => ({ tool: tool as { t: string } | null, label: `Open tool: ${label}` })),
 ];
 
 const TABBABLE =
@@ -30,9 +30,9 @@ async function openCdrSpolka(page: Page): Promise<Locator> {
   return spolka;
 }
 
-// Type the label, then ArrowDown until the EXACT option is active — the
-// filter is a substring match, so `Open research` (tool) also lists
-// `Open Research` (the Ctrl+4 screen shortcut) first.
+// Type the label, then ArrowDown until the EXACT option is active — a
+// belt-and-braces match now that the `tool:` family (#454) keeps the tool
+// commands textually distinct from the Ctrl+N screen shortcuts.
 async function runPaletteCommand(page: Page, label: string) {
   const palette = await openPalette(page);
   await palette.getByRole("combobox", { name: "Search commands" }).fill(label);

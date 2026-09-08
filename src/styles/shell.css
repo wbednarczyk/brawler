@@ -273,42 +273,15 @@
   backdrop-filter: blur(12px);
 }
 
+/* The `.search-box` skin (shell.css, shared with the Inbox filter and the
+   command palette) carries the input's own chrome (border, padding, icon,
+   clear button) — this wrapper only anchors the absolutely-positioned
+   results dropdown and caps the field's width in the topbar. */
 .global-search {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
   flex: 1 1 auto;
   max-width: 420px;
   min-width: 0;
-  min-height: 40px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--muted);
-  background: var(--surface);
-}
-
-.global-search-icon {
-  flex: 0 0 auto;
-}
-
-.global-search-input {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  color: var(--text);
-  background: transparent;
-}
-
-.global-search-input::placeholder {
-  color: var(--muted);
-}
-
-.global-search-clear {
-  position: static;
-  flex: 0 0 auto;
-  transform: none;
 }
 
 .global-search-results {
@@ -363,7 +336,8 @@
 }
 
 .global-search-result:hover,
-.global-search-result:focus-visible {
+.global-search-result:focus-visible,
+.global-search-result[aria-selected="true"] {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 

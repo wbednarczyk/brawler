@@ -112,7 +112,8 @@ test("wave 2026-09 on the real app: picker, period tables, document selection, f
   }
 
   // 4. Feed tool rows: PL kind chips, no English literal, no dead subtitle.
-  await spolka.getByRole("toolbar", { name: /Warsztat|Workshop/ }).getByRole("button", { name: /^Feed$/ }).click();
+  // #478: the PL workshop-bar button now reads "Kanał" (EN stays "Feed").
+  await spolka.getByRole("toolbar", { name: /Warsztat|Workshop/ }).getByRole("button", { name: /^(Kanał|Feed)$/ }).click();
   const feedTool = page.getByRole("group", { name: /Workshop tool|Narzędzie warsztatu/ });
   await expect(feedTool).toBeVisible({ timeout: 15_000 });
   const feedText = await feedTool.innerText();
