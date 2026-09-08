@@ -20,10 +20,11 @@ function runningHeavy() {
   }
   const r = spawnSync("pgrep", ["-af", PGREP_PATTERN], { encoding: "utf8" });
   if (r.status !== 0 || !r.stdout) return "";
+  // The FULL list decides (a compiler hiding behind five JS matches must
+  // still count); only the diagnostic shown to the agent is truncated.
   return r.stdout
     .split("\n")
     .filter((l) => l && !l.includes("one-heavy-build"))
-    .slice(0, 5)
     .join("\n");
 }
 

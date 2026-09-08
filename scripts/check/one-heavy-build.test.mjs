@@ -82,6 +82,25 @@ test("scoped JS runs are never denied; cargo stacks only on a compile; full suit
   }
 });
 
+test("round-3 matrix defects stay closed (option arity, cargo globals, chain precedence, full process list)", () => {
+  // option VALUES are not scope; grep/-t and quoted files ARE scope
+  for (const cmd of ["npx vitest run --maxWorkers 8", "npx playwright test --workers 8", "vitest run --reporter dot"]) {
+    assert.equal(runHook(cmd, JS_ALIVE), "deny", `unscoped despite options: ${cmd}`);
+  }
+  for (const cmd of ['npx vitest run --grep="one case"', "npx playwright test -g 'x'", 'npx vitest run "src/a b.test.ts"', "npx vitest run -t name"]) {
+    assert.equal(runHook(cmd, JS_ALIVE), "allow", `scoped: ${cmd}`);
+  }
+  // cargo through ordinary syntax
+  for (const cmd of ['env CARGO_BUILD_JOBS="8" cargo test', "cargo +stable test", "cargo --manifest-path src-tauri/Cargo.toml test", "CARGO_BUILD_JOBS=8 cargo nextest run x"]) {
+    assert.equal(runHook(cmd, HEAVY_ALIVE), "deny", `cargo while compile alive: ${cmd}`);
+  }
+  // chain precedence: full dominates cargo
+  assert.equal(runHook("cargo test && npm test", JS_ALIVE), "deny", "chain with a full suite while vitest alive");
+  // a compiler hidden after many JS matches still counts
+  const manyJsThenRustc = Array.from({ length: 6 }, (_, i) => `${1000 + i} node /r/node_modules/.bin/vitest run`).concat(["9999 /usr/bin/rustc --crate-name a"]).join("\n");
+  assert.equal(runHook("cargo test", manyJsThenRustc), "deny", "rustc beyond the first five lines");
+});
+
 test("nothing heavy alive: every command is allowed", () => {
   for (const cmd of [...DENY_COMMANDS, ...ALLOW_COMMANDS]) {
     assert.equal(runHook(cmd, ""), "allow", `expected allow when idle for: ${cmd}`);

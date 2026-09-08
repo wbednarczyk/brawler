@@ -249,6 +249,17 @@ describe("fidelity-corpus membership (ADR 0049)", () => {
     ).toEqual([]);
   });
 
+  it("the frozen approved set and the baseline are EQUAL (an offender that gained coverage leaves both — a reviewed edit)", () => {
+    const orphaned = [...FROZEN_BASELINE].filter((name) => !baselineNames.has(name));
+    expect(
+      orphaned,
+      `${orphaned.length} FROZEN_BASELINE entr(y/ies) are no longer in fidelity-membership.baseline.json — ` +
+        "delete them from FROZEN_BASELINE in this test too (review 2026-09-08: otherwise a command that " +
+        "lost its corpus step could silently re-enter the baseline). Orphaned: " +
+        orphaned.join(", "),
+    ).toEqual([]);
+  });
+
   it("every baseline entry is still a real #[tauri::command] (stale entries must be removed)", () => {
     const stale = [...baselineNames].filter((name) => !registered.has(name));
     expect(

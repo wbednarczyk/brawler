@@ -162,6 +162,18 @@ describe("English-in-PL detector (G12, dogfooding #8 class)", () => {
     ).toEqual([]);
   });
 
+  it("the frozen identical-key set and identicalEntries.json are EQUAL (a translated entry leaves both)", () => {
+    const keys = new Set(Object.keys(identicalEntries));
+    const orphaned = [...FROZEN_IDENTICAL_KEYS].filter((key) => !keys.has(key));
+    expect(
+      orphaned,
+      `${orphaned.length} FROZEN_IDENTICAL_KEYS entr(y/ies) are no longer in identicalEntries.json — ` +
+        "delete them from the frozen set in this test too, so a translated string cannot silently " +
+        "become identical again. Orphaned: " +
+        orphaned.join(", "),
+    ).toEqual([]);
+  });
+
   it("has no NEW PL entry identical to its EN key beyond identicalEntries.json", () => {
     const missing = identical.filter((key) => !(key in identicalEntries)).sort();
     expect(

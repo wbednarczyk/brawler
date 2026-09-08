@@ -509,6 +509,16 @@ fn transform_modules_carry_their_property_and_golden_tests() {
             "manifest insta:true count {insta_true} fell below the floor {INSTA_TRUE_FLOOR} — coverage may only rise"
         ));
     }
+    for frozen in FROZEN_NO_PROPTEST {
+        let has_proptest = modules
+            .iter()
+            .any(|m| m["path"].as_str() == Some(frozen) && m["proptest"].as_bool() == Some(true));
+        if has_proptest {
+            violations.push(format!(
+                "{frozen}: now carries proptest:true — delete it from FROZEN_NO_PROPTEST so it can never flip back (per-module ratchet)"
+            ));
+        }
+    }
     for module in modules {
         let path = module["path"].as_str().expect("path");
         if module["proptest"].as_bool() == Some(false) && !FROZEN_NO_PROPTEST.contains(&path) {

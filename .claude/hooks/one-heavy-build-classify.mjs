@@ -78,7 +78,7 @@ function stripQuotes(segment) {
     }
     if (c === '"' || c === "'") {
       quote = c;
-      out += " __quoted__ ";
+      out += "__quoted__";
       continue;
     }
     out += c;
@@ -137,31 +137,86 @@ const BIN_HEAVY_RE = /^\.?\/?node_modules\/\.bin\/(vitest|playwright)$/;
  *  - null: light — including SCOPED vitest/playwright runs (a file or pattern
  *    argument), which may run alongside anything (owner 2026-09-08).
  */
+// JS runner options that take a VALUE (the value is not a scope argument).
+const VALUE_OPTIONS = new Set([
+  "--workers", "-w", "--maxWorkers", "--max-workers", "--minWorkers", "--project", "--reporter",
+  "--retries", "--timeout", "--shard", "--config", "-c", "--root", "--dir", "--outputDir", "--output",
+  "--pool", "--poolOptions", "--coverage.provider", "--environment", "--browser", "--repeat-each",
+]);
+// Options that NARROW a run to a subset — they count as scope.
+const SCOPE_OPTIONS = new Set(["--grep", "-g", "-t", "--testNamePattern", "--testPathPattern", "--grep-invert", "--last-failed", "--only-failed", "--changed", "--related"]);
+
+/** Whether the args after a JS runner's subcommand narrow the run (a file/pattern/grep). */
+function hasScope(args) {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--") continue;
+    const eq = a.indexOf("=");
+    const name = eq === -1 ? a : a.slice(0, eq);
+    if (SCOPE_OPTIONS.has(name)) return true;
+    if (VALUE_OPTIONS.has(name)) {
+      if (eq === -1) i++; // consume the value
+      continue;
+    }
+    if (a.startsWith("-")) continue; // flag without scope meaning
+    return true; // positional (file, pattern, quoted name) = scope
+  }
+  return false;
+}
+
+// Cargo global options that take a value; other `-…` tokens and `+toolchain` are flags.
+const CARGO_VALUE_OPTIONS = new Set(["--manifest-path", "--config", "-Z", "--color", "-C", "--target-dir", "-j", "--jobs"]);
+function cargoSubcommand(tokens) {
+  for (let i = 1; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.startsWith("+")) continue;
+    const eq = t.indexOf("=");
+    const name = eq === -1 ? t : t.slice(0, eq);
+    if (CARGO_VALUE_OPTIONS.has(name)) {
+      if (eq === -1) i++;
+      continue;
+    }
+    if (t.startsWith("-")) continue;
+    return t;
+  }
+  return "";
+}
+
+/**
+ * Classify a command's head tokens (post-prefix-stripping):
+ *  - "cargo": any cargo build/test/clippy/… — compiles the crate (the OOM
+ *    class is two rustc builds at once), denied only while cargo/rustc is alive;
+ *  - "full": an UNSCOPED JS suite or a composite target (`vitest` with no file,
+ *    `playwright test` with no spec, `make check*`/coverage/build, `npm test`,
+ *    `npm run check|build|coverage`, `yarn test|build`) — denied while anything
+ *    heavy is alive;
+ *  - null: light — including SCOPED vitest/playwright runs (a file, pattern or
+ *    grep argument), which may run alongside anything (owner 2026-09-08).
+ */
 function classifyTokens(tokens) {
   const [t0, t1, t2] = tokens;
   if (!t0) return null;
-  const rest = (from) => tokens.slice(from).filter((t) => !t.startsWith("-") && t !== "__quoted__");
-  const scopedJs = (from) => rest(from).length > 0;
+  const jsRun = (from) => (hasScope(tokens.slice(from)) ? null : "full");
   switch (t0) {
     case "cargo":
-      return /^(build|test|nextest|clippy|llvm-cov|check|mutants|bench|run)$/.test(t1 ?? "") ? "cargo" : null;
+      return /^(build|test|nextest|clippy|llvm-cov|check|mutants|bench|run)$/.test(cargoSubcommand(tokens)) ? "cargo" : null;
     case "cargo-nextest":
       return "cargo";
     case "nextest":
       return t1 === "run" ? "cargo" : null;
     case "vitest":
-      return t1 === "run" ? (scopedJs(2) ? null : "full") : scopedJs(1) ? null : "full";
+      return t1 === "run" ? jsRun(2) : jsRun(1);
     case "playwright":
-      return t1 === "test" ? (scopedJs(2) ? null : "full") : null;
+      return t1 === "test" ? jsRun(2) : null;
     case "yarn":
       return /^(test|build)$/.test(t1 ?? "") ? "full" : null;
     case "npm":
-      if (t1 === "test") return scopedJs(2) ? null : "full";
-      if (t1 === "run" && NPM_RUN_HEAVY_RE.test(t2 ?? "")) return t2.startsWith("test") && scopedJs(3) ? null : "full";
+      if (t1 === "test") return jsRun(2);
+      if (t1 === "run" && NPM_RUN_HEAVY_RE.test(t2 ?? "")) return t2.startsWith("test") ? jsRun(3) : "full";
       return null;
     case "npx":
-      if (t1 === "vitest") return t2 === "run" ? (scopedJs(3) ? null : "full") : scopedJs(2) ? null : "full";
-      if (t1 === "playwright") return t2 === "test" ? (scopedJs(3) ? null : "full") : null;
+      if (t1 === "vitest") return t2 === "run" ? jsRun(3) : jsRun(2);
+      if (t1 === "playwright") return t2 === "test" ? jsRun(3) : null;
       return null;
     case "make": {
       let i = 1;
@@ -181,20 +236,23 @@ function classifyTokens(tokens) {
     default: {
       const m = t0.match(BIN_HEAVY_RE);
       if (!m) return null;
-      if (m[1] === "vitest") return t1 === "run" ? (scopedJs(2) ? null : "full") : scopedJs(1) ? null : "full";
-      return t1 === "test" ? (scopedJs(2) ? null : "full") : null;
+      if (m[1] === "vitest") return t1 === "run" ? jsRun(2) : jsRun(1);
+      return t1 === "test" ? jsRun(2) : null;
     }
   }
 }
 
-/** The heaviest class among the command's segments: "cargo" > "full" > null. */
+/** The strictest class among the command's segments: "full" > "cargo" > null. */
 export function classifyCommand(cmd) {
+  // "full" dominates "cargo": its denial condition (anything heavy alive) is
+  // broader than cargo's (a compile alive) — a chain `cargo test && npm test`
+  // must be judged by its strictest member.
   let worst = null;
   for (const segment of splitSegments(cmd)) {
     const tokens = stripQuotes(segment).trim().split(/\s+/).filter(Boolean);
     const c = classifyTokens(stripPrefixes(tokens));
-    if (c === "cargo") return "cargo";
-    if (c === "full") worst = "full";
+    if (c === "full") return "full";
+    if (c === "cargo") worst = "cargo";
   }
   return worst;
 }
