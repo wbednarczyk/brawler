@@ -55,7 +55,7 @@ The database is otherwise healthy (normalized, FK-enforced, versioned embedded m
 
 9. **Rotating automatic backups.** Periodic and on-close backups are written to `<app_data_dir>/backups/`, keeping the last N (rotation prunes the oldest). Backup status (last backup time, count) is visible. Pre-migration snapshots are retained alongside rotating backups.
 
-10. **Restore is a restart operation, surfaced in Diagnostics.** Restore is offered from the Diagnostics screen with explicit confirmation. Because live connections hold the database open, restore stages the chosen backup and requires an app relaunch to swap it in; it does not attempt a hot in-place swap. This matches the roadmap's "restore safety while the app is running" concern.
+10. **Restore is a restart operation.** Restore is offered with explicit confirmation — since 2026-09-08 from Settings › Data storage (amendment, owner card #451: backups are a product feature and must not sit behind the developer-gated Diagnostics route); Diagnostics no longer hosts it. Because live connections hold the database open, restore stages the chosen backup and requires an app relaunch to swap it in; it does not attempt a hot in-place swap. This matches the roadmap's "restore safety while the app is running" concern.
 
 11. **Backups are local-only and distinct from import/export.** A backup is a byte-faithful copy of `brawler.sqlite3` only; it is separate from the M20 import/export documents (which are portable, redacted, and exclude secrets). Secrets remain in the OS keychain and are never in the database, so they are absent from backups by construction. No cloud backup.
 

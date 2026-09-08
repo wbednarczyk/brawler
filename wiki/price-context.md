@@ -26,7 +26,7 @@ for a later release.)_
 
 ## The Price context section
 
-Open the company (Spółka screen) → **Open fundamentals**; the tool leads with **Price
+Open the company (Spółka screen) → **Open tool: Fundamentals**; the tool leads with **Price
 context**:
 
 - **Latest close** and the day's change (absolute + percent), colored

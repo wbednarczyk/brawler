@@ -348,7 +348,7 @@ Main regions:
 - logs tab or section: full in-app runtime log viewer, log status, copy redacted log output, and open logs folder
 - source candidates section: registered developer-tier source candidates, IDs, source types, fetch modes, source URLs, and source-policy notes
 - source reconciliation section: the recent GPW ESPI/EBI witness ↔ Bankier pair ledger (`list_source_reconciliation`), each row showing the disclosure, company, and a `matched` / `Missed by primary` (`espi_only`) / `Bankier only` status chip ([ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md) D2)
-- backups section: backup status (last backup time, count), backup list (rotating backups and pre-migration snapshots), a create-backup-now action, and a restore action with explicit confirmation that warns restore is applied on app relaunch (see [ADR 0032](adr/0032-search-and-backup-boundaries.md))
+- (backups moved to Settings › Data storage, owner card #451, 2026-09-08 — [ADR 0032](adr/0032-search-and-backup-boundaries.md) amendment)
 - developer mode status and disable action
 
 Rules:
@@ -377,6 +377,7 @@ Sections:
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls
 - Logs: local runtime log level and rotation limits, with a clear local-only/no-telemetry explanation
 - Database: connection-pool tuning (`maxConnections`, `busyTimeoutMs`, `acquireTimeoutMs`) with safe-range clamping, a reset-to-defaults control, and a clear "applied on next launch" note (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)); backup and restore controls remain in Diagnostics
+- Backups (in Data storage, moved from Developer Diagnostics 2026-09-08, #451): last-backup time and count, `Utwórz kopię`, the backup list with a human title first (`Kopia · <date>` / `Kopia sprzed aktualizacji · <date>`, file name as secondary metadata) and `Przywróć` behind an inline confirmation that says the restore applies on relaunch ([ADR 0032](adr/0032-search-and-backup-boundaries.md) dec. 10 amendment)
 - Import and Export: export/import research data, export/import safe preferences, preview import changes before applying them
 - MCP server ([ADR 0078](adr/0078-mcp-external-surface.md)): enable toggle with a live Active/Stopped status pill (refusal reasons — missing token, port in use — surface inline), listen port (commit-on-blur, clamped 1024–65535, applies on next start), access-token lifecycle (generate with a one-time copyable reveal, revoke behind an inline confirm, configured/storage status), and copyable example connection snippets for Claude Code (HTTP) and the stdio adapter
 - License: optional local entitlement status, safe metadata, replace, and clear controls

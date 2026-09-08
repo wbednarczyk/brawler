@@ -30,7 +30,7 @@ styleguide mockup: `docs/mockups/frontend-v2-styleguide/` (canvas + five artboar
    no CDN at runtime (dependency decision; files land in the F0.5 repaint PR). The ADR 0076 type
    scale (10–20 px) and spacing scale are unchanged; mono carries `--line-numeric` contexts, so
    digit columns align by construction.
-3. **Verb dictionary (PL/EN), enforced.** Eight verbs cover the app: Otwórz (navigate), Zastosuj
+3. **Verb dictionary (PL/EN), enforced.** Eight verbs cover the app: Otwórz (navigate), Zastosuj **Amendment 2026-09-08 (#454):** palette commands come in families that keep the verb and name the target class after a colon — `Open screen: …`, `Open company: …`, `Open tool: <Name>` (`Otwórz narzędzie: …`) for the Spółka workshop tools — so a screen and a same-named tool never differ only by letter case.
    (apply a preset; persists nothing), Zapisz (persist under a name), Pobierz (fetch something new
    from outside), Przeczytaj (turn a stored report into numbers), Odśwież (ask a source now),
    Oznacz jako… (state change), Dodaj/Usuń (collections). Labels start with the verb and are never
