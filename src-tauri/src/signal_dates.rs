@@ -359,6 +359,7 @@ mod proptests {
         /// scan-window slicing path (the site of the original panic) is exercised far
         /// more often than pure random text would achieve, while still padding with
         /// arbitrary (potentially multi-byte) filler on both sides.
+        // no-assert-ok: no-panic invariant (ADR 0049) — not panicking IS the test.
         #[test]
         fn labelled_bodies_with_unicode_filler_never_panic(
             prefix in ".{0,120}",

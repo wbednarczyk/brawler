@@ -1436,7 +1436,7 @@ mod tests {
                 /// inputs is missing -- it resolves to `None` (`Unavailable`
                 /// at the engine boundary), matching the derived-metrics
                 /// contract for every other formula in the catalog.
-                #[test]
+                #[test] // no-assert-ok: no-panic invariant (ADR 0049) — not panicking IS the test.
                 fn no_panic_on_arbitrary_missing_inputs(
                     include_shares in any::<bool>(),
                     include_equity in any::<bool>(),

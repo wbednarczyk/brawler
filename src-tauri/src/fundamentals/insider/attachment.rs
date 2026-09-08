@@ -553,6 +553,7 @@ mod tests {
     use proptest::prelude::*;
 
     proptest! {
+        // no-assert-ok: no-panic invariant (ADR 0049) — not panicking IS the test.
         #[test]
         fn never_panics_on_arbitrary_text(text in ".*") {
             let _ = parse_notification_text(&text);

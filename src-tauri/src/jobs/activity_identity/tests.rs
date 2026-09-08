@@ -273,11 +273,34 @@ fn job_kind_list_matches_registry() {
     // with the REAL registry (`registered_kinds()`), so a new/retired kind
     // reddens here until the TS list (and its `formatJobKindDisplayName`
     // label) is updated.
+    // cargo-mutants copies only src-tauri/ into its scratch sandbox
+    // (source_tree_guards::no_runtime_cross_tree_read_escapes_the_workspace),
+    // so this sibling-tree file is legitimately absent there; degrade to a
+    // SKIP only when `is_crate_only_sandbox` (B5/ADR 0045 harvest) confirms
+    // that sandbox, otherwise panic — a real checkout that can't read this
+    // file is a broken guard, not something to silently no-op past — while a
+    // real checkout (`make check`, normal `cargo test`/`nextest`) still runs
+    // the full parity assertion below.
+    // cross-tree-read-ok: absent under cargo-mutants by design, see above.
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("src/shared/formatting/jobKinds.ts");
-    let contents = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(err) => {
+            assert!(
+                crate::source_tree_guards::is_crate_only_sandbox(),
+                "{} unreadable ({err}) outside the cargo-mutants sandbox — a real checkout \
+                 always has this file; investigate before trusting this guard's silence",
+                path.display()
+            );
+            eprintln!(
+                "SKIP job_kind_list_matches_registry: {} not found (cargo-mutants sandbox)",
+                path.display()
+            );
+            return;
+        }
+    };
     let ts_kinds: std::collections::BTreeSet<String> = contents
         .lines()
         .filter_map(|line| {

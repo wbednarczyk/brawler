@@ -128,6 +128,122 @@ const API_LAYER_RESTRICTION = {
     "src/api is the IPC bottom layer — it imports only its own modules and the Tauri API, never app/screens/shared/ui (docs/modularization-design.md § Frontend layer contract).",
 };
 
+// Test hygiene (G10, docs/testing.md § Frontend test responsibilities): a
+// committed `.only()` silently skips the rest of the suite — it must never
+// reach the gate. One selector catches it.only/test.only/describe.only AND
+// the nested test.describe.only (its outer call's callee.property is also
+// "only", so the same selector matches all four spellings from CLAUDE.md).
+const ONLY_BAN = {
+  selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='only']",
+  message:
+    'No .only() in committed tests — it.only/test.only/describe.only/test.describe.only silently skips the rest of the suite (docs/testing.md § Frontend test responsibilities).',
+};
+
+// G11 (dogfooding #11): a `data-*-highlighted`/`-marked` attribute is not
+// proof of a visible mark — CompanyReportDocumentsPanel set
+// `data-document-highlighted` for 4s with no CSS rule ever painting it, and
+// the browser spec that asserted the attribute stayed green throughout.
+// Scoped to tests/** (Playwright, a real layout engine) only: jsdom computes
+// no colors (docs/testing.md § Frontend test responsibilities), so the
+// equivalent Vitest assertions in src/**/*.test.* (App.test.tsx,
+// CompanyReportDocumentsPanel.test.tsx) are legitimate and must not be
+// flagged (ADR 0045 — never flag legitimate code). Narrowed to
+// highlighted/marked only (dropped selected/active, sol diff finding 8):
+// `data-selected`/`data-active` commonly track pure logic/ARIA state with no
+// visual-mark claim, so banning them flagged legitimate assertions.
+// `-highlighted`/`-marked` name the paint claim itself (matches
+// `data-document-highlighted`, the real #11 case). Matches both a plain
+// string literal and a no-substitution template literal first argument.
+const PAINT_ATTR_REGEX = "/^data-([a-z-]*-)?(highlighted|marked)$/";
+// (b) fix (Astra re-verification of PR #477 finding 8): the TemplateLiteral
+// branch only ever looked at the first quasi, so
+// `` `data-highlighted${suffix}` `` was banned even though a non-empty
+// `suffix` (e.g. "-reason") can make the resulting attribute name legitimate.
+// Restrict the TemplateLiteral branch to a literal with ZERO expressions
+// (`expressions.length=0`) — a plain no-substitution template — so an
+// interpolated attribute name is never matched by this selector at all.
+const TO_HAVE_ATTRIBUTE_PAINT_BAN = {
+  selector:
+    `CallExpression[callee.property.name='toHaveAttribute'][arguments.0.type='Literal'][arguments.0.value=${PAINT_ATTR_REGEX}], ` +
+    `CallExpression[callee.property.name='toHaveAttribute'][arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0][arguments.0.quasis.0.value.raw=${PAINT_ATTR_REGEX}]`,
+  message: "assert the paint via tests/browser/helpers/paint.ts, not the attribute (dogfooding #11)",
+};
+
+// it.only.each/test.only.each (sol diff finding 8): `.only` one level below
+// the top call is invisible to ONLY_BAN below (its callee.property is
+// `each`, not `only`) but still silently narrows the suite to one
+// parameterized case.
+const ONLY_EACH_BAN = {
+  selector:
+    "CallExpression[callee.type='MemberExpression'][callee.object.type='MemberExpression'][callee.object.property.name='only']",
+  message:
+    "No .only.each() in committed tests — it.only.each/test.only.each silently narrows the suite to one parameterized case (docs/testing.md § Frontend test responsibilities).",
+};
+
+// Skip/fixme/todo hygiene (G10): an undocumented skip is a silently-shrinking
+// suite. Two small local rules (no plugin dependency) rather than a single
+// no-restricted-syntax selector, because "does it carry a reason" needs
+// argument-shape/comment inspection that esquery selectors can't express.
+const testHygienePlugin = {
+  rules: {
+    // Vitest: it.skip/test.skip/describe.skip/it.todo/test.todo take no
+    // reason slot, so the reason lives in a preceding comment instead.
+    "skip-needs-reason-comment": {
+      meta: { type: "problem" },
+      create(context) {
+        const sourceCode = context.sourceCode ?? context.getSourceCode();
+        return {
+          CallExpression(node) {
+            const callee = node.callee;
+            if (callee.type !== "MemberExpression" || callee.property.type !== "Identifier") return;
+            if (!["skip", "todo", "fixme"].includes(callee.property.name)) return;
+            const hasReason = sourceCode
+              .getCommentsBefore(node)
+              .some((comment) => /skip-ok:\s*\S/.test(comment.value));
+            if (!hasReason) {
+              context.report({
+                node,
+                message:
+                  "Vitest .skip()/.todo() needs a preceding `// skip-ok: <reason>` comment (docs/testing.md § Frontend test responsibilities).",
+              });
+            }
+          },
+        };
+      },
+    },
+    // Playwright: test.skip/.fixme/.todo take the reason as their last
+    // argument (test.skip(condition, "reason")). Restricted to a direct
+    // `test.<method>(...)`/`it.<method>(...)` callee (sol diff finding 8):
+    // `test.describe.skip(...)`/`.fixme(...)` have no reason slot at all (a
+    // different, comment-based hygiene question this rule must not flag),
+    // and an unrelated `.skip(n)`/`.fixme(...)` call on some other object
+    // (e.g. an iterator/stream helper) is not a test skip at all.
+    "skip-needs-reason-arg": {
+      meta: { type: "problem" },
+      create(context) {
+        return {
+          CallExpression(node) {
+            const callee = node.callee;
+            if (callee.type !== "MemberExpression" || callee.property.type !== "Identifier") return;
+            if (!["skip", "fixme", "todo"].includes(callee.property.name)) return;
+            if (callee.object.type !== "Identifier" || !["test", "it"].includes(callee.object.name)) return;
+            const args = node.arguments;
+            const last = args[args.length - 1];
+            const hasStringReason = last && last.type === "Literal" && typeof last.value === "string";
+            if (!hasStringReason) {
+              context.report({
+                node,
+                message:
+                  "Playwright test.skip()/.fixme()/.todo() needs a string reason as the last argument (docs/testing.md § Frontend test responsibilities).",
+              });
+            }
+          },
+        };
+      },
+    },
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -165,12 +281,28 @@ export default tseslint.config(
     // idioms unwritable; `prefer-find-by` additionally collapses
     // waitFor+getBy* into the equivalent findBy*.
     files: ["src/**/*.test.{ts,tsx}", "src/test/**/*.{ts,tsx}"],
-    plugins: { "testing-library": testingLibrary },
+    plugins: { "testing-library": testingLibrary, local: testHygienePlugin },
     rules: {
       "testing-library/await-async-queries": "error",
       // userEvent only: React's fireEvent is synchronous by design.
       "testing-library/await-async-events": ["error", { eventModule: "userEvent" }],
       "testing-library/prefer-find-by": "error",
+      "no-restricted-syntax": ["error", ONLY_BAN, ONLY_EACH_BAN],
+      "local/skip-needs-reason-comment": "error",
+    },
+  },
+  {
+    // Playwright browser/live specs (G10/G11, docs/testing.md § Frontend test
+    // responsibilities). Not a subset of the "src/**" block above, so it gets
+    // its own minimal parser wiring rather than the full js/tseslint
+    // recommended sets — this stays a targeted hygiene gate, not a new lint
+    // surface over 50+ existing spec files (ADR 0045: precise gates only).
+    files: ["tests/**/*.ts"],
+    languageOptions: { parser: tseslint.parser },
+    plugins: { local: testHygienePlugin },
+    rules: {
+      "no-restricted-syntax": ["error", ONLY_BAN, ONLY_EACH_BAN, TO_HAVE_ATTRIBUTE_PAINT_BAN],
+      "local/skip-needs-reason-arg": "error",
     },
   },
   {

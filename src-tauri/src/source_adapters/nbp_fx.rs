@@ -366,6 +366,7 @@ mod proptests {
     use proptest::prelude::*;
 
     proptest! {
+        // no-assert-ok: no-panic invariant (ADR 0049) — not panicking IS the test.
         #[test]
         fn parse_never_panics_on_arbitrary_input(input in ".*") {
             let _ = parse_nbp_table_a(&input);

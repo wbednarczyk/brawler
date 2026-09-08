@@ -256,7 +256,17 @@ export function run(dir = DEFAULT_DIR) {
 
 const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMainModule) {
-  const { exitCode, output } = run();
-  console.log(output);
-  process.exit(exitCode);
+  // --validate (G4, check-docs-gates): a docs gate wants pass/fail, not the
+  // trend report — print nothing on success, just the malformed-row errors
+  // on failure, exit non-zero. The default (no flag) invocation keeps
+  // printing the full advisory report, unchanged.
+  if (process.argv.includes("--validate")) {
+    const { exitCode, errors } = run();
+    for (const error of errors) console.error(`✖ ${error}`);
+    process.exit(exitCode);
+  } else {
+    const { exitCode, output } = run();
+    console.log(output);
+    process.exit(exitCode);
+  }
 }

@@ -17,7 +17,7 @@ on:
       - 'src-tauri/src/storage/migrations.rs'
       - 'src-tauri/src/storage/feed_matching.rs'
       - 'src-tauri/src/source_adapters/parsing.rs'
-      - 'src-tauri/src/entity_resolution.rs'
+      - 'src-tauri/src/storage/ingestion.rs'
   workflow_dispatch:
     inputs:
       shard:
@@ -56,6 +56,12 @@ jobs:
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      # G13 (gate-integrity.mjs, ADR 0096 dec. 5 + owner 2026-09-07): an
+      # advisory workflow must have an addressee, never a silent finding —
+      # the carding step below needs this to open an issue.
+      issues: write
     strategy:
       # Every shard reports its own verdict; one red shard must not kill the
       # others' evidence.
@@ -182,6 +188,7 @@ jobs:
       # missing tally file cannot buy the timeout pass either: no report, no
       # proof that nothing survived, so the job stays red.
       - name: Sweep verdict
+        id: verdict
         # Inputs/outputs arrive as env, never interpolated into the script body
         # (a dispatch input is caller-controlled text, not shell).
         env:
@@ -196,6 +203,15 @@ jobs:
             tally_known=1
             if [ -s "$missed_file" ]; then missed=$(grep -c '' "$missed_file"); fi
           fi
+          # Exposed for the advisory-carding step below (G3b): it needs the
+          # same rc/missed/tally_known this verdict already computed, never a
+          # re-derived copy — B2 (ADR 0045 harvest 2026-09-08): the carding
+          # step must know whether "0 missed" is a KNOWN tally or just the
+          # default it fell back to when missed.txt never got written (a
+          # sweep that died before producing one).
+          echo "rc=$rc" >>"$GITHUB_OUTPUT"
+          echo "missed=$missed" >>"$GITHUB_OUTPUT"
+          echo "tally_known=$tally_known" >>"$GITHUB_OUTPUT"
           {
             echo "### cargo-mutants sweep — shard ${SHARD}"
             echo ""
@@ -214,6 +230,89 @@ jobs:
           echo "::error::cargo-mutants sweep failed: exit ${rc:-<unset>}, $missed missed mutants — see the mutants-out artifact."
           echo "- verdict: **fail** — see the \`mutants-out\` artifact." >>"$GITHUB_STEP_SUMMARY"
           exit 1
+
+      # G3b (ADR 0096 dec. 5 + owner 2026-09-07): "advisory" must not mean
+      # "silent" — a failed baseline (rc=4, the exact failure mode that hid
+      # runs 33203998627/32237111937's 2 missed mutants each with no
+      # addressee) or any missed mutant gets a tracked issue here, idempotent
+      # per commit+shard so a rerun of the same sweep never duplicates it.
+      # `if: always()` so this fires even though "Sweep verdict" exits 1 on
+      # a red shard; the step itself never fails the job (every gh call is
+      # best-effort) — G13 (gate-integrity.mjs) checks this step exists,
+      # never that it succeeds.
+      #
+      # B2 (ADR 0045 harvest 2026-09-08): "card unless it's a pass" — a
+      # sweep that DIED before writing missed.txt used to fall through as
+      # "rc != 4 and missed == 0" = treated as a clean pass, exactly the
+      # silent-failure shape this step exists to close. Pass is defined the
+      # same way "Sweep verdict" defines it (rc=0, or rc=3 with a KNOWN tally
+      # of 0) — everything else, including an empty/unset rc, gets carded.
+      - name: File advisory issue for a failed baseline or missed mutants
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC: ${{ steps.verdict.outputs.rc }}
+          MISSED: ${{ steps.verdict.outputs.missed }}
+          TALLY_KNOWN: ${{ steps.verdict.outputs.tally_known }}
+          SHARD: ${{ matrix.shard }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          rc="${RC:-}"
+          missed="${MISSED:-0}"
+          case "$missed" in ''|*[!0-9]*) missed=0 ;; esac
+          tally_known="${TALLY_KNOWN:-0}"
+
+          is_pass=0
+          if [ "$rc" = "0" ]; then
+            is_pass=1
+          elif [ "$rc" = "3" ] && [ "$tally_known" = "1" ] && [ "$missed" -eq 0 ]; then
+            is_pass=1
+          fi
+          if [ "$is_pass" = "1" ]; then
+            echo "advisory: sweep passed (rc=${rc}, 0 missed) — nothing to card."
+            exit 0
+          fi
+
+          gh label create mutants --color BFD4F2 \
+            --description "cargo-mutants advisory findings (ADR 0096 dec. 5)" --force || true
+
+          short_sha="${GITHUB_SHA:0:7}"
+          if [ -z "$rc" ]; then
+            headline="sweep did not complete"
+          elif [ "$rc" = "4" ]; then
+            headline="baseline failed"
+          else
+            headline="${missed} missed mutants"
+          fi
+          title="mutation-audit: ${headline} on ${short_sha} shard ${SHARD}"
+
+          existing=$(gh issue list --repo "$REPO" --label mutants --state open \
+            --search "$title in:title" --json title \
+            --jq ".[] | select(.title == \"${title}\") | .title" || true)
+          if [ -n "$existing" ]; then
+            echo "advisory: an open issue already carries this exact title — skipping: $title"
+            exit 0
+          fi
+
+          missed_file=src-tauri/mutants.out/missed.txt
+          {
+            echo "Run: ${RUN_URL}"
+            echo ""
+            echo "- shard: \`${SHARD}\`"
+            echo "- cargo-mutants exit code: \`${rc:-<unset>}\`"
+            echo "- missed mutants: \`${missed}\`"
+            if [ -f "$missed_file" ]; then
+              echo ""
+              echo '```'
+              head -n 60 "$missed_file"
+              echo '```'
+            fi
+          } >/tmp/mutation-audit-issue-body.md
+
+          gh issue create --repo "$REPO" --title "$title" \
+            --body-file /tmp/mutation-audit-issue-body.md \
+            --label mutants,area:testing,priority:low || true
 
       - name: Upload mutants.out
         if: always()

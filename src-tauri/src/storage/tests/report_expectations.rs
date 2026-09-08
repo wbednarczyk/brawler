@@ -365,6 +365,7 @@ proptest! {
     /// The evaluator is TOTAL: any comparator string and any f64-shaped values
     /// (including NaN/inf/huge magnitudes that overflow Decimal) return an
     /// outcome instead of panicking.
+    // no-assert-ok: totality/no-panic invariant (ADR 0049) — not panicking IS the test.
     #[test]
     fn comparator_evaluator_is_total(
         expected in proptest::num::f64::ANY,

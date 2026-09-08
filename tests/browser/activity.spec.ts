@@ -70,6 +70,7 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
     // same single-document constraint.
     await expect(page.getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "dokumenty");
     const targetRow = page.locator('[data-document-id="doc_cdr_q3_2025"]');
+    // eslint-disable-next-line no-restricted-syntax -- the attribute is asserted TOGETHER with the paint below (backgroundColor), not instead of it (dogfooding #11)
     await expect(targetRow).toHaveAttribute("data-document-highlighted", "true");
     await expect(targetRow).toHaveAttribute("aria-current", "true");
     const targetColor = await targetRow.evaluate((el) => getComputedStyle(el).backgroundColor);

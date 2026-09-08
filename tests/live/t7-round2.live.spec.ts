@@ -190,8 +190,7 @@ test("T7-A: quantitative framework evaluation runs against the live facts", asyn
   await openWorkshopTool(/^(Jakość|Quality)$/);
   const evaluate = page.getByRole("button", { name: /^Oceń$|^Evaluate$/ }).first();
   if (!(await evaluate.isVisible().catch(() => false))) {
-    console.log("SKIP: no visible quantitative Evaluate button in the current layout");
-    test.skip();
+    test.skip(true, "no visible quantitative Evaluate button in the current layout");
   }
   await evaluate.click();
   await page.waitForTimeout(3_000);

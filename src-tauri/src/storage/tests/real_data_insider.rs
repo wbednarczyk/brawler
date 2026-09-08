@@ -289,6 +289,7 @@ fn real_data_insider_recall_precision() {
 /// `<feedItemId>.pdf` / `<feedItemId>.xhtml` (or, when unset, the `report_documents/`
 /// subtree of `BRAWLER_REAL_DATA_DIR`). Inert (SKIP) when no files are present — it
 /// never fabricates evidence.
+// no-assert-ok: prints attachment-tier recall metrics against ground truth for human review; no automated threshold yet.
 #[test]
 #[ignore = "real-data validation; needs BRAWLER_INSIDER_ATTACH_DIR (or a real data dir) of fetched notification files"]
 fn real_data_insider_attachment_figures() {

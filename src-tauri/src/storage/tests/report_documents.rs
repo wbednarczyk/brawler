@@ -903,9 +903,11 @@ fn mark_metadata_only_negatives_do_not_protect() {
     )
     .expect("seed unconfirmed fact");
     drop(raw);
-    state
-        .mark_report_document_metadata_only(&doc_fact.id)
-        .expect("an unconfirmed fact must not protect the doc");
+    let result = state.mark_report_document_metadata_only(&doc_fact.id);
+    assert!(
+        result.is_ok(),
+        "an unconfirmed fact must not protect the doc: {result:?}"
+    );
 
     // A `proposed` signal does not protect.
     let doc_signal = fresh_doc(&state, &company.id, "proposed-signal");
@@ -916,9 +918,11 @@ fn mark_metadata_only_negatives_do_not_protect() {
         "feed_proposed",
         "proposed",
     );
-    state
-        .mark_report_document_metadata_only(&doc_signal.id)
-        .expect("a proposed (unconfirmed) signal must not protect the doc");
+    let result = state.mark_report_document_metadata_only(&doc_signal.id);
+    assert!(
+        result.is_ok(),
+        "a proposed (unconfirmed) signal must not protect the doc: {result:?}"
+    );
 
     // A CONFIRMED signal exists in the table, but for a DIFFERENT document's
     // origin_ref — the join must scope by THIS document's origin_ref, never
@@ -940,9 +944,11 @@ fn mark_metadata_only_negatives_do_not_protect() {
         )
         .expect("point origin_ref at an unrelated feed item with no signal");
     }
-    state
-        .mark_report_document_metadata_only(&doc_wrong_origin.id)
-        .expect("a confirmed signal owned by a DIFFERENT document's origin_ref must not protect this one");
+    let result = state.mark_report_document_metadata_only(&doc_wrong_origin.id);
+    assert!(
+        result.is_ok(),
+        "a confirmed signal owned by a DIFFERENT document's origin_ref must not protect this one: {result:?}"
+    );
 }
 
 #[test]

@@ -34,6 +34,7 @@ test.describe("Spółka › Documents — deep-link target contract (dogfooding 
 
     const targetRow = tool.locator('[data-document-id="doc_cdr_q3_2025"]');
     await expect(targetRow).toHaveAttribute("aria-current", "true");
+    // eslint-disable-next-line no-restricted-syntax -- asserted TOGETHER with the painted background below, not instead of it (dogfooding #11)
     await expect(targetRow).toHaveAttribute("data-document-highlighted", "true");
 
     const targetColor = await targetRow.evaluate((el) => getComputedStyle(el).backgroundColor);

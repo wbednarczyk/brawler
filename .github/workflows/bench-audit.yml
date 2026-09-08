@@ -11,6 +11,11 @@ on:
         default: ""
 permissions:
   contents: read
+  # G13 (gate-integrity.mjs, finding 4 / ADR 0045 harvest 2026-09-08): this
+  # workflow's header says "Advisory" — advisory must never mean silent, so
+  # a red run needs somewhere to go. The carding step below needs this to
+  # open an issue.
+  issues: write
 concurrency:
   group: bench-audit-${{ github.ref }}
   cancel-in-progress: true
@@ -35,6 +40,60 @@ jobs:
           workspaces: src-tauri
           key: bench
       - name: Bench base vs head
+        id: bench
         env:
           BASE: ${{ inputs.base }}
-        run: make audit-bench-ci
+        run: |
+          rc=0
+          make audit-bench-ci || rc=$?
+          echo "rc=$rc" >>"$GITHUB_OUTPUT"
+          exit "$rc"
+
+      # Finding 4 (ADR 0045 harvest 2026-09-08), the same G3b pattern as
+      # mutation-audit.yml: a red run (bench-compare.mjs exit 1 = regression,
+      # 2 = malformed/error, or the step never producing an `rc` at all)
+      # files a tracked issue, idempotent per commit so a rerun never
+      # duplicates it. `if: always()` so this fires even though "Bench base
+      # vs head" exits non-zero on a regression.
+      - name: File advisory issue for a bench regression
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC: ${{ steps.bench.outputs.rc }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          rc="${RC:-}"
+          if [ "$rc" = "0" ]; then
+            echo "advisory: bench audit passed — nothing to card."
+            exit 0
+          fi
+
+          gh label create bench --color BFD4F2 \
+            --description "bench-audit advisory findings (ADR 0096)" --force || true
+
+          short_sha="${GITHUB_SHA:0:7}"
+          if [ -z "$rc" ]; then
+            headline="bench audit did not complete"
+          else
+            headline="regression detected (exit ${rc})"
+          fi
+          title="bench-audit: ${headline} on ${short_sha}"
+
+          existing=$(gh issue list --repo "$REPO" --label bench --state open \
+            --search "$title in:title" --json title \
+            --jq ".[] | select(.title == \"${title}\") | .title" || true)
+          if [ -n "$existing" ]; then
+            echo "advisory: an open issue already carries this exact title — skipping: $title"
+            exit 0
+          fi
+
+          {
+            echo "Run: ${RUN_URL}"
+            echo ""
+            echo "- exit code: \`${rc:-<unset>}\`"
+          } >/tmp/bench-audit-issue-body.md
+
+          gh issue create --repo "$REPO" --title "$title" \
+            --body-file /tmp/bench-audit-issue-body.md \
+            --label bench,area:testing,priority:low || true
