@@ -30,14 +30,14 @@ styleguide mockup: `docs/mockups/frontend-v2-styleguide/` (canvas + five artboar
    no CDN at runtime (dependency decision; files land in the F0.5 repaint PR). The ADR 0076 type
    scale (10–20 px) and spacing scale are unchanged; mono carries `--line-numeric` contexts, so
    digit columns align by construction.
-3. **Verb dictionary (PL/EN), enforced.** Eight verbs cover the app: Otwórz (navigate), Zastosuj **Amendment 2026-09-08 (#454):** palette commands come in families that keep the verb and name the target class after a colon — `Open screen: …`, `Open company: …`, `Open tool: <Name>` (`Otwórz narzędzie: …`) for the Spółka workshop tools — so a screen and a same-named tool never differ only by letter case.
+3. **Verb dictionary (PL/EN), enforced.** Eight verbs at adoption (extended by the dated amendments below) cover the app: Otwórz (navigate), Zastosuj
    (apply a preset; persists nothing), Zapisz (persist under a name), Pobierz (fetch something new
    from outside), Przeczytaj (turn a stored report into numbers), Odśwież (ask a source now),
    Oznacz jako… (state change), Dodaj/Usuń (collections). Labels start with the verb and are never
    full sentences. Banned: two verbs for one action, icon without a label or tooltip, English in
    Polish UI, system vocabulary in copy. Enforcement: a command-palette copy test (lands with F3a)
    plus the swap test in review — if two buttons could exchange labels and still "fit", the
-   dictionary is broken.
+   dictionary is broken. **Amendment 2026-09-08 (#454):** palette commands come in families that keep the verb and name the target class after a colon — `Open screen: …`, `Open company: …`, `Open tool: <Name>` (`Otwórz narzędzie: …`) for the Spółka workshop tools — so a screen and a same-named tool never differ only by letter case.
 4. **Pattern: an empty state is an invitation** — three beats: what this is → where it comes
    from → one action button. A bare "no data" sentence is a defect (audit class D).
 5. **Pattern: detail shrinks to its content** — a detail pane never repeats what the list row

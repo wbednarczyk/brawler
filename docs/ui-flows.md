@@ -404,7 +404,7 @@ Acceptance criteria:
 
 - A backup exists before every data-structure migration; a failed migration leaves the snapshot intact.
 - Rotating backups keep the last N and prune the oldest.
-- Restore from Diagnostics recovers a verified earlier state after relaunch.
+- Restore from Settings › Data storage recovers a verified earlier state after relaunch.
 - Restore never performs a hot in-place swap while connections are open.
 
 ## Screen Inventory
