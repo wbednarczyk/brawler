@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import budgetsJson from "../journeys/budgets.json" with { type: "json" };
+import { openPalette as openPaletteViaHarness } from "./harness";
 import {
   JOURNEY_METRIC_NAMES,
   JourneyMetricsRecorder,
@@ -33,6 +34,8 @@ export type Journey = {
   /** Real key-by-key typing (`pressSequentially`) — one interaction, like `fill`, but through the keyboard (a keyboard-only journey never uses `fill`). */
   type(locator: Locator, value: string): Promise<void>;
   press(target: Locator | Page, key: string): Promise<void>;
+  /** Opens the ⌘K command palette via the shared harness helper (never a bare `Control+K`) and counts it as one interaction — the same weight `press(page, "Control+K")` used to record. */
+  openPalette(page: Page): Promise<Locator>;
   selectOption(locator: Locator, value: string): Promise<void>;
   /** Declares the screen now on-screen; counts a transition when it differs from the last marked screen. */
   markScreen(name: string): Promise<void>;
@@ -119,6 +122,12 @@ export function journey(page: Page, id: string): Journey {
       if (isPage(target)) await target.keyboard.press(key);
       else await target.press(key);
       recorder.recordInteraction(`press "${key}"`);
+    },
+
+    async openPalette(targetPage) {
+      const palette = await openPaletteViaHarness(targetPage);
+      recorder.recordInteraction('press "Control+K"');
+      return palette;
     },
 
     async selectOption(locator, value) {

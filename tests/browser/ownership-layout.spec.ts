@@ -1,4 +1,4 @@
-import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openPalette, expectNoPageOverflow } from "./helpers/harness";
 import type { Page } from "@playwright/test";
 
 // Ownership section (Basic Info panel, v0.56 T6, ADR 0072) must stay usable in a
@@ -19,8 +19,7 @@ async function openBasicInfo(page: Page) {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Ownership");
   await palette.getByRole("option", { name: "Open tool: Ownership", exact: true }).first().click();
   const pane = page.getByRole("group", { name: "Workshop tool" });

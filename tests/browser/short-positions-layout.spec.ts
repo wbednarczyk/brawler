@@ -1,4 +1,4 @@
-import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openPalette, expectNoPageOverflow } from "./helpers/harness";
 
 // The KNF short-selling panel (v0.55 T4b, ADR 0069 decision 3) renders variable
 // content — long institutional holder names in a positions table plus a
@@ -19,8 +19,7 @@ async function addShortPositionsPanel(page: import("@playwright/test").Page, com
     .click();
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Ownership");
   await palette.getByRole("option", { name: "Open tool: Ownership", exact: true }).first().click();
 }

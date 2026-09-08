@@ -2,6 +2,7 @@ import {
   test,
   expect,
   openApp,
+  openPalette,
   expectNoPageOverflow,
   expectInternalScroll,
 } from "./helpers/harness";
@@ -18,8 +19,7 @@ async function openQualityTool(page: import("@playwright/test").Page) {
   await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Quality");
   await palette.getByRole("option", { name: "Open tool: Quality", exact: true }).first().click();
 }

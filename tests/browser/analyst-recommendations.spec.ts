@@ -1,4 +1,4 @@
-import { test, expect, openApp, expectNoPageOverflow, setPaneSize } from "./helpers/harness";
+import { test, expect, openApp, openPalette, expectNoPageOverflow, setPaneSize } from "./helpers/harness";
 
 // Analyst-recommendations workshop tool (v0.58 A3, ADR 0073). The first red
 // journey test from the experience contract: "pinned panel lists attributed
@@ -20,8 +20,7 @@ async function addRecommendationsPanel(
     .click();
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Recommendations");
   await palette.getByRole("option", { name: "Open tool: Recommendations", exact: true }).first().click();
 }

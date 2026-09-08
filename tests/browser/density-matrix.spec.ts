@@ -75,18 +75,51 @@ async function notebookColumns(page: Page): Promise<{ list: NonNullable<Awaited<
   return { list: list!, detail: detail! };
 }
 
+// Converging (rule 6, docs/testing.md § Browser UI regression smoke): the
+// density tier's re-layout can land a frame after `setPaneSize` resolves, so
+// these poll rather than sample the columns' boxes once.
 async function expectStacked(page: Page) {
-  const { list, detail } = await notebookColumns(page);
   // One column: list and detail share the left edge, detail sits BELOW the list.
-  expect(Math.abs(detail.x - list.x), "detail shares the list's column").toBeLessThan(6);
-  expect(detail.y, "detail stacked below the list").toBeGreaterThan(list.y + 10);
+  await expect
+    .poll(
+      async () => {
+        const { list, detail } = await notebookColumns(page);
+        return Math.abs(detail.x - list.x);
+      },
+      { message: "detail shares the list's column" },
+    )
+    .toBeLessThan(6);
+  await expect
+    .poll(
+      async () => {
+        const { list, detail } = await notebookColumns(page);
+        return detail.y - list.y;
+      },
+      { message: "detail stacked below the list" },
+    )
+    .toBeGreaterThan(10);
 }
 
 async function expectSideBySide(page: Page) {
-  const { list, detail } = await notebookColumns(page);
   // Two columns: detail sits to the RIGHT of the list on the same row.
-  expect(detail.x, "detail beside the list").toBeGreaterThan(list.x + list.width / 2);
-  expect(Math.abs(detail.y - list.y), "list and detail on one row").toBeLessThan(40);
+  await expect
+    .poll(
+      async () => {
+        const { list, detail } = await notebookColumns(page);
+        return detail.x - (list.x + list.width / 2);
+      },
+      { message: "detail beside the list" },
+    )
+    .toBeGreaterThan(0);
+  await expect
+    .poll(
+      async () => {
+        const { list, detail } = await notebookColumns(page);
+        return Math.abs(detail.y - list.y);
+      },
+      { message: "list and detail on one row" },
+    )
+    .toBeLessThan(40);
 }
 
 // Today is the default landing screen (ADR 0054) — no navigation needed, just

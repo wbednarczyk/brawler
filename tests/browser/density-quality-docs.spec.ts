@@ -1,4 +1,4 @@
-import { test, expect, openApp, setPaneSize, resetPaneSize, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openPalette, setPaneSize, resetPaneSize, expectNoPageOverflow } from "./helpers/harness";
 import type { Locator, Page } from "@playwright/test";
 
 // Panel density matrix — cluster B (ADR 0076 D6 / U7-B): the Quality panel and
@@ -42,8 +42,7 @@ async function openCompany(page: Page) {
 // (spolka.css), not the "Workshop tool" group itself.
 async function openTool(page: Page, label: string): Promise<PaneLocator> {
   await openCompany(page);
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill(label);
   await palette.getByRole("option", { name: label, exact: true }).first().click();
   await expect(page.getByRole("group", { name: "Workshop tool" })).toBeVisible();
@@ -88,11 +87,19 @@ const PANEL_CONTRACTS: PanelContract[] = [
       L: async (_page, pane) => {
         const list = pane.locator(".quality-history-list");
         await expect(list).toBeVisible();
-        const main = await box(pane.locator(".quality-main"));
-        const history = await box(pane.locator(".quality-history"));
-        expect(history.x, "history beside the criteria column").toBeGreaterThan(
-          main.x + main.width / 2,
-        );
+        // Converging (rule 6, docs/testing.md § Browser UI regression smoke):
+        // the density tier's re-layout can land a frame after `setPaneSize`
+        // resolves — poll rather than sample the boxes once.
+        await expect
+          .poll(
+            async () => {
+              const main = await box(pane.locator(".quality-main"));
+              const history = await box(pane.locator(".quality-history"));
+              return history.x - (main.x + main.width / 2);
+            },
+            { message: "history beside the criteria column" },
+          )
+          .toBeGreaterThan(0);
       },
       // short: chips + criteria stay; the history folds (collapsed by default).
       short: async (_page, pane) => {

@@ -1,4 +1,4 @@
-import { test, expect, openApp } from "../helpers/harness";
+import { test, expect, openApp, openPalette } from "../helpers/harness";
 import { shootPanel } from "./helpers";
 import type { Locator, Page } from "@playwright/test";
 
@@ -16,8 +16,7 @@ async function openCompanyTool(page: Page, toolLabel: string): Promise<Locator> 
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill(toolLabel);
   await palette.getByRole("option", { name: toolLabel, exact: true }).first().click();
   // `.spolka-layout`, not the tool group itself, carries the density

@@ -25,8 +25,7 @@ test.describe("J8 — keyboard-only company review", { tag: "@journey" }, () => 
     await openApp(page);
     await j.markScreen("Today");
 
-    await j.press(page, "Control+K");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
+    const palette = await j.openPalette(page);
     await expect(palette).toBeVisible();
     await j.type(palette.getByRole("combobox", { name: "Search commands" }), "Open company: CDR");
     await expect(palette.getByRole("option", { name: "Open company: CDR" })).toHaveAttribute("aria-selected", "true");

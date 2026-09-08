@@ -64,24 +64,55 @@ test.describe("Inbox density contract", { tag: "@clickable" }, () => {
     const firstRow = page.locator(".feed-row").first();
 
     // L (>760): list ∥ detail — detail sits to the RIGHT of the list on one row.
+    // Converging (rule 6, docs/testing.md § Browser UI regression smoke): the
+    // density tier's re-layout can land a frame after `setPaneSize` resolves,
+    // so poll rather than sample the boxes once.
     await setPaneSize(page, { ...TIER_SIZE.L, pane });
-    {
-      const listBox = await box(list);
-      const detailBox = await box(detail);
-      expect(detailBox.x, "detail beside the list at L").toBeGreaterThan(listBox.x + listBox.width / 2);
-      expect(Math.abs(detailBox.y - listBox.y), "list and detail share a row at L").toBeLessThan(40);
-    }
+    await expect
+      .poll(
+        async () => {
+          const listBox = await box(list);
+          const detailBox = await box(detail);
+          return detailBox.x - (listBox.x + listBox.width / 2);
+        },
+        { message: "detail beside the list at L" },
+      )
+      .toBeGreaterThan(0);
+    await expect
+      .poll(
+        async () => {
+          const listBox = await box(list);
+          const detailBox = await box(detail);
+          return Math.abs(detailBox.y - listBox.y);
+        },
+        { message: "list and detail share a row at L" },
+      )
+      .toBeLessThan(40);
     await expectNoPageOverflow(page);
 
     // M (420–760): list + detail stacked — detail shares the list's left edge and
     // sits below it.
     await setPaneSize(page, { ...TIER_SIZE.M, pane });
-    {
-      const listBox = await box(list);
-      const detailBox = await box(detail);
-      expect(Math.abs(detailBox.x - listBox.x), "detail shares the list column at M").toBeLessThan(6);
-      expect(detailBox.y, "detail stacked below the list at M").toBeGreaterThan(listBox.y + 10);
-    }
+    await expect
+      .poll(
+        async () => {
+          const listBox = await box(list);
+          const detailBox = await box(detail);
+          return Math.abs(detailBox.x - listBox.x);
+        },
+        { message: "detail shares the list column at M" },
+      )
+      .toBeLessThan(6);
+    await expect
+      .poll(
+        async () => {
+          const listBox = await box(list);
+          const detailBox = await box(detail);
+          return detailBox.y - listBox.y;
+        },
+        { message: "detail stacked below the list at M" },
+      )
+      .toBeGreaterThan(10);
     await expectNoPageOverflow(page);
 
     // S (<420): list only. With no selection the detail is hidden and the list
@@ -94,18 +125,29 @@ test.describe("Inbox density contract", { tag: "@clickable" }, () => {
 
     await firstRow.click();
     await expect(detail).toBeVisible();
-    {
-      // The overlay is a full-pane overlay covering the list: it starts at or
-      // before the list's left edge and spans past its right edge (not a narrow
-      // side rail).
-      const listBox = await box(list);
-      const detailBox = await box(detail);
-      expect(detailBox.x, "overlay starts at/left of the list at S").toBeLessThanOrEqual(listBox.x + 1);
-      expect(
-        detailBox.x + detailBox.width,
-        "overlay spans past the list's right edge at S",
-      ).toBeGreaterThanOrEqual(listBox.x + listBox.width - 1);
-    }
+    // The overlay is a full-pane overlay covering the list: it starts at or
+    // before the list's left edge and spans past its right edge (not a narrow
+    // side rail). Converging (rule 6): poll rather than sample once.
+    await expect
+      .poll(
+        async () => {
+          const listBox = await box(list);
+          const detailBox = await box(detail);
+          return detailBox.x - (listBox.x + 1);
+        },
+        { message: "overlay starts at/left of the list at S" },
+      )
+      .toBeLessThanOrEqual(0);
+    await expect
+      .poll(
+        async () => {
+          const listBox = await box(list);
+          const detailBox = await box(detail);
+          return detailBox.x + detailBox.width - (listBox.x + listBox.width - 1);
+        },
+        { message: "overlay spans past the list's right edge at S" },
+      )
+      .toBeGreaterThanOrEqual(0);
     const back = page.getByRole("button", { name: "Back to list" });
     await expect(back).toBeVisible();
     await expectNoPageOverflow(page);

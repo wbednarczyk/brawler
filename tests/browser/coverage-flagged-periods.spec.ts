@@ -1,4 +1,4 @@
-import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openPalette, expectNoPageOverflow } from "./helpers/harness";
 
 // The Coverage panel's "Flagged periods" section (ADR 0061 decision 2, ADR 0084
 // decision 4/6) — the UI half of the "never silently wrong" guarantee: the
@@ -24,8 +24,7 @@ async function openCoveragePanel(page: import("@playwright/test").Page, companyI
     .click();
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Coverage");
   await palette.getByRole("option", { name: "Open tool: Coverage", exact: true }).first().click();
 }

@@ -81,8 +81,16 @@ const PANEL_CONTRACTS: PanelContract[] = [
         await expect(pane.getByRole("button", { name: /Research questions/ })).toBeVisible();
         await expect(pane.locator(".research-timeline")).toBeVisible();
         // The evidence timeline never collapses: standalone hosts at ~768px tall let
-        // reminders + questions swallow the stack and the timeline hit 0px (F3a S4 harvest).
-        expect((await pane.locator(".research-timeline-shell").boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(200);
+        // reminders + questions swallow the stack and the timeline hit 0px (F3a S4
+        // harvest). Converging (rule 6, docs/testing.md § Browser UI regression
+        // smoke): the density tier's re-layout can land a frame after
+        // `setPaneSize` resolves, so poll rather than sample the box once.
+        await expect
+          .poll(
+            async () => (await pane.locator(".research-timeline-shell").boundingBox())?.height ?? 0,
+            { message: "evidence timeline never collapses at S" },
+          )
+          .toBeGreaterThanOrEqual(200);
         await expect(pane.locator(".research-summary")).toBeVisible();
         await expect(pane.locator(".research-reminders")).toBeHidden();
         await expect(pane.locator(".research-questions")).toBeHidden();
@@ -158,17 +166,41 @@ const PANEL_CONTRACTS: PanelContract[] = [
         const scrollerOverflow = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
         expect(scrollerOverflow).toBeLessThanOrEqual(1);
 
-        const paneBox = await pane.boundingBox();
+        // Converging (rule 6, docs/testing.md § Browser UI regression smoke):
+        // the density tier's re-layout can land a frame after `setPaneSize`
+        // resolves, so poll each margin rather than sample the boxes once.
         const days = pane.locator(".event-week-day");
-        const first = await days.first().boundingBox();
-        const last = await days.nth(4).boundingBox();
-        expect(paneBox && first && last).toBeTruthy();
-        if (paneBox && first && last) {
-          expect(first.x).toBeGreaterThanOrEqual(paneBox.x - 1);
-          expect(first.x + first.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 1);
-          expect(last.x).toBeGreaterThanOrEqual(paneBox.x - 1);
-          expect(last.x + last.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 1);
-        }
+        const dayBoxes = async () => {
+          const paneBox = await pane.boundingBox();
+          const first = await days.first().boundingBox();
+          const last = await days.nth(4).boundingBox();
+          expect(paneBox && first && last, "pane and both weekday columns have a box").toBeTruthy();
+          return { paneBox: paneBox!, first: first!, last: last! };
+        };
+        await expect
+          .poll(async () => {
+            const { paneBox, first } = await dayBoxes();
+            return first.x - (paneBox.x - 1);
+          }, { message: "first weekday column starts inside the pane" })
+          .toBeGreaterThanOrEqual(0);
+        await expect
+          .poll(async () => {
+            const { paneBox, first } = await dayBoxes();
+            return first.x + first.width - (paneBox.x + paneBox.width + 1);
+          }, { message: "first weekday column ends inside the pane" })
+          .toBeLessThanOrEqual(0);
+        await expect
+          .poll(async () => {
+            const { paneBox, last } = await dayBoxes();
+            return last.x - (paneBox.x - 1);
+          }, { message: "fifth weekday column starts inside the pane" })
+          .toBeGreaterThanOrEqual(0);
+        await expect
+          .poll(async () => {
+            const { paneBox, last } = await dayBoxes();
+            return last.x + last.width - (paneBox.x + paneBox.width + 1);
+          }, { message: "fifth weekday column ends inside the pane" })
+          .toBeLessThanOrEqual(0);
         await expectTextFits(pane.locator(".event-week-day-header"));
         await expectFilledAtRest(pane, { max: 1 });
       },

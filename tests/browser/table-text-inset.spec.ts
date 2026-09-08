@@ -1,4 +1,4 @@
-import { test, expect, openApp, setPaneSize, type Page } from "./helpers/harness";
+import { test, expect, openApp, openPalette, setPaneSize, type Page } from "./helpers/harness";
 import { primeMockScenario } from "./helpers/mockRuntime";
 import { expectTableCellTextInset } from "./helpers/interactionContracts";
 
@@ -25,8 +25,7 @@ async function openCompany(page: Page, companyId: string) {
 }
 
 async function openFundamentals(page: Page) {
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Fundamentals");
   await palette.getByRole("option", { name: "Open tool: Fundamentals", exact: true }).first().click();
   await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
@@ -55,8 +54,7 @@ test("Spółka core KPI and Coverage tables keep their text inside the cells", a
   await openApp(page);
   await openCompany(page, "company_gpw_cdr");
   await expectTableCellTextInset(page.locator(".spolka-kpi-table"));
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Coverage");
   await palette.getByRole("option", { name: "Open tool: Coverage", exact: true }).first().click();
   const coverage = page.locator(".coverage-table");

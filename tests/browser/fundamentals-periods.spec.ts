@@ -1,4 +1,4 @@
-import { test, expect, openApp, setPaneSize, type Page } from "./helpers/harness";
+import { test, expect, openApp, openPalette, setPaneSize, type Page } from "./helpers/harness";
 import { primeMockScenario } from "./helpers/mockRuntime";
 import { periodExpanderAccessibleName } from "../../src/screens/Companies/useVisiblePeriods";
 
@@ -30,11 +30,9 @@ async function openManyPeriodsFundamentals(page: Page, locale: "en" | "pl" = "en
   await page.locator(`[data-company-id="${MANY_PERIODS_COMPANY_ID}"] .company-row-main`).click();
   const companyViewLabel = locale === "pl" ? "Widok spółki" : "Company view";
   await page.getByRole("region", { name: companyViewLabel }).waitFor();
-  await page.keyboard.press("Control+K");
-  const paletteLabel = locale === "pl" ? "Paleta poleceń" : "Command palette";
   const searchLabel = locale === "pl" ? "Szukaj poleceń" : "Search commands";
   const optionLabel = locale === "pl" ? "Otwórz narzędzie: Fundamenty" : "Open tool: Fundamentals";
-  const palette = page.getByRole("dialog", { name: paletteLabel });
+  const palette = await openPalette(page);
   await palette.getByLabel(searchLabel).fill(optionLabel);
   await palette.getByRole("option", { name: optionLabel, exact: true }).first().click();
   const matrixLabel = locale === "pl" ? "Tabela faktów finansowych" : "Financial facts matrix";
@@ -230,8 +228,7 @@ async function openSmokeCompanyFundamentals(page: Page) {
   await nav(page).getByRole("button", { name: "Companies" }).click();
   await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
   await page.getByRole("region", { name: "Company view" }).waitFor();
-  await page.keyboard.press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
+  const palette = await openPalette(page);
   await palette.getByLabel("Search commands").fill("Open tool: Fundamentals");
   await palette.getByRole("option", { name: "Open tool: Fundamentals", exact: true }).first().click();
   await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
