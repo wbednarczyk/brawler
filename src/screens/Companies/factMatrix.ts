@@ -8,7 +8,7 @@ export type FactMatrixRow = {
   definition: KpiDefinition;
   // periodId -> fact for that KPI in that period (sparse).
   cells: Record<string, FinancialFact>;
-  // Epic #398 completeness bar: true when no `kpi_definitions` catalog row
+  // Section-header warn chip (epic #398): true when no `kpi_definitions` catalog row
   // matched this fact's definitionId, so `buildFactMatrix` synthesized a
   // placeholder from the raw metric id (`syntheticDefinition` below). This is
   // the honest "still awaiting a catalog name" signal — never silently

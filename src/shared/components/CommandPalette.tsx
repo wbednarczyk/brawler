@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { Modal, SearchField } from "../../ui";
+import { useEffect, useRef } from "react";
+import { Modal, SearchField, useComboboxListbox } from "../../ui";
 import { focusScreenHeadingIfBody } from "../focus/focusScreenHeading";
 import type { Verb } from "../verbs";
 
@@ -16,6 +16,10 @@ import type { Verb } from "../verbs";
 // `verb` and that no two verbs share one `actionKey`.
 export type PaletteCommand = { id: string; label: string; run: () => void; actionKey: string; verb: Verb };
 
+function filterCommand(command: PaletteCommand, query: string): boolean {
+  return command.label.toLowerCase().includes(query.toLowerCase());
+}
+
 export function CommandPalette({
   open,
   commands,
@@ -27,37 +31,38 @@ export function CommandPalette({
   onClose: () => void;
   text: (s: string) => string;
 }) {
-  const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const listId = useId();
+
+  function runCommand(command: PaletteCommand) {
+    command.run();
+    onClose();
+    // The Modal restores focus to the invoker on unmount; when that invoker
+    // was `<body>` (Ctrl+K from nowhere) or left with the previous screen,
+    // land on the new screen's heading instead (never `<body>`).
+    requestAnimationFrame(() => {
+      focusScreenHeadingIfBody();
+    });
+  }
+
+  // Shared combobox controller; "close-host": one Escape closes the modal and
+  // restores the invoker (never a closed-list-but-open-modal state).
+  const controller = useComboboxListbox({
+    options: commands,
+    getId: (command) => command.id,
+    filter: filterCommand,
+    onSelect: runCommand,
+    escapePolicy: () => "close-host",
+    onCloseHost: onClose,
+  });
+
+  // The palette stays mounted across opens — reset the controller each time.
   useEffect(() => {
     if (open) {
-      setQuery("");
-      setActive(0);
+      controller.reset();
+      controller.open();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires only on an `open` transition; `controller`'s methods read current state at call time
   }, [open]);
-
-  const filtered = query.trim()
-    ? commands.filter((command) => command.label.toLowerCase().includes(query.trim().toLowerCase()))
-    : commands;
-  const clampedActive = Math.min(active, Math.max(0, filtered.length - 1));
-  const activeOption = filtered[clampedActive];
-  const optionId = (index: number) => `${listId}-option-${index}`;
-
-  function run(index: number) {
-    const command = filtered[index];
-    if (command) {
-      command.run();
-      onClose();
-      // The Modal restores focus to the invoker on unmount; when that invoker
-      // was `<body>` (Ctrl+K from nowhere) or left with the previous screen,
-      // land on the new screen's heading instead (never `<body>`).
-      requestAnimationFrame(() => {
-        focusScreenHeadingIfBody();
-      });
-    }
-  }
 
   return (
     <Modal
@@ -72,57 +77,36 @@ export function CommandPalette({
           ariaLabel={text("Search commands")}
           className="search-box"
           placeholder={text("Type to filter commands…")}
-          value={query}
-          onChange={(value) => {
-            setQuery(value);
-            setActive(0);
-          }}
+          value={controller.query}
+          onChange={(value) => controller.setQuery(value)}
           inputProps={{
             ref: inputRef,
-            role: "combobox",
-            "aria-expanded": true,
-            "aria-autocomplete": "list",
-            "aria-controls": listId,
-            "aria-activedescendant": activeOption ? optionId(clampedActive) : undefined,
-            onKeyDown: (event) => {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setActive((index) => Math.min(index + 1, filtered.length - 1));
-              } else if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setActive((index) => Math.max(index - 1, 0));
-              } else if (event.key === "Home") {
-                event.preventDefault();
-                setActive(0);
-              } else if (event.key === "End") {
-                event.preventDefault();
-                setActive(Math.max(0, filtered.length - 1));
-              } else if (event.key === "Enter") {
-                event.preventDefault();
-                run(clampedActive);
-              }
-            },
+            role: controller.inputProps.role,
+            "aria-expanded": controller.inputProps["aria-expanded"],
+            "aria-autocomplete": controller.inputProps["aria-autocomplete"],
+            "aria-controls": controller.inputProps["aria-controls"],
+            "aria-activedescendant": controller.inputProps["aria-activedescendant"],
+            onKeyDown: controller.inputProps.onKeyDown,
           }}
         />
-        <ul className="command-palette-list" role="listbox" id={listId} aria-label={text("Commands")}>
-          {filtered.length === 0 ? (
+        <ul {...controller.listboxProps} className="command-palette-list" aria-label={text("Commands")}>
+          {controller.filtered.length === 0 ? (
             <li className="command-palette-empty">{text("No matching commands.")}</li>
           ) : null}
-          {filtered.map((command, index) => (
-            <li
-              key={command.id}
-              id={optionId(index)}
-              role="option"
-              aria-selected={index === clampedActive}
-              className={["command-palette-item", index === clampedActive ? "is-active" : ""]
-                .filter(Boolean)
-                .join(" ")}
-              onClick={() => run(index)}
-              onMouseEnter={() => setActive(index)}
-            >
-              {command.label}
-            </li>
-          ))}
+          {controller.filtered.map((command) => {
+            const optionProps = controller.optionProps(command);
+            return (
+              <li
+                key={command.id}
+                {...optionProps}
+                className={["command-palette-item", optionProps["aria-selected"] ? "is-active" : ""]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {command.label}
+              </li>
+            );
+          })}
         </ul>
       </div>
     </Modal>

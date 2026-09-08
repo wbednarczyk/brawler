@@ -7,6 +7,7 @@ import { FeedDetailGeneric } from "./FeedDetailGeneric";
 import { FeedDetailMedia } from "./FeedDetailMedia";
 import { FeedDetailReport } from "./FeedDetailReport";
 import { FeedSignalsSection } from "./FeedSignalsSection";
+import { feedKindChip, type FeedKindChip } from "./feedPresentation";
 
 export type FeedDetailContentProps = {
   item: FeedItem;
@@ -20,28 +21,9 @@ export type FeedDetailContentProps = {
   onRejectSignal: (signalId: string) => Promise<void> | void;
 };
 
-type KindChip = { label: string; tone: "media" | "official" };
-
-// Kind chip per presentation kind (mockup artboards InboxMedia/ESPI/Raport).
-// `text(...)` calls stay literal here (not a lookup table indexed by a
-// variable) so the translation-completeness ratchet's static scan can see them.
-function kindChip(kind: FeedItem["presentationKind"], text: (value: string) => string): KindChip | null {
-  switch (kind) {
-    case "media":
-      return { label: text("Media"), tone: "media" };
-    case "filing":
-      return { label: text("ESPI notice"), tone: "official" };
-    case "report":
-      return { label: text("Periodic report"), tone: "official" };
-    default:
-      return null;
-  }
-}
-
-// Dispatches the Inbox detail body by `presentationKind` (F1 S4, ADR 0104).
-// media/filing/report get the redesigned host-neutral body; redFlag (and any
-// future kind this switch doesn't yet cover) falls back to the pre-redesign
-// generic rendering, unchanged.
+// Dispatches the Inbox detail body by `presentationKind` (F1 S4, ADR 0104):
+// media/filing/report get the host-neutral bodies; redFlag keeps the generic
+// body under the same shared kind chip (`feedPresentation`).
 export function FeedDetailContent({
   item,
   signals,
@@ -52,11 +34,16 @@ export function FeedDetailContent({
   onRejectSignal,
 }: FeedDetailContentProps) {
   const { text } = useLocale();
-  const chip = kindChip(item.presentationKind, text);
+  const chip: FeedKindChip = feedKindChip(item.presentationKind, text);
 
-  if (!chip) {
+  if (item.presentationKind === "redFlag") {
     return (
-      <FeedDetailGeneric
+      <>
+        <div className="feed-detail-kind-row">
+          <StatusChip tone={chip.tone}>{chip.label}</StatusChip>
+          <span className="feed-detail-kind-source">{item.source}</span>
+        </div>
+        <FeedDetailGeneric
         item={item}
         signals={signals}
         actions={actions}
@@ -65,6 +52,7 @@ export function FeedDetailContent({
         onConfirmSignal={onConfirmSignal}
         onRejectSignal={onRejectSignal}
       />
+      </>
     );
   }
 

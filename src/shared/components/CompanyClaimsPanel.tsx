@@ -66,10 +66,6 @@ export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: Compa
   const [claims, setClaims] = useState<ManagementClaim[]>([]);
   const [queue, setQueue] = useState<ClaimsToVerify | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  // Fades on its own after the scroll+flash — the incoming prop stays set for
-  // the panel's lifetime (nothing clears it at the root), so the highlight
-  // itself has to be transient, not the data driving it.
-  const [activeHighlightId, setActiveHighlightId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statement, setStatement] = useState("");
   const [dueYear, setDueYear] = useState("");
@@ -118,24 +114,16 @@ export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: Compa
     void reload();
   }, [reload]);
 
-  // Scroll the targeted claim into view + flash it once it's actually
-  // rendered (either list — the main claims list or the review queue), then
-  // let the flash fade on its own after a few seconds. Also lifts the short
-  // pane-height tier's collapse (`claims.css` "short height tier": the full
-  // `.claims-body` — where the row lives — is `display:none` behind
-  // `data-short-expanded` under 480px) — a highlight the user cannot see
-  // defeats the whole seam (sol R1 finding 9 browser-proof caught this: the
-  // Claims tab activated and the row got the highlight class, but the row
-  // stayed CSS-hidden in a short dock pane).
+  // Deep-link target contract (ADR 0107): the main-list row is the canonical
+  // target (the review-queue twin only gets `data-claim-match`); the mark is
+  // the prop itself, never a timer. Lifts the short-height collapse first —
+  // the row is `display:none` behind `data-short-expanded` under 480px.
   useEffect(() => {
-    if (!highlightClaimId) return undefined;
-    const row = panelRef.current?.querySelector<HTMLElement>(`[data-claim-id="${highlightClaimId}"]`);
-    if (!row) return undefined;
+    if (!highlightClaimId) return;
+    const row = panelRef.current?.querySelector<HTMLElement>(`.claims-list [data-claim-id="${highlightClaimId}"]`);
+    if (!row) return;
     setShortExpanded(true);
     row.scrollIntoView({ block: "center" });
-    setActiveHighlightId(highlightClaimId);
-    const timer = window.setTimeout(() => setActiveHighlightId(null), 4000);
-    return () => window.clearTimeout(timer);
   }, [highlightClaimId, claims, queue]);
 
   const resolveVerdict = async (claim: ManagementClaim, status: ClaimStatus) => {
@@ -285,10 +273,11 @@ export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: Compa
           <div className="claims-list" aria-label={text("Management claims")}>
             {claims.map((claim) => (
               <div
-                className={["claim-row", claim.id === activeHighlightId ? "claim-row-highlighted" : ""]
+                className={["claim-row", claim.id === highlightClaimId ? "claim-row-highlighted" : ""]
                   .filter(Boolean)
                   .join(" ")}
                 data-claim-id={claim.id}
+                aria-current={claim.id === highlightClaimId ? "true" : undefined}
                 key={claim.id}
               >
                 <div className="claim-row-main">
@@ -335,13 +324,11 @@ export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: Compa
                   <Hint>{`${label} · ${queue[key].length}`}</Hint>
                   {queue[key].map((entry: ClaimToVerify) => (
                     <div
-                      className={[
-                        "claim-queue-row",
-                        entry.claim.id === activeHighlightId ? "claim-row-highlighted" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
+                      className="claim-queue-row"
                       data-claim-id={entry.claim.id}
+                      // Twin of the canonical main-list row: match marker only,
+                      // never `aria-current` (ADR 0107 deep-link target).
+                      data-claim-match={entry.claim.id === highlightClaimId ? "true" : undefined}
                       key={entry.claim.id}
                     >
                       <div className="claim-queue-statement">{entry.claim.statement}</div>

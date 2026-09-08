@@ -28,13 +28,15 @@ import {
   type CompanySpec,
 } from "./entities";
 import type { ScenarioData } from "./scenarios";
-import type { FinancialFact, KpiDefinition } from "../../api/financialsTypes";
+import type { FinancialFact, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
+import type { KpiComparison, KpiComparisonCell, KpiComparisonPeriod } from "../../api/comparison";
 
 export type ScenarioOverlayName =
   | "hostile-content"
   | "dense-history"
   | "partial-data"
   | "preliminary-fundamentals"
+  | "many-periods-fundamentals"
   | "stale-processing"
   | "conflicting-statuses"
   | "mixed-locale"
@@ -60,6 +62,7 @@ const HOSTILE_SPEC: CompanySpec = {
 const DENSE_SPEC: CompanySpec = { key: "dense", ticker: "ZZZD", name: "Dense History Test Sp. z o.o.", sector: "Technology" };
 const PARTIAL_SPEC: CompanySpec = { key: "partial", ticker: "ZZZP", name: "Partial Data Test S.A.", sector: "Financials" };
 const PRELIMINARY_SPEC: CompanySpec = { key: "preliminary", ticker: "ZZZQ", name: "Preliminary Fundamentals Test S.A.", sector: "Technology" };
+const MANY_PERIODS_SPEC: CompanySpec = { key: "manyperiods", ticker: "ZZZN", name: "Many Periods Test S.A.", sector: "Technology" };
 const STALE_SPEC: CompanySpec = { key: "stale", ticker: "ZZZS", name: "Stale Processing Test S.A.", sector: "Energy" };
 const MIXED_SPEC: CompanySpec = { key: "mixed", ticker: "ZZZM", name: "Mieszany Test Lokalizacji S.A.", sector: "Consumer Staples" };
 
@@ -202,6 +205,167 @@ function applyPreliminaryFundamentals(data: ScenarioData): ScenarioData {
     financialPeriods: [supersededPeriod, openPeriod, ...data.financialPeriods],
     kpiDefinitions: [definition, ...data.kpiDefinitions],
     financialFacts: [preliminaryOnly, supersedingFinal, supersededPreliminary, ...data.financialFacts],
+  };
+}
+
+/**
+ * Six KPI rows for `applyManyPeriodsFundamentals` below — a mix of short and
+ * deliberately long labels so the fixture forces BOTH horizontal overflow
+ * (14 periods) and vertical overflow (six rows) in the same repro, per
+ * dogfooding #5 (sticky first column bleeds under scrolled cells in either
+ * direction). `metricKey` doubles as the fixed-id suffix.
+ */
+const MANY_PERIODS_METRICS: Array<{ metricKey: string; label: string; unit: string; base: number; step: number }> = [
+  { metricKey: "revenue", label: "Revenue", unit: "PLN", base: 1_000_000_000, step: 50_000_000 },
+  // Shrinking series: the OLDEST period carries the widest value ("1 234 mld
+  // PLN" vs "64 mld PLN"), so a capacity measured from the newest slice only
+  // would overflow — the measuring pass must see every period.
+  { metricKey: "goodwillLegacy", label: "Goodwill (legacy, shrinking)", unit: "PLN", base: 1_234_000_000_000, step: -90_000_000_000 },
+  { metricKey: "netProfit", label: "Net profit", unit: "PLN", base: 120_000_000, step: 6_000_000 },
+  { metricKey: "ebitda", label: "EBITDA", unit: "PLN", base: 210_000_000, step: 9_000_000 },
+  {
+    metricKey: "ownersEquityAttributableToParent",
+    label: "Owners' equity attributable to parent company shareholders",
+    unit: "PLN",
+    base: 2_400_000_000,
+    step: 40_000_000,
+  },
+  {
+    metricKey: "freeCashFlowAfterMaintenanceCapex",
+    label: "Free cash flow after maintenance capital expenditures",
+    unit: "PLN",
+    base: 95_000_000,
+    step: 3_000_000,
+  },
+  { metricKey: "netDebtToEbitda", label: "Net debt to EBITDA ratio", unit: "x", base: 2, step: 0 },
+];
+
+/**
+ * Dogfooding wave 2026-09 (#6): a company with 14 annual periods — far more
+ * than fit at any width tier — so the facts-matrix / Pozycje × okresy
+ * period-expander column (useVisiblePeriods.ts) has something to collapse.
+ * The base "rich" scenario's companies carry only 2 periods each
+ * (entities.ts `makeFinancialPeriod` calls in scenarios.ts), never enough to
+ * exercise the collapsed state.
+ *
+ * Six KPI rows (`MANY_PERIODS_METRICS`, dogfooding #5) so the facts matrix
+ * also overflows vertically, not just horizontally — the sticky-first-column
+ * repro needs both scroll directions at once. `fundamentals-periods.spec.ts`
+ * and `fundamentals-sticky.spec.ts` are the consumers.
+ */
+function applyManyPeriodsFundamentals(data: ScenarioData): ScenarioData {
+  const company = makeCompany(MANY_PERIODS_SPEC);
+  const years = Array.from({ length: 14 }, (_, index) => 2013 + index);
+  const periods = years.map((year) => makeFinancialPeriod(MANY_PERIODS_SPEC, year));
+
+  const definitions: KpiDefinition[] = MANY_PERIODS_METRICS.map((metric) => ({
+    id: `kpidef_overlay_many_periods_${metric.metricKey}`,
+    scope: "global",
+    companyId: null,
+    sector: null,
+    metricKey: metric.metricKey,
+    label: metric.label,
+    valueKind: "monetary",
+    unit: metric.unit,
+    computation: "reported",
+    formula: null,
+    displayFormat: null,
+    origin: "seed",
+    statementGroup: "other",
+    periodNature: "duration",
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
+  }));
+
+  const facts: FinancialFact[] = MANY_PERIODS_METRICS.flatMap((metric, metricIndex) =>
+    periods.map((period, periodIndex) => ({
+      id: `fact_overlay_many_periods_${metric.metricKey}_${period.fiscalYear}`,
+      companyId: company.id,
+      periodId: period.id,
+      definitionId: definitions[metricIndex].id,
+      metricKey: metric.metricKey,
+      valueNumeric: String(metric.base + periodIndex * metric.step),
+      currency: metric.unit === "PLN" ? "PLN" : null,
+      statementBasis: "consolidated",
+      attribution: "total",
+      variant: "reported",
+      measureWindow: "flow",
+      dataQuality: "final",
+      asReportedValue: null,
+      asReportedScale: null,
+      reportingStandard: "IFRS",
+      extractionMethod: "esef",
+      confidence: null,
+      confirmationState: "confirmed",
+      supersedesId: null,
+      sourceDocumentRef: null,
+      annotation: null,
+      createdAt: SAMPLE_NOW,
+      updatedAt: SAMPLE_NOW,
+    })),
+  );
+
+  const relevance: KpiRelevance[] = definitions.map((definition) => ({
+    id: `kpi_rel_overlay_many_periods_${definition.metricKey}`,
+    companyId: company.id,
+    definitionId: definition.id,
+    status: "active",
+    source: "seed",
+    rank: "primary",
+    firstSeenPeriod: periods[0].id,
+    lastSeenPeriod: periods[periods.length - 1].id,
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
+  }));
+
+  // Pozycje × okresy (FundamentalsPeriodsSection) calls `get_kpi_comparison`
+  // with this company's own KPI set — the mock only returns a populated axis
+  // when a SEEDED comparison matches the request shape exactly (companyIds,
+  // metricKeys, granularity); otherwise it falls back to an empty axis
+  // (runtime.ts `get_kpi_comparison`), which would leave `fundamentals-
+  // sticky.spec.ts`'s periods-table case with nothing to render.
+  const axis: KpiComparisonPeriod[] = periods.map((period) => ({
+    fiscalYear: period.fiscalYear,
+    periodType: "FY",
+    key: `${period.fiscalYear}:FY`,
+  }));
+  const comparisonSeries = MANY_PERIODS_METRICS.map((metric, metricIndex) => ({
+    companyId: company.id,
+    metricKey: metric.metricKey,
+    valueKind: "currency",
+    cells: periods.map((period, periodIndex): KpiComparisonCell => {
+      const value = String(metric.base + periodIndex * metric.step);
+      const isPln = metric.unit === "PLN";
+      return {
+        fiscalYear: period.fiscalYear,
+        periodType: "FY",
+        factId: facts[metricIndex * periods.length + periodIndex].id,
+        value,
+        currency: isPln ? "PLN" : null,
+        valuePln: isPln ? value : null,
+        fxBasis: isPln ? "native_pln" : null,
+        validationStatus: "confirmed",
+        deltaQoQ: null,
+        deltaYoY: periodIndex > 0 ? "5.00" : null,
+        flags: [],
+      };
+    }),
+  }));
+  const comparison: KpiComparison = {
+    granularity: "annual",
+    metricKeys: MANY_PERIODS_METRICS.map((metric) => metric.metricKey),
+    axis,
+    series: comparisonSeries,
+  };
+
+  return {
+    ...data,
+    companies: [company, ...data.companies],
+    financialPeriods: [...periods, ...data.financialPeriods],
+    financialFacts: [...facts, ...data.financialFacts],
+    kpiDefinitions: [...definitions, ...data.kpiDefinitions],
+    kpiRelevance: [...relevance, ...data.kpiRelevance],
+    kpiComparisons: [comparison, ...(data.kpiComparisons ?? [])],
   };
 }
 
@@ -476,12 +640,26 @@ function applyMorningReview(data: ScenarioData): ScenarioData {
     fetchedAt: "2026-06-07T17:19:00Z",
   };
 
+  // An attachment-bearing `report` item (presentationKind "report", NOT
+  // "filing") that still carries the exact dead "Komunikat ESPI/EBI" summary
+  // literal — the real shape `report_documents.rs:212` produces when a
+  // report's own summary hasn't been parsed yet (dogfooding #9): the row
+  // hosts must suppress it by exact match, not just by kind.
+  const reportWithLiteralSummaryFeedItem = {
+    ...makeFeedItem(COMPANY_SPECS.find((spec) => spec.key === "pzu")!, 0),
+    id: "feed_overlay_mr_report_literal",
+    title: "PZU: raport bieżący bez sparsowanego podsumowania",
+    summary: "Komunikat ESPI/EBI",
+    publishedAt: "2026-06-06T08:00:00Z",
+    fetchedAt: "2026-06-06T08:00:00Z",
+  };
+
   return {
     ...data,
     alertRules: [insiderRule, ...data.alertRules],
     attentionEvents: [insider, reconciliation, ...group, ...data.attentionEvents],
     autopilotRuns: [...runs, ...data.autopilotRuns],
-    feedItems: [filingFeedItem, reportFeedItem, ...data.feedItems],
+    feedItems: [filingFeedItem, reportFeedItem, reportWithLiteralSummaryFeedItem, ...data.feedItems],
     // Dziś v2 visit anchor (F2 S4): one day before `filingFeedItem`/SAMPLE_NOW so
     // the delta header has a non-empty "since your last visit" sentence and the
     // morning-review items land inside the visible window.
@@ -829,6 +1007,7 @@ function applyJobFailedEvent(data: ScenarioData): ScenarioData {
 const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData> = {
   "partial-data": applyPartialData,
   "preliminary-fundamentals": applyPreliminaryFundamentals,
+  "many-periods-fundamentals": applyManyPeriodsFundamentals,
   "stale-processing": applyStaleProcessing,
   "conflicting-statuses": applyConflictingStatuses,
   "hostile-content": applyHostileContent,
@@ -855,6 +1034,7 @@ const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData
 export const SCENARIO_OVERLAY_NAMES: readonly ScenarioOverlayName[] = [
   "partial-data",
   "preliminary-fundamentals",
+  "many-periods-fundamentals",
   "stale-processing",
   "conflicting-statuses",
   "hostile-content",

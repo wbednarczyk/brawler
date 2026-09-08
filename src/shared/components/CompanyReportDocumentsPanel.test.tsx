@@ -655,6 +655,110 @@ describe("CompanyReportDocumentsPanel", () => {
     await screen.findByRole("link");
     expect(document.querySelector("[data-document-highlighted]")).toBeNull();
   });
+
+  // Deep-link target contract (dogfooding #11, ADR 0107 amendment): the mark
+  // persists for as long as the tool holds the target — no 4s flash.
+  it("carries aria-current on the targeted row and stays marked past the old 4s flash window", async () => {
+    mockView([
+      viewRow(
+        { id: "d_sig", title: "signature.xades", docKind: "other", fetchStatus: "metadata_only" },
+        { canonical: false },
+      ),
+    ]);
+
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" highlightDocumentRef="d_sig" />);
+
+    await waitFor(() => {
+      const row = screen.getByText("signature.xades").closest("[data-document-id]");
+      expect(row).toHaveAttribute("data-document-highlighted", "true");
+      expect(row).toHaveAttribute("aria-current", "true");
+    });
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(10_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    const row = screen.getByText("signature.xades").closest("[data-document-id]");
+    expect(row).toHaveAttribute("data-document-highlighted", "true");
+    expect(row).toHaveAttribute("aria-current", "true");
+  });
+
+  it("retargeting moves the mark to the new document", async () => {
+    mockView([
+      viewRow({ id: "d_a", title: "a.pdf", docKind: "other" }, { canonical: false }),
+      viewRow({ id: "d_b", title: "b.pdf", docKind: "other" }, { canonical: false }),
+    ]);
+
+    const { rerender } = renderPanel(
+      <CompanyReportDocumentsPanel companyId="company_gpw_cdr" highlightDocumentRef="d_a" />,
+    );
+    await waitFor(() =>
+      expect(screen.getByText("a.pdf").closest("[data-document-id]")).toHaveAttribute(
+        "data-document-highlighted",
+        "true",
+      ),
+    );
+
+    rerender(
+      <ToastProvider>
+        <CompanyReportDocumentsPanel companyId="company_gpw_cdr" highlightDocumentRef="d_b" />
+      </ToastProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("b.pdf").closest("[data-document-id]")).toHaveAttribute(
+        "data-document-highlighted",
+        "true",
+      ),
+    );
+    expect(screen.getByText("a.pdf").closest("[data-document-id]")).not.toHaveAttribute("data-document-highlighted");
+  });
+
+  it("a retarget hidden by the search resets the filter so the row can be marked", async () => {
+    mockView([
+      viewRow({ id: "d_a", title: "a.pdf", docKind: "other" }, { canonical: false }),
+      viewRow({ id: "d_b", title: "b.pdf", docKind: "other" }, { canonical: false }),
+    ]);
+    const user = userEvent.setup();
+    const { rerender } = renderPanel(
+      <CompanyReportDocumentsPanel companyId="company_gpw_cdr" highlightDocumentRef="d_a" />,
+    );
+    await screen.findByText("a.pdf");
+    const search = screen.getByPlaceholderText(/Search titles/);
+    await user.type(search, "a.pdf");
+    await waitFor(() => expect(screen.queryByText("b.pdf")).not.toBeInTheDocument());
+
+    rerender(
+      <ToastProvider>
+        <CompanyReportDocumentsPanel companyId="company_gpw_cdr" highlightDocumentRef="d_b" />
+      </ToastProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByText("b.pdf").closest("[data-document-id]")).toHaveAttribute("aria-current", "true"),
+    );
+    expect(search).toHaveValue("");
+  });
+
+  it("clears the mark when re-rendered without a target (close without retarget)", async () => {
+    mockView([viewRow({ id: "d_sig", title: "signature.xades", docKind: "other" }, { canonical: false })]);
+
+    const { rerender } = renderPanel(
+      <CompanyReportDocumentsPanel companyId="company_gpw_cdr" highlightDocumentRef="d_sig" />,
+    );
+    await waitFor(() =>
+      expect(document.querySelector('[data-document-highlighted="true"]')).not.toBeNull(),
+    );
+
+    rerender(
+      <ToastProvider>
+        <CompanyReportDocumentsPanel companyId="company_gpw_cdr" />
+      </ToastProvider>,
+    );
+
+    expect(document.querySelector("[data-document-highlighted]")).toBeNull();
+  });
 });
 
 describe("extraction indicator chip (#155)", () => {

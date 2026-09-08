@@ -87,9 +87,9 @@ type CompanyReportDocumentsPanelProps = {
   // model, so this is the invalidation signal across them.
   onExtracted?: () => void;
   /** A KPI cell's provenance ticket (`sourceDocumentRef`, ADR 0104 dec. 7,
-   * sol-review finding 8): scroll + flash this document once it renders,
-   * expanding whatever fold (companion group / "No period") hides it —
-   * mirrors CompanyClaimsPanel's `highlightClaimId` seam. */
+   * sol-review finding 8): scroll to and persistently mark this document once
+   * it renders, expanding whatever fold (companion group / "No period") hides
+   * it — mirrors CompanyClaimsPanel's `highlightClaimId` seam. */
   highlightDocumentRef?: string;
 };
 
@@ -134,10 +134,6 @@ export function CompanyReportDocumentsPanel({
   const { text, locale } = useLocale();
   const toast = useToast();
   const panelRef = useRef<HTMLDivElement>(null);
-  // Fades on its own after the scroll+flash (CompanyClaimsPanel's pattern) —
-  // the incoming prop stays set for the panel's lifetime, so the highlight
-  // itself has to be transient, not the data driving it.
-  const [activeHighlightRef, setActiveHighlightRef] = useState<string | null>(null);
   const [rows, setRows] = useState<ReportDocumentViewRow[]>([]);
   // Coverage roll-up (#174, epic #229 T3) — the denominator behind the rows;
   // null while the view hasn't loaded yet.
@@ -334,6 +330,16 @@ export function CompanyReportDocumentsPanel({
   // to scroll to.
   useEffect(() => {
     if (!highlightDocumentRef) return;
+    // A retarget hidden by the type filter or the search resets both — the
+    // target row must exist to be marked and scrolled to (ADR 0107).
+    if (
+      rows.some((row) => row.document.id === highlightDocumentRef) &&
+      !filteredRows.some((row) => row.document.id === highlightDocumentRef)
+    ) {
+      setKindFilter(KIND_FILTER_ALL);
+      setQuery("");
+      return;
+    }
     const foldedGroup = groups.find((group) =>
       group.folded.some((row) => row.document.id === highlightDocumentRef),
     );
@@ -343,19 +349,15 @@ export function CompanyReportDocumentsPanel({
     if (noPeriodRows.some((row) => row.document.id === highlightDocumentRef)) {
       setNoPeriodExpanded(true);
     }
-  }, [highlightDocumentRef, groups, noPeriodRows]);
+  }, [highlightDocumentRef, groups, noPeriodRows, rows, filteredRows]);
 
-  // Scroll the targeted document into view + flash it once its row actually
-  // exists in the DOM (after the expand effect above runs), then let the
-  // flash fade on its own — same 4s pattern as CompanyClaimsPanel.
+  // Deep-link target contract (ADR 0107): scroll to the row once it exists
+  // (after the expand effect above); the mark is the prop itself, never a
+  // timer.
   useEffect(() => {
-    if (!highlightDocumentRef) return undefined;
+    if (!highlightDocumentRef) return;
     const row = panelRef.current?.querySelector<HTMLElement>(`[data-document-id="${highlightDocumentRef}"]`);
-    if (!row) return undefined;
-    row.scrollIntoView?.({ block: "center" });
-    setActiveHighlightRef(highlightDocumentRef);
-    const timer = window.setTimeout(() => setActiveHighlightRef(null), 4000);
-    return () => window.clearTimeout(timer);
+    row?.scrollIntoView?.({ block: "center" });
   }, [highlightDocumentRef, groups, noPeriodRows, expandedFolds, noPeriodExpanded]);
 
   const toggleFold = (key: string) =>
@@ -460,12 +462,14 @@ export function CompanyReportDocumentsPanel({
     const dateLabel = formatDetailTimestamp(document.fetchedAt ?? document.createdAt, "");
     const code = statementCode(document.docKind);
     const canonicalTitle = text("Canonical report for this period");
+    const isTargeted = document.id === highlightDocumentRef;
     return (
       <li
         className="doc-row"
         key={document.id}
         data-document-id={document.id}
-        data-document-highlighted={document.id === activeHighlightRef ? "true" : undefined}
+        data-document-highlighted={isTargeted ? "true" : undefined}
+        aria-current={isTargeted ? "true" : undefined}
       >
         <span className="doc-row-icon">
           <FileText size={14} aria-hidden="true" />

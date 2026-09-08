@@ -1,4 +1,5 @@
 import { test, expect, openApp, expectNoA11yViolations, expectNoHorizontalOverflow, openPalette } from "./helpers/harness";
+import { expectActionInsideScroller } from "./helpers/interactionContracts";
 
 // Activity center (ADR 0109, #133) — the first red journey test (plan § 1):
 // seeded active + queued + a failed reading + a sweep parent via the
@@ -51,15 +52,67 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
     await expect(failedRow).toHaveAttribute("data-activity-target", "company");
     await expect(failedRow).toHaveAttribute("data-activity-tool", "dokumenty");
     await expect(failedRow).toHaveAttribute("data-activity-document", "doc_cdr_q3_2025");
-    await failedRow.getByRole("button", { name: "Open document" }).click();
+    // Dogfooding #12: the destination names where it actually lands.
+    await failedRow.getByRole("button", { name: "Open in documents" }).click();
 
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     // Lands on the Documents tool with the exact `documentId` the row
-    // declared and the document row flashed (`data-document-highlighted`,
-    // CompanyReportDocumentsPanel — the seeded reading targets the smoke
-    // runtime's `doc_cdr_q3_2025`).
+    // declared, and the document row stays marked — a persistent deep-link
+    // target (dogfooding #11), not a 4s flash: it carries `aria-current` and
+    // actually PAINTS a real background, not just a DOM attribute with no
+    // matching CSS rule (the original defect — a `.doc-row` has no
+    // background at rest, so a computed color other than fully transparent
+    // proves the rule matched and painted). The browser smoke runtime seeds
+    // exactly one report document for CDR (`browserSmokeRuntime.ts`, out of
+    // this slice's file list), so there is no sibling row to diff against —
+    // `spolka-documents.spec.ts` covers the same paint contract with the
+    // same single-document constraint.
     await expect(page.getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "dokumenty");
-    await expect(page.locator('[data-document-id="doc_cdr_q3_2025"][data-document-highlighted="true"]')).toBeVisible();
+    const targetRow = page.locator('[data-document-id="doc_cdr_q3_2025"]');
+    await expect(targetRow).toHaveAttribute("data-document-highlighted", "true");
+    await expect(targetRow).toHaveAttribute("aria-current", "true");
+    const targetColor = await targetRow.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(targetColor).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
+  // Dogfooding #10: `.activity-panel` used to be its OWN padding-less
+  // scroller nested inside the padded `.ui-modal-body`; the fix makes
+  // `.ui-modal-body` the sole scroll owner (`ui.css`, already padded +
+  // `overflow-y: auto`) and `.activity-panel` a plain, unconstrained flex
+  // column that grows with its content — so the SCROLLER under test is
+  // `.ui-modal-body` now, not `.activity-panel`. entities.ts (the row seed)
+  // is out of this slice's file list, so a shrunk viewport — not more seeded
+  // rows — is the forcing mechanism here: a small enough window that even
+  // the seeded 8 rows (2 active + 1 queued + 5 recent) overflow the dialog.
+  test("every row's destination action stays inside the scroller when the dialog overflows", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 420 });
+    await openApp(page);
+    await page.getByRole("button", { name: "Open activity" }).click();
+    const dialog = page.getByRole("dialog", { name: "Activity" });
+    const scroller = dialog.locator(".ui-modal-body");
+    await expect(scroller).toBeVisible();
+    await expect
+      .poll(() => scroller.evaluate((el) => el.scrollHeight > el.clientHeight))
+      .toBe(true);
+
+    const destinations = dialog.locator('[data-action-kind="destination"]');
+    const count = await destinations.count();
+    expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < count; i += 1) {
+      await expectActionInsideScroller(destinations.nth(i), scroller);
+      // The geometry check alone stays green if `.activity-panel` regains its
+      // own scrollbar — pin the scroll OWNER: the nearest scrolling ancestor
+      // of every action is the modal body.
+      const owner = await destinations.nth(i).evaluate((el) => {
+        let node = el.parentElement;
+        while (node && !(/auto|scroll/.test(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight)) {
+          node = node.parentElement;
+        }
+        return node?.className ?? null;
+      });
+      expect(owner, "the modal body owns the scroll").toContain("ui-modal-body");
+    }
+    await expect(dialog.locator(".activity-panel")).toHaveCSS("overflow-y", "visible");
   });
 });

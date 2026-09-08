@@ -34,10 +34,10 @@ Open it by clicking the icon or with `Ctrl+K → Open activity`.
   how it ended (finished · failed · partial · interrupted) and when.
 - **Expand a row** for the raw error, the attempt count, or a parent task's
   members.
-- **One action per row** — `Open document`, `Open company`, `Open sources`,
-  `Open Today`, `Open transcripts` — lands on the item itself (a failed report
-  reading opens that document in the company's Documents tool) and closes
-  the panel. `Escape` closes it and puts focus back where you were.
+- **One action per row** — `Otwórz w dokumentach`, `Otwórz spółkę`, `Otwórz źródła`,
+  `Otwórz Dziś`, `Otwórz transkrypcje` — lands on the item itself (a failed report
+  reading opens the company's Documents tool with that document selected and
+  scrolled into view) and closes the panel. `Escape` closes it and puts focus back where you were.
 
 Honest states: a task in retry backoff reads *queued*, not running; a task
 the app lost track of after a crash reads *stalled* or *interrupted* once the

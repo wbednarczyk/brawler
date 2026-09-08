@@ -81,6 +81,9 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        // A descendant that consumed this Escape (a combobox closing its
+        // list) must not also close the modal.
+        if (event.defaultPrevented) return;
         event.stopPropagation();
         onCloseRef.current();
         return;

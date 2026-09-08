@@ -158,3 +158,102 @@ export async function expectFilledAtRest(root: Locator, { max = 1 }: { max?: num
     `Expected at most ${max} visible filled (variant="primary") element(s) at rest, found ${visibleCount}.`,
   ).toBeLessThanOrEqual(max);
 }
+
+/**
+ * Asserts `action`'s right edge stays inside `scroller`'s CLIENT box — the
+ * content box a scroller actually renders into, excluding a rendered
+ * scrollbar's own track — not merely inside its border-box bounding
+ * rectangle (dogfooding #10: a right-aligned row action sat flush against
+ * `.activity-panel`'s own scrollbar with no reserved gutter, clipping it).
+ * `clientWidth` is what excludes the scrollbar track; `boundingBox().width`
+ * would not. The formula: `actionBox.right <= scrollerBox.left +
+ * scroller.clientWidth − 1`.
+ */
+export async function expectActionInsideScroller(action: Locator, scroller: Locator): Promise<void> {
+  await expect(action).toBeVisible();
+  let scrollerBox: Awaited<ReturnType<Locator["boundingBox"]>> = null;
+  let actionBox: Awaited<ReturnType<Locator["boundingBox"]>> = null;
+  let clientWidth = 0;
+  await expect
+    .poll(
+      async () => {
+        [scrollerBox, actionBox, clientWidth] = await Promise.all([
+          scroller.boundingBox(),
+          action.boundingBox(),
+          scroller.evaluate((el) => el.clientWidth),
+        ]);
+        return scrollerBox !== null && actionBox !== null;
+      },
+      {
+        message:
+          "expectActionInsideScroller: scroller/action never yielded a stable bounding box (not visible/rendered)",
+      },
+    )
+    .toBe(true);
+  const scrollerRect = scrollerBox!;
+  const actionRect = actionBox!;
+  const clientRight = scrollerRect.x + clientWidth;
+  const actionRight = actionRect.x + actionRect.width;
+  expect(
+    actionRight,
+    `Row action's right edge (${actionRight.toFixed(0)}) must stay inside the scroller's client box ` +
+      `(right edge ${clientRight.toFixed(0)} = boundingBox x ${scrollerRect.x.toFixed(0)} + clientWidth ${clientWidth}) ` +
+      `— a scrollbar occupying the last ${(scrollerRect.width - clientWidth).toFixed(0)}px must not clip it.`,
+  ).toBeLessThanOrEqual(clientRight - 1);
+}
+
+/**
+ * Owner guardrail (2026-09-07): text never touches a table cell's edge. For
+ * every `th`/`td` under `table` the ink of its TEXT NODES (a Range per node,
+ * so stretched wrappers like a `width: 100%` button don't count) stays at
+ * least `minInset` px inside the cell's edges — left/right for horizontal
+ * text, top/bottom for a vertical writing mode. Visually hidden text is
+ * skipped; an ellipsized cell (content wider than its box) checks only its
+ * leading edge, `text-overflow` already keeps the ellipsis inside the padding.
+ */
+export async function expectTableCellTextInset(table: Locator, minInset = 6): Promise<void> {
+  const offenders = await table.evaluate((root, min) => {
+    const bad: string[] = [];
+    for (const cell of Array.from(root.querySelectorAll<HTMLElement>("th, td"))) {
+      const cellStyle = getComputedStyle(cell);
+      if (cellStyle.display === "none" || cellStyle.visibility === "hidden") continue;
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      let ink: DOMRect | null = null;
+      let vertical = false;
+      let ellipsized = cell.scrollWidth > cell.clientWidth + 1;
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent?.trim()) continue;
+        const parent = node.parentElement as HTMLElement;
+        if (parent.closest(".visually-hidden")) continue;
+        const style = getComputedStyle(parent);
+        if (style.writingMode.startsWith("vertical")) vertical = true;
+        for (let el: HTMLElement | null = parent; el && el !== cell; el = el.parentElement) {
+          if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX !== "visible") ellipsized = true;
+        }
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const rect = range.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) continue;
+        ink = ink
+          ? new DOMRect(
+              Math.min(ink.left, rect.left),
+              Math.min(ink.top, rect.top),
+              Math.max(ink.right, rect.right) - Math.min(ink.left, rect.left),
+              Math.max(ink.bottom, rect.bottom) - Math.min(ink.top, rect.top),
+            )
+          : rect;
+      }
+      if (!ink) continue;
+      const box = cell.getBoundingClientRect();
+      const lead = vertical ? ink.top - box.top : ink.left - box.left;
+      const trail = vertical ? box.bottom - ink.bottom : box.right - ink.right;
+      if (lead < min || (!ellipsized && trail < min)) {
+        bad.push(
+          `${cell.tagName.toLowerCase()}.${cell.className || "-"} "${cell.textContent?.trim().slice(0, 24)}" lead=${lead.toFixed(1)} trail=${trail.toFixed(1)}`,
+        );
+      }
+    }
+    return bad;
+  }, minInset);
+  expect(offenders, `cells whose text touches an edge (< ${minInset}px inset):\n${offenders.join("\n")}`).toEqual([]);
+}

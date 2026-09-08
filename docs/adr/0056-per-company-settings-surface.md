@@ -43,3 +43,5 @@ The surface ships with the **Automation group → autopilot mode** (bulk set acr
 ## Status notes
 
 Accepted 2026-06-25 after a design discussion that surfaced the scalability concern (what happens at 5–10 settings) and the tall-narrow-window constraint. Master-detail chosen for vertical scalability + narrow-window friendliness. Built incrementally; v1 = autopilot + pinned + watchlists.
+
+**Amendment (2026-09-04, owner dogfooding v0.79 #4).** The *Fundamentals autopilot editor* retires: the Fundamentals tool no longer carries the automation-mode fold (nor the read-only "Reporting periods" list, which restated the matrix headers). Companies → **Manage settings** is the only autopilot editor — including the one-company case (select one company). The other in-context single-company controls stay as written above: the IR reports URL and the sector override remain in the Basic info panel's edit mode.

@@ -206,6 +206,29 @@
   padding-bottom: var(--space-0);
 }
 
+/* The one provenance action (ADR 0104 dec. 7): the thread cell's figure is a
+   bare button inheriting the table's typography. */
+.spolka-kpi-thread-button {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+  text-align: inherit;
+}
+
+/* Hover/focus on either side lights the pair (ADR 0104 dec. 7). */
+.spolka-kpi[data-thread-hot="true"] .spolka-kpi-thread {
+  border-bottom-color: var(--primary);
+}
+
+.spolka-kpi[data-thread-hot="true"] .spolka-provenance-ticket {
+  text-decoration: underline;
+  border-color: color-mix(in srgb, var(--tone-official) 60%, transparent);
+}
+
 .spolka-kpi-footer {
   display: flex;
   align-items: center;
@@ -398,4 +421,40 @@
   flex-direction: column;
   gap: var(--space-2);
   align-items: flex-start;
+}
+
+/* Header anatomy (ADR 0107): `identity · picker · actions` on a 3-column
+   grid; the equal outer `1fr` tracks keep the picker centred regardless of
+   the identity's width. `.ui-panel-header-actions` is unwrapped
+   (`display: contents`) so the picker is a direct grid item. */
+.ui-panel-header.spolka-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.spolka-header .ui-panel-header-actions {
+  display: contents;
+}
+
+.spolka-header .ui-combobox {
+  grid-column: 2;
+  justify-self: center;
+  width: min(320px, 100%);
+}
+
+/* Single column below the S tier (resolves against `.workspace`'s container;
+   `PanelHeader` sits outside `.spolka-layout`). */
+@container pane (max-width: 419px) {
+  .ui-panel-header.spolka-header {
+    grid-template-columns: 1fr;
+  }
+
+  .spolka-header .ui-combobox {
+    /* `grid-column: 2` above would force an implicit second column. */
+    grid-column: auto;
+    justify-self: stretch;
+    width: 100%;
+  }
 }

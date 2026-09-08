@@ -205,8 +205,6 @@ export const plText: Record<string, string> = {
   "Off — manual": "Wyłączony — ręcznie",
   "Assist — auto-extract, you confirm": "Asysta — auto-ekstrakcja, Ty potwierdzasz",
   "Autopilot — auto-confirm (unreviewed)": "Autopilot — auto-zatwierdzanie (niezweryfikowane)",
-  "Automatically process this company's new reports on the next source refresh. Off keeps everything manual; Assist auto-fetches and extracts but you confirm each value; Autopilot also auto-confirms extracted values as unreviewed (cited and reversible).":
-    "Automatycznie przetwarzaj nowe raporty tej spółki przy następnym odświeżeniu źródeł. Wyłączony zostawia wszystko ręcznie; Asysta auto-pobiera i wyciąga dane, ale każdą wartość potwierdzasz Ty; Autopilot dodatkowo auto-zatwierdza wyciągnięte wartości jako niezweryfikowane (cytowane i odwracalne).",
   "Checking autopilot runs…": "Sprawdzanie przebiegów autopilota…",
   "New report processed.": "Przetworzono nowy raport.",
   "New report processed": "Przetworzono nowy raport",
@@ -259,7 +257,6 @@ export const plText: Record<string, string> = {
   "Mark as read": "Oznacz jako przeczytane",
   "Couldn't load attention signals.": "Nie udało się wczytać sygnałów uwagi.",
   "Reverted": "Cofnięto",
-  "Open document": "Otwórz dokument",
   "From your alert rule": "Z reguły alertu",
   "Routine": "Rutynowe",
   "What do the severity levels mean?": "Co oznaczają poziomy ważności?",
@@ -1207,8 +1204,6 @@ export const plText: Record<string, string> = {
   "Failed to load price context": "Nie udało się wczytać kontekstu ceny",
   "New reporting period": "Nowy okres sprawozdawczy",
   "Create reporting period": "Utwórz okres sprawozdawczy",
-  "Reporting periods": "Okresy sprawozdawcze",
-  "No reporting periods yet.": "Brak okresów sprawozdawczych.",
   "Financial facts": "Fakty finansowe",
   "Financial fact": "Fakt finansowy",
   "Financial fact detail": "Szczegóły faktu finansowego",
@@ -1926,8 +1921,6 @@ export const plText: Record<string, string> = {
   "Undefined change (non-positive or sign-flipped base) — an honest gap, not a fabricated number.":
     "Zmiana nieokreślona (podstawa niedodatnia lub zmiana znaku) — uczciwa luka, nie zmyślona liczba.",
   "Show evidence": "Pokaż dowód",
-  "Show all periods": "Pokaż wszystkie okresy",
-  "Show fewer periods": "Pokaż mniej okresów",
 
   // Inbox v2 per-kind detail + company-context block (F1 S4, ADR 0104/0106).
   "Media": "Media",
@@ -2005,7 +1998,6 @@ export const plText: Record<string, string> = {
   "PLN million · consolidated": "mln PLN · skonsolidowane",
   "Line item": "Pozycja",
   "y/y": "r/r",
-  "Open source document": "Otwórz dokument źródłowy",
   "Every figure leads to its source": "Każda liczba prowadzi do źródła",
   "Couldn't load the KPI table. The rest of the view is up to date.":
     "Nie udało się wczytać tabeli KPI. Reszta widoku jest aktualna.",
@@ -2252,7 +2244,7 @@ export const plText: Record<string, string> = {
   // ---- F3d S2 ----
   // Activity center (ADR 0109, #133): topbar indicator + panel copy. Family
   // labels (`activityLabels.ts`); "Source refresh"/"Morning briefing"/
-  // "Transcript"/"Try again"/"Open document"/"Open company" reuse their
+  // "Transcript"/"Try again"/"Open company" reuse their
   // existing exact-match entries above instead of duplicating a key. Status
   // labels moved to the "F3d fixT2" block below (sol diff R2 finding 6).
   "Company refresh": "Odświeżanie komunikatów spółki",
@@ -2303,4 +2295,13 @@ export const plText: Record<string, string> = {
   "Finished with an error": "nie udało się",
   "Partially finished": "częściowo",
   // ---- /F3d fixT2 ----
+  // ---- wave 2026-09 (dogfooding v0.79 + v0.81) ----
+  "Red flag": "Sygnał ostrzegawczy",
+  "Open in documents": "Otwórz w dokumentach",
+  "No matches": "Brak dopasowań",
+  "Open source: {metric} · {period} · {source}": "Otwórz źródło: {metric} · {period} · {source}",
+  "Expand earlier": "Rozwiń starsze",
+  "Collapse earlier": "Zwiń starsze",
+  "Earlier periods": "Wcześniejsze okresy",
+  // ---- /wave 2026-09 ----
 };

@@ -374,7 +374,7 @@ Destinations (exact):
 | Source refresh · registry refresh · FX pull · fundamentals pull | Sources screen |
 | Company feed refresh | Spółka › Feed |
 | History fetch · report sweep · re-extraction · KPI ingest | Spółka › Coverage (KPI ingest: Documents with the document highlighted) |
-| Report reading · shareholder / management reading | Spółka › Documents, the document highlighted |
+| Report reading · shareholder / management reading | Spółka › Documents, the document row selected (`aria-current`) and scrolled into view — action label `Otwórz w dokumentach` |
 | Price history | Spółka Overview |
 | Morning briefing | Today |
 | Transcript | Transcripts screen |

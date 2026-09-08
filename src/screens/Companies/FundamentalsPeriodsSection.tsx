@@ -1,11 +1,17 @@
+import { periodsMeasureKey } from "./periodMeasureKeys";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink } from "lucide-react";
+import { ChevronRight, ExternalLink } from "lucide-react";
 
 import { getKpiComparison } from "../../api/comparison";
 import type { KpiComparison } from "../../api/comparison";
 import { useLocale, type LocaleCode } from "../../shared/locale";
 import { formatFinancialValue, groupFormat } from "../../shared/format/financialValue";
 import {
+  periodExpanderAccessibleName,
+  periodExpanderVisibleLabel,
+  useVisiblePeriods, naturalCellWidth, cssLengthVar } from "./useVisiblePeriods";
+import {
+  ActionButton,
   Button,
   EmptyState,
   ErrorText,
@@ -18,11 +24,10 @@ import {
 type Granularity = "annual" | "quarterly";
 type LoadState = "idle" | "loading" | "error";
 
-// Default column cap (narrow-window rule): a 23-year-wide table must not render
-// by default. The most recent MAX_PERIODS aligned columns show; the full history
-// is one click away via the disclosure. The focus column is always the last
-// (most recent complete) period, per the storyboard "Fokus: ostatni pełny okres".
-const MAX_PERIODS = 8;
+// Sticky column widths (dogfooding #6): fixed for the same reason as the
+// facts matrix (FundamentalsPanel.tsx) — a dynamic `left` offset would need
+// inline `style={{…}}`. Mirrored in companies.css
+// `.fundamentals-periods-kpi`/`-expander`.
 
 type FundamentalsPeriodsSectionProps = {
   companyId: string;
@@ -67,10 +72,10 @@ export function FundamentalsPeriodsSection({
   const { text, locale } = useLocale();
 
   const [granularity, setGranularity] = useState<Granularity>("annual");
-  const [showAllPeriods, setShowAllPeriods] = useState(false);
   const [comparison, setComparison] = useState<KpiComparison | null>(null);
   const [status, setStatus] = useState<LoadState>("idle");
   const requestSeq = useRef(0);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   const metricKeysKey = metricKeys.join(",");
   useEffect(() => {
@@ -102,15 +107,64 @@ export function FundamentalsPeriodsSection({
   const axis = useMemo(() => comparison?.axis ?? [], [comparison]);
   const quarterly = granularity === "quarterly";
 
-  // Bounded rendering: the most recent MAX_PERIODS columns unless expanded. The
-  // shown indices reference the full axis so cells (aligned 1:1) slice the same.
-  const shownIndices = useMemo(() => {
-    const all = axis.map((_, index) => index);
-    if (showAllPeriods || all.length <= MAX_PERIODS) return all;
-    return all.slice(all.length - MAX_PERIODS);
-  }, [axis, showAllPeriods]);
+  // Period-expander column (dogfooding #6): reuses the facts-matrix hook with
+  // this host's own measured period-group width + fixed sticky-column width.
+  const periodsVisible = useVisiblePeriods({
+    scrollerRef,
+    total: axis.length,
+    measureKey: periodsMeasureKey({ locale, granularity, comparison }),
+    // The tier folds the Δ columns (S); a flip re-measures with the new set.
+    measureVariant: () => {
+      const scroller = scrollerRef.current;
+      if (!scroller) return "";
+      return ["value", "qoq", "yoy"]
+        .filter((col) => {
+          const cell = scroller.querySelector<HTMLElement>(`[data-period-col="${col}"]`);
+          return cell ? getComputedStyle(cell).display !== "none" : false;
+        })
+        .join(",");
+    },
+    // One period group = value + delta column(s); each column's width is the
+    // widest natural cell in it across ALL periods (the measuring pass renders
+    // them all; a column folded by the tier measures 0).
+    measurePeriodWidth: () => {
+      const scroller = scrollerRef.current;
+      if (!scroller) return 0;
+      const widest = new Map<string, number>();
+      for (const cell of scroller.querySelectorAll<HTMLElement>("[data-period-col]")) {
+        if (getComputedStyle(cell).display === "none") continue;
+        const col = cell.dataset.periodCol as string;
+        widest.set(col, Math.max(widest.get(col) ?? 0, naturalCellWidth(cell)));
+      }
+      let group = 0;
+      for (const width of widest.values()) group += width;
+      return group;
+    },
+    measureFixedWidth: () => scrollerRef.current?.querySelector<HTMLElement>(".fundamentals-periods-corner")?.offsetWidth ?? 0,
+    measureExpanderWidth: () => cssLengthVar(scrollerRef.current, "--period-expander-width"),
+  });
+  // Autoscroll to the newest period only on the transition INTO the expanded
+  // state — never on mount, never on a later resize.
+  useEffect(() => {
+    if (!periodsVisible.expanded) return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    scroller.scrollLeft = scroller.scrollWidth;
+  }, [periodsVisible.expanded]);
+
+  // The shown indices reference the full axis so cells (aligned 1:1) slice the same.
+  const shownIndices = useMemo(
+    () =>
+      axis
+        .map((_, index) => index)
+        .slice(periodsVisible.visibleStart, periodsVisible.visibleStart + periodsVisible.visibleCount),
+    [axis, periodsVisible.visibleStart, periodsVisible.visibleCount],
+  );
   const focusIndex = axis.length - 1;
-  const capped = axis.length > MAX_PERIODS;
+  // The column stays visible while expanded (showing "Collapse earlier") even
+  // though `hiddenCount` is then 0 — "no column at all" only applies when
+  // there was never anything to hide in the first place.
+  const showExpanderColumn = !periodsVisible.measuring && (periodsVisible.expanded || periodsVisible.hiddenCount > 0);
 
   const series = useMemo(
     () => (comparison?.series ?? []).filter((entry) => entry.companyId === companyId),
@@ -190,53 +244,93 @@ export function FundamentalsPeriodsSection({
 
       {showTable ? (
         <>
-          {/* Deliberate wide content: the periods table scrolls inside its own
-              bounded scroller (data-hscroll), contained so it never forces a
-              panel- or pane-level horizontal scrollbar (narrow-window rule). */}
+          {/* Collapsed: the newest period groups that fit, clipped wrapper;
+              expanded: every period inside a bounded 2-axis scroller
+              (data-hscroll), never a pane-level horizontal scrollbar. */}
           <div
             className="fundamentals-periods-scroll"
             data-hscroll
+            data-expanded={periodsVisible.expanded || undefined}
+            data-measuring={periodsVisible.measuring || undefined}
+            data-visible-periods={periodsVisible.measuring ? undefined : shownIndices.length}
+            data-total-periods={axis.length}
             aria-label={text("Positions and period deltas")}
+            ref={scrollerRef}
           >
-            <table className="fundamentals-periods-table">
+            <table className="fundamentals-periods-table ui-zebra">
               <thead>
                 <tr>
                   <th className="fundamentals-periods-corner" scope="col">
                     {text("Position")}
                   </th>
+                  {/* No column at all when nothing is hidden (owner storyboard). */}
+                  {showExpanderColumn ? (
+                    <th className="fundamentals-periods-expander" scope="col">
+                      <span className="visually-hidden">{text("Earlier periods")}</span>
+                    </th>
+                  ) : null}
                   {shownIndices.flatMap((index) => {
                     const period = axis[index];
                     const focus = index === focusIndex;
-                    return [
+                    const cells = [
                       <th
                         key={`${period.key}-value`}
                         scope="col"
                         className={focus ? "fundamentals-periods-focus" : undefined}
+                        data-period-col="value"
                       >
                         {periodLabel(period.fiscalYear, period.periodType)}
                       </th>,
                       ...(quarterly
                         ? [
-                            <th key={`${period.key}-qoq`} scope="col">
+                            <th key={`${period.key}-qoq`} scope="col" data-period-col="qoq">
                               {text("Δ QoQ")}
                             </th>,
                           ]
                         : []),
-                      <th key={`${period.key}-yoy`} scope="col">
+                    ];
+                    cells.push(
+                      <th key={`${period.key}-yoy`} scope="col" data-period-col="yoy">
                         {text("Δ YoY")}
                       </th>,
-                    ];
+                    );
+                    return cells;
                   })}
                 </tr>
               </thead>
               <tbody>
-                {series.map((row) => {
+                {series.map((row, rowIndex) => {
                   const label = kpiLabelByMetricKey[row.metricKey] ?? row.metricKey;
                   return (
                     <tr key={row.metricKey}>
-                      <th className="fundamentals-periods-kpi" scope="row">
+                      <th className="fundamentals-periods-kpi" scope="row" title={label}>
                         {label}
                       </th>
+                      {/* The whole column is ONE clickable cell spanning every
+                          body row (owner storyboard round 1). */}
+                      {rowIndex === 0 && showExpanderColumn ? (
+                        <td className="fundamentals-periods-expander" rowSpan={series.length}>
+                          <ActionButton
+                            kind="control"
+                            className="fundamentals-periods-expander-button"
+                            variant="ghost"
+                            onClick={periodsVisible.toggle}
+                            aria-label={periodExpanderAccessibleName(
+                              periodsVisible.expanded,
+                              periodsVisible.hiddenCount,
+                              locale,
+                              text,
+                            )}
+                          >
+                            <ChevronRight
+                              aria-hidden="true"
+                              size={13}
+                              className="fundamentals-periods-expander-chevron"
+                            />
+                            {periodExpanderVisibleLabel(periodsVisible.expanded, text)}
+                          </ActionButton>
+                        </td>
+                      ) : null}
                       {shownIndices.flatMap((index) => {
                         const cell = row.cells[index];
                         const focus = index === focusIndex;
@@ -248,7 +342,11 @@ export function FundamentalsPeriodsSection({
                             flag === "currency_unknown",
                         );
                         const valueCell = (
-                          <td key={`${row.metricKey}-${index}-value`} className={`fundamentals-periods-value-cell${focusClass}`}>
+                          <td
+                            key={`${row.metricKey}-${index}-value`}
+                            className={`fundamentals-periods-value-cell${focusClass}`}
+                            data-period-col="value"
+                          >
                             {gapFlag ? (
                               <StatusChip tone="warn" className="fundamentals-periods-flag">
                                 {flagLabel(gapFlag)}
@@ -288,7 +386,11 @@ export function FundamentalsPeriodsSection({
                           valueCell,
                           ...(quarterly
                             ? [
-                                <td key={`${row.metricKey}-${index}-qoq`} className={`fundamentals-periods-delta-cell${focusClass}`}>
+                                <td
+                                  key={`${row.metricKey}-${index}-qoq`}
+                                  className={`fundamentals-periods-delta-cell${focusClass}`}
+                                  data-period-col="qoq"
+                                >
                                   {renderDelta(
                                     cell?.deltaQoQ ?? null,
                                     cell?.flags.includes("delta_qoq_undefined") ?? false,
@@ -297,7 +399,11 @@ export function FundamentalsPeriodsSection({
                                 </td>,
                               ]
                             : []),
-                          <td key={`${row.metricKey}-${index}-yoy`} className={`fundamentals-periods-delta-cell${focusClass}`}>
+                          <td
+                            key={`${row.metricKey}-${index}-yoy`}
+                            className={`fundamentals-periods-delta-cell${focusClass}`}
+                            data-period-col="yoy"
+                          >
                             {renderDelta(
                               cell?.deltaYoY ?? null,
                               cell?.flags.includes("delta_yoy_undefined") ?? false,
@@ -312,15 +418,6 @@ export function FundamentalsPeriodsSection({
               </tbody>
             </table>
           </div>
-          {capped ? (
-            <Button
-              variant="ghost"
-              className="fundamentals-periods-more"
-              onClick={() => setShowAllPeriods((value) => !value)}
-            >
-              {showAllPeriods ? text("Show fewer periods") : text("Show all periods")}
-            </Button>
-          ) : null}
         </>
       ) : null}
     </section>

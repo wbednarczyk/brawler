@@ -54,7 +54,8 @@ function toneForStatus(status: ActivityItem["status"]): "neutral" | "accent" | "
 function destinationLabel(target: ActivityTarget, text: (value: string) => string): string {
   switch (target.kind) {
     case "company":
-      return target.tool?.t === "dokumenty" ? text("Open document") : text("Open company");
+      // Names the destination (the Documents tool, row selected), not a file.
+      return target.tool?.t === "dokumenty" ? text("Open in documents") : text("Open company");
     case "sources":
       return text("Open sources");
     case "today":

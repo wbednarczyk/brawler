@@ -27,7 +27,6 @@ test.describe("fundamentals visual harness", () => {
 
     const panel = page.getByLabel("Company fundamentals");
     await expect(panel).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Reporting periods" })).toBeVisible();
     await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
 
     await panel.screenshot({ path: `${SHOT_DIR}/fundamentals-${tag}.png` });

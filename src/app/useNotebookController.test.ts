@@ -40,6 +40,16 @@ describe("feedItemSummary (shared render-site root, ADR F1 S1)", () => {
 
     expect(feedItemSummary(item)).toBe("Q1 2026 results beat expectations");
   });
+
+  // Dogfooding #9: an attachment-bearing `report` item can ALSO carry the
+  // exact dead literal (`report_documents.rs:212`) — the old guard only
+  // checked `presentationKind === "filing"`, so a real report with no parsed
+  // summary yet silently showed "Komunikat ESPI/EBI" as if it were content.
+  it("suppresses the exact dead literal for a report-kind item too", () => {
+    const item = makeItem({ presentationKind: "report", summary: "Komunikat ESPI/EBI" });
+
+    expect(feedItemSummary(item)).toBe("");
+  });
 });
 
 // sol fix1 item 3: extracted so both the cross-company `openFeedItemNoteDraft`
@@ -70,5 +80,36 @@ describe("buildFeedItemNoteDraft (sol fix1 item 3)", () => {
         label: "GPW ESPI/EBI: Report 0",
       },
     ]);
+  });
+});
+
+// Dogfooding #9: the dead literal must never reach the note draft body,
+// whichever path it takes there (empty `bodyText` falls back to
+// `feedItemSummary`).
+describe("buildFeedItemNoteDraft — the dead literal never reaches the draft body (#9)", () => {
+  it("retains a meaningful summary when the draft body is empty", () => {
+    const item = makeItem({
+      presentationKind: "report",
+      bodyText: "",
+      summary: "Q1 2026 results beat expectations",
+    });
+
+    const draft = buildFeedItemNoteDraft(item);
+
+    expect(draft.form.body).toBe("Q1 2026 results beat expectations");
+  });
+
+  it("falls back to an empty body (never the literal) when the summary is the dead ESPI/EBI literal", () => {
+    const item = makeItem({
+      presentationKind: "report",
+      bodyText: "",
+      summary: "Komunikat ESPI/EBI",
+      title: "Raport bieżący 7/2026",
+    });
+
+    const draft = buildFeedItemNoteDraft(item);
+
+    expect(draft.form.title).toBe("Raport bieżący 7/2026");
+    expect(draft.form.body).toBe("");
   });
 });

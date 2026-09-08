@@ -236,4 +236,63 @@ describe("CommandPaletteProvider — combobox/listbox semantics", () => {
     expect(screen.getByText("state:closed")).toBeInTheDocument();
     expect(trigger).toHaveFocus();
   });
+
+  // S2 (dogfooding wave 2026-09, #3): the palette now runs on the SAME
+  // `useComboboxListbox` controller as the Spółka company picker — these pin
+  // the controller extras the migration must keep (index reset, dynamic
+  // removal, hover).
+  it("active index resets to the new first match when filtering narrows the list", async () => {
+    const user = userEvent.setup();
+    renderPalette();
+    await user.click(screen.getByRole("button", { name: "launch" }));
+
+    await user.keyboard("{End}"); // active -> Charlie (last)
+    await user.type(paletteInput(), "ra"); // narrows to "Bravo" only
+
+    const options = within(screen.getByRole("listbox")).getAllByRole("option");
+    expect(options).toHaveLength(1);
+    expect(options[0]).toHaveTextContent("Bravo");
+    expect(paletteInput()).toHaveAttribute("aria-activedescendant", options[0]!.id);
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("active id resets to the first remaining option when a command is dynamically removed", async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [cmds, setCmds] = useState(commands);
+      return (
+        <CommandPaletteProvider appCommands={cmds} text={identity}>
+          <OpenButton />
+          <button type="button" onClick={() => setCmds((current) => current.filter((c) => c.id !== "a"))}>
+            remove alpha
+          </button>
+        </CommandPaletteProvider>
+      );
+    }
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "launch" }));
+    // Alpha is the active option at rest (first of three).
+    const firstOptions = within(screen.getByRole("listbox")).getAllByRole("option");
+    expect(firstOptions[0]).toHaveTextContent("Alpha");
+    expect(paletteInput()).toHaveAttribute("aria-activedescendant", firstOptions[0]!.id);
+
+    await user.click(screen.getByRole("button", { name: "remove alpha" }));
+
+    const remainingOptions = within(screen.getByRole("listbox")).getAllByRole("option");
+    expect(remainingOptions).toHaveLength(2);
+    expect(remainingOptions[0]).toHaveTextContent("Bravo");
+    expect(paletteInput()).toHaveAttribute("aria-activedescendant", remainingOptions[0]!.id);
+  });
+
+  it("pointer hover sets the active option", async () => {
+    const user = userEvent.setup();
+    renderPalette();
+    await user.click(screen.getByRole("button", { name: "launch" }));
+
+    const options = within(screen.getByRole("listbox")).getAllByRole("option");
+    await user.hover(options[2]!);
+    expect(paletteInput()).toHaveAttribute("aria-activedescendant", options[2]!.id);
+    expect(options[2]).toHaveAttribute("aria-selected", "true");
+    expect(options[0]).toHaveAttribute("aria-selected", "false");
+  });
 });
