@@ -1,5 +1,5 @@
 //! Guard (G9, hard gates wave 2): command-shape guard over
-//! `src/commands/**` — every `#[tauri::command]` fn taking a
+//! `src/commands/**` — every Tauri-command-attributed fn taking a
 //! `tauri::State<'_, AppState>` param (any qualification: `tauri::State`,
 //! bare `State`; `AppState` or `app_state::AppState`) touches shared storage
 //! and must not block the Tauri main thread (CLAUDE.md "keep non-trivial
@@ -12,10 +12,16 @@
 
 use std::path::Path;
 
+// Built from split literals so this file never contains the contiguous attribute
+// text: docs-drift scans every `.rs` line for it and would read the synthetic
+// snippets below as real commands missing from contracts.md.
+const CMD_ATTR: &str = concat!("#[tauri::", "command]");
+const CMD_ATTR_OPEN: &str = concat!("#[tauri::", "command(");
+
 use super::scan::{is_test_file, strip_comments_and_strings};
 use super::{extract_fn_body, extract_test_fn_name, is_fn_signature, source_files};
 
-/// One `#[tauri::command]` fn taking a `State<'_, ...AppState>` param.
+/// One Tauri-command-attributed fn taking a `State<'_, ...AppState>` param.
 struct StateCommand {
     /// `"commands/<file>.rs::<fn>"`, relative to `src-tauri/src/`.
     id: String,
@@ -37,7 +43,7 @@ fn is_async_signature(line: &str) -> bool {
     rest.starts_with("async fn ")
 }
 
-/// Every `#[tauri::command]`/`#[tauri::command(...)]` fn taking a
+/// Every Tauri-command-attributed fn (plain or `(...)` form) taking a
 /// `State<'_, ...AppState>` param in `content` (one file's source, already
 /// known non-test — `rel` labels the resulting ids `"<rel>::<fn>"`).
 /// Standalone from disk I/O so synthetic snippets can exercise it directly.
@@ -55,15 +61,14 @@ fn scan_state_commands_in(rel: &str, content: &str) -> Vec<StateCommand> {
     let mut idx = 0;
     while idx < lines.len() {
         let trimmed = lines[idx].trim_start();
-        let is_command_attr =
-            trimmed == "#[tauri::command]" || trimmed.starts_with("#[tauri::command(");
+        let is_command_attr = trimmed == CMD_ATTR || trimmed.starts_with(CMD_ATTR_OPEN);
         if !is_command_attr {
             idx += 1;
             continue;
         }
         let attr_is_async = trimmed.contains("async");
 
-        // Attribute/doc-comment lines may stack between `#[tauri::command]`
+        // Attribute/doc-comment lines may stack between the command attribute
         // and the fn signature (`#[allow(...)]`, `/// docs`).
         let mut fn_line = idx + 1;
         while fn_line < lines.len() {
@@ -101,7 +106,7 @@ fn scan_state_commands_in(rel: &str, content: &str) -> Vec<StateCommand> {
     found
 }
 
-/// Every `#[tauri::command]`/`#[tauri::command(...)]` fn taking a
+/// Every Tauri-command-attributed fn (plain or `(...)` form) taking a
 /// `State<'_, ...AppState>` param under `src/commands/**` (test files
 /// excluded by the 4-clause predicate — commands are production surface
 /// only, so no inline test-span handling is needed here).
@@ -207,7 +212,9 @@ fn sync_state_commands_are_pinned() {
 
 #[cfg(test)]
 mod predicate_tests {
-    use super::{is_async_signature, scan_state_commands, scan_state_commands_in};
+    use super::{
+        is_async_signature, scan_state_commands, scan_state_commands_in, CMD_ATTR, CMD_ATTR_OPEN,
+    };
 
     #[test]
     fn is_async_signature_recognizes_modifier_stacking() {
@@ -217,13 +224,15 @@ mod predicate_tests {
 
     #[test]
     fn sync_state_command_is_detected() {
-        let source = "\
-#[tauri::command]
+        let source = format!(
+            "{CMD_ATTR}\n{}",
+            "\
 pub fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     Ok(vec![])
 }
-";
-        let found = scan_state_commands_in("commands/x.rs", source);
+"
+        );
+        let found = scan_state_commands_in("commands/x.rs", &source);
         assert_eq!(found.len(), 1);
         assert!(!found[0].is_async);
         assert_eq!(found[0].id, "commands/x.rs::list_things");
@@ -231,13 +240,15 @@ pub fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String>, Str
 
     #[test]
     fn async_state_command_with_spawn_blocking_is_ok() {
-        let source = "\
-#[tauri::command]
+        let source = format!(
+            "{CMD_ATTR}\n{}",
+            "\
 pub async fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || Ok(vec![])).await.unwrap()
 }
-";
-        let found = scan_state_commands_in("commands/x.rs", source);
+"
+        );
+        let found = scan_state_commands_in("commands/x.rs", &source);
         assert_eq!(found.len(), 1);
         assert!(found[0].is_async);
         assert!(found[0].body.contains("spawn_blocking("));
@@ -245,13 +256,15 @@ pub async fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String
 
     #[test]
     fn async_state_command_without_offload_is_flagged_by_the_body_check() {
-        let source = "\
-#[tauri::command]
+        let source = format!(
+            "{CMD_ATTR}\n{}",
+            "\
 pub async fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     Ok(state.list())
 }
-";
-        let found = scan_state_commands_in("commands/x.rs", source);
+"
+        );
+        let found = scan_state_commands_in("commands/x.rs", &source);
         assert_eq!(found.len(), 1);
         assert!(found[0].is_async);
         assert!(
@@ -262,29 +275,33 @@ pub async fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String
 
     #[test]
     fn tauri_command_async_attribute_counts_as_async() {
-        let source = "\
-#[tauri::command(async)]
+        let source = format!(
+            "{CMD_ATTR_OPEN}async)]\n{}",
+            "\
 pub fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     Ok(vec![])
 }
-";
-        let found = scan_state_commands_in("commands/x.rs", source);
+"
+        );
+        let found = scan_state_commands_in("commands/x.rs", &source);
         assert_eq!(found.len(), 1);
         assert!(
             found[0].is_async,
-            "#[tauri::command(async)] must count as async even on a sync fn signature"
+            "the `command(async)` attribute form must count as async even on a sync fn signature"
         );
     }
 
     #[test]
     fn command_without_state_param_is_ignored() {
-        let source = "\
-#[tauri::command]
+        let source = format!(
+            "{CMD_ATTR}\n{}",
+            "\
 pub fn health() -> HealthResponse {
     HealthResponse::default()
 }
-";
-        let found = scan_state_commands_in("commands/x.rs", source);
+"
+        );
+        let found = scan_state_commands_in("commands/x.rs", &source);
         assert!(found.is_empty());
     }
 
