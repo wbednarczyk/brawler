@@ -306,18 +306,18 @@ if (testsTouchedContent === null) {
         `    not a gate (G14, same class as an exit-ignored Makefile step).`,
     );
   }
-  if (!/\/repos\/\$\{\{\s*github\.repository\s*\}\}\/issues\/[^"\n]*\/labels"/.test(testsTouchedContent)) {
+  if (!/GH_TOKEN:\s*\$\{\{\s*github\.token\s*\}\}/.test(testsTouchedContent) || !/PR_NUMBER:\s*\$\{\{\s*github\.event\.pull_request\.number\s*\}\}/.test(testsTouchedContent)) {
     errors.push(
-      `\`${TESTS_TOUCHED_PATH}\` has no live \`/repos/.../issues/.../labels\` fetch step — labels must be fetched\n` +
-        `    LIVE at check time, not trusted from the (possibly stale, on a manual re-run) triggering event\n` +
-        `    payload (G14).`,
+      `\`${TESTS_TOUCHED_PATH}\` must pass \`GH_TOKEN\` and \`PR_NUMBER\` to the check step — the script fetches the\n` +
+        `    PR's labels LIVE at check time (a manual re-run must never replay a stale event snapshot) (G14).`,
     );
   }
-  if (!/PR_LABELS:\s*\$\{\{\s*steps\.labels\.outputs\.labels\s*\}\}/.test(testsTouchedContent)) {
-    errors.push(
-      `\`${TESTS_TOUCHED_PATH}\` does not pass \`PR_LABELS\` from \`steps.labels.outputs.labels\` — the check\n` +
-        `    step must consume the live-fetched labels step's output, not the event payload directly (G14).`,
-    );
+  if (/PR_LABELS:/.test(testsTouchedContent)) {
+    errors.push(`\`${TESTS_TOUCHED_PATH}\` passes \`PR_LABELS\` from the workflow — labels must be fetched live by the script, not taken from the event payload (G14).`);
+  }
+  const testsTouchedScript = readIfExists("scripts/check/tests-touched.mjs") ?? "";
+  if (!/\/issues\/\$\{process\.env\.PR_NUMBER\}\/labels/.test(testsTouchedScript)) {
+    errors.push("`scripts/check/tests-touched.mjs` has no live `/issues/<n>/labels` fetch — G14 labels must be fetched at check time.");
   }
 }
 

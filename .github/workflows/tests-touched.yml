@@ -39,28 +39,15 @@ jobs:
         # from the container user; Nix's libgit2 then refuses the flake git input
         # ("repository path is not owned by current user"). No-op outside containers.
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
-      - name: Fetch current PR labels
-        # A manual re-run of an old job replays THAT event's payload, whose
-        # label snapshot can be stale (a label added/removed since). Fetch
-        # the CURRENT labels live at check time instead of trusting the
-        # triggering event's payload, so a re-run always evaluates against
-        # the PR's actual label state.
-        id: labels
-        env:
-          GH_TOKEN: ${{ github.token }}
-        # The devshell container has no `gh`; curl + node (both present) hit the
-        # same REST endpoint and emit the JSON array of label names.
-        run: |
-          labels=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "$GITHUB_API_URL/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels" \
-            | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.stringify(JSON.parse(d).map(l=>l.name))))')
-          echo "labels=$labels" >> "$GITHUB_OUTPUT"
       - name: Check tests touched
         # Labels arrive as a JSON array via env — never interpolated into the
         # shell line (so a label like `foo"; rm -rf /` cannot escape into the
         # recipe) and never comma-joined (a label whose own name contains a
         # comma, e.g. "review,tests:not-needed", must not fragment into a
         # false match — G14).
+        # Labels are fetched LIVE by the script (GH_TOKEN + PR_NUMBER) — never taken
+        # from the triggering event's payload, which a manual re-run replays stale.
         env:
-          PR_LABELS: ${{ steps.labels.outputs.labels }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: make check-tests-touched RANGE=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}

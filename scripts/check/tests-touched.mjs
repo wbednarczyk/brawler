@@ -17,7 +17,7 @@ import path from "node:path";
 
 function usage(message) {
   if (message) console.error(`tests-touched: ${message}`);
-  console.error("Usage: node scripts/check/tests-touched.mjs --base <sha> --head <sha>  (PR_LABELS env, comma-separated)");
+  console.error("Usage: node scripts/check/tests-touched.mjs --base <sha> --head <sha>  (labels: PR_LABELS JSON env, or live via GH_TOKEN + PR_NUMBER + GITHUB_REPOSITORY)");
   process.exit(64);
 }
 
@@ -289,6 +289,7 @@ function overlaps(a, b) {
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url).pathname;
 if (isMain) {
+  await (async () => {
   const { base, head } = parseArgs(process.argv.slice(2));
   if (!base || !head) usage("both --base and --head are required");
 
@@ -315,13 +316,28 @@ if (isMain) {
   const entries = parseNameStatus(nameStatusOut);
 
   let labels = [];
-  const rawLabels = process.env.PR_LABELS ?? "[]";
-  try {
-    const parsed = JSON.parse(rawLabels);
-    if (!Array.isArray(parsed)) throw new Error("PR_LABELS JSON value is not an array");
-    labels = parsed.filter((l) => typeof l === "string");
-  } catch (err) {
-    console.error(`tests-touched: PR_LABELS is not a valid JSON array (${err.message}); treating labels as empty.`);
+  if (process.env.PR_LABELS !== undefined) {
+    try {
+      const parsed = JSON.parse(process.env.PR_LABELS);
+      if (!Array.isArray(parsed)) throw new Error("PR_LABELS JSON value is not an array");
+      labels = parsed.filter((l) => typeof l === "string");
+    } catch (err) {
+      console.error(`tests-touched: PR_LABELS is not a valid JSON array (${err.message}); treating labels as empty.`);
+    }
+  } else if (process.env.GH_TOKEN && process.env.PR_NUMBER && process.env.GITHUB_REPOSITORY) {
+    // Live fetch at check time (a manual re-run of an old job must not replay that event's
+    // stale label snapshot). Done here, in node, because the CI container has neither `gh`
+    // nor `node` on PATH outside the nix devshell this script already runs in.
+    const api = process.env.GITHUB_API_URL ?? "https://api.github.com";
+    const url = `${api}/repos/${process.env.GITHUB_REPOSITORY}/issues/${process.env.PR_NUMBER}/labels`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: "application/vnd.github+json" },
+    });
+    if (!res.ok) {
+      console.error(`tests-touched: label fetch failed (${res.status} ${res.statusText}) for ${url}`);
+      process.exit(2);
+    }
+    labels = (await res.json()).map((l) => l.name).filter((n) => typeof n === "string");
   }
   const exempt = labels.includes("tests:not-needed");
 
@@ -421,4 +437,5 @@ if (isMain) {
   console.error("  Add or modify a test (or, for Rust, edit inside a #[cfg(test)]/#[test] span in the same diff),");
   console.error("  or add the `tests:not-needed` label if this change genuinely needs none.");
   process.exit(1);
+  })();
 }
