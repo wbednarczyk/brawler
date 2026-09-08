@@ -1,6 +1,5 @@
 ---
 source: src/mcp/protocol.rs
-assertion_line: 333
 expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
 ---
 {
@@ -1150,7 +1149,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "update_financial_fact"
       },
       {
-        "description": "Register and fetch a report document by URL for a company — the document an agent read before citing facts from it (the fact-write tools need its returned documentId). Always registers under source_type \"user_url\"; passing a sourceType is refused (unknown field). Gated: https only, private/loopback/link-local network addresses refused (including via redirect), content-type restricted to application/pdf | text/html | application/xhtml+xml, 30 MiB size cap. Idempotent on (companyId, url). Returns the document's id, local path, and fetch success/error.",
+        "description": "Register and fetch a report document by URL for a company — the document an agent read before citing facts from it (the fact-write tools need its returned documentId). Always registers under source_type \"user_url\"; passing a sourceType is refused (unknown field). Gated: https only, private/loopback/link-local network addresses refused (including via redirect), content-type restricted to application/pdf | text/html | application/xhtml+xml — an octet-stream or missing header defers to a strict byte sniff of the fetched body instead of an outright refusal — 30 MiB size cap. Idempotent on (companyId, url); never downgrades an already-fetched document — a call against a document whose stored file still matches its hash returns that document unchanged (no refetch), and a previously-failed row whose file matches is healed back to fetched. Returns the document's id, local path, and fetch success/error.",
         "inputSchema": {
           "additionalProperties": false,
           "properties": {

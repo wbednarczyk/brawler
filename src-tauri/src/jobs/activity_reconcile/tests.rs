@@ -104,7 +104,14 @@ fn startup_reconcile_leaves_a_run_with_a_stage_in_retry_backoff_alone() {
 }
 
 #[test]
-fn startup_reconcile_fails_a_run_whose_stage_job_is_gone() {
+fn startup_reconcile_reschedules_a_run_whose_stage_job_is_entirely_missing() {
+    // Issue #458 (ADR 0109 amendment): a non-terminal run with no live stage
+    // job is no longer failed outright — only a DEAD-LETTERED stage job fails
+    // it (`startup_reconcile_fails_a_run_with_a_dead_lettered_stage_job`,
+    // unchanged below). A run whose stage job never existed at all (this
+    // test) is resumable: its last-started stage (the default `fetch`, on a
+    // freshly created run) is rescheduled, exactly like the queue's own
+    // crash-residue reclaim resumes a crashed `running` job.
     let state = state();
     let company_id = company(&state);
     let document_id = state
@@ -131,12 +138,146 @@ fn startup_reconcile_fails_a_run_whose_stage_job_is_gone() {
         )
         .expect("create run")
         .expect("created");
-    // No stage job at all for this run: provably stranded.
+    // No stage job at all for this run: provably stranded, but not dead-lettered.
 
     reconcile_on_startup(&state);
 
-    let status = state.autopilot().get_run(&run.id).expect("run").status;
-    assert_eq!(status, "failed");
+    let after = state.autopilot().get_run(&run.id).expect("run");
+    assert_eq!(
+        after.status, "pending",
+        "reconcile never touches run.status on a reschedule"
+    );
+    let job = state
+        .jobs()
+        .status(&crate::jobs::autopilot::stage_job_id(&run.id, &after.stage))
+        .expect("status")
+        .expect("the missing stage job must have been rescheduled");
+    assert_eq!(job.status, "pending");
+}
+
+#[test]
+fn startup_reconcile_reschedules_the_last_started_stage_of_a_stranded_run_exactly_once() {
+    // Issue #458 (ADR 0109 amendment): a run stuck `running` at a stage with
+    // NO job under it at all (crash before the stage's own job was even
+    // enqueued) is resumable — its last-started stage (`extract`, here) is
+    // rescheduled once. A SECOND reconcile pass must be a no-op (idempotent):
+    // no new row, `attempts` untouched.
+    let state = state();
+    let company_id = company(&state);
+    let document_id = state
+        .create_or_find_pending_report_document(crate::storage::CaptureReportDocumentInput {
+            company_id: company_id.clone(),
+            source_type: "official_report".to_owned(),
+            url: "https://example.test/r5.pdf".to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: Some("Raport 5".to_owned()),
+            attribution: None,
+        })
+        .expect("document")
+        .id;
+    let run = state
+        .autopilot()
+        .create_run_if_absent(
+            "run-5",
+            &company_id,
+            &document_id,
+            "detection",
+            "autopilot",
+            None,
+        )
+        .expect("create run")
+        .expect("created");
+    state
+        .autopilot()
+        .set_run_stage(&run.id, "extract", "running")
+        .expect("set stage");
+    // No job row at all for `extract`.
+
+    reconcile_on_startup(&state);
+
+    let job_id = crate::jobs::autopilot::stage_job_id(&run.id, "extract");
+    let job = state
+        .jobs()
+        .status(&job_id)
+        .expect("status")
+        .expect("the last-started stage must have been rescheduled");
+    assert_eq!(job.status, "pending");
+    assert_eq!(job.attempts, 0);
+
+    reconcile_on_startup(&state);
+    let job_again = state
+        .jobs()
+        .status(&job_id)
+        .expect("status")
+        .expect("job row");
+    assert_eq!(
+        job_again.attempts, 0,
+        "a second reconcile pass must be a no-op — reschedule on an already-pending row does nothing"
+    );
+}
+
+#[test]
+fn startup_reconcile_reschedules_when_a_stale_succeeded_job_from_a_previous_generation_exists() {
+    // Issue #458: a run can be RECREATED under the same deterministic id
+    // (`create_run_if_absent`'s self-heal DELETE-then-INSERT path) while its
+    // stage's `job_queue` row from a PRIOR life still sits there, terminally
+    // `succeeded` — a stale row, not a dead letter. That must resume the same
+    // as a missing job (reschedule), never fail the run outright.
+    let state = state();
+    let company_id = company(&state);
+    let document_id = state
+        .create_or_find_pending_report_document(crate::storage::CaptureReportDocumentInput {
+            company_id: company_id.clone(),
+            source_type: "official_report".to_owned(),
+            url: "https://example.test/r6.pdf".to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: Some("Raport 6".to_owned()),
+            attribution: None,
+        })
+        .expect("document")
+        .id;
+    let run = state
+        .autopilot()
+        .create_run_if_absent(
+            "run-6",
+            &company_id,
+            &document_id,
+            "detection",
+            "autopilot",
+            None,
+        )
+        .expect("create run")
+        .expect("created");
+    state
+        .autopilot()
+        .set_run_stage(&run.id, "extract", "running")
+        .expect("set stage");
+    let job_id = crate::jobs::autopilot::stage_job_id(&run.id, "extract");
+    state
+        .jobs()
+        .enqueue(
+            &job_id,
+            AUTOPILOT_STAGE_KIND,
+            r#"{"run_id":"run-6","stage":"extract"}"#,
+            3,
+        )
+        .expect("enqueue");
+    state.jobs().claim_next().expect("claim").expect("job");
+    state.jobs().mark_succeeded(&job_id).expect("succeed");
+
+    reconcile_on_startup(&state);
+
+    let job = state
+        .jobs()
+        .status(&job_id)
+        .expect("status")
+        .expect("job row");
+    assert_eq!(
+        job.status, "pending",
+        "a stale succeeded row from a previous generation must be rescheduled, not treated as a dead letter"
+    );
 }
 
 #[test]
@@ -247,22 +388,49 @@ fn startup_reconcile_is_not_fooled_by_a_like_false_positive_from_an_underscore_i
 
     reconcile_on_startup(&state);
 
-    let status = state.autopilot().get_run(&run.id).expect("run").status;
+    // Issue #458 (ADR 0109 amendment): `co_1`'s own stage job is MISSING
+    // (only the decoy under a different id exists), so reconcile reschedules
+    // it rather than failing the run — the decoy must not have been mistaken
+    // for `co_1`'s job either way (the point of this test, unchanged): a
+    // false "live" read would have left `co_1` untouched (still `pending`
+    // with NO real job), while the correct exact-`IN` read sees no live job
+    // and reschedules `co_1`'s real stage job.
+    let run = state.autopilot().get_run(&run.id).expect("run");
     assert_eq!(
-        status, "failed",
+        run.status, "pending",
         "the decoy row must not falsely keep `co_1` looking live"
+    );
+    let real_job = state
+        .jobs()
+        .status(&crate::jobs::autopilot::stage_job_id(&run.id, &run.stage))
+        .expect("status")
+        .expect("co_1's own stage job must have been rescheduled");
+    assert_eq!(real_job.status, "pending");
+    let decoy = state
+        .jobs()
+        .status("autopilot:coX1:fetch")
+        .expect("status")
+        .expect("decoy row untouched");
+    assert_eq!(
+        decoy.attempts, 0,
+        "the decoy must never have been claimed or otherwise touched by reconcile"
     );
 }
 
 #[test]
-fn startup_reconcile_fails_a_run_whose_last_stage_succeeded_with_no_successor() {
-    // sol diff R1 #17: `notify` is the LAST stage — it has no successor to
-    // enqueue at all (`next_stage` returns `None` for it). A crash between
-    // the notify job settling `succeeded` and `autopilot_run.status` itself
-    // being finalized leaves the run `pending`/`running` with NO live stage
-    // job — provably stuck (there is nothing left to resume), so reconcile
-    // must still fail it, exactly like the "stage job is gone" case, rather
-    // than mishandling the "no successor by design" shape differently.
+fn startup_reconcile_reschedules_a_run_whose_last_stage_succeeded_with_no_successor_and_run_until_idle_finalizes_it(
+) {
+    // sol diff R1 #17 + issue #458 (ADR 0109 amendment, 2026-09-08): `notify`
+    // is the LAST stage — it has no successor to enqueue at all (`next_stage`
+    // returns `None` for it). A crash between the notify job settling
+    // `succeeded` and `autopilot_run.status` itself being finalized leaves
+    // the run `pending`/`running` with NO live stage job. Under the queue's
+    // own crash contract this is NOT a dead letter (the notify job's own
+    // terminal state is `succeeded`, not `failed`) — it is resumable: the
+    // run's last-started stage (`notify`) is rescheduled ONCE and re-runs;
+    // `finalize_notify` is idempotent (unconditionally re-finalizes as
+    // `succeeded`), so the re-run settles the run instead of stranding it
+    // `failed` forever (the pre-fix behavior this test used to pin).
     let state = state();
     let company_id = company(&state);
     let document_id = state
@@ -289,6 +457,14 @@ fn startup_reconcile_fails_a_run_whose_last_stage_succeeded_with_no_successor() 
         )
         .expect("create run")
         .expect("created");
+    // The run genuinely reached the notify stage before the simulated crash
+    // (`run_stage` stamps stage/status -> running BEFORE running the stage
+    // body) — realistic fidelity for the "reschedule the last-started stage"
+    // rule, which reads `run.stage`.
+    state
+        .autopilot()
+        .set_run_stage(&run.id, "notify", "running")
+        .expect("set stage");
     // The notify stage's job ran to a genuine terminal success...
     state
         .jobs()
@@ -309,10 +485,42 @@ fn startup_reconcile_fails_a_run_whose_last_stage_succeeded_with_no_successor() 
 
     reconcile_on_startup(&state);
 
-    let status = state.autopilot().get_run(&run.id).expect("run").status;
+    let after_reconcile = state.autopilot().get_run(&run.id).expect("run");
     assert_eq!(
-        status, "failed",
-        "no live stage job survives the notify stage's own success — provably stuck, honestly failed"
+        after_reconcile.status, "running",
+        "reconcile never touches run.status on a reschedule"
+    );
+    let job = state
+        .jobs()
+        .status("autopilot:run-4:notify")
+        .expect("status")
+        .expect("job row");
+    assert_eq!(
+        job.status, "pending",
+        "the notify job must be re-armed once, not left succeeded forever"
+    );
+
+    // Idempotent: a second reconcile pass must not re-arm it again (still
+    // `pending`, `attempts` untouched — `reschedule` on an already-pending
+    // row is a no-op).
+    reconcile_on_startup(&state);
+    let job_again = state
+        .jobs()
+        .status("autopilot:run-4:notify")
+        .expect("status")
+        .expect("job row");
+    assert_eq!(job_again.attempts, job.attempts);
+
+    // Driving the queue to idle re-runs the notify stage; it finalizes the
+    // run instead of leaving it dangling.
+    crate::jobs::handlers::build_worker(state.clone())
+        .run_until_idle()
+        .expect("drain the queue");
+
+    let finalized = state.autopilot().get_run(&run.id).expect("run");
+    assert_eq!(
+        finalized.status, "succeeded",
+        "the re-armed notify stage must finalize the run, not strand it"
     );
 }
 

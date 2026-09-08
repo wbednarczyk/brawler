@@ -31,6 +31,15 @@ pub(super) fn list_notebook_entries(
     Ok(entries)
 }
 
+/// The entry INSERT, its tags and its origins land together or not at all
+/// (#461): before this fn a partial write (e.g. the entry row with none of
+/// its origins) was silent data loss the caller had no way to detect. This fn
+/// owns its transaction — every caller today (`NotebookStore::create_notebook_entry`,
+/// `create_note_from_transcript_selection`, MCP acts, Tauri commands) passes a
+/// bare pooled connection and none holds a transaction of its own, so there is
+/// no nested-transaction hazard; a future composed caller should get a
+/// `_in_tx` inner writer taking `&Transaction` instead of nesting a new
+/// transaction on top of this one (rusqlite has no true nested transactions).
 pub(super) fn create_notebook_entry(
     connection: &Connection,
     input: NewNotebookEntry,
@@ -47,7 +56,14 @@ pub(super) fn create_notebook_entry(
     let kind = input.kind.trim().to_owned();
     let claim_status = empty_string_to_none(input.claim_status);
     let tags = normalize_tags(input.tags);
-    let id = notebook_entry_id(connection, &input.company_id, &title)?;
+
+    // Opened before the id allocation's COUNT(*) read so the id and every
+    // write below share one snapshot (#461) — a concurrent insert racing on
+    // the same title can no longer see stale state between the read and the
+    // writes that key off it.
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, rusqlite::TransactionBehavior::Immediate)?;
+    let id = notebook_entry_id(&transaction, &input.company_id, &title)?;
 
     validate_allowed_notebook_value("body_format", &body_format, &["markdown"])?;
     validate_allowed_notebook_value(
@@ -92,7 +108,7 @@ pub(super) fn create_notebook_entry(
         )?;
     }
 
-    connection.execute(
+    transaction.execute(
         "
         INSERT INTO notebook_entries (
             id,
@@ -122,7 +138,7 @@ pub(super) fn create_notebook_entry(
     )?;
 
     for tag in tags {
-        connection.execute(
+        transaction.execute(
             "
             INSERT OR IGNORE INTO notebook_entry_tags (notebook_entry_id, tag)
             VALUES (?1, ?2)
@@ -134,7 +150,7 @@ pub(super) fn create_notebook_entry(
     for (index, origins) in input.origins.into_iter().enumerate() {
         let source_type = origins.source_type.trim().to_owned();
 
-        connection.execute(
+        transaction.execute(
             "
             INSERT INTO notebook_entry_origins (
                 id,
@@ -156,9 +172,16 @@ pub(super) fn create_notebook_entry(
         )?;
     }
 
-    get_notebook_entry(connection, &id)
+    let entry = get_notebook_entry(&transaction, &id)?;
+    transaction.commit()?;
+    Ok(entry)
 }
 
+/// The UPDATE, the tag DELETE and the tag re-INSERT land together or not at
+/// all (#461): before this fn a failure mid-reinsert left the row updated but
+/// its tags gone. Same transaction-ownership contract as
+/// [`create_notebook_entry`] — see that fn's doc for the nested-transaction
+/// note.
 pub(super) fn update_notebook_entry(
     connection: &Connection,
     input: NotebookEntryUpdate,
@@ -191,7 +214,10 @@ pub(super) fn update_notebook_entry(
         )?;
     }
 
-    connection.execute(
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, rusqlite::TransactionBehavior::Immediate)?;
+
+    transaction.execute(
         "
         UPDATE notebook_entries
         SET
@@ -217,13 +243,13 @@ pub(super) fn update_notebook_entry(
         ],
     )?;
 
-    connection.execute(
+    transaction.execute(
         "DELETE FROM notebook_entry_tags WHERE notebook_entry_id = ?1",
         [&id],
     )?;
 
     for tag in tags {
-        connection.execute(
+        transaction.execute(
             "
             INSERT OR IGNORE INTO notebook_entry_tags (notebook_entry_id, tag)
             VALUES (?1, ?2)
@@ -232,7 +258,9 @@ pub(super) fn update_notebook_entry(
         )?;
     }
 
-    get_notebook_entry(connection, &id)
+    let entry = get_notebook_entry(&transaction, &id)?;
+    transaction.commit()?;
+    Ok(entry)
 }
 
 pub(super) fn delete_notebook_entry(

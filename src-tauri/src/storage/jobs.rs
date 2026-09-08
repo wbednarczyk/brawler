@@ -71,6 +71,31 @@ fn sibling_not_running_guard() -> String {
     )
 }
 
+/// Shared INSERT for one `job_queue` row (issue #458): the single place that
+/// writes a job row, so every writer — standalone (`JobQueueStore::enqueue`,
+/// `or_ignore = true`, `INSERT OR IGNORE`) or composed inside another store's
+/// own IMMEDIATE transaction (`or_ignore = false`, plain INSERT — a
+/// collision rolls the whole transaction back instead of silently no-op'ing
+/// half a create+enqueue pair) — goes through the same statement. Used by
+/// `pipeline_reextraction.rs`'s `create_batch_with_job_if_none_active` and
+/// `history_sweeps.rs`'s `create_history_sweep_with_job`.
+pub(super) fn enqueue_in(
+    connection: &Connection,
+    id: &str,
+    kind: &str,
+    payload: &str,
+    max_attempts: i64,
+    or_ignore: bool,
+) -> StorageResult<bool> {
+    let sql = if or_ignore {
+        "INSERT OR IGNORE INTO job_queue (id, kind, payload, max_attempts) VALUES (?1, ?2, ?3, ?4)"
+    } else {
+        "INSERT INTO job_queue (id, kind, payload, max_attempts) VALUES (?1, ?2, ?3, ?4)"
+    };
+    let inserted = connection.execute(sql, params![id, kind, payload, max_attempts.max(1)])?;
+    Ok(inserted > 0)
+}
+
 /// Job-queue domain store. Reach it via `AppState::jobs()`.
 #[derive(Clone)]
 pub struct JobQueueStore {
@@ -94,14 +119,7 @@ impl JobQueueStore {
         max_attempts: i64,
     ) -> StorageResult<bool> {
         let connection = self.db.checkout()?;
-        let inserted = connection.execute(
-            "
-            INSERT OR IGNORE INTO job_queue (id, kind, payload, max_attempts)
-            VALUES (?1, ?2, ?3, ?4)
-            ",
-            params![id, kind, payload, max_attempts.max(1)],
-        )?;
-        Ok(inserted > 0)
+        enqueue_in(&connection, id, kind, payload, max_attempts, true)
     }
 
     /// Re-arm a recurring job under a **stable** id: insert it, or reset an

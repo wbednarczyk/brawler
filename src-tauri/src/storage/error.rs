@@ -276,6 +276,15 @@ pub enum StorageError {
         id: String,
         reason: String,
     },
+    /// A restore candidate failed verification (#319, ADR 0032): not a real,
+    /// intact database this build recognizes (missing/corrupt file, failed
+    /// `PRAGMA integrity_check`, no `schema_migrations` table, or a migration
+    /// version this build has never applied — likely a newer app version's
+    /// database). Always recoverable: the live database is untouched, never
+    /// renamed away until AFTER a verified candidate is checkpointed and
+    /// copied aside — see `storage::backup::apply_staged_restore`.
+    #[error("restore refused: {0}")]
+    RestoreRejected(String),
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

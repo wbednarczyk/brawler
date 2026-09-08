@@ -93,6 +93,27 @@ database (2026-09-03): 4 151 queue rows, 0 pending/running; residue of retired k
    panel is open, through a controller with the attention-controller posture (one request at a
    time, last-known-good, request sequencing).
 
+## Amendment (2026-09-08, #458) — stranded runs recovered like a crashed job
+
+Decision 4's startup rule closed the two cards it deferred ("re-arming a stuck `pending` run and
+transactional sweep create+enqueue are a separate card, not this ADR"): `enqueue_history_sweep`
+now creates the sweep row and its durable job in one IMMEDIATE transaction
+(`HistorySweepStore::create_history_sweep_with_job`), mirroring
+`pipeline_reextraction.rs`'s `create_batch_with_job_if_none_active` shape — a crash/error between
+the two writes can no longer commit a sweep with no job ever able to drive it. A stranded
+`autopilot_run` (non-terminal, no live stage job) is now recovered like the durable queue's own
+crash contract, not failed outright: only a stage job that is **dead-lettered** (terminally
+`failed`, attempts exhausted) fails the run. A **missing** stage job, or a **stale terminal**
+(`succeeded`) row left by a previous generation of the same deterministic run id
+(`create_run_if_absent`'s self-heal), is resumable — the run's last-started stage (`run.stage`,
+the stage `run_stage` stamps `running` before executing it) is rescheduled once per startup pass,
+exactly like `reclaim_stale_running` resumes a crashed `running` job. Decision 4's prose above is
+superseded by this rule for the "reachable stage job is terminally failed, absent, or succeeded
+without a live successor → `failed`" clause specifically — the dead-lettered case still fails the
+run, the other two now reschedule it. Stage-enqueue failures (the first stage, and every stage's
+hand-off to its successor) are also no longer swallowed as a warn-only log: the run is finalized
+`failed` with a typed `last_error` naming the stage, visible on the run card (ADR 0091 surface).
+
 ## Rejected
 
 - **A new task registry table the jobs "publish to"** — the queue already is the durable

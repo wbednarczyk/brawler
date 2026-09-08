@@ -96,6 +96,50 @@ impl HistorySweepStore {
         self.get_history_sweep(&id)
     }
 
+    /// Create a queued sweep AND its durable job row in one IMMEDIATE
+    /// transaction (issue #458). The pre-fix caller ran `create_history_sweep`
+    /// then `JobQueueStore::enqueue` as two separate autocommit statements — a
+    /// crash/error between them committed a `queued` sweep with no job ever able
+    /// to drive it (no reconcile rule resurrects a sweep row with no job at all,
+    /// only a run under one). Mirrors `pipeline_reextraction.rs`'s
+    /// `create_batch_with_job_if_none_active` shape, minus its dedup branch — a
+    /// sweep is never deduplicated against an existing one, so this is the plain
+    /// create+enqueue half only. `payload_fn` receives the freshly minted sweep
+    /// id (needed to build the job payload).
+    pub fn create_history_sweep_with_job(
+        &self,
+        company_id: &str,
+        trigger: &str,
+        job_kind: &str,
+        job_max_attempts: i64,
+        job_payload: impl Fn(&str) -> String,
+    ) -> StorageResult<HistorySweep> {
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let id = next_sweep_id(&tx, company_id)?;
+        tx.execute(
+            "
+            INSERT INTO history_sweeps (id, company_id, trigger)
+            VALUES (?1, ?2, ?3)
+            ",
+            params![id, company_id, trigger],
+        )?;
+        // Plain INSERT (`or_ignore = false`): `next_sweep_id` already checked the
+        // id is free, so a collision here means something is very wrong — the
+        // whole transaction rolls back rather than silently no-op'ing the job.
+        super::jobs::enqueue_in(
+            &tx,
+            &id,
+            job_kind,
+            &job_payload(&id),
+            job_max_attempts,
+            false,
+        )?;
+        tx.commit()?;
+        drop(connection);
+        self.get_history_sweep(&id)
+    }
+
     /// Fetch one sweep by id.
     pub fn get_history_sweep(&self, id: &str) -> StorageResult<HistorySweep> {
         let connection = self.db.checkout()?;

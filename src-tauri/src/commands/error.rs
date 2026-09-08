@@ -295,6 +295,11 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         // A sweep/batch parent's declared member set failed verification
         // (sol diff R4 #2) — corrupt producer bookkeeping, not caller input.
         StorageError::ActivityParentMemberInvariant { .. } => Internal,
+        // The caller-chosen backup file failed verification (#319): not a
+        // real/intact database this build recognizes. A shape problem with
+        // the chosen input, not a conflict with stored state — the live
+        // database is untouched either way.
+        StorageError::RestoreRejected(_) => InvalidInput,
     }
 }
 

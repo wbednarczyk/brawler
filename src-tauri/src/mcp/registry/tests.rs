@@ -1706,6 +1706,10 @@ fn capture_report_document_forces_user_url_and_is_idempotent_without_network() {
         document.source_type, "user_url",
         "an agent capture always registers source_type=user_url, never an ingest type"
     );
+    assert_eq!(
+        document.fetch_status, "failed",
+        "the https-only refusal records a failed fetch, not a lingering pending row"
+    );
 
     // Idempotent: same company_id+url returns the SAME row (existing
     // UNIQUE(company_id, url) behavior, unaffected by the new gates).
@@ -1723,6 +1727,15 @@ fn capture_report_document_forces_user_url_and_is_idempotent_without_network() {
     assert_eq!(
         first_id, second_id,
         "same company+url must return the same row"
+    );
+    let document_after_second = state
+        .get_report_document(&second_id)
+        .expect("report document");
+    assert_eq!(
+        document_after_second.fetch_status, "failed",
+        "#455: repeating a still-failing capture must not strand the row anywhere else \
+         (mark_failed's atomic guard only ever declines a downgrade FROM fetched, never \
+         a re-application of failed onto failed)"
     );
 }
 

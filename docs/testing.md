@@ -103,6 +103,21 @@ Bootstrap/refresh: `rust-coverage` and `frontend-coverage` (`full-check.yml`) up
 
 `scripts/check/tests-touched.mjs` (G14, hard gates wave 2, `tests-touched.yml`) is an **acknowledgement** gate, not proof of behavioral coverage: a PR whose diff touches production code must also carry a test change (a changed test file, or, for Rust, an inline `#[cfg(test)]`/`#[test]` hunk in the same diff), or the `tests:not-needed` label — a pure refactor legitimately keeps its existing tests untouched. A deleted or renamed test file counts as evidence too (an obsolete test dropped alongside its production edit is still acknowledged); old-side test-span content is read at the actual merge-base of the PR (`git merge-base base head`), not the base branch's current tip, so an advanced base branch never misattributes evidence. Labels are fetched **live at check time** by the script itself through the GitHub REST API (`GH_TOKEN` + `PR_NUMBER`, `/repos/…/issues/<n>/labels`) (never trusted from the triggering event's payload, which a manual re-run of an old job would replay stale) and travel into the check step as a JSON array, never a comma list — a label whose own name contains a comma must not fragment into a false `tests:not-needed` match. Lives outside `full-check.yml` (same rationale as `release-label.yml`) so a label event re-runs this ~seconds job instead of the whole gate.
 
+## Failure-path tests: fault injection
+
+A multi-step write's happy-path test only ever observes success — nothing injects a failure at step *k*, so a partial-state bug (the first write commits, the second never runs) goes untested even with 100% line coverage of the writer. The 2026-09-08 atomicity wave (#461, #319) named the idiom already used six times in `jobs/` and generalized it: **a multi-step write ships one test that poisons step k ≥ 2 and asserts no partial state remains.**
+
+Idiom:
+
+1. `state.checkout_for_tests()` (test-only, `#[cfg(test)]`) → `CREATE TRIGGER poison_<x> BEFORE <INSERT|UPDATE|DELETE> ON <table> WHEN <semantic predicate on NEW/OLD, e.g. NEW.tag = 'poison-tag'> BEGIN SELECT RAISE(ABORT, '<x> poisoned for test'); END`.
+2. **Drop the checkout guard before calling the store method** — holding it across the call deadlocks the pool (#360/#376).
+3. Call the public store method under test and assert it surfaces an error.
+4. Assert the promised invariant through the same public read the feature uses: for a database write, the observable state equals the pre-call state (e.g. the entry row and its tags/origins are exactly as they were, or absent entirely if nothing should have committed); for a filesystem/restart protocol, the restart-recovery assertion (a crash-journal test reads the recovered file back).
+
+**Targeted triggers are the default.** The `WHEN` predicate names the specific row/value the test's own write produces (a tag string, a job kind, an id suffix) so the trigger only ever fires for that test's own data, never an unrelated write racing in the same run. A `total_changes()` budget counting writes since a checkpoint (`jobs/queue_dispatch_tests.rs:288`) is a **specialized** idiom for a controlled-retry test where no single row/value distinguishes the poisoned attempt from a legitimate one — never the template for a fresh test.
+
+**Prove the test is real before shipping the fix**: run the new test against the pre-fix code and confirm it fails for the reason under test (not a setup bug), then implement, then confirm green. A compile failure is never that evidence. When the test needs a new API, get the red from the *behaviour*: keep the new signature but temporarily short-circuit the new logic (e.g. make the verifier return `Ok` or skip the transaction), run the test red, then restore — and paste that tail.
+
 ## Real-data validation precedes implementation for matching/ranking features
 
 Any feature whose value rests on a **similarity / dedup / clustering / matching /

@@ -466,6 +466,16 @@ function checkGit(rawArgs, state) {
     case "push":
       reason = checkPush(rest, localState);
       break;
+    case "apply":
+      // `git apply -R/--reverse <patch>` rewrites tracked files back to the patch's pre-image —
+      // an agent used it to "undo its own fmt" and silently discarded three other agents' work
+      // (harvest 2026-09-08, atomicity wave). Forward `apply`/`--check` stay allowed.
+      if (hasExact(rest, ["-R", "--reverse"]) || hasBundledShortFlag(rest, "R")) {
+        reason = "git apply -R/--reverse rewrites tracked files to a patch's pre-image (discards other work)";
+      } else {
+        reason = mayBeOnMaster(localState) ? "git apply directly on `master` bypasses the PR/CI gate" : null;
+      }
+      break;
     case "worktree":
       reason = checkWorktree(rest);
       break;

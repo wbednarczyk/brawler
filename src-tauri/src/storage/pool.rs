@@ -90,8 +90,12 @@ pub(super) fn read_pool_config(connection: &Connection) -> PoolConfig {
 /// migrations and reads pool configuration, then the pool is built from that
 /// configuration with per-connection pragmas.
 pub fn open_pool(database_path: PathBuf, data_dir: PathBuf) -> StorageResult<AppState> {
-    // Apply a staged restore (if requested last session) before opening anything.
-    backup::apply_staged_restore(&database_path, &data_dir)?;
+    // Apply a staged restore (if requested last session) before opening
+    // anything. A recoverable rejection (#319) is NOT fatal — the original
+    // database is untouched, so setup continues with it; the reason is
+    // carried on the returned `AppState` for `lib.rs` to surface once the
+    // pool is up. Only an unrecoverable crash-recovery failure propagates.
+    let restore_notice = backup::apply_staged_restore(&database_path, &data_dir)?;
 
     let mut bootstrap = Connection::open(&database_path)?;
     bootstrap.pragma_update(None, "journal_mode", "WAL")?;
@@ -123,7 +127,7 @@ pub fn open_pool(database_path: PathBuf, data_dir: PathBuf) -> StorageResult<App
         .connection_timeout(Duration::from_millis(config.acquire_timeout_ms))
         .build(manager)?;
 
-    Ok(AppState::with_pool(pool, data_dir))
+    Ok(AppState::with_pool(pool, data_dir).with_pending_restore_notice(restore_notice))
 }
 
 #[cfg(test)]
