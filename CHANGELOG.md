@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.83.0 - 2026-09-08
+
+
+### Features
+
+- **gates**: hard guardrails wave 1 — hooks, advisory carding, source-scan ratchets, test-hygiene lints (#477)
+
+- **ui**: Frontend v2 closing wave — GlobalSearch on the shared combobox, Open tool: palette family, Kanał, paint-proven document marks, Backups in Settings (#469, #454, #478, #476, #451) (#483)
+
 ## v0.82.0 - 2026-09-08
 
 
