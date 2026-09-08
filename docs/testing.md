@@ -76,7 +76,10 @@ denied only while another cargo/rustc/nextest is alive; a FULL JS suite or a
 composite target (`vitest`/`playwright test` with no file, `make check*`,
 coverage, `npm test`/`run build`) is denied while anything heavy is alive;
 SCOPED vitest/playwright runs (a file or pattern argument) always pass.
-`BRAWLER_ALLOW_PARALLEL_BUILD=1` is the deliberate escape hatch.
+`BRAWLER_ALLOW_PARALLEL_BUILD=1` is the deliberate escape hatch. The hook is
+defence-in-depth behind this rule, not a mutex: it classifies ordinary agent
+command syntax (prefixes, wrappers, redirections, `bash -c` bodies) and
+cannot see a run started outside the Bash tool.
 
 **Delegation contracts name the consumers of a changed boundary (harvested 2026-07-10, ADR 0045).** When a delegated slice changes what a creation/normalization boundary produces (e.g. a create call starts folding a legacy label), scoped module tests miss the OTHER modules whose seeds or reads assumed the old shape — the collision surfaces only at the full gate. The slice contract must enumerate the boundary's consumers (`repoctx callers <fn>` / `rdeps`) as modules the agent runs tests for, and any test that needs the legacy shape seeds it via raw SQL like migration tests do, never through the now-normalizing public surface.
 

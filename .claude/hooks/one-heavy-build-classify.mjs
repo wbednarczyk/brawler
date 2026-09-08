@@ -106,6 +106,26 @@ function stripPrefixes(tokens) {
       if (tokens[0] === "proxy") tokens.shift();
       changed = true;
     }
+    // `timeout [opts] <duration> cmd`, `nice [-n N] cmd`, `time cmd`: transparent wrappers.
+    if (tokens[0] === "timeout") {
+      tokens.shift();
+      while (tokens.length && tokens[0].startsWith("-")) {
+        if (/^(-s|-k|--signal|--kill-after)$/.test(tokens[0])) tokens.shift();
+        tokens.shift();
+      }
+      tokens.shift(); // the duration
+      changed = true;
+    }
+    if (tokens[0] === "nice") {
+      tokens.shift();
+      if (tokens[0] === "-n") tokens.splice(0, 2);
+      else if (/^-\d+$/.test(tokens[0] ?? "")) tokens.shift();
+      changed = true;
+    }
+    if (tokens[0] === "time") {
+      tokens.shift();
+      changed = true;
+    }
     if (tokens[0] === "nix") {
       const cIdx = tokens.indexOf("-c");
       if (cIdx !== -1) {
@@ -214,10 +234,19 @@ function classifyTokens(tokens) {
       if (t1 === "test") return jsRun(2);
       if (t1 === "run" && NPM_RUN_HEAVY_RE.test(t2 ?? "")) return t2.startsWith("test") ? jsRun(3) : "full";
       return null;
-    case "npx":
-      if (t1 === "vitest") return t2 === "run" ? jsRun(3) : jsRun(2);
-      if (t1 === "playwright") return t2 === "test" ? jsRun(3) : null;
+    case "npx": {
+      // npx flags (`--no-install`, `-y`, `--package x`) may precede the runner.
+      let i = 1;
+      while (i < tokens.length && tokens[i].startsWith("-")) {
+        if (/^(--package|-p)$/.test(tokens[i])) i++;
+        i++;
+      }
+      const runner = tokens[i];
+      const next = tokens[i + 1];
+      if (runner === "vitest") return next === "run" ? jsRun(i + 2) : jsRun(i + 1);
+      if (runner === "playwright") return next === "test" ? jsRun(i + 2) : null;
       return null;
+    }
     case "make": {
       let i = 1;
       while (i < tokens.length) {

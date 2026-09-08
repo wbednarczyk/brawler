@@ -125,6 +125,17 @@ test("round-5 bypasses stay closed (glued redirections; quoted assignments befor
   }
 });
 
+test("round-6 follow-ups (timeout/nice/time wrappers; npx flags before the runner)", () => {
+  const RUSTC = "200 /usr/bin/rustc --crate-name brawler";
+  for (const cmd of ["timeout 120s cargo test", "timeout -k 5 300 cargo nextest run x", "nice -n 10 cargo build", "time cargo clippy"]) {
+    assert.equal(runHook(cmd, RUSTC), "deny", `wrapped cargo: ${cmd}`);
+  }
+  for (const cmd of ["npx --no-install vitest run", "npx -y playwright test", "npx --package vitest vitest"]) {
+    assert.equal(runHook(cmd, RUSTC), "deny", `npx flags before the runner: ${cmd}`);
+  }
+  assert.equal(runHook("npx --no-install vitest run src/a.test.ts", RUSTC), "allow", "scoped after npx flags");
+});
+
 test("nothing heavy alive: every command is allowed", () => {
   for (const cmd of [...DENY_COMMANDS, ...ALLOW_COMMANDS]) {
     assert.equal(runHook(cmd, ""), "allow", `expected allow when idle for: ${cmd}`);
