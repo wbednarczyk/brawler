@@ -28,7 +28,14 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
 hook_dir=$(dirname "${BASH_SOURCE[0]}")
 printf '%s' "$cmd" | node "$hook_dir/one-heavy-build-classify.mjs" || exit 0
 
-running=$(pgrep -af '(^|/)(cargo|rustc|cargo-nextest|nextest|vitest|playwright)( |$)' 2>/dev/null | grep -v 'one-heavy-build' | head -5 || true)
+# Test seam: BRAWLER_HEAVY_PS_OVERRIDE (when SET, even empty) replaces the
+# pgrep result so scripts/check/one-heavy-build.test.mjs is hermetic — it never
+# depends on what is really running on the machine.
+if [ -n "${BRAWLER_HEAVY_PS_OVERRIDE+x}" ]; then
+  running="$BRAWLER_HEAVY_PS_OVERRIDE"
+else
+  running=$(pgrep -af '(^|/)(cargo|rustc|cargo-nextest|nextest|vitest|playwright)( |$)' 2>/dev/null | grep -v 'one-heavy-build' | head -5 || true)
+fi
 [ -n "$running" ] || exit 0
 
 jq -n --arg r "$running" '{
