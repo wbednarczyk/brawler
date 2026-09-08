@@ -9,6 +9,14 @@
 //! blocks is review territory, not this scan — the two checks below are
 //! about SHAPE (`async` + offload marker present; the identity of which
 //! commands are sync at all, frozen).
+//!
+//! Both the offload-marker search and the `command(async)` attribute parse
+//! run over comment/string-stripped text (`strip_comments_and_strings`) —
+//! `spawn_blocking(` written only in a `//` comment, or `async` appearing
+//! only inside a string VALUE (`rename_all = "async_x"`), must not satisfy
+//! either check. A reviewed exception for a genuinely non-blocking async
+//! command is a `// offload-ok: <non-empty reason>` comment on the line
+//! above its attribute block (mirrors wave-1's `// no-assert-ok:`, `mod.rs`).
 
 use std::path::Path;
 
@@ -18,7 +26,7 @@ use std::path::Path;
 const CMD_ATTR: &str = concat!("#[tauri::", "command]");
 const CMD_ATTR_OPEN: &str = concat!("#[tauri::", "command(");
 
-use super::scan::{is_test_file, strip_comments_and_strings};
+use super::scan::{contains_word_token, is_test_file, strip_comments_and_strings};
 use super::{extract_fn_body, extract_test_fn_name, is_fn_signature, source_files};
 
 /// One Tauri-command-attributed fn taking a `State<'_, ...AppState>` param.
@@ -27,6 +35,56 @@ struct StateCommand {
     id: String,
     is_async: bool,
     body: String,
+    /// A `// offload-ok: <non-empty reason>` comment sat directly above this
+    /// command's attribute block — a reviewed exception for a genuinely
+    /// non-blocking async command that has no `spawn_blocking(`/
+    /// `run_blocking_task(` to find (mirrors wave-1's `// no-assert-ok:`,
+    /// `mod.rs`). A blank reason does NOT count — same rule G11
+    /// (`escape_hatch_reasons_are_non_empty`) enforces crate-wide.
+    offload_ok: bool,
+}
+
+/// Whether the command-attribute line `trimmed` (bare or the `(...)` open
+/// form, both single-line) declares
+/// `async` — parsed from the argument list's contents rather than a raw
+/// substring search over the whole line, so a string VALUE merely containing
+/// "async" (`rename_all = "async_x"`) does not count; only a bare `async`
+/// identifier token inside the parens does.
+fn attr_declares_async(trimmed: &str) -> bool {
+    let Some(open) = trimmed.find('(') else {
+        return false;
+    };
+    let Some(close) = trimmed.rfind(')') else {
+        return false;
+    };
+    if close <= open {
+        return false;
+    }
+    let args = strip_comments_and_strings(&trimmed[open + 1..close]);
+    contains_word_token(&args, "async")
+}
+
+/// Whether `body`'s offload marker (`spawn_blocking(`/`run_blocking_task(`)
+/// appears in real code — a `//` comment mentioning the marker (or one
+/// inside a string literal) must not satisfy the check for a command that
+/// never actually calls it.
+fn body_is_offloaded(body: &str) -> bool {
+    let code_only = strip_comments_and_strings(body);
+    code_only.contains("spawn_blocking(") || code_only.contains("run_blocking_task(")
+}
+
+/// The reason text of a `// offload-ok: <reason>` comment sat directly on
+/// the line above `lines[attr_idx]` (the command-attribute line), if any —
+/// `None` when the line above isn't that comment, `Some("")` when it is but
+/// carries no reason (still fails the check; see [`StateCommand::offload_ok`]).
+fn offload_ok_reason(lines: &[&str], attr_idx: usize) -> Option<String> {
+    if attr_idx == 0 {
+        return None;
+    }
+    lines[attr_idx - 1]
+        .trim_start()
+        .strip_prefix("// offload-ok:")
+        .map(|reason| reason.trim().to_string())
 }
 
 /// Whether `line`, after stripping the same modifier keywords
@@ -66,7 +124,8 @@ fn scan_state_commands_in(rel: &str, content: &str) -> Vec<StateCommand> {
             idx += 1;
             continue;
         }
-        let attr_is_async = trimmed.contains("async");
+        let attr_is_async = attr_declares_async(trimmed);
+        let offload_ok = offload_ok_reason(&lines, idx).is_some_and(|reason| !reason.is_empty());
 
         // Attribute/doc-comment lines may stack between the command attribute
         // and the fn signature (`#[allow(...)]`, `/// docs`).
@@ -99,6 +158,7 @@ fn scan_state_commands_in(rel: &str, content: &str) -> Vec<StateCommand> {
                 id: format!("{rel}::{name}"),
                 is_async: attr_is_async || is_async_signature(lines[fn_line]),
                 body,
+                offload_ok,
             });
         }
         idx = fn_line + 1;
@@ -134,21 +194,24 @@ fn scan_state_commands() -> Vec<StateCommand> {
 /// command]` runs sync commands ON the main thread and async commands on the
 /// async runtime, but an async command whose body still does the real work
 /// inline (no `spawn_blocking`/`run_blocking_task`) blocks that runtime's
-/// worker just the same. Invariant, empty allowlist by design.
+/// worker just the same. Invariant, empty allowlist by design — the one
+/// escape is a reviewed `// offload-ok: <reason>` comment (`offload_ok`,
+/// non-empty reason required) for a command that genuinely never blocks.
 #[test]
 fn async_state_commands_offload_their_work() {
     let commands = scan_state_commands();
     let violations: Vec<&str> = commands
         .iter()
-        .filter(|c| c.is_async)
-        .filter(|c| !c.body.contains("spawn_blocking(") && !c.body.contains("run_blocking_task("))
+        .filter(|c| c.is_async && !c.offload_ok)
+        .filter(|c| !body_is_offloaded(&c.body))
         .map(|c| c.id.as_str())
         .collect();
     assert!(
         violations.is_empty(),
         "async State command(s) with no spawn_blocking(/run_blocking_task( in their body — \
          Tauri's async runtime still blocks its worker thread on inline work (CLAUDE.md \
-         \"keep non-trivial work off the UI thread\", DoD \u{a7}C):\n{}",
+         \"keep non-trivial work off the UI thread\", DoD \u{a7}C); if genuinely non-blocking, \
+         add a `// offload-ok: <reason>` comment above the attribute:\n{}",
         violations.join("\n")
     );
 }
@@ -213,7 +276,8 @@ fn sync_state_commands_are_pinned() {
 #[cfg(test)]
 mod predicate_tests {
     use super::{
-        is_async_signature, scan_state_commands, scan_state_commands_in, CMD_ATTR, CMD_ATTR_OPEN,
+        attr_declares_async, body_is_offloaded, is_async_signature, scan_state_commands,
+        scan_state_commands_in, CMD_ATTR, CMD_ATTR_OPEN,
     };
 
     #[test]
@@ -270,6 +334,84 @@ pub async fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String
         assert!(
             !found[0].body.contains("spawn_blocking(")
                 && !found[0].body.contains("run_blocking_task(")
+        );
+    }
+
+    #[test]
+    fn offload_marker_only_in_a_comment_does_not_count() {
+        assert!(!body_is_offloaded(
+            "// spawn_blocking( mentioned only here\nOk(state.list())"
+        ));
+        assert!(body_is_offloaded(
+            "tauri::async_runtime::spawn_blocking(move || {})"
+        ));
+    }
+
+    #[test]
+    fn async_state_command_with_offload_only_in_a_comment_is_flagged() {
+        let source = format!(
+            "{CMD_ATTR}\n{}",
+            "\
+pub async fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    // spawn_blocking( mentioned only here, never called
+    Ok(state.list())
+}
+"
+        );
+        let found = scan_state_commands_in("commands/x.rs", &source);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].is_async);
+        assert!(
+            !body_is_offloaded(&found[0].body),
+            "a comment-only mention of spawn_blocking( must not count as offloading"
+        );
+    }
+
+    #[test]
+    fn rename_all_value_containing_async_does_not_count_as_the_async_attribute() {
+        assert!(!attr_declares_async(&format!(
+            "{CMD_ATTR_OPEN}rename_all = \"async_x\")]"
+        )));
+        assert!(attr_declares_async(&format!(
+            "{CMD_ATTR_OPEN}async, rename_all = \"camelCase\")]"
+        )));
+    }
+
+    #[test]
+    fn offload_ok_comment_with_a_reason_exempts_an_unoffloaded_async_command() {
+        let source = format!(
+            "// offload-ok: pure async fetch, no blocking work\n{CMD_ATTR}\n{}",
+            "\
+pub async fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    Ok(state.list())
+}
+"
+        );
+        let found = scan_state_commands_in("commands/x.rs", &source);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].is_async);
+        assert!(!body_is_offloaded(&found[0].body));
+        assert!(
+            found[0].offload_ok,
+            "a non-empty `// offload-ok:` reason above the attribute must exempt the command"
+        );
+    }
+
+    #[test]
+    fn offload_ok_comment_with_an_empty_reason_does_not_exempt() {
+        let source = format!(
+            "// offload-ok:\n{CMD_ATTR}\n{}",
+            "\
+pub async fn list_things(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    Ok(state.list())
+}
+"
+        );
+        let found = scan_state_commands_in("commands/x.rs", &source);
+        assert_eq!(found.len(), 1);
+        assert!(
+            !found[0].offload_ok,
+            "a blank `// offload-ok:` reason must not exempt the command (mirrors G11)"
         );
     }
 

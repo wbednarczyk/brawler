@@ -6,9 +6,11 @@
 // label — a pure refactor legitimately keeps its existing tests untouched.
 //
 // Usage: node scripts/check/tests-touched.mjs --base <sha> --head <sha>
-// Labels come from the PR_LABELS env var (comma-separated), never a CLI arg —
-// the caller (Makefile target / workflow) passes them straight through via
-// `env:`, never interpolated into a shell command line.
+// Labels come from the PR_LABELS env var as a JSON array (never a comma list —
+// a label whose own name contains a comma, e.g. "review,tests:not-needed",
+// must not fragment into a false match), never a CLI arg — the caller
+// (Makefile target / workflow) passes them straight through via `env:`, never
+// interpolated into a shell command line.
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -290,19 +292,37 @@ if (isMain) {
   const { base, head } = parseArgs(process.argv.slice(2));
   if (!base || !head) usage("both --base and --head are required");
 
+  // Resolve the merge-base ONCE and use it for both diffs and old-content
+  // lookups — the PR diff (base...head) is always mb-vs-head, but if `base`
+  // has since moved (an advanced base branch), `git show base:path` reads the
+  // WRONG revision unless it's pinned to the same mb (G14 fix #1).
+  let mergeBase;
+  try {
+    mergeBase = git(["merge-base", base, head]).trim();
+  } catch (err) {
+    console.error(`tests-touched: git merge-base failed for ${base} ${head}: ${err.message}`);
+    process.exit(2);
+  }
+
   let nameStatusOut;
   try {
-    nameStatusOut = git(["diff", "--name-status", "-M", `${base}...${head}`]);
+    nameStatusOut = git(["diff", "--name-status", "-M", `${mergeBase}..${head}`]);
   } catch (err) {
-    console.error(`tests-touched: git diff failed for ${base}...${head}: ${err.message}`);
+    console.error(`tests-touched: git diff failed for ${mergeBase}..${head}: ${err.message}`);
     process.exit(2);
   }
 
   const entries = parseNameStatus(nameStatusOut);
-  const labels = (process.env.PR_LABELS ?? "")
-    .split(",")
-    .map((l) => l.trim())
-    .filter(Boolean);
+
+  let labels = [];
+  const rawLabels = process.env.PR_LABELS ?? "[]";
+  try {
+    const parsed = JSON.parse(rawLabels);
+    if (!Array.isArray(parsed)) throw new Error("PR_LABELS JSON value is not an array");
+    labels = parsed.filter((l) => typeof l === "string");
+  } catch (err) {
+    console.error(`tests-touched: PR_LABELS is not a valid JSON array (${err.message}); treating labels as empty.`);
+  }
   const exempt = labels.includes("tests:not-needed");
 
   const codeFiles = [];
@@ -310,16 +330,20 @@ if (isMain) {
   let hasEvidence = false;
 
   for (const e of entries) {
-    if (e.status === "D") continue; // deletions never require evidence
-    if (e.status === "R" && e.score === 100) continue; // pure rename, no content change
-
     const filePath = e.status === "R" || e.status === "C" ? e.newPath : e.path;
     const oldPath = e.status === "R" ? e.oldPath : filePath;
 
+    // Test-evidence classification happens BEFORE the deletion/rename skip
+    // below: a DELETED or renamed test file is still evidence a test changed
+    // (G14 fix #2). Deletions of CODE files still never require evidence.
     if (isTestEvidenceFile(filePath)) {
       hasEvidence = true;
       continue;
     }
+
+    if (e.status === "D") continue; // deletions of code files never require evidence
+    if (e.status === "R" && e.score === 100) continue; // pure rename, no content change
+
     if (isRustCodeFile(filePath)) {
       codeFiles.push(filePath);
       rustCandidates.push({ path: filePath, oldPath });
@@ -333,9 +357,9 @@ if (isMain) {
   if (!hasEvidence && rustCandidates.length > 0) {
     let hunkDiff;
     try {
-      hunkDiff = git(["diff", "--no-color", "-U0", "-M", `${base}...${head}`]);
+      hunkDiff = git(["diff", "--no-color", "-U0", "-M", `${mergeBase}..${head}`]);
     } catch (err) {
-      console.error(`tests-touched: git diff -U0 failed for ${base}...${head}: ${err.message}`);
+      console.error(`tests-touched: git diff -U0 failed for ${mergeBase}..${head}: ${err.message}`);
       process.exit(2);
     }
     const hunkMap = parseHunksByNewPath(hunkDiff);
@@ -345,7 +369,7 @@ if (isMain) {
       let baseContent = null;
       let headContent = null;
       try {
-        baseContent = git(["show", `${base}:${entry.oldPath}`]);
+        baseContent = git(["show", `${mergeBase}:${entry.oldPath}`]);
       } catch {
         baseContent = null;
       }

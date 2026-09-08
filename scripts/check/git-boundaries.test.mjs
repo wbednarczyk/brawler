@@ -130,6 +130,21 @@ const DENY_BRANCH_INDEPENDENT = [
   "gh api -X PUT repos/o/r/pulls/12/merge", // 5. PR-merge via the REST API
   "gh api -X POST repos/o/r/releases", // 5. release creation via the REST API
   "git checkout HEAD -- tracked.txt", // 7. explicit deny case named by the review
+  // adversarial review round 2 (owner 2026-09-08), lettered A-J below
+  "git switch --discard-changes feat/x", // A. checkSwitch had no discard check at all
+  "git switch -f feat/x", // A. same, short form
+  "git switch --force feat/x", // A. same, long form
+  "git checkout -fq feat/x", // B. bundled short flag `-fq` on checkout (letters generalized)
+  "git switch -fc feat/x", // B. bundled short flag on switch
+  "git restore --staged -SW tracked.txt", // B. bundled `-SW` on restore — W (worktree) hides in the bundle
+  "(git reset --hard)", // D. subshell parens hid the leading/trailing tokens
+  "{ git stash; }", // D. brace-group syntax, same class
+  'command bash -c "git reset --hard"', // E. `command` prefix defeated wrapper detection
+  "git push origin :", // H. lone `:` (matching refspec) can update master
+  'git push origin ":"', // H. same, quoted
+  "gh api repos/o/r/releases -f tag_name=v1", // I. implicit POST via -f, no explicit -X
+  "gh api -f tag_name=v1 repos/o/r/releases", // I. same, endpoint operand after the flag
+  'echo "unsafe: $(git push --force)"', // G. double-quoted $() still executes — must still deny
 ];
 
 // Deny cases that require a specific starting branch or a chain transition.
@@ -149,6 +164,12 @@ const DENY_BRANCH_DEPENDENT = [
   // 4. `git push origin HEAD` has a refspec, so the old code skipped the no-refspec/master check
   { cmd: "git push origin HEAD", cwd: MASTER_REPO },
   { cmd: "git push origin HEAD:", cwd: MASTER_REPO },
+  // C. a `reset` with a commit-ish operand moves HEAD — a history rewrite when done on master
+  { cmd: "git reset --soft HEAD~1", cwd: MASTER_REPO },
+  { cmd: "git reset HEAD~1", cwd: MASTER_REPO },
+  // F. `-C` must scope only the ONE git invocation it's attached to, never leak into the next
+  // chain segment's cwd — so this commit is still judged against the real (master) cwd.
+  { cmd: "git -C ../feature status && git commit -m x", cwd: MASTER_REPO },
 ];
 
 const ALLOW_BRANCH_INDEPENDENT = [
@@ -194,6 +215,11 @@ const ALLOW_BRANCH_INDEPENDENT = [
   "git commit -am x", // 4. `-am` (no `n`) is not --no-verify
   "gh api repos/o/r/releases", // 5. a GET on /releases is a read, not a mutation
   "git checkout -q feat/x", // 7. explicit allow case named by the review
+  // adversarial review round 2 (owner 2026-09-08), lettered A-J below
+  "git commit -m \"--no-verify\"", // G. a message that only LOOKS like the flag must not deny
+  "git commit -m \"fix -n\"", // G. same, a bundled-looking short flag inside the message
+  'git commit --message="--no-verify"', // G. inline `--opt=value` form of the same trap
+  "echo 'inert: $(git push --force)'", // G. single-quoted $() is inert in bash — must not deny
 ];
 
 const ALLOW_BRANCH_DEPENDENT = [
@@ -202,6 +228,17 @@ const ALLOW_BRANCH_DEPENDENT = [
   { cmd: "git checkout master && git pull --ff-only", cwd: FEATURE_REPO },
   // 4. `git push origin HEAD` is fine off master
   { cmd: "git push origin HEAD", cwd: FEATURE_REPO },
+  // C. `git reset` with no commit operand (or an existing-path operand) never moves HEAD —
+  // stays an ordinary unstage even directly on master
+  { cmd: "git reset", cwd: MASTER_REPO },
+  { cmd: "git reset --mixed", cwd: MASTER_REPO },
+  { cmd: "git reset tracked.txt", cwd: MASTER_REPO },
+  // F. `cd` must reset chainBranch — branch knowledge from before the `cd` is for a different
+  // worktree. Starting on MASTER_REPO, `checkout master` sets chainBranch="master"; `cd` into
+  // FEATURE_REPO (a real repo on a non-master branch) must drop that stale assumption, so the
+  // commit is judged by FEATURE_REPO's real (non-master) branch and allowed. Denied here would
+  // prove the bug: a stale "master" chainBranch surviving the `cd`.
+  { cmd: `git checkout master && cd ${FEATURE_REPO} && git commit -m x`, cwd: MASTER_REPO },
 ];
 
 test("git-boundaries denies the write matrix, allows everything else (branch-independent)", () => {
@@ -225,6 +262,16 @@ test("git-boundaries master-branch and chain-transition rules", () => {
 test("the escape hatch, malformed input, non-Bash tools, and the un-flagged override all allow", () => {
   // Escape hatch: BRAWLER_GIT_BOUNDARIES_OFF=1 in the hook's own env allows a command that would otherwise deny.
   assert.equal(runHook("git push --force", { cwd: MASTER_REPO, env: { BRAWLER_GIT_BOUNDARIES_OFF: "1" } }), "allow");
+
+  // J. the escape hatch is diagnosed on stderr — stdout (the actual permission decision) stays empty (allow).
+  const offRun = spawnSync("bash", [HOOK_PATH], {
+    input: JSON.stringify({ tool_name: "Bash", tool_input: { command: "git push --force" } }),
+    encoding: "utf8",
+    cwd: MASTER_REPO,
+    env: { ...process.env, BRAWLER_GIT_BOUNDARIES_OFF: "1" },
+  });
+  assert.equal(offRun.stdout.trim(), "");
+  assert.match(offRun.stderr, /git-boundaries: disabled by BRAWLER_GIT_BOUNDARIES_OFF=1/);
 
   // Malformed JSON on stdin never blocks.
   const malformed = spawnSync("bash", [HOOK_PATH], { input: "not json", encoding: "utf8", cwd: FEATURE_REPO });

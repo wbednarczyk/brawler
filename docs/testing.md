@@ -87,7 +87,9 @@ cannot see a run started outside the Bash tool.
 
 `make coverage-frontend` (Vitest's v8 provider) and `make coverage-rust` (`cargo-llvm-cov`) measure line coverage per layer, then each runs a **ratchet** (`scripts/check/coverage-ratchet.mjs`) that fails if its layer drops below the committed floor in `coverage-baseline.json` — frontend 80.0%, Rust 86.5%. This enforces the full-coverage policy as a *trend* (never regress) without a brittle absolute target; when coverage rises it prints the new floors to commit. Both are **PR required checks** (`Frontend coverage ratchet` / `Rust coverage ratchet`), not periodic — the PR is the only gate under continuous release ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md), amending [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)). The instrumented Rust build's cache uses its own key, distinct from the plain test-build cache (ADR 0096 dec. 4).
 
-**Per-directory floors** (G15, hard gates wave 2, ADR 0096 dec. 4 amendment 2026-09-08) sit alongside the global floor above: `coverage-baseline.json` carries a `dirs` block per layer, aggregated from the per-file entries the coverage tools already produce. Keys — frontend: `src/screens/<name>`, `src/ui`, `src/shared`, `src/app`, `src/api`; Rust: `src-tauri/src/<top-level-dir>`, or `src-tauri/src/(root)` for a file directly under `src-tauri/src/` with no subdirectory. A directory with zero executable lines is skipped (nothing to enforce). `dirs` is **required** once present for a layer — a layer with no `dirs` block fails outright, never silently skipped. A measured directory absent from `dirs` is admitted only at/above a **70% admission floor** (below that the PR is rejected outright — a near-zero module cannot buy its way in by editing the baseline); at/above 70% the PR still fails, but the message names the exact pin to add (a reviewed diff line, same idiom as the file-size ratchet's baseline entries).
+**Per-directory floors** (G15, hard gates wave 2, ADR 0096 dec. 4 amendment 2026-09-08) sit alongside the global floor above: `coverage-baseline.json` carries a `dirs` block per layer, aggregated from the per-file entries the coverage tools already produce. Keys — frontend: `src/screens/<name>`, `src/ui`, `src/shared`, `src/app`, `src/api`, or `src/(root)` (catch-all for every other measured file under `src/`, e.g. `src/main.tsx` — mirrors the Rust key below so no measured file is ever silently unbucketed); Rust: `src-tauri/src/<top-level-dir>`, or `src-tauri/src/(root)` for a file directly under `src-tauri/src/` with no subdirectory. A directory with zero executable lines is skipped (nothing to enforce). `dirs` is **required** once present for a layer — a layer with no `dirs` block fails outright, never silently skipped. A measured directory absent from `dirs` is admitted only at/above a **70% admission floor** (below that the PR is rejected outright — a near-zero module cannot buy its way in by editing the baseline); at/above 70% the PR still fails, but the message names the exact pin to add (a reviewed diff line, same idiom as the file-size ratchet's baseline entries). A directory **pinned but producing no measured coverage at all** fails outright unless its directory no longer exists on disk (source deleted — then it's a note to drop the stale pin, not a failure). Pins and measured percentages are validated as finite numbers in `[0, 100]`; a malformed value fails with a clear message.
+
+**Base-baseline comparison** (admission-hole close, 2026-09-08): with `COVERAGE_BASE_REF` set to the PR's base sha (the coverage jobs in `full-check.yml` set it from `github.event.pull_request.base.sha`, with full-history checkouts so `git show <ref>:coverage-baseline.json` resolves), a `dirs` key that is **new** relative to that revision's baseline must both measure and pin `>= 70%` — closing the hole where a new key could be admitted with a pin of `0`. An **existing** key's pin may never read lower than it did at the base revision, even if measured coverage still clears the lowered pin. On a non-PR run (or when the base baseline can't be read) the ref is left unset and the comparison is skipped with a printed note, never a hard failure.
 
 Bootstrap/refresh: `rust-coverage` and `frontend-coverage` (`full-check.yml`) upload `coverage/rust-summary.json` / `coverage/frontend/coverage-summary.json` as build artifacts (`if: always()`, 7-day retention). Download them, then `node scripts/check/coverage-ratchet.mjs --seed [--layer=frontend|rust]` prints the current `dirs` block from those summaries — no coverage run needed — for hand-pasting into `coverage-baseline.json`. `--write` raises an *existing* pin when measured coverage now clears it; it never lowers a pin (a regression stays red) and never adds a new one (that stays a reviewed `--seed` paste).
 
@@ -96,6 +98,10 @@ Bootstrap/refresh: `rust-coverage` and `frontend-coverage` (`full-check.yml`) up
 ## File-size ratchet
 
 `scripts/check/file-size-ratchet.mjs` (in `make check-docs-gates` + `check-local` Stage 1) is the fitness function for the CLAUDE.md oversized-file rule ([ADR 0103](adr/0103-file-size-ratchet-fitness-function.md)): production source files ≥1000 lines are pinned **exactly** in `file-size-baseline.json` — growth fails (extract as part of the change, or hand-raise the pin in the reviewed diff), shrinking fails until `--write` ratchets the pin down. `--write` never raises or adds entries. Dedicated test files, `src/api/generated/` and locale resource tables are out of scope; colocated `#[cfg(test)]` counts.
+
+## Tests-touched gate
+
+`scripts/check/tests-touched.mjs` (G14, hard gates wave 2, `tests-touched.yml`) is an **acknowledgement** gate, not proof of behavioral coverage: a PR whose diff touches production code must also carry a test change (a changed test file, or, for Rust, an inline `#[cfg(test)]`/`#[test]` hunk in the same diff), or the `tests:not-needed` label — a pure refactor legitimately keeps its existing tests untouched. A deleted or renamed test file counts as evidence too (an obsolete test dropped alongside its production edit is still acknowledged); old-side test-span content is read at the actual merge-base of the PR (`git merge-base base head`), not the base branch's current tip, so an advanced base branch never misattributes evidence. Labels travel as a JSON array (`PR_LABELS: ${{ toJSON(...) }}`), never a comma list — a label whose own name contains a comma must not fragment into a false `tests:not-needed` match. Lives outside `full-check.yml` (same rationale as `release-label.yml`) so a label event re-runs this ~seconds job instead of the whole gate; a manual re-run of an *old* job replays that event's label snapshot — only a fresh `labeled`/`unlabeled` (or push) event re-evaluates against the PR's current labels.
 
 ## Real-data validation precedes implementation for matching/ranking features
 
@@ -801,11 +807,16 @@ test-file predicate, and comment/string-safe span stripping (`strip_test_spans`,
 
 - **G8 — own-connection multi-write without a transaction**
   (`storage_writes::own_connection_multi_writes_are_transactional`): a `src/storage/**` fn that
-  checks out its OWN connection (`.checkout()`) and issues ≥2 write statements
-  (`.execute(`/`execute_batch(` with an INSERT/UPDATE/DELETE literal, case-insensitive) with no
-  `Transaction::new_unchecked`/`transaction` token in the real code is not atomic — a
-  crash/failure between the two writes leaves the database in a state no caller intended (#404's
-  class). Frozen pin `FROZEN_UNTRANSACTED_WRITERS` (wave-1 idiom: a fn that gains a transaction
+  checks out its OWN connection (`.checkout()`) and issues ≥2 write statements with no transaction
+  marker in the real code (comments/strings don't count) is not atomic — a crash/failure between the
+  two writes leaves the database in a state no caller intended (#404's class). Write-statement
+  counting: `.execute(` counts once per call whose argument text carries an INSERT/UPDATE/DELETE
+  literal (case-insensitive); `execute_batch(` counts **per statement** inside the batch SQL (split
+  on `;`, each segment starting with INSERT/UPDATE/DELETE counts), so one `execute_batch` packing two
+  writes counts 2, not 1. Transaction-marker detection is whole-token: `new_unchecked(`,
+  `TransactionBehavior`, `.commit()` literally, or a `transaction` IDENTIFIER token at word
+  boundaries — a similarly-named identifier like `transaction_count` does not exempt a real
+  offender. Frozen pin `FROZEN_UNTRANSACTED_WRITERS` (wave-1 idiom: a fn that gains a transaction
   must be deleted from the pin, loud; a new offender outside it fails) starts at today's three:
   `storage/autopilot.rs:create_run_if_absent`, `storage/jobs.rs:mark_failed`,
   `storage/jobs.rs:reclaim_stale_running`. **Scope is Group A only** (fns that own their
@@ -814,17 +825,29 @@ test-file predicate, and comment/string-safe span stripping (`strip_test_spans`,
   provenance (is the caller already inside a transaction?) is not decidable by name. That rule is
   written, not enforced: a `&Connection` writer issuing ≥2 statements is wrapped by its CALLER —
   pass the held transaction in; #461 stays the tracked fix.
+  `ponytail:` known ceiling — counting is textual, not branch-aware: two writes in mutually
+  exclusive `if`/`else` arms (no real path issues both) still flag. Cost is wrapping one write in an
+  IMMEDIATE transaction anyway — cheap, never wrong — so this is accepted; upgrade path is
+  branch-aware counting (walk the fn body's actual control-flow tree) if a real offender's fix ever
+  gets expensive enough to be worth it.
 - **G9 — command-shape guard** (`command_shapes::async_state_commands_offload_their_work` +
   `command_shapes::sync_state_commands_are_pinned`): every `#[tauri::command]` fn over
   `src/commands/**` taking a `State<'_, ...AppState>` param touches shared storage and must not
   block the Tauri main thread. (a) Every `async` State command (or `#[tauri::command(async)]`) must
-  contain `spawn_blocking(`/`run_blocking_task(` in its body — an invariant, asserted empty. (b) The
-  set of today's SYNC State commands is frozen in `src-tauri/sync-commands-baseline.json`
-  (`include_str!`, like `transform-modules.json`) — a sync command missing from the list fails
-  ("make it `async fn` and offload"); a listed command no longer sync/no longer existing fails
-  asking to drop it (the pin may only shrink; a new command ships async from day one). This is a
-  **shape** guard, not a body auditor: whether an async command's inline work still blocks despite
-  the offload marker being present is review territory, not this scan.
+  contain `spawn_blocking(`/`run_blocking_task(` in its body, checked over comment/string-stripped
+  text — a `spawn_blocking(` mentioned only in a `//` comment does not count — an invariant, asserted
+  empty modulo the escape below. (b) The set of today's SYNC State commands is frozen in
+  `src-tauri/sync-commands-baseline.json` (`include_str!`, like `transform-modules.json`) — a sync
+  command missing from the list fails ("make it `async fn` and offload"); a listed command no longer
+  sync/no longer existing fails asking to drop it (the pin may only shrink; a new command ships async
+  from day one). The `#[tauri::command(async)]` form is detected by parsing the attribute's argument
+  list for a bare `async` identifier token at word boundaries — a string VALUE merely containing
+  "async" (`rename_all = "async_x"`) does not count. Reviewed exception: a `// offload-ok: <reason>`
+  comment on the line above the attribute block exempts a genuinely non-blocking async command from
+  (a) — mirrors wave-1's `// no-assert-ok:` (`mod.rs`); an empty reason does not exempt (G11,
+  `escape_hatch_reasons_are_non_empty`, extended to cover this marker). This is a **shape** guard, not
+  a body auditor: whether an async command's inline work still blocks despite the offload marker
+  being present is review territory, not this scan.
 
 ### Mock-runtime fidelity — the dual-execution contract
 

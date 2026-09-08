@@ -262,12 +262,16 @@ for (const name of readdirSync(workflowsDir)) {
 }
 
 // (2e) G14 tests-touched.yml (hard gates wave 2): the workflow must exist,
-// re-evaluate on label events (adding `tests:not-needed` must flip a red PR
-// green without a new push — the release-label.yml rationale), and its
-// check-executing step must invoke the gate's own make target. Scoped to this
-// one workflow rather than folded into GATE_WORKFLOW_PATHS/(2b) above, same
-// reason release-label.yml lives outside full-check.yml: it deliberately
-// carries its own trigger `types:`.
+// re-evaluate on EVERY relevant PR event (a fresh push AND a label change —
+// adding `tests:not-needed` must flip a red PR green without a new push, the
+// release-label.yml rationale), its check-executing step must genuinely (not
+// commented out) invoke the gate's own make target with no `if:`/
+// `continue-on-error:` escape hatch, labels must travel as a JSON array (not
+// a comma list a label's own name could fragment), and the Makefile recipe it
+// calls must still shell out to the real script. Scoped to this one workflow
+// rather than folded into GATE_WORKFLOW_PATHS/(2b) above, same reason
+// release-label.yml lives outside full-check.yml: it deliberately carries its
+// own trigger `types:`.
 const TESTS_TOUCHED_PATH = ".github/workflows/tests-touched.yml";
 const testsTouchedContent = readIfExists(TESTS_TOUCHED_PATH);
 if (testsTouchedContent === null) {
@@ -275,20 +279,47 @@ if (testsTouchedContent === null) {
 } else {
   const typesMatch = testsTouchedContent.match(/^\s*types:\s*\[(.+)\]\s*$/m);
   const types = typesMatch ? typesMatch[1].split(",").map((t) => t.trim()) : [];
-  for (const required of ["labeled", "unlabeled"]) {
+  for (const required of ["opened", "synchronize", "reopened", "labeled", "unlabeled"]) {
     if (!types.includes(required)) {
       errors.push(
-        `\`${TESTS_TOUCHED_PATH}\` pull_request \`types:\` does not include \`${required}\` — the\n` +
-          `    \`tests:not-needed\` label must be able to flip the gate without a new push (G14).`,
+        `\`${TESTS_TOUCHED_PATH}\` pull_request \`types:\` does not include \`${required}\` — it must\n` +
+          `    re-evaluate on every relevant PR event (a fresh push AND a label change), never a subset (G14).`,
       );
     }
   }
-  if (!/run:\s*make check-tests-touched\b/.test(testsTouchedContent)) {
+  // Line-anchored: a `# run: make check-tests-touched` comment must not count.
+  if (!/^\s*run:\s*make check-tests-touched\b/m.test(testsTouchedContent)) {
     errors.push(
-      `\`${TESTS_TOUCHED_PATH}\` has no \`run: make check-tests-touched\` step — every check-executing CI\n` +
-        `    step must be a thin \`make <target>\` wrapper (ADR 0090).`,
+      `\`${TESTS_TOUCHED_PATH}\` has no active (non-commented) \`run: make check-tests-touched\` step —\n` +
+        `    every check-executing CI step must be a thin \`make <target>\` wrapper (ADR 0090).`,
     );
   }
+  if (/^\s*if:/m.test(testsTouchedContent)) {
+    errors.push(
+      `\`${TESTS_TOUCHED_PATH}\` carries an \`if:\` condition — this workflow's one job/step must always\n` +
+        `    run unconditionally; a conditionally-skipped gate is not a gate (G14).`,
+    );
+  }
+  if (/continue-on-error:/.test(testsTouchedContent)) {
+    errors.push(
+      `\`${TESTS_TOUCHED_PATH}\` carries \`continue-on-error:\` — a gate step whose failure is ignored is\n` +
+        `    not a gate (G14, same class as an exit-ignored Makefile step).`,
+    );
+  }
+  if (!/PR_LABELS:\s*\$\{\{\s*toJSON\(/.test(testsTouchedContent)) {
+    errors.push(
+      `\`${TESTS_TOUCHED_PATH}\` does not pass \`PR_LABELS\` via \`toJSON(...)\` — a comma-joined label\n` +
+        `    list fragments a label whose OWN name contains a comma into a false match (G14).`,
+    );
+  }
+}
+
+const checkTestsTouchedRecipe = recipeLines(makefile, "check-tests-touched");
+if (checkTestsTouchedRecipe === null || !checkTestsTouchedRecipe.join("\n").includes("scripts/check/tests-touched.mjs")) {
+  errors.push(
+    "`Makefile`'s `check-tests-touched` recipe does not invoke `scripts/check/tests-touched.mjs` — the\n" +
+      "    gate's Make wrapper must still shell out to the real script (G14).",
+  );
 }
 
 // (2f) T3 retries->0 (hard gates wave 2, owner 2026-09-08): a CI flake must be
@@ -443,6 +474,12 @@ if (hookContent === null) {
 // mechanical form of testing.md § Resource discipline and CLAUDE.md § Working
 // Rules (T1) for every agent/subagent. Parses hooks.PreToolUse rather than a
 // plain substring test so a Bash entry with the WRONG matcher can't fool it.
+// The wiring check requires the EXACT command string (not a substring
+// anywhere in some unrelated command — a `.includes(base)` check let a
+// command that merely MENTIONED the filename, e.g. in a comment, satisfy it),
+// and each `.sh` wrapper must be executable and `exec node` its paired `.mjs`
+// — a hook that is present but chmod-stripped or gutted silently no-ops
+// instead of running (hard gates wave 2 harvest, 2026-09-08).
 const REQUIRED_BASH_HOOKS = [".claude/hooks/one-heavy-build.sh", ".claude/hooks/git-boundaries.sh"];
 const preToolUseSettings = readIfExists(".claude/settings.json");
 if (preToolUseSettings === null) {
@@ -461,19 +498,44 @@ if (preToolUseSettings === null) {
     : null;
   const bashCommands = (bashEntry?.hooks ?? []).map((h) => h.command).filter((c) => typeof c === "string");
   for (const hookFile of REQUIRED_BASH_HOOKS) {
-    const base = hookFile.split("/").pop();
-    if (!bashCommands.some((c) => c.includes(base))) {
+    const expected = `bash "$CLAUDE_PROJECT_DIR/${hookFile}"`;
+    if (!bashCommands.includes(expected)) {
       contextArchErrors.push(
-        `\`.claude/settings.json\` does not wire \`${hookFile}\` as a Bash PreToolUse hook (hard gates G1/G2, ADR 0038).`,
+        `\`.claude/settings.json\` does not wire \`${hookFile}\` as a Bash PreToolUse hook with the exact\n` +
+          `    command \`${expected}\` (hard gates G1/G2, ADR 0038) — a command that merely MENTIONS the\n` +
+          `    filename elsewhere (a comment, an unrelated string) does not count.`,
       );
     }
   }
 }
+for (const hookFile of REQUIRED_BASH_HOOKS) {
+  const abs = resolve(repoRoot, hookFile);
+  let stat;
+  try {
+    stat = statSync(abs);
+  } catch {
+    contextArchErrors.push(`\`${hookFile}\` not found (hard gate G1/G2).`);
+    continue;
+  }
+  if ((stat.mode & 0o111) === 0) {
+    contextArchErrors.push(
+      `\`${hookFile}\` is not executable (missing chmod +x) — a non-executable PreToolUse Bash hook\n` +
+        `    silently no-ops instead of running (hard gate G1/G2).`,
+    );
+  }
+  const mjsName = hookFile.split("/").pop().replace(/\.sh$/, ".mjs");
+  const content = readIfExists(hookFile) ?? "";
+  const execRe = new RegExp(`exec\\s+node\\b.*${mjsName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+  if (!execRe.test(content)) {
+    contextArchErrors.push(
+      `\`${hookFile}\` does not \`exec node\` its \`${mjsName}\` — the thin-wrapper contract (hard gate\n` +
+        `    G1/G2) is broken (the logic must live in the .mjs; the .sh is a pure exec shim).`,
+    );
+  }
+}
 for (const hookFile of [
-  ".claude/hooks/one-heavy-build.sh",
   ".claude/hooks/one-heavy-build.mjs",
   ".claude/hooks/one-heavy-build-classify.mjs",
-  ".claude/hooks/git-boundaries.sh",
   ".claude/hooks/git-boundaries.mjs",
 ]) {
   if (readIfExists(hookFile) === null) {

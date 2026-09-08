@@ -11,10 +11,21 @@
 //! Fix: wrap the writes in
 //! `rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)`
 //! (DoD §C — write transactions are IMMEDIATE, never DEFERRED, #404 H6).
+//!
+//! ponytail: known ceiling — the write-statement count is textual, not
+//! branch-aware, so two writes in mutually exclusive `if`/`else` arms (no
+//! real path issues both) still flag. Cost of the false positive is
+//! wrapping one write in an IMMEDIATE transaction anyway, which is cheap and
+//! never wrong; upgrade path is branch-aware counting (walk the fn body's
+//! actual control-flow tree instead of a flat token scan) if a real offender
+//! shows up whose fix is expensive enough to be worth it.
 
 use std::path::Path;
 
-use super::scan::{is_test_file, paren_matched_text, strip_comments_and_strings, strip_test_spans};
+use super::scan::{
+    contains_word_token, is_test_file, paren_matched_text, strip_comments_and_strings,
+    strip_test_spans,
+};
 use super::{extract_fn_body, extract_test_fn_name, is_fn_signature, source_files};
 
 /// Today's own-connection multi-writers with no transaction (computed by this
@@ -30,10 +41,10 @@ const FROZEN_UNTRANSACTED_WRITERS: &[&str] = &[
 /// Whether `body` (a fn body from `extract_fn_body`) is a G8 offender: checks
 /// out its own connection (`.checkout()`) and issues ≥2 write statements
 /// (`.execute(`/`execute_batch(` whose parenthesized argument text contains
-/// an INSERT/UPDATE/DELETE literal, case-insensitive) with no
-/// `new_unchecked(`/`transaction` token in the real code (comments/strings
-/// don't count — a `// still transactional` comment or a log string
-/// mentioning "transaction" must not exempt a real offender).
+/// an INSERT/UPDATE/DELETE literal, case-insensitive) with no transaction
+/// marker in the real code (comments/strings don't count — a `// still
+/// transactional` comment or a log string mentioning "transaction" must not
+/// exempt a real offender).
 fn is_untransacted_multi_writer(body: &str) -> bool {
     if !body.contains(".checkout()") {
         return false;
@@ -42,13 +53,31 @@ fn is_untransacted_multi_writer(body: &str) -> bool {
         return false;
     }
     let code_only = strip_comments_and_strings(body);
-    !code_only.contains("new_unchecked(") && !code_only.contains("transaction")
+    !has_transaction_marker(&code_only)
+}
+
+/// Whether `code_only` (already comment/string-stripped) carries a
+/// transaction marker: `new_unchecked(`/`TransactionBehavior`/`.commit()`
+/// literally, or a `transaction` IDENTIFIER token — word boundaries, so a
+/// merely-similarly-named identifier like `transaction_count` does not
+/// exempt an otherwise-untransacted writer.
+fn has_transaction_marker(code_only: &str) -> bool {
+    code_only.contains("new_unchecked(")
+        || code_only.contains("TransactionBehavior")
+        || code_only.contains(".commit()")
+        || contains_word_token(code_only, "transaction")
 }
 
 /// Count `.execute(`/`execute_batch(` calls whose parenthesized argument text
 /// contains an INSERT/UPDATE/DELETE SQL literal, case-insensitive. The
 /// keyword search runs over the RAW (unstripped) argument text — the SQL
 /// literal is inside quotes, so this must not blank strings first.
+///
+/// `.execute(` takes exactly one statement, so a matching call counts once.
+/// `execute_batch(` takes a semicolon-separated SQL string that can pack
+/// several writes into one call — counted per-statement via
+/// [`count_batch_write_statements`] so e.g. one `execute_batch("INSERT ...;
+/// UPDATE ...;")` counts 2, not 1.
 fn write_statement_count(body: &str) -> usize {
     let mut count = 0;
     for marker in [".execute(", "execute_batch("] {
@@ -57,13 +86,16 @@ fn write_statement_count(body: &str) -> usize {
             let open = search_from + rel + marker.len() - 1;
             match paren_matched_text(body, open) {
                 Some(args) => {
-                    let upper = args.to_uppercase();
-                    if ["INSERT", "UPDATE", "DELETE"]
-                        .iter()
-                        .any(|keyword| upper.contains(keyword))
-                    {
-                        count += 1;
-                    }
+                    count += if marker == "execute_batch(" {
+                        count_batch_write_statements(args)
+                    } else {
+                        let upper = args.to_uppercase();
+                        usize::from(
+                            ["INSERT", "UPDATE", "DELETE"]
+                                .iter()
+                                .any(|keyword| upper.contains(keyword)),
+                        )
+                    };
                     search_from = open + args.len() + 2;
                 }
                 None => search_from = open + 1,
@@ -71,6 +103,23 @@ fn write_statement_count(body: &str) -> usize {
         }
     }
     count
+}
+
+/// Count write-statement starts (immediately after `;`, or at the start of
+/// the batch text once leading punctuation/whitespace/quote chars are
+/// skipped) that begin with INSERT/UPDATE/DELETE, case-insensitive. `sql`
+/// is the raw `execute_batch(...)` argument text (quotes included).
+fn count_batch_write_statements(sql: &str) -> usize {
+    let upper = sql.to_uppercase();
+    upper
+        .split(';')
+        .filter(|segment| {
+            let trimmed = segment.trim_start_matches(|c: char| !c.is_ascii_alphabetic());
+            ["INSERT", "UPDATE", "DELETE"]
+                .iter()
+                .any(|keyword| trimmed.starts_with(keyword))
+        })
+        .count()
 }
 
 /// G8 scan: every fn in `src/storage/**` (test files and test spans
@@ -216,6 +265,44 @@ mod predicate_tests {
             is_untransacted_multi_writer(&body),
             "a string-literal-only mention of \"transaction\" must not exempt a real offender"
         );
+    }
+
+    #[test]
+    fn similarly_named_identifier_does_not_exempt_a_real_offender() {
+        // "transaction_count" contains "transaction" as a substring but is a
+        // DIFFERENT identifier — must not be mistaken for a real transaction
+        // marker (word-boundary fix).
+        let body = format!(
+            "{}\nlet transaction_count = 2;\n{}\n{}",
+            checkout_line(),
+            write_call("DELETE FROM t WHERE id = ?1"),
+            write_call("INSERT INTO t (id) VALUES (?1)")
+        );
+        assert!(
+            is_untransacted_multi_writer(&body),
+            "a `transaction_count` identifier must not exempt an untransacted offender"
+        );
+    }
+
+    #[test]
+    fn execute_batch_with_two_writes_counts_as_two() {
+        let body = format!(
+            "{}\nconnection.execute_batch(\"INSERT INTO t (id) VALUES (1); UPDATE t SET x = 1 WHERE id = 1;\")?;",
+            checkout_line()
+        );
+        assert!(
+            is_untransacted_multi_writer(&body),
+            "one execute_batch call packing two writes must count as 2, not 1"
+        );
+    }
+
+    #[test]
+    fn execute_batch_with_one_write_is_not_flagged() {
+        let body = format!(
+            "{}\nconnection.execute_batch(\"INSERT INTO t (id) VALUES (1);\")?;",
+            checkout_line()
+        );
+        assert!(!is_untransacted_multi_writer(&body));
     }
 
     #[test]

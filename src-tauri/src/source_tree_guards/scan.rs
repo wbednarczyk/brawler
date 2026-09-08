@@ -127,6 +127,29 @@ pub(super) fn strip_comments_and_strings(content: &str) -> String {
     String::from_utf8(out).expect("blanking only replaces bytes with ASCII spaces")
 }
 
+/// Whether `token` appears in `text` as a whole identifier — not as a
+/// substring of a larger one (word boundaries: an ASCII alphanumeric-or-`_`
+/// byte on either side means it's part of a bigger token, e.g.
+/// `transaction_count` must not match the token `transaction`, and
+/// `rename_all = "async_x"` must not match the token `async`). Shared by
+/// G8's transaction-marker check and G9's `command(async)` attribute parse.
+pub(super) fn contains_word_token(text: &str, token: &str) -> bool {
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    while let Some(rel) = text[start..].find(token) {
+        let idx = start + rel;
+        let before_ok = idx == 0 || !is_ident(bytes[idx - 1]);
+        let after = idx + token.len();
+        let after_ok = after >= bytes.len() || !is_ident(bytes[after]);
+        if before_ok && after_ok {
+            return true;
+        }
+        start = idx + 1;
+    }
+    false
+}
+
 /// Byte offset just past the `)`/`}` matching the opening delimiter at
 /// `open`, skipping string/comment content. `open_byte`/`close_byte` are
 /// `b'('`/`b')'` or `b'{'`/`b'}'`.

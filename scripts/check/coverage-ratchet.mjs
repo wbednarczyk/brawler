@@ -25,9 +25,10 @@
 // deliberate, reviewed --seed paste, never something this flag does silently.
 //
 // Per-directory keys:
-//   frontend — src/screens/<name>, src/ui, src/shared, src/app, src/api
-//     (aggregated from the per-file entries; a file outside these buckets,
-//     e.g. src/main.tsx, is not attributed to any directory floor)
+//   frontend — src/screens/<name>, src/ui, src/shared, src/app, src/api, or
+//     src/(root) for every OTHER measured file under src/ (e.g. src/main.tsx)
+//     — a catch-all bucket, mirroring the Rust `(root)` key below, so no
+//     measured production file is ever silently unbucketed.
 //   rust     — src-tauri/src/<top-level-dir>, or src-tauri/src/(root) for a
 //     file directly under src-tauri/src/ with no subdirectory
 // A directory with zero executable lines in the measured summary is skipped
@@ -35,6 +36,16 @@
 // `dirs` is admitted only when its measured coverage is >= 70% — the PR
 // still fails (a baseline pin is a deliberate, reviewed addition) but the
 // message names the exact line to add; below 70% it is rejected outright.
+// A directory PINNED in `dirs` but producing NO measured coverage at all
+// fails outright unless it no longer exists on disk (source deleted — then
+// it's a note to drop the stale pin, not a failure).
+//
+// Base-baseline comparison (G15 amendment 2026-09-08, closes the admission
+// hole where a new key could enter at pin 0): with COVERAGE_BASE_REF set (the
+// PR's base sha), a `dirs` key NEW relative to that revision's
+// coverage-baseline.json must measure AND pin >= 70%; an EXISTING key's pin
+// must never read lower than it did at the base revision. Unset (non-PR run,
+// or the base baseline can't be read) skips this comparison with a note.
 //
 // Known blind spot: masking inside a large flat module (e.g. storage, before
 // any further submodule split) — coverage debt inside one directory bucket
@@ -45,7 +56,8 @@
 //   coverage/frontend/coverage-summary.json  (per-file .lines + .total.lines.pct)
 //   coverage/rust-summary.json               (.data[0].files[] + .data[0].totals.lines.percent)
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 
 const TOLERANCE = 0.5; // percentage points of slack for measurement noise
 const RAISE_BY = 1.0; // suggest raising the floor when current exceeds it by this
@@ -100,7 +112,21 @@ function frontendDirKey(rawPath) {
   const parts = rel.split("/");
   if (parts[1] === "screens" && parts.length > 2) return `src/screens/${parts[2]}`;
   if (["ui", "shared", "app", "api"].includes(parts[1])) return `src/${parts[1]}`;
-  return null;
+  // Catch-all bucket (mirrors the Rust `(root)` key): every measured
+  // production frontend file under src/ lands SOMEWHERE, never silently
+  // unbucketed (G15 fix #7).
+  return "src/(root)";
+}
+
+/** Map a `dirs` key back to the filesystem directory it represents — a
+ * `(root)` key names the PARENT (loose files directly under it), everything
+ * else maps 1:1 to its own path. */
+function dirKeyToFsPath(key) {
+  return key.endsWith("/(root)") ? key.slice(0, -"/(root)".length) : key;
+}
+
+function validPct(n) {
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100;
 }
 
 function rustDirKey(rawPath) {
@@ -195,6 +221,28 @@ if (write) {
 // --- normal check: global floor (unchanged) + per-directory floors -----------
 const baseline = readJson("coverage-baseline.json", baselineReadTarget());
 
+// Base-baseline comparison (G15 fix #5, admission-hole close): a NEW dirs key
+// (absent from the BASE revision's baseline) may only enter at/above the 70%
+// admission floor for BOTH measured coverage and its pin — a pin of 0 written
+// straight into the head baseline no longer buys a free pass. An EXISTING
+// key's pin must never read lower than it did at base. COVERAGE_BASE_REF
+// (set by full-check.yml from the PR's base sha) drives the comparison; unset
+// (a non-PR run) skips it with a printed note, never a hard failure.
+const COVERAGE_BASE_REF = process.env.COVERAGE_BASE_REF;
+let baseBaseline = null;
+if (!COVERAGE_BASE_REF) {
+  console.log("coverage-ratchet: COVERAGE_BASE_REF not set (non-PR run) — skipping base-baseline pin comparison.");
+} else {
+  try {
+    const raw = execFileSync("git", ["show", `${COVERAGE_BASE_REF}:coverage-baseline.json`], { encoding: "utf8" });
+    baseBaseline = JSON.parse(raw);
+  } catch (err) {
+    console.log(
+      `coverage-ratchet: could not read coverage-baseline.json at COVERAGE_BASE_REF=${COVERAGE_BASE_REF} (${err.message}) — skipping base-baseline pin comparison.`,
+    );
+  }
+}
+
 let failed = false;
 const raises = [];
 
@@ -202,7 +250,17 @@ for (const layer of layers) {
   const { json, aggregated } = loadAggregated(layer);
 
   const floor = baseline[layer].lines;
+  if (!validPct(floor)) {
+    console.error(`coverage-ratchet: ${layer}.lines in coverage-baseline.json is not a valid percentage (${floor}).`);
+    failed = true;
+    continue;
+  }
   const now = globalPct(layer, json);
+  if (!validPct(now)) {
+    console.error(`coverage-ratchet: measured ${layer} coverage is not a valid percentage (${now}) — check the coverage summary input.`);
+    failed = true;
+    continue;
+  }
   const status = now + TOLERANCE < floor ? "FAIL" : "ok";
   if (status === "FAIL") failed = true;
   if (now - floor >= RAISE_BY) raises.push(`${layer}: ${floor} -> ${now.toFixed(1)}`);
@@ -220,9 +278,16 @@ for (const layer of layers) {
     continue;
   }
 
+  const baseDirs = baseBaseline?.[layer]?.dirs ?? null;
+
   for (const [key, entry] of Object.entries(aggregated)) {
     if (entry.total === 0) continue; // zero-executable-line directory — nothing to enforce
     const pct = pctOf(entry);
+    if (!validPct(pct)) {
+      failed = true;
+      console.error(`  FAIL ${layer} ${key} measured coverage is not a valid percentage (${pct}) — check the coverage summary input.`);
+      continue;
+    }
     const pin = dirsBaseline[key];
     if (pin === undefined) {
       failed = true;
@@ -238,10 +303,59 @@ for (const layer of layers) {
       }
       continue;
     }
+    if (!validPct(pin)) {
+      failed = true;
+      console.error(`  FAIL ${layer} ${key} pin in coverage-baseline.json is not a valid percentage (${pin}).`);
+      continue;
+    }
+
+    if (baseDirs !== null) {
+      const basePin = baseDirs[key];
+      const isNewKey = basePin === undefined || !validPct(basePin);
+      if (isNewKey) {
+        if (pct < ADMISSION_FLOOR || pin < ADMISSION_FLOOR) {
+          failed = true;
+          console.error(
+            `  FAIL ${layer} ${key} lines ${pct.toFixed(2)}% pin ${pin}% — new directory relative to the base baseline; both measured coverage and the pin must be >= ${ADMISSION_FLOOR}% (G15 admission-hole close).`,
+          );
+          continue;
+        }
+      } else if (pin < basePin) {
+        failed = true;
+        console.error(
+          `  FAIL ${layer} ${key} pin lowered from ${basePin}% (base) to ${pin}% (head) — an existing directory's pin must never drop.`,
+        );
+        continue;
+      }
+    }
+
     const dirStatus = pct + TOLERANCE < pin ? "FAIL" : "ok";
     if (dirStatus === "FAIL") failed = true;
     if (pct - pin >= RAISE_BY) raises.push(`${layer} ${key}: ${pin} -> ${pct.toFixed(1)}`);
     console.log(`  ${dirStatus} ${layer} ${key} lines ${pct.toFixed(2)}% (${entry.covered}/${entry.total}) (floor ${pin}%)`);
+  }
+
+  // Pinned-but-unmeasured (G15 fix #6): a key in `dirs` that never showed up
+  // in `aggregated` at all (not even a zero-total entry) got NO measured
+  // coverage this run. That's a hard failure UNLESS the directory is
+  // genuinely gone from disk (source deleted) — then it's a drop-the-pin note.
+  for (const key of Object.keys(dirsBaseline)) {
+    if (aggregated[key]) continue; // already handled above
+    const fsPath = dirKeyToFsPath(key);
+    let existsOnDisk = false;
+    try {
+      existsOnDisk = statSync(fsPath).isDirectory();
+    } catch {
+      existsOnDisk = false;
+    }
+    if (!existsOnDisk) {
+      console.log(`  note ${layer} ${key} — no measured coverage and the directory no longer exists on disk; drop its pin from coverage-baseline.json.`);
+      continue;
+    }
+    failed = true;
+    console.error(
+      `  FAIL ${layer} ${key} is pinned at ${dirsBaseline[key]}% but produced no measured coverage, and the directory still exists on disk — fix coverage collection for it, or delete the dead code (not just the pin).`,
+    );
   }
 }
 
