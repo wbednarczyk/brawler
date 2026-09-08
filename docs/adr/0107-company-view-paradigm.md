@@ -26,10 +26,7 @@ four vocabularies over an unguessable preset↔save↔reset model.
    strip). It replaces the curated per-company dashboard path (amends
    [ADR 0057](0057-composable-views-and-curated-dashboard.md)); the mode nav
    becomes Dziś / Inbox / Spółka.
-2. **Routes are a discriminated union** — `{kind:"company", companyId, tool?}`
-   | `{kind:"namedView", layoutId}`, with `tool` a closed per-variant-payload
-   union (15 variants). Invalid combinations are unrepresentable; every
-   glance-counter and deep-link intent maps to a typed destination. **Closure audit 2026-09-08 (#410):** the live route state is composed as `Section` + `companyId` + `Tool` (`SpolkaTransition`, `useSpolkaScreenWiring.tsx`) rather than a literal `{kind: "company" | "namedView"}` object — the `namedView` arm never existed once ADR 0108 removed named views; the intent (invalid tool/company combinations unrepresentable via the closed `Tool` union) holds.
+2. **Routes are typed and closed** — the live route state composes `Section` + `companyId` + `Tool` (`SpolkaTransition`, `useSpolkaScreenWiring.tsx`), with `Tool` a closed per-variant-payload union (15 variants, `route.ts`). Invalid tool/company combinations are unrepresentable; every glance-counter and deep-link intent maps to a typed destination. (Originally written as a `{kind: "company" | "namedView"}` union; the `namedView` arm never shipped — named views were removed by [ADR 0108](0108-retire-docking-engine.md). Rewritten at the #410 closure audit, 2026-09-08.)
 3. **One composed read model `get_company_view`** feeds the whole screen (one
    invocation, one pending state, closed per-section error map — the F2
    pattern); counter semantics are normative in contracts.md.
@@ -37,15 +34,7 @@ four vocabularies over an unguessable preset↔save↔reset model.
    standard; ~3M window on the company card; series reused from
    `compute_price_context`, rendered by the shared `CandlestickChart`
    primitive extended with an opt-in log scale).
-5. **Freeform layout structure is FROZEN until the #414 engine decision** (resolved 2026-08-28 by [ADR 0108](0108-retire-docking-engine.md): removed): view
-   creation, panel add/close/drag and preset application are removed; existing
-   named views and the four legacy `dashboard:*` rows stay reachable read-only
-   ("Dawny dashboard · TICKER"), with domain editing inside panels fully
-   writable. Rationale: zero adoption + a proven data-loss path; building
-   layout persistence for a surface whose engine is under review is waste.
-   dockview remains ONLY behind these frozen views; #414 decides stay/replace/
-   remove with F3a as production evidence that the main surface needs no
-   docking engine.
+5. **No freeform layout surface** — the cockpit, named views, the four legacy `dashboard:*` rows and the docking engine are removed ([ADR 0108](0108-retire-docking-engine.md), 2026-08-28; migration `0152` dropped `cockpit_layouts`). The original decision froze the freeform structure pending the #414 engine verdict; the verdict retired it outright — no read-only "Dawny dashboard" remains.
 6. **Workshop tools own a dirty seam** (`ToolHost { isDirty, discard }`)
    enforced on every unmount path including app close; switching the company
    closes the open tool (stay/discard when dirty) — tools never silently

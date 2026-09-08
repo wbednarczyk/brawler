@@ -66,6 +66,8 @@ test.describe("Spółka › Documents — deep-link target contract (dogfooding 
     await expect(targetRow).toBeVisible();
     await expect(targetRow).not.toHaveAttribute("data-document-highlighted", "true");
     const prePaint = await paintStyle(targetRow);
+    // The proof is on the SAME node: keep its handle and re-verify it after the deep link.
+    const targetHandle = await targetRow.elementHandle();
 
     await page.getByRole("button", { name: "Open activity" }).click();
     const dialog = page.getByRole("dialog", { name: "Activity" });
@@ -79,6 +81,8 @@ test.describe("Spółka › Documents — deep-link target contract (dogfooding 
     await expect(siblingRow).not.toHaveAttribute("aria-current", "true");
     await expect(siblingRow).not.toHaveAttribute("data-document-highlighted", "true");
 
+    expect(await targetHandle!.evaluate((el) => el.isConnected), "target row survived the navigation").toBe(true);
+    expect(await targetRow.evaluate((el, handle) => el === handle, targetHandle), "locator resolves to the original node").toBe(true);
     const postPaint = await paintStyle(targetRow);
     expect(
       paintDiffers(prePaint, postPaint),

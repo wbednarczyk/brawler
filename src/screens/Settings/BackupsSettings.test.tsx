@@ -176,4 +176,29 @@ describe("Settings › Data storage — Backups (#451)", () => {
     expect(await screen.findByText("backup-123.sqlite3")).toBeInTheDocument();
     expect(screen.queryByText("Local copies of your data.")).not.toBeInTheDocument();
   });
+
+  it("marks Create backup as the section's one primary action", async () => {
+    renderPl(<BackupsSettings />);
+    const create = await screen.findByRole("button", { name: "Utwórz kopię" });
+    expect(create).toHaveAttribute("data-ux-primary-action", "true");
+    expect(document.querySelectorAll('[data-ux-primary-action="true"]')).toHaveLength(1);
+  });
+
+  it("shows neither the list nor the invitation while the status is still loading", () => {
+    vi.mocked(backupsApi.backupStatus).mockReturnValue(new Promise(() => {}));
+    renderPl(<BackupsSettings />);
+    expect(screen.queryByRole("list", { name: "Kopie zapasowe" })).toBeNull();
+    expect(screen.queryByText("Lokalne kopie Twoich danych.")).toBeNull();
+  });
+
+  it("keeps the last-known list when a refresh fails instead of showing an empty state", async () => {
+    const user = userEvent.setup();
+    renderPl(<BackupsSettings />);
+    await screen.findByRole("list", { name: "Kopie zapasowe" });
+    vi.mocked(backupsApi.backupStatus).mockRejectedValueOnce(new Error("disk unreadable"));
+    await user.click(screen.getByRole("button", { name: "Odśwież" }));
+    await screen.findByText("Error: disk unreadable");
+    expect(screen.getByRole("list", { name: "Kopie zapasowe" })).toBeInTheDocument();
+    expect(screen.queryByText("Lokalne kopie Twoich danych.")).toBeNull();
+  });
 });

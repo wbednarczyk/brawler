@@ -1087,7 +1087,7 @@ Representative manual sweep:
 - **Sources:** adapters grouped by purpose, disabled/review candidates distinct, expanded rows readable, registry search + clear work.
 - **Companies:** create a watchlist, toggle membership on/off, verify feedback/selected states, clear form fields.
 - **Global search:** top-toolbar search → ranked results grouped by content type with snippets → select navigates → field clear returns focus.
-- **Backups/restore:** in Developer Diagnostics, verify status + list, create a backup, exercise restore (warns + applies on relaunch).
+- **Backups/restore:** in Settings › Data storage (moved out of Developer Diagnostics 2026-09-08, #451), verify status + list, create a backup, exercise restore (warns + applies on relaunch).
 - **Polish locale:** switch to Polish and check labels in Settings, Sources, Companies, licensing.
 
 ## Live smoke tests

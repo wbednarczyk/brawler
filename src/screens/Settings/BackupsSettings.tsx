@@ -9,6 +9,9 @@ import { formatListTimestamp } from "../../shared/format/datetime";
 export function BackupsSettings() {
   const { locale, text } = useLocale();
   const [status, setStatus] = useState<BackupStatus | null>(null);
+  // `loading` until the first status resolves; `error` keeps the last-known
+  // list on screen — an unknown state never renders as "no backups yet".
+  const [load, setLoad] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [inFlight, setInFlight] = useState(false);
@@ -21,9 +24,13 @@ export function BackupsSettings() {
       .backupStatus()
       .then((next) => {
         setStatus(next);
+        setLoad("loaded");
         setError(null);
       })
-      .catch((cause) => setError(String(cause)));
+      .catch((cause) => {
+        setLoad("error");
+        setError(String(cause));
+      });
   }
 
   useEffect(() => {
@@ -59,11 +66,12 @@ export function BackupsSettings() {
   }
 
   const hasBackups = (status?.backups.length ?? 0) > 0;
+  const showInvitation = load === "loaded" && status !== null && !hasBackups;
   // ADR 0104 dec. 4: exactly one primary Create-backup action lives in the
   // section at a time — the empty-state invitation while there is nothing to
   // show, the toolbar once at least one backup exists — never both.
   const createButton = (
-    <ActionButton disabled={inFlight} onClick={createBackup} verb="create">
+    <ActionButton data-ux-primary-action="true" disabled={inFlight} onClick={createBackup} variant="primary" verb="create">
       <DatabaseBackup size={15} />
       {inFlight ? text("Working") : text("Create backup")}
     </ActionButton>
@@ -129,14 +137,14 @@ export function BackupsSettings() {
             />
           ))}
         </ul>
-      ) : (
+      ) : showInvitation ? (
         <EmptyState
           action={createButton}
           kind="invitation"
           source={text("Stored on this computer.")}
           title={text("Local copies of your data.")}
         />
-      )}
+      ) : null}
     </section>
   );
 }

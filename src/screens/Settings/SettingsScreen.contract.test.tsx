@@ -249,7 +249,7 @@ describe("Settings action inventory (F4c contract § Settings, plan dec. 5)", ()
         ]),
       );
       expectPrimaryMarkerMatchesVariant(region);
-      expectSinglePrimary(region, 0);
+      expectSinglePrimary(region, 1);
     },
   );
 
@@ -276,7 +276,7 @@ describe("Settings action inventory (F4c contract § Settings, plan dec. 5)", ()
         ]),
       );
       expectPrimaryMarkerMatchesVariant(region);
-      expectSinglePrimary(region, 0);
+      expectSinglePrimary(region, 1);
     },
   );
 

@@ -64,6 +64,43 @@ describe("palette copy gate (ADR 0104 dec. 3, F3a S3)", () => {
       ).toEqual([]);
     });
 
+    it(`every family command carries its family prefix (${locale})`, () => {
+
+      // ADR 0104 dec. 3 amendment 2026-09-08 (#454): a screen and a same-named
+
+      // workshop tool must never differ only by letter case, so each family
+
+      // keeps a colon prefix in both locales.
+
+      const FAMILIES: Array<[prefix: string, en: string, pl: string]> = [
+
+        ["tool.open.", "Open tool: ", "Otwórz narzędzie: "],
+
+        ["screen.open.", "Open screen: ", "Otwórz ekran: "],
+
+        ["company.open.", "Open company: ", "Otwórz spółkę: "],
+
+      ];
+
+      const commands = collectCommands(locale);
+
+      const offenders = commands.filter((command) => {
+
+        const family = FAMILIES.find(([prefix]) => command.actionKey.startsWith(prefix));
+
+        if (!family) return false;
+
+        return !command.label.startsWith(locale === "pl" ? family[2] : family[1]);
+
+      });
+
+      expect(commands.some((command) => command.actionKey.startsWith("tool.open."))).toBe(true);
+
+      expect(offenders.map((command) => `${command.actionKey}: "${command.label}"`)).toEqual([]);
+
+    });
+
+
     it(`no command label is a full sentence, both locales (${locale})`, () => {
       const commands = collectCommands(locale);
       const offenders = commands.filter((command) => command.label.trim().endsWith("."));
@@ -160,7 +197,10 @@ describe("palette disambiguation on Spółka: nav shortcut vs 'Open screen:' vs 
       await user.type(within(dialog).getByRole("combobox", { name: "Search commands" }), query);
       const options = within(dialog).getAllByRole("option");
       const labels = options.map((option) => option.textContent);
-      await user.click(options[0]!);
+      // The sole match is the active option; Enter — not a click — runs it.
+      const combobox = within(dialog).getByRole("combobox", { name: "Search commands" });
+      expect(combobox).toHaveAttribute("aria-activedescendant", options[0]!.id);
+      await user.keyboard("{Enter}");
       return labels;
     }
 

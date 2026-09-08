@@ -77,8 +77,8 @@ test.describe("command palette", { tag: "@clickable" }, () => {
     const palette = await openPalette(page);
     await expect(palette).toBeVisible();
 
-    await palette.getByLabel("Search commands").fill("Open notebook");
-    await expect(palette.getByRole("option", { name: "Open notebook", exact: true })).toBeVisible();
+    await palette.getByLabel("Search commands").fill("Open tool: Notebook");
+    await expect(palette.getByRole("option", { name: "Open tool: Notebook", exact: true })).toBeVisible();
 
     await expect(palette.getByRole("option", { name: /^Open panel:/ })).toHaveCount(0);
   });

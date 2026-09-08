@@ -1790,7 +1790,7 @@ Data-safety guarantees for the local SQLite database (`brawler.sqlite3`). See [A
 - Backups and pre-migration snapshots are produced with `VACUUM INTO '<path>'` — a consistent, compacted copy safe to take on the live connection.
 - **Pre-migration snapshot:** before the migration runner applies any pending migration, it writes a snapshot named with schema version and timestamp. If the snapshot cannot be written, migration is aborted with a clear error and no schema change is attempted; a failed migration leaves the snapshot intact for manual restore.
 - **Rotating backups:** periodic and on-close backups are written to `<app_data_dir>/backups/`, keeping the last N (oldest pruned). Backup status (last time, count) is inspectable.
-- **Restore** is a restart operation surfaced in Diagnostics: the chosen backup is staged and applied on app relaunch (no hot in-place swap), because live connections hold the database open.
+- **Restore** is a restart operation surfaced in Settings › Data storage (moved out of Diagnostics 2026-09-08, #451): the chosen backup is staged and applied on app relaunch (no hot in-place swap), because live connections hold the database open.
 - A backup is a byte-faithful copy of the database only; it is distinct from M20 import/export documents. Secrets live in the OS keychain, never in the database, so they are absent from backups by construction. No cloud backup.
 
 ## Connection Model

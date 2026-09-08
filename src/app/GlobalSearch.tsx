@@ -71,60 +71,55 @@ export function GlobalSearch({ locale, onNavigate }: GlobalSearchProps) {
   const t = makeTranslator(locale);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [resultsState, setResultsState] = useState<SearchResults | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
+  // Results are keyed by the query that produced them: a keystroke makes the
+  // previous set stale in the same render (no window where old rows are the
+  // controller's options for the new query).
+  const [resultsState, setResultsState] = useState<{ query: string; results: SearchResults } | null>(null);
 
   function selectMatch(match: SearchMatch) {
     onNavigate(match);
     controller.reset();
   }
 
-  const orderedGroups = resultsState
-    ? GROUP_ORDER.map((contentType) =>
-        resultsState.groups.find((group) => group.contentType === contentType),
-      ).filter((group): group is NonNullable<typeof group> => Boolean(group))
-    : [];
-  const flatMatches = orderedGroups.flatMap((group) => group.matches);
-  // While a request is in flight, the DOM renders the "Searching…" status
-  // (below) instead of the previous result rows — so the controller must see
-  // no options too, or `aria-activedescendant` keeps pointing at a row id
-  // that is no longer in the document.
-  const controllerOptions = isSearching ? [] : flatMatches;
+  // Rows for a query are the settled results keyed by that exact query —
+  // anything else (pending, stale) is an empty option set.
+  function groupsFor(query: string) {
+    const settled = resultsState && resultsState.query === query.trim() ? resultsState.results : null;
+    return settled
+      ? GROUP_ORDER.map((contentType) => settled.groups.find((group) => group.contentType === contentType)).filter(
+          (group): group is NonNullable<typeof group> => Boolean(group),
+        )
+      : null;
+  }
 
   const controller = useComboboxListbox({
-    options: controllerOptions,
+    options: (query) => groupsFor(query)?.flatMap((group) => group.matches) ?? [],
     getId: matchId,
     filter: () => true,
     onSelect: selectMatch,
     escapePolicy: globalSearchEscapePolicy,
   });
 
+  const trimmedQuery = controller.query.trim();
+  const orderedGroups = groupsFor(trimmedQuery);
+  const isSearching = trimmedQuery !== "" && orderedGroups === null;
+
   useEffect(() => {
     const trimmed = controller.query.trim();
     if (trimmed === "") {
       setResultsState(null);
-      setIsSearching(false);
       return;
     }
-
     let cancelled = false;
-    setIsSearching(true);
     const handle = window.setTimeout(() => {
       runSearch({ query: trimmed })
         .then((found) => {
-          if (!cancelled) {
-            setResultsState(found);
-            setIsSearching(false);
-          }
+          if (!cancelled) setResultsState({ query: trimmed, results: found });
         })
         .catch(() => {
-          if (!cancelled) {
-            setResultsState({ groups: [] });
-            setIsSearching(false);
-          }
+          if (!cancelled) setResultsState({ query: trimmed, results: { groups: [] } });
         });
     }, SEARCH_DEBOUNCE_MS);
-
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
@@ -148,7 +143,7 @@ export function GlobalSearch({ locale, onNavigate }: GlobalSearchProps) {
     inputRef.current?.focus();
   }
 
-  const showPanel = controller.isOpen && controller.query.trim() !== "";
+  const showPanel = controller.isOpen && trimmedQuery !== "";
 
   return (
     <div className="global-search" ref={containerRef} data-global-search>
@@ -164,19 +159,23 @@ export function GlobalSearch({ locale, onNavigate }: GlobalSearchProps) {
           ref: inputRef,
           "data-global-search-input": true,
           role: controller.inputProps.role,
-          "aria-expanded": controller.inputProps["aria-expanded"],
+          // The exposed state follows the VISIBLE panel: an empty query never
+          // reports an expanded combobox with no listbox in the document.
+          "aria-expanded": showPanel,
           "aria-autocomplete": controller.inputProps["aria-autocomplete"],
-          "aria-controls": controller.inputProps["aria-controls"],
+          "aria-controls": showPanel ? controller.inputProps["aria-controls"] : undefined,
           "aria-activedescendant": controller.inputProps["aria-activedescendant"],
           onKeyDown: controller.inputProps.onKeyDown,
-          onFocus: () => controller.open(),
+          onFocus: () => {
+            if (controller.query.trim() !== "") controller.open();
+          },
         }}
       />
       {showPanel ? (
         <div {...controller.listboxProps} className="global-search-results" aria-label={t("globalSearch.ariaLabel")}>
           {isSearching ? (
             <div className="global-search-status">{t("globalSearch.searching")}</div>
-          ) : orderedGroups.length === 0 ? (
+          ) : !orderedGroups || orderedGroups.length === 0 ? (
             <div className="global-search-status">{t("globalSearch.noResults")}</div>
           ) : (
             orderedGroups.map((group) => (

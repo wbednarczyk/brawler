@@ -10,7 +10,10 @@ export type ComboboxEscapeAction = "close-list" | "clear" | "bubble" | "close-ho
 export type ComboboxEscapeState = { query: string; isOpen: boolean };
 
 export type UseComboboxListboxOptions<T> = {
-  options: readonly T[];
+  // A list, or a function of the current query for hosts whose options come
+  // from an async request keyed by that query (no render where the previous
+  // query's rows are still the options).
+  options: readonly T[] | ((query: string) => readonly T[]);
   /** Stable per-option identity — option ids stay tied to the OPTION, not its
    * index, so they survive filtering/reordering (the active option keeps
    * pointing at the same item, never silently rebinding to "slot 3"). */
@@ -39,7 +42,8 @@ export function useComboboxListbox<T>({
 
   const filtered = useMemo(() => {
     const trimmed = query.trim();
-    return trimmed ? options.filter((option) => filter(option, trimmed)) : options;
+    const resolved = typeof options === "function" ? options(query) : options;
+    return trimmed ? resolved.filter((option) => filter(option, trimmed)) : resolved;
   }, [options, query, filter]);
 
   const activeIndex = activeId === null ? -1 : filtered.findIndex((option) => getId(option) === activeId);

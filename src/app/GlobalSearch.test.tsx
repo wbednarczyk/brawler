@@ -1,4 +1,5 @@
 import { describe, it } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import {
   appTestState,
   expect,
@@ -427,6 +428,23 @@ describe("Global search", () => {
     // it is in the DOM (only the "Searching…" status renders meanwhile).
     await user.type(input, "x");
     expect(input).not.toHaveAttribute("aria-activedescendant");
+    // …and the previous query's rows are gone in the very same render — the
+    // controller's options are keyed by the query that produced them.
+    expect(within(results).queryAllByRole("option")).toHaveLength(0);
+  });
+
+  it("an empty query never reports an expanded combobox, and its Escape is left to the app", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const input = await screen.findByLabelText("Global search");
+    await user.click(input);
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(input).not.toHaveAttribute("aria-controls");
+    expect(screen.queryByRole("listbox", { name: "Global search" })).toBeNull();
+    // `fireEvent` returns false when a handler called preventDefault — an
+    // unconsumed Escape bubbles to whatever the app wants to do with it.
+    expect(fireEvent.keyDown(input, { key: "Escape" })).toBe(true);
+    expect(input).toHaveAttribute("aria-expanded", "false");
   });
 
   // #469 sol re-review: the id space is `${contentType}:${sourceId}`, not the

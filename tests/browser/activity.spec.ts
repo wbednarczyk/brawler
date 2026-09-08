@@ -78,6 +78,8 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
     await expect(targetRow).toBeVisible();
     await expect(targetRow).not.toHaveAttribute("data-document-highlighted", "true");
     const prePaint = await paintStyle(targetRow);
+    // The proof is on the SAME node: keep its handle and re-verify it after the deep link.
+    const targetHandle = await targetRow.elementHandle();
 
     await page.getByRole("button", { name: "Open activity" }).click();
     const dialog = page.getByRole("dialog", { name: "Activity" });
@@ -105,6 +107,8 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
     await expect(targetRow).toHaveAttribute("data-document-highlighted", "true");
     await expect(targetRow).toHaveAttribute("aria-current", "true");
 
+    expect(await targetHandle!.evaluate((el) => el.isConnected), "target row survived the navigation").toBe(true);
+    expect(await targetRow.evaluate((el, handle) => el === handle, targetHandle), "locator resolves to the original node").toBe(true);
     const postPaint = await paintStyle(targetRow);
     expect(
       paintDiffers(prePaint, postPaint),
