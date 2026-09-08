@@ -168,13 +168,14 @@ describe.each(LOCALES)("ActivityPanel contract (%s)", (locale) => {
     }
   });
 
-  it("exactly one destination action per row", () => {
+  it("exactly one `open` action per row (ADR 0104 dec. 3: a verb label, never a noun destination)", () => {
     const root = renderPanel(locale);
     const rows = root.querySelectorAll(".activity-item");
     const inventory = collectActionInventory(root, locale);
-    const destinations = inventory.filter((entry) => entry.kind === "destination");
+    const opens = inventory.filter((entry) => entry.kind === "open");
     expect(rows.length).toBeGreaterThan(0);
-    expect(destinations.length).toBe(rows.length);
+    expect(opens.length).toBe(rows.length);
+    expect(inventory.filter((entry) => entry.kind === "destination")).toHaveLength(0);
   });
 
   it("groups rows under a TickerLabel company heading, non-company rows under Sources and system", () => {

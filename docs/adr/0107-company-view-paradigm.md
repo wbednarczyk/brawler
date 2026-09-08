@@ -29,7 +29,7 @@ four vocabularies over an unguessable preset↔save↔reset model.
 2. **Routes are a discriminated union** — `{kind:"company", companyId, tool?}`
    | `{kind:"namedView", layoutId}`, with `tool` a closed per-variant-payload
    union (15 variants). Invalid combinations are unrepresentable; every
-   glance-counter and deep-link intent maps to a typed destination.
+   glance-counter and deep-link intent maps to a typed destination. **Closure audit 2026-09-08 (#410):** the live route state is composed as `Section` + `companyId` + `Tool` (`SpolkaTransition`, `useSpolkaScreenWiring.tsx`) rather than a literal `{kind: "company" | "namedView"}` object — the `namedView` arm never existed once ADR 0108 removed named views; the intent (invalid tool/company combinations unrepresentable via the closed `Tool` union) holds.
 3. **One composed read model `get_company_view`** feeds the whole screen (one
    invocation, one pending state, closed per-section error map — the F2
    pattern); counter semantics are normative in contracts.md.
