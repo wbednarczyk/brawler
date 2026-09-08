@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.83.1 - 2026-09-08
+
+
+### Bug Fixes
+
+- **storage**: atomicity and failure-path wave — notebook writes, verified restore, capture status, sweep enqueue and stranded-run recovery (#461, #319, #455, #458) (#487)
+
+
+### Features
+
+- **gates**: hard guardrails wave 2 — git-boundaries hook, tests-touched check, per-directory coverage floors, storage-write and command-shape pins, retries 0 (#485)
+
 ## v0.83.0 - 2026-09-08
 
 
