@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button, EmptyState, ErrorText, SectionHeader } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { localizedKpiLabelForKey } from "../../shared/locale/kpiLabels";
@@ -46,6 +47,9 @@ export type CoreKpiTableProps = {
 // SAME cell carries the dotted provenance thread (ADR 0104 dec. 7).
 export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExternalUrl }: CoreKpiTableProps) {
   const { text, locale } = useLocale();
+  // Hover/focus on the thread button or the ticket lights the pair (ADR 0104
+  // dec. 7).
+  const [threadHot, setThreadHot] = useState(false);
 
   const newestCell = (() => {
     if (!kpi) return undefined;
@@ -65,7 +69,12 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExt
   // its own overflow instead of the whole screen (owner dogfooding v0.74,
   // item 1).
   return (
-    <article aria-label={text("Annual KPI table")} className="spolka-section spolka-kpi" tabIndex={0}>
+    <article
+      aria-label={text("Annual KPI table")}
+      className="spolka-section spolka-kpi"
+      tabIndex={0}
+      data-thread-hot={threadHot || undefined}
+    >
       <SectionHeader level="h2" title={text("Annual results")} eyebrow={text("PLN million · consolidated")} />
 
       {error ? (
@@ -74,7 +83,7 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExt
         <EmptyState>{text("No confirmed annual figures yet — read a report to populate this table.")}</EmptyState>
       ) : (
         <>
-          <table className="spolka-kpi-table">
+          <table className="spolka-kpi-table ui-zebra">
             <thead>
               <tr>
                 <th>{text("Line item")}</th>
@@ -87,22 +96,50 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExt
               </tr>
             </thead>
             <tbody>
-              {kpi.rows.map((row) => (
+              {kpi.rows.map((row) => {
+                const metricLabel = localizedKpiLabelForKey(row.metricKey, locale);
+                return (
                 <tr key={row.metricKey}>
-                  <td>{localizedKpiLabelForKey(row.metricKey, locale)}</td>
+                  <td>{metricLabel}</td>
                   {row.cells.map((cell) => {
                     const isThreadCell = newestCell?.metricKey === row.metricKey && newestCell.fiscalYear === cell.fiscalYear;
+                    const value =
+                      cell.valueNumeric === undefined
+                        ? DASH
+                        : formatFinancialValue(
+                            { valueNumeric: cell.valueNumeric, currency: kpi.currency, valueKind: "monetary" },
+                            locale,
+                          );
+                    if (isThreadCell && newestTicket) {
+                      // The one provenance action (ADR 0104 dec. 7); the
+                      // footer ticket is its static twin.
+                      const sourceLabel = isExternalUrl(newestTicket) ? humanSourceLabel(newestTicket) : newestTicket;
+                      const openSourceLabel = text("Open source: {metric} · {period} · {source}")
+                        .replace("{metric}", metricLabel)
+                        .replace("{period}", String(cell.fiscalYear))
+                        .replace("{source}", sourceLabel);
+                      return (
+                        <td key={cell.fiscalYear} className="num-tabular spolka-kpi-thread">
+                          <button
+                            type="button"
+                            className="spolka-kpi-thread-button"
+                            aria-label={openSourceLabel}
+                            onMouseEnter={() => setThreadHot(true)}
+                            onMouseLeave={() => setThreadHot(false)}
+                            onFocus={() => setThreadHot(true)}
+                            onBlur={() => setThreadHot(false)}
+                            onClick={() =>
+                              isExternalUrl(newestTicket) ? onOpenExternalUrl(newestTicket) : onOpenDocument(newestTicket)
+                            }
+                          >
+                            {value}
+                          </button>
+                        </td>
+                      );
+                    }
                     return (
-                      <td
-                        key={cell.fiscalYear}
-                        className={["num-tabular", isThreadCell ? "spolka-kpi-thread" : ""].filter(Boolean).join(" ")}
-                      >
-                        {cell.valueNumeric === undefined
-                          ? DASH
-                          : formatFinancialValue(
-                              { valueNumeric: cell.valueNumeric, currency: kpi.currency, valueKind: "monetary" },
-                              locale,
-                            )}
+                      <td key={cell.fiscalYear} className="num-tabular">
+                        {value}
                       </td>
                     );
                   })}
@@ -112,21 +149,20 @@ export function CoreKpiTable({ kpi, error, onOpenTool, onOpenDocument, onOpenExt
                       : formatFinancialValue({ valueNumeric: String(row.yoyPct), valueKind: "percentage" }, locale)}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           <div className="spolka-kpi-footer">
             {newestTicket ? (
-              <Button
-                variant="ghost"
+              // Static twin of the thread button (ADR 0104 dec. 7).
+              <span
                 className="spolka-provenance-ticket"
-                aria-label={text("Open source document")}
-                onClick={() =>
-                  isExternalUrl(newestTicket) ? onOpenExternalUrl(newestTicket) : onOpenDocument(newestTicket)
-                }
+                onMouseEnter={() => setThreadHot(true)}
+                onMouseLeave={() => setThreadHot(false)}
               >
                 {isExternalUrl(newestTicket) ? humanSourceLabel(newestTicket) : newestTicket}
-              </Button>
+              </span>
             ) : null}
             <span className="spolka-kpi-hint">{text("Every figure leads to its source")}</span>
           </div>

@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 
-import { SpolkaScreen, type SpolkaScreenProps } from "./SpolkaScreen";
+import { SpolkaScreen, foldDiacritics, type SpolkaScreenProps } from "./SpolkaScreen";
 import { useSpolkaToolHost } from "./ToolHost";
 import { ToastProvider } from "../../ui";
 import { CommandPaletteProvider } from "../../app/commandPalette";
@@ -467,7 +467,11 @@ describe("SpolkaScreen", () => {
     getCompanyViewMock.mockResolvedValue(fullView());
     const onOpenDocument = vi.fn();
     renderScreen({ onOpenDocument });
-    await user.click(await screen.findByRole("button", { name: "Open source document" }));
+    // dogfooding #1b: the threaded cell IS the button now — the footer ticket
+    // is its non-interactive twin.
+    await user.click(
+      await screen.findByRole("button", { name: "Open source: Revenue · 2026 · Raport roczny 2026 · s. 44" }),
+    );
     expect(onOpenDocument).toHaveBeenCalledWith("Raport roczny 2026 · s. 44");
   });
 
@@ -866,5 +870,11 @@ describe("SpolkaScreen keyboard model (F3c S1)", () => {
     await user.click(within(dialogAgain).getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(screen.queryByRole("group", { name: "Workshop tool" })).not.toBeInTheDocument());
     expect(within(bar).getByRole("button", { name: "Notebook" })).toHaveFocus();
+  });
+});
+
+describe("company picker type-ahead folding", () => {
+  it("folds Polish letters without a decomposition (ł/Ł) as well as combining marks", () => {
+    expect(foldDiacritics("ŁÓDŹ Spółka")).toBe("lodz spolka");
   });
 });

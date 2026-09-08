@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TickerLabel } from "../../shared/components/TickerLabel";
+import { feedKindChip } from "../../shared/components/feedDetail/feedPresentation";
 import { useFocusAfterRemove } from "../../shared/focus/focusAfterRemove";
 import { useLocale } from "../../shared/locale";
 import { formatListTimestamp } from "../../shared/format/datetime";
@@ -258,7 +259,9 @@ export function InboxScreen() {
         </FilterToolbar>
 
         <div className="feed-list" aria-label={text("Feed items")} ref={feedListRef}>
-          {filteredFeedItems.map((item) => (
+          {filteredFeedItems.map((item) => {
+            const kindChip = feedKindChip(item.presentationKind, text);
+            return (
             <DenseRow
               as="button"
               aria-label={`${text("Select feed item")}: ${item.title}`}
@@ -293,7 +296,7 @@ export function InboxScreen() {
                   <span className="num-tabular">{formatListTimestamp(item.time, locale, text("Unknown"))}</span>
                 </div>
                 <div className="feed-row-source-line">
-                  <span>{item.type}</span>
+                  <StatusChip tone={kindChip.tone}>{kindChip.label}</StatusChip>
                   <span>{item.source}</span>
                 </div>
                 <h2>{item.title}</h2>
@@ -310,7 +313,8 @@ export function InboxScreen() {
                 />
               ) : null}
             </DenseRow>
-          ))}
+            );
+          })}
           {inboxEmptyState ? (
             <EmptyState wrapText={false}>
               {inboxEmptyState === "no-companies" ? (

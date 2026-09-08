@@ -323,6 +323,13 @@
   overflow-y: auto;
 }
 
+/* Hosted in the Spółka workshop the tool body scrolls; the panel must not be
+   a scroll container of its own or the period tables' sticky headers pin to
+   a box that never scrolls. */
+.spolka-tool-body .fundamentals-panel {
+  overflow-y: visible;
+}
+
 .fundamentals-section {
   display: flex;
   flex-direction: column;
@@ -406,7 +413,7 @@
   font-size: var(--font-base);
 }
 
-/* Reporting periods as chips rather than a cramped column. */
+/* Custom KPI definitions as chips (CustomKpiManager). */
 .periods-list {
   display: flex;
   flex-wrap: wrap;
@@ -434,7 +441,14 @@
 }
 
 .facts-matrix-scroll {
-  overflow-x: auto;
+  --period-kpi-width: 140px;
+  --period-expander-width: 44px;
+  /* Collapsed: NOT a scroll container (`clip` + `visible`), so the sticky
+     header pins to the tool body's scroll — the visible periods fit by
+     construction (`useVisiblePeriods`). Expanded: a bounded 2-axis scroller
+     with the header pinned inside it (owner 2026-09-07). */
+  overflow-x: clip;
+  overflow-y: visible;
   /* An overflow-x scroller in a COLUMN flex chain still propagates its
      content's min-content width upward (cross-axis intrinsic sizing), so the
      wide table used to dictate the whole pane's minimum width and force a
@@ -444,6 +458,21 @@
   contain: inline-size;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.facts-matrix-scroll[data-expanded="true"],
+.fundamentals-periods-scroll[data-expanded="true"] {
+  overflow: auto;
+  max-height: 60vh;
+}
+
+/* Pane-relative cap (`cqh` against `.spolka-layout`'s size container) where
+   supported — never taller than the pane. */
+@supports (max-height: 1cqh) {
+  .facts-matrix-scroll[data-expanded="true"],
+  .fundamentals-periods-scroll[data-expanded="true"] {
+    max-height: min(60vh, 80cqh);
+  }
 }
 
 .facts-matrix {
@@ -472,6 +501,10 @@
 .facts-matrix thead th {
   position: sticky;
   top: 0;
+  /* Dogfooding #5 z-index ladder: above plain body cells (z-index 1) so a
+     vertically-scrolled row never paints over the pinned header; below the
+     dual-axis corner cells (z-index 3, see `.facts-matrix-corner` above). */
+  z-index: 2;
   padding: var(--space-2) var(--space-3);
   font-size: var(--font-xs);
   text-transform: uppercase;
@@ -486,13 +519,54 @@
   border-bottom: none;
 }
 
+/* Origin chip in the newest period's header (dogfooding #7, retires the
+   below-table completeness bar): the chip keeps its own casing rather than
+   inheriting the header's uppercase/letter-spacing treatment. */
+/* Natural-width wrapper for the period header (columns stretch; the
+   capacity measurement reads this box). */
+.facts-matrix-period {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.facts-matrix-origin-chip {
+  display: block;
+  margin-top: var(--space-1);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* `th` in the selector: outranks `.facts-matrix th { text-align: right }`;
+   nothing else here, so the low-specificity zebra tint still reaches the cell. */
+.facts-matrix th.facts-matrix-corner,
+.facts-matrix th.facts-matrix-kpi {
+  text-align: left;
+  /* `.facts-matrix th { padding: 0 }` outranks the class rules below. */
+  padding: var(--space-2) var(--space-3);
+}
+
 .facts-matrix-corner,
 .facts-matrix-kpi {
-  text-align: left;
   position: sticky;
   left: 0;
   background: var(--surface);
   z-index: 1;
+  /* Dogfooding #5: a visible edge between the sticky KPI column and the
+     period values scrolling underneath it — an opaque background alone
+     reads as "blending" without a boundary line (owner: "Zysk netto" and
+     "4 mln PLN" overprint). Mirrors `.facts-matrix-expander`'s border. */
+  border-right: 1px solid var(--border);
+  /* Fixed width (dogfooding #6): the expander column immediately right needs
+     a static `left` offset — a dynamically measured one would need inline
+     `style={{…}}`, banned outside AppShell's sidebar-width exception
+     (ui-authoring § Styling rules). Long labels ellipsize; the `title`
+     attribute (FundamentalsPanel.tsx) carries the full text as a tooltip. */
+  width: var(--period-kpi-width);
+  min-width: var(--period-kpi-width);
+  max-width: var(--period-kpi-width);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .facts-matrix-kpi {
@@ -500,9 +574,74 @@
   font-weight: 600;
 }
 
-.facts-matrix-corner {
+/* Dogfooding #5 z-index ladder: this cell is sticky on BOTH axes (top via
+   `.facts-matrix thead th` below, left via `.facts-matrix-corner` above) —
+   the corner needs to paint above plain (top-only) period headers, which in
+   turn must paint above body rows (`.facts-matrix-kpi`/`.facts-matrix-expander`
+   tbody cells, z-index 1). The selector is deliberately prefixed
+   (`.facts-matrix thead th.facts-matrix-corner`) so its specificity beats the
+   general `.facts-matrix thead th` rule below — a bare `.facts-matrix-corner`
+   selector loses that fight and silently drops back to the header's z-index. */
+.facts-matrix thead th.facts-matrix-corner {
   background: var(--surface-raised);
-  z-index: 2;
+  z-index: 3;
+}
+
+/* Period-expander column (dogfooding #6, owner storyboard round 1): a narrow
+   full-height sticky column right of the KPI column — an empty <th> in the
+   header, ONE rowSpan <td> in the first body row holding the whole control.
+   `left` = the sticky KPI column's width (`--period-kpi-width`). */
+td.facts-matrix-expander {
+  /* Floor for the spanned rows (the label is absolute, so it adds no height). */
+  height: 120px;
+}
+
+.facts-matrix-expander {
+  position: sticky;
+  left: var(--period-kpi-width);
+  z-index: 1;
+  width: var(--period-expander-width);
+  min-width: var(--period-expander-width);
+  padding: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+/* Same dual-axis corner status as `.facts-matrix-corner` (sticky top from
+   `.facts-matrix thead th`, sticky left from `.facts-matrix-expander`) —
+   same z-index-3 tier, same specificity-prefix reasoning. */
+.facts-matrix thead th.facts-matrix-expander {
+  z-index: 3;
+  background: var(--surface-raised);
+}
+
+.facts-matrix-expander-button {
+  /* Absolute inside the sticky (positioned) cell: a percentage height in a
+     rowSpan cell inflates every spanned row in Chromium. */
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+}
+
+.facts-matrix-expander-button:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.facts-matrix-expander-chevron {
+  transform: rotate(90deg);
 }
 
 .facts-matrix-cell {
@@ -571,6 +710,17 @@
 .facts-matrix-trend {
   text-align: center;
   padding: var(--space-2) var(--space-3);
+  /* The host reads this floor for the capacity measurement. */
+  min-width: 108px;
+}
+
+/* S tier: the sparkline column folds so one period still fits beside the
+   sticky KPI + expander columns. */
+@container pane (max-width: 419px) {
+  .facts-matrix-trend-head,
+  .facts-matrix-trend {
+    display: none;
+  }
 }
 
 .facts-matrix-trend {
@@ -589,7 +739,10 @@
 }
 
 .fundamentals-periods-scroll {
-  overflow-x: auto;
+  --period-kpi-width: 140px;
+  --period-expander-width: 44px;
+  overflow-x: clip;
+  overflow-y: visible;
   /* Same containment contract as .facts-matrix-scroll: an overflow-x scroller in
      a column flex chain otherwise propagates its content's min-content width up
      and forces a panel-level horizontal scrollbar. */
@@ -615,27 +768,105 @@
 }
 
 .fundamentals-periods-table thead th {
+  /* Dogfooding #5: this table's header was never vertically sticky (only
+     the first column was, via `.fundamentals-periods-corner`/`-kpi` below),
+     so it scrolled away like ordinary content once `.fundamentals-periods-
+     scroll` became a genuine vertical scroll container (the #5 fix above).
+     Mirrors `.facts-matrix thead th`'s top-sticky + z-index ladder: body
+     sticky cells are z-index 1, plain headers 2, the dual-axis corner 3. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
   color: var(--muted);
   font-weight: 500;
   background: var(--surface-raised);
 }
 
+.fundamentals-periods-table th.fundamentals-periods-corner,
+.fundamentals-periods-table th.fundamentals-periods-kpi {
+  text-align: left;
+}
+
 .fundamentals-periods-corner,
 .fundamentals-periods-kpi {
-  text-align: left;
   position: sticky;
   left: 0;
   background: var(--surface);
   z-index: 1;
+  /* Dogfooding #5 — mirrors `.facts-matrix-corner`/`-kpi` above: a visible
+     edge between the sticky column and the scrolled-under period cells. */
+  border-right: 1px solid var(--border);
+  /* Fixed width (dogfooding #6) — mirrors .facts-matrix-corner/-kpi above;
+     the expander column's `left` needs a static offset. */
+  width: var(--period-kpi-width);
+  min-width: var(--period-kpi-width);
+  max-width: var(--period-kpi-width);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fundamentals-periods-kpi {
   font-weight: 600;
 }
 
-.fundamentals-periods-corner {
+/* Dual-axis corner (sticky top from `.fundamentals-periods-table thead th`
+   above, sticky left from `.fundamentals-periods-corner` above) — same
+   z-index-3 tier and specificity-prefix reasoning as `.facts-matrix-corner`. */
+.fundamentals-periods-table thead th.fundamentals-periods-corner {
   background: var(--surface-raised);
-  z-index: 2;
+  z-index: 3;
+}
+
+/* Period-expander column (dogfooding #6) — mirrors .facts-matrix-expander
+   above. */
+td.fundamentals-periods-expander {
+  height: 120px;
+}
+
+.fundamentals-periods-expander {
+  position: sticky;
+  left: var(--period-kpi-width);
+  z-index: 1;
+  width: var(--period-expander-width);
+  min-width: var(--period-expander-width);
+  padding: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+/* Same dual-axis corner status as `.fundamentals-periods-corner` above. */
+.fundamentals-periods-table thead th.fundamentals-periods-expander {
+  z-index: 3;
+  background: var(--surface-raised);
+}
+
+.fundamentals-periods-expander-button {
+  /* Absolute inside the sticky (positioned) cell: a percentage height in a
+     rowSpan cell inflates every spanned row in Chromium. */
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+}
+
+.fundamentals-periods-expander-button:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.fundamentals-periods-expander-chevron {
+  transform: rotate(90deg);
 }
 
 .fundamentals-periods-value {
@@ -671,7 +902,8 @@
 
 /* Focus: the most recent complete period column (storyboard "Fokus: ostatni
    pełny okres") carries a subtle primary tint across its header + cells. */
-.fundamentals-periods-focus {
+/* Outranks the shared `.ui-zebra` tint (one class) on even rows. */
+.fundamentals-periods-table .fundamentals-periods-focus {
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
@@ -855,21 +1087,6 @@
 .facts-matrix-subtotal td {
   font-weight: 700;
   border-top: 1px solid var(--border);
-}
-
-/* Source/completeness bar (approved mockup): origin + "N of M" + the
-   never-silently-absent uncatalogued-tail count, below the matrix. */
-.fundamentals-completeness-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-raised);
-  color: var(--muted);
-  font-size: var(--font-sm);
 }
 
 /* Price context section (v0.53 T5, ADR 0067) — fundamentals-adjacent, same
@@ -1492,34 +1709,6 @@
   font-size: var(--font-sm);
 }
 
-/* Autopilot disclosure. The summary toggle is hidden at tall/wide tiers (the
-   field renders inline via .fundamentals-autopilot-body); it only surfaces —
-   and can fold the field — at the S tier. */
-.fundamentals-autopilot-toggle,
-.fundamentals-forms-toggle {
-  display: none;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: var(--font-base);
-  text-align: left;
-  cursor: pointer;
-}
-
-.fundamentals-autopilot-chevron,
-.fundamentals-forms-chevron {
-  display: inline-flex;
-  transition: transform 120ms ease;
-}
-
-.fundamentals-autopilot.is-expanded .fundamentals-autopilot-chevron,
-.fundamentals-forms.is-expanded .fundamentals-forms-chevron {
-  transform: rotate(90deg);
-}
 
 /* Reporting forms: one column by default (M/S), toggle hidden (forms inline). */
 .fundamentals-forms {
@@ -1549,17 +1738,6 @@
 
   .price-context-ratio-grid {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  }
-}
-
-/* S (<420px): Autopilot folds to a summary row + expand. */
-@container pane (max-width: 419px) {
-  .fundamentals-autopilot-toggle {
-    display: inline-flex;
-  }
-
-  .fundamentals-autopilot:not(.is-expanded) .fundamentals-autopilot-body {
-    display: none;
   }
 }
 
@@ -1676,5 +1854,25 @@
   .company-row-context {
     justify-self: stretch;
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The measuring pass (`useVisiblePeriods`): every period is rendered once,
+   hidden, so the capacity is derived from ALL periods' natural widths. */
+.facts-matrix-scroll[data-measuring="true"],
+.fundamentals-periods-scroll[data-measuring="true"] {
+  visibility: hidden;
+}
+
+/* S tier: Pozycje × okresy keeps one period group reachable — values only
+   (the Δ columns fold) beside a narrower sticky column. */
+@container pane (max-width: 419px) {
+  .fundamentals-periods-scroll {
+    --period-kpi-width: 110px;
+  }
+
+  .fundamentals-periods-table [data-period-col="qoq"],
+  .fundamentals-periods-table [data-period-col="yoy"] {
+    display: none;
   }
 }

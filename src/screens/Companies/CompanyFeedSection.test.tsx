@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Company, FeedItem } from "../../api/types";
 import { CompanyFeedSection } from "./CompanyFeedSection";
+import { feedItemSummary as realFeedItemSummary } from "../../app/useNotebookController";
 
 // The detail branch renders the company-context block (F1; sol round-1
 // blocker 1) — resolve its one composed call with an empty context so these
@@ -120,6 +121,44 @@ describe("CompanyFeedSection (ADR 0057 dashboard panel)", () => {
     expect(within(detail).getByText("ESPI notice")).toBeInTheDocument();
     expect(within(detail).getByText(/Rada Nadzorcza powołała/)).toBeInTheDocument();
     expect(within(detail).queryByText("Komunikat ESPI/EBI")).not.toBeInTheDocument();
+  });
+
+  it("shows the localized kind chip in the row, never the raw 'Official report' item.type (dogfooding #8)", () => {
+    const item = makeItem({
+      type: "Official report",
+      presentationKind: "filing",
+    });
+    render(
+      <CompanyFeedSection
+        {...baseProps}
+        feedItems={[item]}
+        selectedFeedItem={null}
+        toggleFeedItem={noop}
+        updateFeedItemState={noop}
+      />,
+    );
+
+    expect(screen.getByText("ESPI notice")).toBeInTheDocument();
+    expect(screen.queryByText("Official report")).not.toBeInTheDocument();
+  });
+
+  it("never renders the dead 'Komunikat ESPI/EBI' summary literal in the row for a report-kind item (dogfooding #9)", () => {
+    const item = makeItem({
+      presentationKind: "report",
+      summary: "Komunikat ESPI/EBI",
+    });
+    render(
+      <CompanyFeedSection
+        {...baseProps}
+        feedItemSummary={realFeedItemSummary}
+        feedItems={[item]}
+        selectedFeedItem={null}
+        toggleFeedItem={noop}
+        updateFeedItemState={noop}
+      />,
+    );
+
+    expect(screen.queryByText("Komunikat ESPI/EBI")).not.toBeInTheDocument();
   });
 
   it("shows the tracked-but-empty state when the company has no feed items", () => {

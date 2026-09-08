@@ -561,7 +561,7 @@ export function CompanyCoveragePanel({
               it horizontally instead of forcing a panel-level scrollbar (the
               facts-matrix pattern; ui-authoring § panel-internal scrollbars). */}
           <div className="coverage-scroll" data-hscroll aria-label={text("Coverage map")}>
-            <table className="coverage-table">
+            <table className="coverage-table ui-zebra">
               <thead>
                 <tr>
                   <th scope="col">{text("Period")}</th>

@@ -9,6 +9,7 @@ import { CandlestickChart } from "./CandlestickChart";
 import { Checkbox } from "./Checkbox";
 import { ChipList } from "./ChipList";
 import { ClearButton } from "./ClearButton";
+import { ComboboxField } from "./ComboboxField";
 import { DenseRow } from "./DenseRow";
 import { DetailSection } from "./DetailSection";
 import { DonutChart, donutSwatchClass } from "./DonutChart";
@@ -34,6 +35,16 @@ import { TextareaField } from "./TextareaField";
 import { ToastProvider, useToast } from "./Toast";
 
 const noop = () => {};
+
+// ComboboxField (dogfooding wave 2026-09, #3): the same primitive backing
+// the Spółka company picker and (via `useComboboxListbox` directly) the ⌘K
+// palette. Gallery-static — no host escape/navigation wiring, just the
+// APG combobox+listbox structure and skin.
+const GALLERY_COMBOBOX_OPTIONS = [
+  { id: "xtb", label: "GPW:XTB · XTB SPÓŁKA AKCYJNA" },
+  { id: "txt", label: "GPW:TXT · TEXT SA" },
+  { id: "xtp", label: "NC:XTP · XTPL SA" },
+];
 
 // Toast has no static "closed" markup like InlineConfirm — it only renders
 // once queued via `useToast().show()`. The gallery is a standalone dev-only
@@ -187,6 +198,16 @@ export function PrimitiveGallery() {
           </SelectField>
           <DateField label="DateField" defaultValue="2026-06-01" />
         </FieldRow>
+        <ComboboxField
+          label="ComboboxField"
+          options={GALLERY_COMBOBOX_OPTIONS}
+          getId={(option) => option.id}
+          getLabel={(option) => option.label}
+          filter={(option, query) => option.label.toLowerCase().includes(query.toLowerCase())}
+          displayValue={GALLERY_COMBOBOX_OPTIONS[0]!.label}
+          onSelect={noop}
+          escapePolicy={() => "bubble"}
+        />
         <TextareaField label="TextareaField" defaultValue="Multi-line note…" />
         <Checkbox label="Checkbox" defaultChecked />
         <SearchField

@@ -8,7 +8,20 @@ import { useLocale } from "../../shared/locale";
 import { CALENDAR_EVENT_FORMS, CLAIM_FORMS, SIGNAL_FORMS, pluralNoun } from "../../shared/locale/plural";
 import { deltaToneClass, formatFinancialValue } from "../../shared/format/financialValue";
 import { formatLocalIsoDate } from "../../shared/format/datetime";
-import { Button, CandlestickChart, DenseRow, EmptyState, ErrorText, PanelHeader, SectionHeader, SelectField, Skeleton, StatusChip } from "../../ui";
+import {
+  Button,
+  CandlestickChart,
+  ComboboxField,
+  DenseRow,
+  EmptyState,
+  ErrorText,
+  PanelHeader,
+  SectionHeader,
+  Skeleton,
+  StatusChip,
+  type ComboboxEscapeState,
+  type ComboboxEscapeAction,
+} from "../../ui";
 import { focusScreenHeadingIfBody } from "../../shared/focus/focusScreenHeading";
 import { useRovingToolbar, type RovingToolbarItemProps } from "../../shared/focus/useRovingToolbar";
 import { TickerLabel } from "../../shared/components/TickerLabel";
@@ -47,6 +60,29 @@ export const SPOLKA_TOOL_COMMANDS: ReadonlyArray<{ tool: Tool | null; label: str
   { tool: { t: "dokumenty" }, label: "Open documents", actionKey: "tool.open.dokumenty" },
   { tool: { t: "wydarzenia" }, label: "Open events", actionKey: "tool.open.wydarzenia" },
 ];
+
+// Company picker (dogfooding #3): filter by ticker or name, case- AND
+// diacritics-insensitive ("xt" matches "XTB", a Polish name with diacritics
+// matches its plain-ASCII typed form too).
+export function foldDiacritics(value: string): string {
+  // NFD strips combining marks (ó → o); ł/Ł have no decomposition, so they
+  // fold explicitly.
+  return value
+    .replace(/ł/g, "l")
+    .replace(/Ł/g, "L")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase();
+}
+
+function companyPickerLabel(company: Company): string {
+  return `${company.qualifiedTicker} · ${company.displayName}`;
+}
+
+function companyPickerFilter(company: Company, query: string): boolean {
+  const needle = foldDiacritics(query);
+  return foldDiacritics(company.qualifiedTicker).includes(needle) || foldDiacritics(company.displayName).includes(needle);
+}
 
 export type SpolkaScreenProps = {
   companyId: string;
@@ -99,7 +135,7 @@ export function SpolkaScreen({
   const lastCoreScrollTopRef = useRef(0);
   // The header company picker (F3c S1, plan § Design 3) — the "company"
   // focus intent's target after a Shift+J/K company switch.
-  const companyPickerRef = useRef<HTMLSelectElement>(null);
+  const companyPickerRef = useRef<HTMLInputElement>(null);
 
   // A tool only belongs to THIS render if it was opened for THIS company — a
   // late `get_company_view` response, or a tool left open from a prior
@@ -154,6 +190,14 @@ export function SpolkaScreen({
     spolkaTool.closeTool("overview");
   }
 
+  // Picker Escape (ADR 0107): open list → close; non-empty → clear; empty →
+  // bubble to the tool frame (`onEscapeBubble` → Overview, dirty-guarded).
+  function companyPickerEscapePolicy({ query, isOpen }: ComboboxEscapeState): ComboboxEscapeAction {
+    if (isOpen) return "close-list";
+    if (query.trim() !== "") return "clear";
+    return "bubble";
+  }
+
   function openTool(tool: Tool) {
     // Capture the core's scroll position at the moment it's about to be
     // hidden — jsdom (and the "set scrollTop directly" test scenario) does
@@ -180,6 +224,7 @@ export function SpolkaScreen({
   return (
     <section className="feed-panel spolka-screen" role="region" aria-label={text("Company view")} data-company-id={companyId}>
       <PanelHeader
+        className="spolka-header"
         title={company.displayName}
         titleId="spolka-title"
         description={
@@ -190,18 +235,18 @@ export function SpolkaScreen({
         }
         actions={
           companies.length > 1 ? (
-            <SelectField
+            <ComboboxField
               ref={companyPickerRef}
               label={text("Company")}
-              value={companyId}
-              onChange={(event) => onSwitchCompany(event.target.value)}
-            >
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.qualifiedTicker} · {c.displayName}
-                </option>
-              ))}
-            </SelectField>
+              options={companies}
+              getId={(c) => c.id}
+              getLabel={companyPickerLabel}
+              filter={companyPickerFilter}
+              displayValue={companyPickerLabel(company)}
+              onSelect={(c) => onSwitchCompany(c.id)}
+              escapePolicy={companyPickerEscapePolicy}
+              onEscapeBubble={overview}
+            />
           ) : undefined
         }
       />

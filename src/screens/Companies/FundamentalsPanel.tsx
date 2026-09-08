@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Pencil, Save, Trash2, X } from "lucide-react";
+import { factsMeasureKey } from "./periodMeasureKeys";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Pencil, Save, Trash2, X } from "lucide-react";
 import type { FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
 import { useLocale, type LocaleCode } from "../../shared/locale";
 import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
 import { AWAITS_NAMING_FORMS, FACT_FORMS, ITEM_FORMS, pluralNoun, type PluralForms } from "../../shared/locale/plural";
 import { formatFinancialValue } from "../../shared/format/financialValue";
-import { buildFactMatrix, buildStatementTabs, isSubtotalRow, type StatementTabKey } from "./factMatrix";
+import { buildFactMatrix, buildStatementTabs, type StatementTabKey } from "./factMatrix";
 import { FundamentalsPeriodsSection } from "./FundamentalsPeriodsSection";
-import { CompanyAutopilotField } from "../../shared/components/CompanyAutopilotField";
+import { FundamentalsFactsMatrix } from "./FundamentalsFactsMatrix";
+import { factQualityLabel, factQualityTone, tierLabel } from "./factLabels";
+import { useVisiblePeriods, naturalCellWidth, cssLengthVar } from "./useVisiblePeriods";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { DriftDiff, parseDrift } from "../../shared/components/DriftDiff";
@@ -23,7 +26,6 @@ import {
   SectionHeader,
   SegmentedControl,
   SegmentedControlOption,
-  Sparkline,
   StatusChip,
   TextField,
   TrendChart,
@@ -98,59 +100,16 @@ export function factsRecordedLabel(count: number, locale: LocaleCode): string {
   return `${count} ${pluralNoun(locale, count, FACT_FORMS)} ${pluralNoun(locale, count, RECORDED_FORMS)}`;
 }
 
-export function tierLabel(tier: string, text: (value: string) => string): string {
-  switch (tier) {
-    case "esef":
-      return text("ESEF (tagged)");
-    case "structured_xhtml":
-      return text("Structured HTML");
-    case "espi_cover_note":
-      return text("ESPI cover note");
-    case "pdf":
-      return text("Structured read (xHTML)");
-    case "agent":
-      return text("Agent (MCP)");
-    case "html_aggregator":
-      return text("Aggregator");
-    case "ai_text":
-    case "ai":
-      return text("AI");
-    default:
-      return tier;
-  }
-}
-
-/**
- * Human-readable `data_quality` label (ADR 0093 dec. 2: `final | preliminary
- * | estimated`, canonical vocabulary). A pure module-level function (mirrors
- * `tierLabel`) so it is unit-testable without rendering. Any unrecognized
- * token (a future addition to the vocabulary, or a legacy row) falls back to
- * "Final" — matching the storage-layer default and never blocking the value.
- */
-export function factQualityLabel(quality: string, text: (value: string) => string): string {
-  switch (quality) {
-    case "preliminary":
-      return text("Preliminary");
-    case "estimated":
-      return text("Estimated");
-    default:
-      return text("Final");
-  }
-}
-
-/** Chip tone for {@link factQualityLabel} — caution for preliminary (issuer-
- * published, pending the audited figure), accent for estimated (third-party
- * derived), neutral for the default final. */
-function factQualityTone(quality: string): "warn" | "accent" | "neutral" {
-  switch (quality) {
-    case "preliminary":
-      return "warn";
-    case "estimated":
-      return "accent";
-    default:
-      return "neutral";
-  }
-}
+// Facts-matrix sticky column widths (dogfooding #6): the KPI column is fixed
+// (not auto — a fixed width lets the expander column's CSS `left` be a
+// matching static value, since dynamic per-render measurement would require
+// inline `style={{…}}`, banned outside AppShell's sidebar-width exception —
+// docs/ui-authoring.md § Styling rules). Long labels ellipsize with a native
+// `title` tooltip. Mirrored in companies.css `.facts-matrix-kpi`/`-expander`.
+// 140px (not the mockup's 96 — real localized labels run longer than "KPI")
+// still leaves room for at least one period column at the narrowest S tier
+// (measured: a ~320px scroller, ~86px period width — 140+44+86=270 fits with
+// margin; the mockup's 96 was measured against a synthetic 10px preview font).
 
 /**
  * Display label for a {@link StatementTabKey} (epic #398 statement switcher):
@@ -175,18 +134,10 @@ export function statementTabLabel(key: StatementTabKey, text: (value: string) =>
 }
 
 /**
- * Completeness-bar "N of M positions" line (epic #398): how many of the
- * active statement's rows carry a value in the most recent period column. A
- * pure module-level function so it is unit-testable without rendering.
- */
-export function statementCompletenessLabel(current: number, total: number, locale: LocaleCode): string {
-  const noun = pluralNoun(locale, total, ITEM_FORMS);
-  return locale === "pl" ? `${current} z ${total} ${noun}` : `${current} of ${total} ${noun}`;
-}
-
-/**
- * Completeness-bar "N awaiting a catalog name" line (epic #398): the honest,
- * never-silently-absent count of rows the matrix synthesized a placeholder
+ * "N awaiting a catalog name" line (epic #398), rendered as a warn chip in
+ * the section header when > 0 (dogfooding #7 — the old completeness bar is
+ * gone): the honest, never-silently-absent count of rows the matrix
+ * synthesized a placeholder
  * for (`FactMatrixRow.isSynthetic`) because no `kpi_definitions` catalog row
  * matched their metric id yet.
  */
@@ -227,11 +178,6 @@ export function FundamentalsPanel({
   // merged with the global taxonomy so they appear in the matrix and dropdown.
   const [companyDefinitions, setCompanyDefinitions] = useState<KpiDefinition[]>([]);
   const [confirmDeleteFact, setConfirmDeleteFact] = useState(false);
-  // U7-A density disclosures (ADR 0076 D6). Collapsed by default so the CSS tier
-  // switch only reveals them where the contract folds content: the Autopilot
-  // summary row at S, the reporting forms when the pane is short. At tall/wide
-  // tiers the container queries ignore the collapsed state and show them inline.
-  const [autopilotExpanded, setAutopilotExpanded] = useState(false);
 
   // Statement switcher (epic #398): one statement in view at a time — replaces
   // the old all-groups-expanded collapsible list. "Kluczowe" is the default
@@ -388,14 +334,16 @@ export function FundamentalsPanel({
       )
     : activeTab.rows;
 
-  // Completeness bar (epic #398): "N of M" = how many of the active
-  // statement's rows carry a value in the most recent period column — never
-  // "M of M" by construction, since every matrix row already has a fact
-  // SOMEWHERE (buildFactMatrix only rows facts that exist).
+  // Period-expander column (dogfooding #6): as many newest periods as fit
+  // show by default, the rest hidden behind a full-height clickable column —
+  // shared logic (`useVisiblePeriods`): a hidden measuring pass over every
+  // period, the sticky KPI + trend widths read from the DOM, the expander
+  // width reserved separately and only when periods must hide.
+  // The never-silently-absent count of rows still awaiting a catalog name
+  // (dogfooding #7: moved into the section header as a warn chip, the old
+  // completeness bar is gone — it competed with the table for attention and
+  // duplicated per-cell provenance).
   const latestMatrixPeriod = factMatrix.periods[factMatrix.periods.length - 1];
-  const currentPeriodFactCount = latestMatrixPeriod
-    ? activeTab.rows.filter((row) => row.cells[latestMatrixPeriod.id]).length
-    : 0;
   const uncataloguedCount = activeTab.rows.filter((row) => row.isSynthetic).length;
 
   // Origin chip (epic #398): the source tier of the active statement's
@@ -413,6 +361,62 @@ export function FundamentalsPanel({
     : new Set<string>();
   const originTier = currentPeriodSourceTiers.size === 1 ? [...currentPeriodSourceTiers][0] : null;
   const originIsMixed = currentPeriodSourceTiers.size > 1;
+
+  const factsScrollRef = useRef<HTMLDivElement | null>(null);
+  const factsPeriods = useVisiblePeriods({
+    scrollerRef: factsScrollRef,
+    total: factMatrix.periods.length,
+    measureKey: factsMeasureKey({
+      locale,
+      periods: factMatrix.periods,
+      rows: visibleMatrixRows,
+      latestPeriodId: latestMatrixPeriod?.id ?? null,
+      originTier,
+      originIsMixed,
+    }),
+    // Widest natural period cell (header label + origin chip, every body
+    // value) across ALL periods — the measuring pass renders them all.
+    measurePeriodWidth: () => {
+      const scroller = factsScrollRef.current;
+      if (!scroller) return 0;
+      let widest = 0;
+      for (const cell of scroller.querySelectorAll<HTMLElement>("[data-period-cell]")) {
+        widest = Math.max(widest, naturalCellWidth(cell, cell.querySelector<HTMLElement>(".facts-matrix-cell")));
+      }
+      return widest;
+    },
+    // Sticky KPI column as rendered + the trend column's natural width when
+    // the tier shows it (its min-width is the floor; it stretches otherwise).
+    measureFixedWidth: () => {
+      const scroller = factsScrollRef.current;
+      if (!scroller) return 0;
+      const corner = scroller.querySelector<HTMLElement>(".facts-matrix-corner");
+      const trend = scroller.querySelector<HTMLElement>(".facts-matrix-trend-head");
+      const trendShown = trend && getComputedStyle(trend).display !== "none";
+      const trendWidth = trendShown
+        ? Math.max(Number.parseFloat(getComputedStyle(trend).minWidth) || 0, naturalCellWidth(trend))
+        : 0;
+      return (corner?.offsetWidth ?? 0) + trendWidth;
+    },
+    measureExpanderWidth: () => cssLengthVar(factsScrollRef.current, "--period-expander-width"),
+  });
+  const visibleFactPeriods = factMatrix.periods.slice(
+    factsPeriods.visibleStart,
+    factsPeriods.visibleStart + factsPeriods.visibleCount,
+  );
+  // The column stays visible while expanded (showing "Collapse earlier") even
+  // though `hiddenCount` is then 0 — "no column at all" only applies when
+  // there was never anything to hide in the first place.
+  const factsShowExpanderColumn = !factsPeriods.measuring && (factsPeriods.expanded || factsPeriods.hiddenCount > 0);
+  // Autoscroll to the newest period only on the transition INTO the expanded
+  // state (owner decision) — never on mount, never on a later resize.
+  useEffect(() => {
+    if (!factsPeriods.expanded) return;
+    const scroller = factsScrollRef.current;
+    if (!scroller) return;
+    scroller.scrollLeft = scroller.scrollWidth;
+  }, [factsPeriods.expanded]);
+
 
   // Trends must compare like-for-like periods: mixing a full-year figure with
   // quarters distorts the line. When any quarterly/half-year period exists, the
@@ -520,7 +524,7 @@ export function FundamentalsPanel({
       ) : null}
 
       {/* Section order (owner request 2026-07-14): price context first, the
-          financial-facts matrix second, everything else (periods, autopilot,
+          financial-facts matrix second, everything else (positions × periods,
           custom KPIs, forms) after. Sector and the IR reports URL live in the
           Basic info panel, not here. */}
       {priceContext ? (
@@ -538,7 +542,15 @@ export function FundamentalsPanel({
 
       {/* Financial Facts List and Detail */}
       <div role="group" className="fundamentals-section" aria-label={text("Financial facts")}>
-        <SectionHeader level="h4" title={text("Financial facts")} />
+        <SectionHeader
+          level="h4"
+          title={text("Financial facts")}
+          meta={
+            uncataloguedCount > 0 ? (
+              <StatusChip tone="warn">{uncataloguedPositionsLabel(uncataloguedCount, locale)}</StatusChip>
+            ) : undefined
+          }
+        />
 
         <div className="fundamentals-workspace">
           {factMatrix.rows.length > 0 ? (
@@ -572,120 +584,21 @@ export function FundamentalsPanel({
                 value={findQuery}
               />
 
-              {visibleMatrixRows.length > 0 ? (
-                /* The KPI × period matrix is DELIBERATE wide content: it scrolls inside
-                   this bounded wrapper (data-hscroll exempts it from the layout gate). */
-                <div className="facts-matrix-scroll" data-hscroll aria-label={text("Financial facts matrix")}>
-                  <table className="facts-matrix">
-                    <thead>
-                      <tr>
-                        <th className="facts-matrix-corner" scope="col">
-                          {text("KPI")}
-                        </th>
-                        {factMatrix.periods.map((period) => (
-                          <th key={period.id} scope="col">
-                            {period.fiscalYear} {period.periodType.toUpperCase()}
-                          </th>
-                        ))}
-                        <th className="facts-matrix-trend-head" scope="col">
-                          {text("Trend")}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleMatrixRows.map((row) => (
-                        // Subtotal emphasis (approved mockup): a statement's own
-                        // subtotal lines render heavier with a top rule — the
-                        // hierarchy that makes ~38 rows in one statement legible.
-                        <tr key={row.definition.id} className={isSubtotalRow(row) ? "facts-matrix-subtotal" : undefined}>
-                          <th className="facts-matrix-kpi" scope="row">
-                            {localizedKpiLabel(row.definition, locale)}
-                          </th>
-                          {factMatrix.periods.map((period) => {
-                            const fact = row.cells[period.id];
-                            if (!fact) {
-                              return (
-                                <td key={period.id} className="facts-matrix-cell-empty">
-                                  <span aria-hidden="true">—</span>
-                                </td>
-                              );
-                            }
-                            return (
-                              <td key={period.id}>
-                                <button
-                                  aria-label={`${localizedKpiLabel(row.definition, locale)}, ${period.fiscalYear} ${period.periodType.toUpperCase()}`}
-                                  className={[
-                                    "facts-matrix-cell",
-                                    selectedFinancialFactId === fact.id ? "facts-matrix-cell-selected" : "",
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" ")}
-                                  onClick={() => selectFinancialFact(fact.id)}
-                                  type="button"
-                                >
-                                  {formatFinancialValue(
-                                    {
-                                      valueNumeric: fact.valueNumeric,
-                                      currency: fact.currency,
-                                      asReportedValue: fact.asReportedValue,
-                                      asReportedScale: fact.asReportedScale,
-                                      valueKind: row.definition.valueKind,
-                                      unit: row.definition.unit,
-                                      metricKey: row.definition.metricKey,
-                                    },
-                                    locale,
-                                  )}
-                                  {fact.annotation ? (
-                                    <span
-                                      className="fact-annotation-marker"
-                                      title={fact.annotation}
-                                      aria-label={`${text("Annotation")}: ${fact.annotation}`}
-                                    >
-                                      *
-                                    </span>
-                                  ) : null}
-                                  {fact.dataQuality !== "final" ? (
-                                    <span
-                                      className="fact-quality-marker"
-                                      title={factQualityLabel(fact.dataQuality, text)}
-                                      aria-label={`${text("Data quality")}: ${factQualityLabel(fact.dataQuality, text)}`}
-                                    >
-                                      ‡
-                                    </span>
-                                  ) : null}
-                                </button>
-                              </td>
-                            );
-                          })}
-                          <td className="facts-matrix-trend">
-                            <Sparkline
-                              values={seriesValuesFor(row)}
-                              ariaLabel={`${localizedKpiLabel(row.definition, locale)} ${text("trend")}`}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <EmptyState>{text("No positions match your search.")}</EmptyState>
-              )}
-
-              {/* Source/completeness bar (epic #398): origin of the active statement's
-                  latest-period facts, "N of M positions" filled, and the honest
-                  never-silently-absent count still awaiting a catalog name. */}
-              <div className="fundamentals-completeness-bar">
-                {originTier ? (
-                  <StatusChip tone="accent">{tierLabel(originTier, text)}</StatusChip>
-                ) : originIsMixed ? (
-                  <StatusChip tone="neutral">{text("Mixed sources")}</StatusChip>
-                ) : null}
-                <span>{statementCompletenessLabel(currentPeriodFactCount, activeTab.rows.length, locale)}</span>
-                {uncataloguedCount > 0 ? (
-                  <StatusChip tone="warn">{uncataloguedPositionsLabel(uncataloguedCount, locale)}</StatusChip>
-                ) : null}
-              </div>
+              <FundamentalsFactsMatrix
+                text={text}
+                locale={locale}
+                visibleMatrixRows={visibleMatrixRows}
+                visibleFactPeriods={visibleFactPeriods}
+                factsScrollRef={factsScrollRef}
+                          factsPeriods={factsPeriods}
+                factsShowExpanderColumn={factsShowExpanderColumn}
+                selectedFinancialFactId={selectedFinancialFactId}
+                selectFinancialFact={selectFinancialFact}
+                seriesValuesFor={seriesValuesFor}
+                latestPeriodId={latestMatrixPeriod?.id ?? null}
+                originTier={originTier}
+                originIsMixed={originIsMixed}
+              />
             </>
           ) : (
             <EmptyState>{text("No financial facts yet.")}</EmptyState>
@@ -939,42 +852,10 @@ export function FundamentalsPanel({
         />
       ) : null}
 
-      {/* Financial Periods List */}
-      <div role="group" className="fundamentals-section" aria-label={text("Reporting periods")}>
-        <SectionHeader level="h4" title={text("Reporting periods")} />
-        {financialPeriods.length > 0 ? (
-          <div className="periods-list">
-            {financialPeriods.map((period) => (
-              <div key={period.id} className="period-item">
-                <span className="period-label">
-                  {period.fiscalYear} {period.periodType.toUpperCase()}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState>{text("No reporting periods yet.")}</EmptyState>
-        )}
-      </div>
-
-      {/* Autopilot section (U7-A): folds to a summary row + expand at the S tier
-          (container query), inline field at M/L. */}
-      <div className={`fundamentals-autopilot${autopilotExpanded ? " is-expanded" : ""}`}>
-        <button
-          type="button"
-          className="fundamentals-autopilot-toggle"
-          aria-expanded={autopilotExpanded}
-          onClick={() => setAutopilotExpanded((value) => !value)}
-        >
-          <span aria-hidden="true" className="fundamentals-autopilot-chevron">
-            <ChevronRight size={15} />
-          </span>
-          {text("Autopilot")}
-        </button>
-        <div className="fundamentals-autopilot-body">
-          <CompanyAutopilotField companyId={companyId} />
-        </div>
-      </div>
+      {/* Dogfooding wave 2026-09 (#4): the Reporting periods read-only list
+          (restated the matrix headers) and the in-panel Autopilot fold both
+          retire — Companies → Manage settings is the only autopilot editor
+          now, including the one-company case (ADR 0056 amendment). */}
 
       <CustomKpiManager companyId={companyId} onDefinitionsChange={setCompanyDefinitions} />
 

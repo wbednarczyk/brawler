@@ -43,9 +43,9 @@ per feature.
   ex-dividend days, and general meetings for the companies on your lists,
   with source attribution on every date, confirm/reject for dates derived
   from a filing, and a one-click jump when a week is empty.
-- **[Per-company settings](company-settings.md)** — quick single-company
-  controls (autopilot mode, IR reports URL) and the bulk **Manage settings**
-  surface for changing several companies, or a whole watchlist, at once.
+- **[Per-company settings](company-settings.md)** — the IR reports URL and
+  sector override in Basic info, and the **Manage settings** surface for the
+  autopilot mode of one company, several, or a whole watchlist at once.
 - **[Quality frameworks](quality-frameworks.md)** — score a company against your
   own quality checklists: quantitative criteria computed from reported
   fundamentals, plus qualitative criteria (moat, capital allocation…) assessed

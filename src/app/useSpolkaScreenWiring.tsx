@@ -33,7 +33,7 @@ export type SpolkaTransition = {
   /** Where focus lands after the transition (F3c, plan § Design 3). Defaults
    * to `none` for a plain company switch — a row/pinned click or a palette
    * hop must NOT focus the company picker (Chromium paints `:focus-visible`
-   * on any programmatically focused `<select>`, mouse or not); only the
+   * on any programmatically focused control, mouse or not); only the
    * keyboard adjacent-company shortcuts pass `"company"`. */
   focusIntent?: FocusIntent;
   highlightClaimId?: string;

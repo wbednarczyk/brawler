@@ -91,6 +91,7 @@ describe("FeedDetailContent dispatcher", () => {
     renderWithLocale(
       <FeedDetailContent item={makeItem({ presentationKind: "redFlag" })} {...baseProps} />,
     );
+    expect(screen.getByText("Red flag")).toBeInTheDocument();
 
     expect(screen.getByLabelText("Official report body")).toBeInTheDocument();
     expect(screen.getByLabelText("Feed summary")).toBeInTheDocument();

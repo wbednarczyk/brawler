@@ -67,17 +67,15 @@ const PANEL_CONTRACTS: PanelContract[] = [
     panel: "Fundamentals",
     open: (page) => openCompanyTool(page, "Open fundamentals"),
     tiers: {
-      // S: Autopilot section collapses to one row + expand (summary toggle shown,
-      // full field folded); sections stack; matrix scrolls.
+      // S: the Autopilot fold is retired (dogfooding #4 — Companies > Manage
+      // settings is the only autopilot editor now); sections stack, matrix scrolls.
       S: async (_page, pane) => {
-        await expect(pane.locator(".fundamentals-autopilot-toggle")).toBeVisible();
-        await expect(pane.locator(".fundamentals-autopilot-body")).toBeHidden();
+        await expect(pane.locator(".fundamentals-autopilot")).toHaveCount(0);
         await expect(pane.getByLabel("Financial facts matrix")).toBeVisible();
       },
-      // M: Autopilot expanded (no toggle); the two forms stack in one column.
+      // M: no Autopilot fold either; the two forms stack in one column.
       M: async (_page, pane) => {
-        await expect(pane.locator(".fundamentals-autopilot-toggle")).toBeHidden();
-        await expect(pane.locator(".fundamentals-autopilot-body")).toBeVisible();
+        await expect(pane.locator(".fundamentals-autopilot")).toHaveCount(0);
         const create = await box(pane.getByLabel("Create reporting period"));
         const add = await box(pane.getByLabel("Add financial fact"));
         expect(add.y, "add-fact form stacked below the period form at M").toBeGreaterThan(create.y + 10);
@@ -155,11 +153,12 @@ test.describe("company panel density matrix", { tag: "@clickable" }, () => {
 });
 
 // Periods × deltas section (v0.61 §A5, ADR 0089 dec. 1). The quarterly view is
-// deliberate wide content (value + Δ QoQ + Δ YoY per period); the narrow-window
-// rule requires it to scroll inside its own bounded, contained scroller so it
-// never forces a pane- or page-level horizontal scrollbar.
+// wide content (value + Δ QoQ + Δ YoY per period); collapsed it shows as many
+// newest periods as fit (clipped wrapper, no scroll — the S tier folds the Δ
+// columns), expanded it scrolls inside its own bounded box, and neither state
+// forces a pane- or page-level horizontal scrollbar.
 test.describe("Fundamentals periods × deltas layout", { tag: "@clickable" }, () => {
-  test("the wide quarterly table scrolls inside its own container, not the pane", async ({
+  test("the collapsed quarterly table fits its wrapper at S and never overflows the pane", async ({
     page,
   }) => {
     await openApp(page);
@@ -179,15 +178,19 @@ test.describe("Fundamentals periods × deltas layout", { tag: "@clickable" }, ()
     // No global horizontal scroll despite the wide table.
     await expectNoPageOverflow(page);
 
-    // The table overflows its OWN scroller (proving it is genuinely wide)…
+    // Owner round 2 (2026-09-07): a collapsed period table never overflows —
+    // at S the Δ columns fold and the sticky column narrows so one value
+    // column fits; the table fills the width it has.
     const inner = await scroller.evaluate((el) => ({
       scrollWidth: el.scrollWidth,
       clientWidth: el.clientWidth,
+      overflowX: getComputedStyle(el).overflowX,
     }));
-    expect(
-      inner.scrollWidth,
-      "the quarterly table is wide enough to exercise its scroller",
-    ).toBeGreaterThan(inner.clientWidth);
+    expect(inner.overflowX, "collapsed wrapper clips instead of scrolling").toBe("clip");
+    expect(inner.scrollWidth, "the collapsed quarterly table fits its wrapper").toBeLessThanOrEqual(inner.clientWidth + 1);
+    await expect(section.locator('[data-period-col="qoq"]').first()).toBeHidden();
+    await expect(section.locator('[data-period-col="yoy"]').first()).toBeHidden();
+    await expect(section.locator('[data-period-col="value"]').first()).toBeVisible();
 
     // …while the pane itself never overflows horizontally (containment holds).
     const paneBox = await pane.evaluate((el) => ({
@@ -240,5 +243,20 @@ test.describe("Companies library density (companies-library cell)", { tag: "@cli
       expect(addBox!.x + addBox!.width).toBeLessThanOrEqual(paneBox!.x + paneBox!.width + 1);
       await resetPaneSize(page, pane);
     }
+  });
+});
+
+// Fundamentals facts matrix: the Trend sparkline column folds at S (so one
+// period always fits beside the sticky KPI + expander columns) and shows at M.
+test.describe("Fundamentals trend column per tier", { tag: "@clickable" }, () => {
+  test("Trend folds at S and shows at M", async ({ page }) => {
+    await openApp(page);
+    const pane = await openCompanyTool(page, "Open fundamentals");
+    const trend = pane.locator(".facts-matrix-trend-head");
+    await setPaneSize(page, { width: 380, height: 700, pane });
+    await expect(trend).toBeHidden();
+    await setPaneSize(page, { width: 600, height: 700, pane });
+    await expect(trend).toBeVisible();
+    await resetPaneSize(page, pane);
   });
 });

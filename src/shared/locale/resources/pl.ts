@@ -113,7 +113,6 @@ export const pl: LocaleResources = {
   "Fiscal year": "Rok obrachunkowy",
   "Period type": "Typ okresu",
   "Annual": "Roczny",
-  "Reporting periods": "Okresy sprawozdawcze",
   "Financial facts": "Fakty finansowe",
   "Financial fact": "Fakt finansowy",
   "No financial facts yet.": "Brak faktów finansowych.",

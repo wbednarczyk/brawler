@@ -232,7 +232,7 @@ describe("AppShell — Activity panel open/close/navigate", () => {
     expect(indicator).toHaveFocus();
   });
 
-  it("Open document calls onNavigateToActivityTarget with the item's target and closes the panel", async () => {
+  it("Open in documents calls onNavigateToActivityTarget with the item's target and closes the panel", async () => {
     const navigateCalls: ActivityTarget[] = [];
     render(<ActivityHarness navigateCalls={navigateCalls} />);
     fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
@@ -242,7 +242,7 @@ describe("AppShell — Activity panel open/close/navigate", () => {
     const row = Array.from(document.querySelectorAll<HTMLElement>('.activity-item[data-activity-target="company"]')).find(
       (node) => node.textContent?.includes(activeItem.subject),
     )!;
-    fireEvent.click(within(row).getByRole("button", { name: "Open document" }));
+    fireEvent.click(within(row).getByRole("button", { name: "Open in documents" }));
 
     expect(navigateCalls).toEqual([activeItem.target]);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

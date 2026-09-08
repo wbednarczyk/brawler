@@ -117,28 +117,3 @@ export async function expectOpaqueSticky(locator: Locator): Promise<void> {
     `sticky z-index (${result.zIndex}) must be >= the scrolling sibling cells' z-index (${result.maxSiblingZIndex})`,
   ).toBeGreaterThanOrEqual(result.maxSiblingZIndex);
 }
-
-/**
- * Asserts a row action's right edge sits inside the scroller's visible width
- * (`clientWidth`, not `scrollWidth`) — an action outside that bound is
- * clipped or hidden under the scrollbar even though it "exists" in the DOM
- * (dogfooding #10: a row action under the scrollbar).
- */
-export async function expectInsideScroller(actionLocator: Locator, scrollerLocator: Locator): Promise<void> {
-  const [actionBox, scrollerBox, clientWidth] = await Promise.all([
-    actionLocator.boundingBox(),
-    scrollerLocator.boundingBox(),
-    scrollerLocator.evaluate((el) => el.clientWidth),
-  ]);
-  if (!actionBox || !scrollerBox) {
-    throw new Error("expectInsideScroller: the action or scroller locator is not visible/attached");
-  }
-
-  const rightEdge = actionBox.x - scrollerBox.x + actionBox.width;
-  expect(
-    rightEdge,
-    `Action's right edge (${rightEdge.toFixed(1)}px) must be within the scroller's visible width ` +
-      `(clientWidth ${clientWidth}px) — outside this bound it is clipped or hidden under the ` +
-      "scrollbar (dogfooding #10).",
-  ).toBeLessThanOrEqual(clientWidth);
-}

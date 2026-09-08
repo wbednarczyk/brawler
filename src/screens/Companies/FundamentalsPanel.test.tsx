@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { FundamentalsPanel, factsRecordedLabel, tierLabel } from "./FundamentalsPanel";
+import { FundamentalsPanel, factsRecordedLabel } from "./FundamentalsPanel";
+import { tierLabel } from "./factLabels";
 import { ToolHostContext, type ToolHandle } from "../../shared/toolHost";
 import { getPriceContext } from "../../api/marketData";
 import { getKpiComparison } from "../../api/comparison";
@@ -11,14 +12,35 @@ import type { KpiComparison } from "../../api/comparison";
 import { listFactProvenance } from "../../api/fundamentalsExtraction";
 import type { FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance } from "../../api/financialsTypes";
 import { buildScenario } from "../../test/scenarios/scenarios";
+import { useVisiblePeriods } from "./useVisiblePeriods";
 
-// The Autopilot / custom-KPI child fields load state via the mocked `invoke`
-// on mount (out of scope here); stub them so the render exercises only the
-// panel's own U7-A density disclosures. (Sector + IR URL fields moved to the
-// Basic info panel, owner request 2026-07-14.)
-vi.mock("../../shared/components/CompanyAutopilotField", () => ({
-  CompanyAutopilotField: () => <div data-testid="autopilot-field" />,
-}));
+// Period-expander column (dogfooding #6): jsdom measures every DOM node's
+// width as 0, which would collapse the REAL hook's capacity to 1 in every
+// test below and hide periods none of them are testing for. Mock it so the
+// default behavior matches the panel's pre-#6 rendering (every period
+// visible, no expander column) — the dedicated "period-expander column"
+// describe block below overrides this per test for the capacity-3 scenario.
+vi.mock("./useVisiblePeriods", async () => {
+  const actual = await vi.importActual<typeof import("./useVisiblePeriods")>("./useVisiblePeriods");
+  return { ...actual, useVisiblePeriods: vi.fn() };
+});
+
+beforeEach(() => {
+  vi.mocked(useVisiblePeriods).mockImplementation(({ total }) => ({
+    visibleStart: 0,
+    visibleCount: total,
+    hiddenCount: 0,
+    expanded: false,
+    toggle: vi.fn(),
+    measuring: false,
+  }));
+});
+
+// The custom-KPI child field loads state via the mocked `invoke` on mount
+// (out of scope here); stub it so the render exercises only the panel's own
+// U7-A density disclosures. (Sector + IR URL fields moved to the Basic info
+// panel, owner request 2026-07-14; the Autopilot fold retired — dogfooding
+// #4 — Companies → Manage settings is the only autopilot editor now.)
 vi.mock("../../shared/components/CustomKpiManager", () => ({
   CustomKpiManager: () => <div data-testid="kpi-manager" />,
 }));
@@ -141,21 +163,15 @@ describe("tierLabel", () => {
 // STATE the folds introduce — jsdom has no container queries, so only the
 // aria-expanded / open-modifier semantics are exercised.
 describe("FundamentalsPanel density disclosures", () => {
-  it("Autopilot section folds to one row + expand (S tier)", async () => {
-    const user = userEvent.setup();
+  // Dogfooding wave 2026-09 (#4): the in-panel Autopilot fold retires
+  // entirely — Companies → Manage settings is the only autopilot editor now,
+  // including the one-company case (ADR 0056 amendment).
+  it("renders no Autopilot fold (retired — Companies > Manage settings is the only editor)", () => {
     const { container } = render(<FundamentalsPanel {...panelProps} />);
 
-    const toggle = container.querySelector(".fundamentals-autopilot-toggle");
-    const section = container.querySelector(".fundamentals-autopilot");
-    expect(toggle, "autopilot summary toggle rendered").not.toBeNull();
-    expect(section, "autopilot section wrapper rendered").not.toBeNull();
-    // Collapsed by default: the summary row is the only affordance at S.
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(section?.className).not.toContain("is-expanded");
-
-    await user.click(toggle as HTMLElement);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(section?.className).toContain("is-expanded");
+    expect(container.querySelector(".fundamentals-autopilot")).toBeNull();
+    expect(container.querySelector(".fundamentals-autopilot-toggle")).toBeNull();
+    expect(screen.queryByLabelText("Autopilot")).toBeNull();
   });
 
   it("reporting forms fold behind a disclosure (short tier)", async () => {
@@ -176,10 +192,11 @@ describe("FundamentalsPanel density disclosures", () => {
 });
 
 // Section order (owner request 2026-07-14): price context leads the panel,
-// the financial-facts matrix follows, everything else (periods, autopilot,
-// custom KPIs, forms) comes after. Sector/IR fields are gone (Basic info panel).
+// the financial-facts matrix follows. Sector/IR fields are gone (Basic info
+// panel); the Reporting periods list and Autopilot fold are gone (dogfooding
+// #4 — both retired).
 describe("FundamentalsPanel section order", () => {
-  it("renders price context before financial facts, and facts before the rest", async () => {
+  it("renders price context before financial facts, with no retired sections", async () => {
     vi.mocked(getPriceContext).mockResolvedValueOnce({
       lastClose: 100,
       lastDate: "2026-07-14",
@@ -202,14 +219,13 @@ describe("FundamentalsPanel section order", () => {
     });
     const price = container.querySelector(".price-context-section")!;
     const facts = container.querySelector('[aria-label="Financial facts"]')!;
-    const periods = container.querySelector('[aria-label="Reporting periods"]')!;
     expect(facts).not.toBeNull();
-    expect(periods).not.toBeNull();
     // compareDocumentPosition: FOLLOWING = the argument comes after the receiver.
     expect(price.compareDocumentPosition(facts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(facts.compareDocumentPosition(periods) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // No Sector field renders in this panel.
+    // No Sector field, no Reporting periods list, no Autopilot fold.
     expect(container.querySelector('[aria-label="Sector"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Reporting periods"]')).toBeNull();
+    expect(container.querySelector(".fundamentals-autopilot")).toBeNull();
   });
 });
 
@@ -783,7 +799,7 @@ describe("FundamentalsPanel statement switcher (epic #398)", () => {
     expect(await screen.findByText("No positions match your search.")).toBeInTheDocument();
   });
 
-  it("reports the completeness bar's uncatalogued-position count for a synthesized row", async () => {
+  it("reports the section header's uncatalogued-position warn chip for a synthesized row (dogfooding #7)", async () => {
     const withSynthetic = {
       ...statementProps,
       // No matching kpi_definitions row for this fact's definitionId — the
@@ -797,6 +813,98 @@ describe("FundamentalsPanel statement switcher (epic #398)", () => {
     await user.click(operatingTab);
 
     expect(await screen.findByText("1 item awaits a catalog name")).toBeInTheDocument();
+  });
+});
+
+// Origin chip (epic #398, dogfooding #7): moved off the retired below-table
+// completeness bar into the newest period's own <th> — no bar renders at all
+// now, and the chip only appears when the active statement's newest-period
+// facts agree (or explicitly disagree) on a source tier.
+describe("FundamentalsPanel origin chip in the newest period header (dogfooding #7)", () => {
+  it("shows the agreed source tier inside the newest period's header, with no completeness bar", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    vi.mocked(listFactProvenance).mockResolvedValueOnce([
+      {
+        factId: "f_rev",
+        sourceTier: "esef",
+        validationStatus: "passed",
+        driftJson: null,
+        citation: null,
+        witnessValue: null,
+        witnessPageUrl: null,
+        corroboratedAt: null,
+      },
+      {
+        factId: "f_np",
+        sourceTier: "esef",
+        validationStatus: "passed",
+        driftJson: null,
+        citation: null,
+        witnessValue: null,
+        witnessPageUrl: null,
+        corroboratedAt: null,
+      },
+    ]);
+    const { container } = render(<FundamentalsPanel {...periodsProps} />);
+
+    const newestHeader = await screen.findByRole("columnheader", { name: /2024 ANNUAL/i });
+    expect(within(newestHeader).getByText("ESEF (tagged)")).toBeInTheDocument();
+    expect(container.querySelector(".fundamentals-completeness-bar")).toBeNull();
+  });
+
+  it("shows 'Mixed sources' when the newest period's facts disagree on tier", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    vi.mocked(listFactProvenance).mockResolvedValueOnce([
+      {
+        factId: "f_rev",
+        sourceTier: "esef",
+        validationStatus: "passed",
+        driftJson: null,
+        citation: null,
+        witnessValue: null,
+        witnessPageUrl: null,
+        corroboratedAt: null,
+      },
+      {
+        factId: "f_np",
+        sourceTier: "ai",
+        validationStatus: "passed",
+        driftJson: null,
+        citation: null,
+        witnessValue: null,
+        witnessPageUrl: null,
+        corroboratedAt: null,
+      },
+    ]);
+    render(<FundamentalsPanel {...periodsProps} />);
+
+    const newestHeader = await screen.findByRole("columnheader", { name: /2024 ANNUAL/i });
+    expect(within(newestHeader).getByText("Mixed sources")).toBeInTheDocument();
+  });
+
+  it("renders no origin chip when no provenance is known for the newest period", async () => {
+    vi.mocked(getKpiComparison).mockResolvedValueOnce(n1Comparison());
+    vi.mocked(listFactProvenance).mockResolvedValueOnce([]);
+    render(<FundamentalsPanel {...periodsProps} />);
+
+    const newestHeader = await screen.findByRole("columnheader", { name: /2024 ANNUAL/i });
+    expect(within(newestHeader).queryByText(/ESEF|Mixed sources/)).toBeNull();
+  });
+});
+
+// Zebra striping (dogfooding #13, owner 2026-09-04): the shared `.ui-zebra`
+// rule (companies.css) stripes every EVEN <tbody> row via CSS `:nth-child`,
+// which jsdom cannot compute — this pins the WIRING (the table carries the
+// class), the pixel-level stripe is the browser visual rebaseline.
+describe("FundamentalsPanel facts matrix zebra striping (dogfooding #13)", () => {
+  it("the facts matrix table carries the shared zebra class", async () => {
+    const { container } = render(<FundamentalsPanel {...periodsProps} />);
+    const table = await waitFor(() => {
+      const el = container.querySelector(".facts-matrix");
+      expect(el).not.toBeNull();
+      return el as HTMLTableElement;
+    });
+    expect(table.className).toContain("ui-zebra");
   });
 });
 
@@ -875,5 +983,110 @@ describe("FundamentalsPanel primary action (sol R1 finding 9)", () => {
       "primary",
     );
     expect(screen.queryByRole("button", { name: /Add fact/ })).not.toBeInTheDocument();
+  });
+});
+
+// Period-expander column (dogfooding wave 2026-09, #6): a mocked capacity of
+// 3 (real measurement is browser-only — fundamentals-periods.spec.ts) drives
+// the facts matrix down to its own newest-N-visible + column-control
+// behavior. The mock's `toggle` is a real `useState` setter (not a `vi.fn()`
+// stub) so expand/collapse renders exactly as the real hook would.
+describe("FundamentalsPanel period-expander column (dogfooding #6)", () => {
+  function periodsRange(count: number, startYear: number): FinancialPeriod[] {
+    return Array.from({ length: count }, (_, index) => period(`p_${startYear + index}`, startYear + index));
+  }
+
+  const twelvePeriods = periodsRange(12, 2013);
+  const facts12 = twelvePeriods.map((p) => fact(`f_${p.id}`, "def_revenue", p.id));
+  const expanderProps = {
+    ...panelProps,
+    financialPeriods: twelvePeriods,
+    financialFacts: facts12,
+    kpiDefinitions: [kpiDef("def_revenue", "revenue", "monetary")],
+    kpiRelevance: [keyRelevance("def_revenue")],
+  };
+
+  beforeEach(() => {
+    vi.mocked(getKpiComparison).mockResolvedValue({
+      granularity: "annual",
+      metricKeys: [],
+      axis: [],
+      series: [],
+    });
+    vi.mocked(useVisiblePeriods).mockImplementation(({ total }) => {
+      const [expanded, setExpanded] = useState(false);
+      const capacity = 3;
+      const visibleCount = expanded ? total : Math.min(capacity, total);
+      return {
+        visibleStart: Math.max(0, total - visibleCount),
+        visibleCount,
+        hiddenCount: Math.max(0, total - visibleCount),
+        expanded,
+        toggle: () => setExpanded((value) => !value),
+        measuring: false,
+      };
+    });
+  });
+
+  it("shows only the 3 newest periods, with the column named for the hidden count", async () => {
+    render(<FundamentalsPanel {...expanderProps} />);
+
+    expect(await screen.findByRole("button", { name: /revenue, 2024 ANNUAL/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /revenue, 2023 ANNUAL/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /revenue, 2022 ANNUAL/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /revenue, 2021 ANNUAL/i })).toBeNull();
+
+    expect(screen.getByRole("button", { name: "Expand 9 earlier periods" })).toBeInTheDocument();
+    expect(screen.getByText("Expand earlier")).toBeInTheDocument();
+    // The KPI header's accessible name is unchanged by the expander column.
+    expect(screen.getByRole("columnheader", { name: "KPI" })).toBeInTheDocument();
+  });
+
+  it("expands on click, shows every period, and scrolls the matrix to the right edge (none on mount)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<FundamentalsPanel {...expanderProps} />);
+
+    const scroller = container.querySelector(".facts-matrix-scroll") as HTMLElement;
+    Object.defineProperty(scroller, "scrollWidth", { value: 999, configurable: true });
+    let scrollLeftValue = 0;
+    Object.defineProperty(scroller, "scrollLeft", {
+      get: () => scrollLeftValue,
+      set: (value) => {
+        scrollLeftValue = value;
+      },
+      configurable: true,
+    });
+
+    const expander = await screen.findByRole("button", { name: "Expand 9 earlier periods" });
+    expect(scrollLeftValue, "no scroll on mount").toBe(0);
+
+    await user.click(expander);
+
+    expect(await screen.findByRole("button", { name: "Collapse earlier" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /revenue, 2013 ANNUAL/i })).toBeInTheDocument();
+    expect(scrollLeftValue, "scrolled to the right edge on expand").toBe(999);
+  });
+
+  it("activates the column control with Enter", async () => {
+    const user = userEvent.setup();
+    render(<FundamentalsPanel {...expanderProps} />);
+
+    const expander = await screen.findByRole("button", { name: "Expand 9 earlier periods" });
+    expander.focus();
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("button", { name: "Collapse earlier" })).toBeInTheDocument();
+  });
+
+  it("renders no expander column when nothing is hidden", async () => {
+    const fitsProps = {
+      ...expanderProps,
+      financialPeriods: twelvePeriods.slice(0, 3),
+      financialFacts: facts12.slice(0, 3),
+    };
+    render(<FundamentalsPanel {...fitsProps} />);
+
+    await screen.findByRole("button", { name: /revenue, 2015 ANNUAL/i });
+    expect(screen.queryByRole("button", { name: /earlier periods/ })).toBeNull();
   });
 });

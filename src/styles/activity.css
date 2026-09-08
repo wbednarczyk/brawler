@@ -7,12 +7,13 @@
   container-type: inline-size;
 }
 
+/* Never a scroller of its own: the padded `.ui-modal-body` owns the scroll,
+   so row actions keep a gutter from the scrollbar (`.activity-modal` caps
+   the height). */
 .activity-panel {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  max-height: min(70vh, 640px);
-  overflow: auto;
   min-width: 0;
 }
 
@@ -47,6 +48,7 @@
 .ui-modal.activity-modal {
   width: min(880px, 94vw);
   max-width: none;
+  max-height: min(70vh, 640px);
 }
 
 .activity-family {

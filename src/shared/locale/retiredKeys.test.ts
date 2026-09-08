@@ -49,6 +49,28 @@ const RETIRED_PLTEXT_KEYS = [
   "Starting a transcript job sends the YouTube URL and video content to Gemini.",
 ];
 
+// Dogfooding wave 2026-09, S1. Commit 1 (#6): the Pozycje × okresy "Show all
+// periods" / "Show fewer periods" disclosure button is replaced by the
+// shared period-expander column (useVisiblePeriods.ts). Commit 2 (#4): the
+// read-only Reporting periods list (restated the matrix headers) and the
+// Fundamentals Autopilot fold both retire — Companies → Manage settings is
+// the only autopilot editor now (ADR 0056 amendment); its description text
+// was exclusive to the retired `CompanyAutopilotField` (the option-label
+// keys "Off — manual" etc. stay — CompanySettingsManager.tsx still uses
+// them). All plText-only keys.
+const RETIRED_PLTEXT_KEYS_WAVE_S1 = [
+  "Show all periods",
+  "Show fewer periods",
+  "Reporting periods",
+  "No reporting periods yet.",
+  "Automatically process this company's new reports on the next source refresh. Off keeps everything manual; Assist auto-fetches and extracts but you confirm each value; Autopilot also auto-confirms extracted values as unreviewed (cited and reversible).",
+  // Wave S2/S3 (dogfooding #1b, #12): the Activity destination is "Open in
+  // documents"; the KPI ticket's control is the thread button named
+  // "Open source: …" — both old keys lost their last call site.
+  "Open document",
+  "Open source document",
+];
+
 const SCAN_ROOT = "src";
 const SCAN_EXTENSIONS = [".ts", ".tsx"];
 // This file and the resource tables carry the retired tokens as data (the
@@ -168,6 +190,31 @@ const RETIRED_PLTEXT_KEYS_F4C = [
 // only a negative assertion in `SettingsScreen.test.tsx` proving its absence.
 // Pinned here so it can't quietly reappear.
 const RETIRED_PLTEXT_KEYS_S4 = ["AI workers"];
+
+describe("retired Fundamentals vocabulary stays retired (dogfooding wave 2026-09, S1)", () => {
+  it("is absent from the plText resource table", () => {
+    const hits = RETIRED_PLTEXT_KEYS_WAVE_S1.filter((key) => key in plText).map((key) => `plText.ts: ${key}`);
+    expect(hits, `Retired keys still present:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("is absent from every src/** call site", () => {
+    const files = listSourceFiles(process.cwd(), SCAN_ROOT, []);
+    const needles = RETIRED_PLTEXT_KEYS_WAVE_S1.flatMap((token) => [
+      `text("${token}")`,
+      `t("${token}")`,
+      `text('${token}')`,
+      `t('${token}')`,
+    ]);
+    const hits: string[] = [];
+    for (const rel of files) {
+      const content = readFileSync(join(process.cwd(), rel), "utf8");
+      for (const needle of needles) {
+        if (content.includes(needle)) hits.push(`${rel}: ${needle}`);
+      }
+    }
+    expect(hits, `Retired keys still referenced:\n${hits.join("\n")}`).toEqual([]);
+  });
+});
 
 describe("retired 'AI workers' vocabulary stays retired (F4c S4)", () => {
   it("is absent from the plText resource table", () => {

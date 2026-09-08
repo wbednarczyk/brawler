@@ -110,7 +110,6 @@ export const en = {
   "Fiscal year": "Fiscal year",
   "Period type": "Period type",
   "Annual": "Annual",
-  "Reporting periods": "Reporting periods",
   "Financial facts": "Financial facts",
   "Financial fact": "Financial fact",
   "No financial facts yet.": "No financial facts yet.",
