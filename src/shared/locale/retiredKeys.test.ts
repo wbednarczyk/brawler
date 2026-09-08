@@ -191,6 +191,18 @@ const RETIRED_PLTEXT_KEYS_F4C = [
 // Pinned here so it can't quietly reappear.
 const RETIRED_PLTEXT_KEYS_S4 = ["AI workers"];
 
+// Wave 2026-09b S2 (#451): Backups moves from developer-gated Diagnostics into
+// Settings › Data storage with product-language copy. The old Diagnostics
+// hint and the implementation-vocabulary kind labels ("Pre-migration
+// snapshot", "Automatic backup") are replaced by the human-title-first row
+// (`BackupsSettings.tsx` — "Backup"/"Copy before upgrade" + a `Figure
+// kind="datetime"`), so all three lose their last call site.
+const RETIRED_PLTEXT_KEYS_WAVE2_S2 = [
+  "Local data backups. Restore is applied on the next app launch.",
+  "Pre-migration snapshot",
+  "Automatic backup",
+];
+
 describe("retired Fundamentals vocabulary stays retired (dogfooding wave 2026-09, S1)", () => {
   it("is absent from the plText resource table", () => {
     const hits = RETIRED_PLTEXT_KEYS_WAVE_S1.filter((key) => key in plText).map((key) => `plText.ts: ${key}`);
@@ -225,6 +237,31 @@ describe("retired 'AI workers' vocabulary stays retired (F4c S4)", () => {
   it("is absent from every src/** call site", () => {
     const files = listSourceFiles(process.cwd(), SCAN_ROOT, []);
     const needles = RETIRED_PLTEXT_KEYS_S4.flatMap((token) => [
+      `text("${token}")`,
+      `t("${token}")`,
+      `text('${token}')`,
+      `t('${token}')`,
+    ]);
+    const hits: string[] = [];
+    for (const rel of files) {
+      const content = readFileSync(join(process.cwd(), rel), "utf8");
+      for (const needle of needles) {
+        if (content.includes(needle)) hits.push(`${rel}: ${needle}`);
+      }
+    }
+    expect(hits, `Retired keys still referenced:\n${hits.join("\n")}`).toEqual([]);
+  });
+});
+
+describe("retired Diagnostics-Backups vocabulary stays retired (wave 2026-09b S2, #451)", () => {
+  it("is absent from the plText resource table", () => {
+    const hits = RETIRED_PLTEXT_KEYS_WAVE2_S2.filter((key) => key in plText).map((key) => `plText.ts: ${key}`);
+    expect(hits, `Retired keys still present:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("is absent from every src/** call site", () => {
+    const files = listSourceFiles(process.cwd(), SCAN_ROOT, []);
+    const needles = RETIRED_PLTEXT_KEYS_WAVE2_S2.flatMap((token) => [
       `text("${token}")`,
       `t("${token}")`,
       `text('${token}')`,

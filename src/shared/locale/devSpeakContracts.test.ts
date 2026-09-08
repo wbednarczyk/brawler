@@ -41,7 +41,10 @@ function escapeRegExp(value: string): string {
 // table scan carries a NARROW allowlist of keys whose only live call site is
 // under `src/screens/Diagnostics/**` — and the test below proves that
 // property, so the allowlist can never hide a string that leaks elsewhere.
-const DIAGNOSTICS_ONLY_KEYS = new Set(["Pre-migration snapshot"]);
+// Wave 2026-09b S2 (#451): "Pre-migration snapshot" retired with the
+// Diagnostics → Settings Backups move (retiredKeys.test.ts pins it shut) —
+// the allowlist is empty again until a genuinely Diagnostics-only term needs it.
+const DIAGNOSTICS_ONLY_KEYS = new Set<string>([]);
 
 describe("dev-speak guard over user-facing copy", () => {
   it("keeps implementation vocabulary out of every locale surface", () => {

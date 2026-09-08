@@ -1,6 +1,7 @@
 import type { UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
 import { ActionButton, FieldRow, SelectField } from "../../ui";
+import { BackupsSettings } from "./BackupsSettings";
 
 type DatabaseSettingsProps = {
   settings: UserSettings | null;
@@ -39,52 +40,55 @@ export function DatabaseSettings({
   const acquireTimeoutMs = database?.acquireTimeoutMs ?? 10000;
 
   return (
-    <section className="settings-group" aria-labelledby="settings-database-title">
-      <h2 id="settings-database-title">{text("Data storage")}</h2>
-      <p className="settings-note">
-        {text("How hard the app works on your data at once. Applies after restart.")}
-      </p>
-      <FieldRow>
-        <SelectField
-          aria-label={text("Parallel work")}
-          label={text("Parallel work")}
-          value={database?.maxConnections ?? 4}
-          onChange={(event) => onDbMaxConnectionsChange(Number(event.target.value))}
-        >
-          {maxConnectionOptions.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
-          aria-label={text("Wait when busy")}
-          label={text("Wait when busy")}
-          value={busyTimeoutMs}
-          onChange={(event) => onDbBusyTimeoutMsChange(Number(event.target.value))}
-        >
-          {busyTimeoutOptions.map((value) => (
-            <option key={value} value={value}>
-              {formatSecondsLabel(value)}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
-          aria-label={text("Wait to start")}
-          label={text("Wait to start")}
-          value={acquireTimeoutMs}
-          onChange={(event) => onDbAcquireTimeoutMsChange(Number(event.target.value))}
-        >
-          {acquireTimeoutOptions.map((value) => (
-            <option key={value} value={value}>
-              {formatSecondsLabel(value)}
-            </option>
-          ))}
-        </SelectField>
-      </FieldRow>
-      <ActionButton kind="control" onClick={onResetDatabaseSettings}>
-        {text("Reset to defaults")}
-      </ActionButton>
-    </section>
+    <>
+      <section className="settings-group" aria-labelledby="settings-database-title">
+        <h2 id="settings-database-title">{text("Data storage")}</h2>
+        <p className="settings-note">
+          {text("How hard the app works on your data at once. Applies after restart.")}
+        </p>
+        <FieldRow>
+          <SelectField
+            aria-label={text("Parallel work")}
+            label={text("Parallel work")}
+            value={database?.maxConnections ?? 4}
+            onChange={(event) => onDbMaxConnectionsChange(Number(event.target.value))}
+          >
+            {maxConnectionOptions.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            aria-label={text("Wait when busy")}
+            label={text("Wait when busy")}
+            value={busyTimeoutMs}
+            onChange={(event) => onDbBusyTimeoutMsChange(Number(event.target.value))}
+          >
+            {busyTimeoutOptions.map((value) => (
+              <option key={value} value={value}>
+                {formatSecondsLabel(value)}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            aria-label={text("Wait to start")}
+            label={text("Wait to start")}
+            value={acquireTimeoutMs}
+            onChange={(event) => onDbAcquireTimeoutMsChange(Number(event.target.value))}
+          >
+            {acquireTimeoutOptions.map((value) => (
+              <option key={value} value={value}>
+                {formatSecondsLabel(value)}
+              </option>
+            ))}
+          </SelectField>
+        </FieldRow>
+        <ActionButton kind="control" onClick={onResetDatabaseSettings}>
+          {text("Reset to defaults")}
+        </ActionButton>
+      </section>
+      <BackupsSettings />
+    </>
   );
 }

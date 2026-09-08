@@ -396,10 +396,8 @@ export const plText: Record<string, string> = {
   "Autopilot tasks at once": "Zadań autopilota naraz",
   "Max concurrent calls per AI provider": "Maks. równoległych wywołań na dostawcę AI",
   "Backups": "Kopie zapasowe",
-  "Local data backups. Restore is applied on the next app launch.":
-    "Lokalne kopie zapasowe danych. Przywracanie działa po następnym uruchomieniu aplikacji.",
   "Last backup": "Ostatnia kopia",
-  "Backups kept": "Przechowywane kopie",
+  "Backups kept": "Zachowane kopie",
   "None yet": "Brak",
   "Create backup": "Utwórz kopię",
   "Backup created.": "Kopia utworzona.",
@@ -408,8 +406,6 @@ export const plText: Record<string, string> = {
     "Przywrócić tę kopię? Zostanie zastosowana po restarcie aplikacji i zastąpi bieżące dane.",
   "Restore staged. Restart the app to apply it.":
     "Przywracanie przygotowane. Uruchom ponownie aplikację, aby je zastosować.",
-  "Pre-migration snapshot": "Migawka przed migracją",
-  "Automatic backup": "Kopia automatyczna",
   "No backups yet.": "Brak kopii zapasowych.",
   "Primary navigation": "Nawigacja główna",
   "Fetch GPW ESPI/EBI public listings": "Pobierz publiczne komunikaty GPW ESPI/EBI",
@@ -2304,4 +2300,14 @@ export const plText: Record<string, string> = {
   "Collapse earlier": "Zwiń starsze",
   "Earlier periods": "Wcześniejsze okresy",
   // ---- /wave 2026-09 ----
+  // ---- wave2 S2 ----
+  "Local copies of your data. A restore is applied when the app restarts.":
+    "Lokalne kopie Twoich danych. Przywrócenie zastosuje się po ponownym uruchomieniu aplikacji.",
+  "Backup": "Kopia",
+  "Copy before upgrade": "Kopia sprzed aktualizacji",
+  // The Backups empty-state invitation (ADR 0104 dec. 4 three beats: what →
+  // where from → the Create backup action).
+  "Local copies of your data.": "Lokalne kopie Twoich danych.",
+  "Stored on this computer.": "Przechowywane na tym komputerze.",
+  // ---- /wave2 S2 ----
 };

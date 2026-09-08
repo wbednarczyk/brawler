@@ -1,5 +1,25 @@
+import type { Locator } from "@playwright/test";
 import { test, expect, openApp, expectNoA11yViolations, expectNoHorizontalOverflow, openPalette } from "./helpers/harness";
 import { expectActionInsideScroller } from "./helpers/interactionContracts";
+
+// Inline paint capture (#476, sol R2 correction) — mirrors PR #477's
+// (open) `tests/browser/helpers/paint.ts` (`expectVisiblyMarked`) property
+// set exactly (backgroundColor/outline/boxShadow, never borderColor) so the
+// integrator can swap this for the shared helper without redesigning the
+// assertion shape.
+function paintStyle(locator: Locator) {
+  return locator.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { backgroundColor: style.backgroundColor, outline: style.outline, boxShadow: style.boxShadow };
+  });
+}
+
+function paintDiffers(
+  a: { backgroundColor: string; outline: string; boxShadow: string },
+  b: { backgroundColor: string; outline: string; boxShadow: string },
+): boolean {
+  return a.backgroundColor !== b.backgroundColor || a.outline !== b.outline || a.boxShadow !== b.boxShadow;
+}
 
 // Activity center (ADR 0109, #133) — the first red journey test (plan § 1):
 // seeded active + queued + a failed reading + a sweep parent via the
@@ -40,6 +60,25 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
 
   test("Otwórz dokument on the failed reading row lands on Spółka › Dokumenty with the document highlighted", async ({ page }) => {
     await openApp(page);
+
+    // #476 sol R2 correction: the strongest proof is the SAME element's paint
+    // before vs after it becomes the deep-link target — open Documents on
+    // CDR directly (no deep link yet) so the row renders in its plain,
+    // unmarked state first.
+    const openCompany = await openPalette(page);
+    await openCompany.getByRole("combobox", { name: "Search commands" }).fill("Open company: CDR");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("region", { name: "Company view", exact: true })).toBeVisible();
+    const openDocuments = await openPalette(page);
+    await openDocuments.getByRole("combobox", { name: "Search commands" }).fill("Open documents");
+    await page.keyboard.press("Enter");
+    const tool = page.getByRole("group", { name: "Workshop tool" });
+    await expect(tool).toHaveAttribute("data-tool", "dokumenty");
+    const targetRow = page.locator('[data-document-id="doc_cdr_q3_2025"]');
+    await expect(targetRow).toBeVisible();
+    await expect(targetRow).not.toHaveAttribute("data-document-highlighted", "true");
+    const prePaint = await paintStyle(targetRow);
+
     await page.getByRole("button", { name: "Open activity" }).click();
     const dialog = page.getByRole("dialog", { name: "Activity" });
     await expect(dialog).toBeVisible();
@@ -59,21 +98,30 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
     await expect(page.getByRole("region", { name: "Company view" })).toBeVisible();
     // Lands on the Documents tool with the exact `documentId` the row
     // declared, and the document row stays marked — a persistent deep-link
-    // target (dogfooding #11), not a 4s flash: it carries `aria-current` and
-    // actually PAINTS a real background, not just a DOM attribute with no
-    // matching CSS rule (the original defect — a `.doc-row` has no
-    // background at rest, so a computed color other than fully transparent
-    // proves the rule matched and painted). The browser smoke runtime seeds
-    // exactly one report document for CDR (`browserSmokeRuntime.ts`, out of
-    // this slice's file list), so there is no sibling row to diff against —
-    // `spolka-documents.spec.ts` covers the same paint contract with the
-    // same single-document constraint.
-    await expect(page.getByRole("group", { name: "Workshop tool" })).toHaveAttribute("data-tool", "dokumenty");
-    const targetRow = page.locator('[data-document-id="doc_cdr_q3_2025"]');
+    // target (dogfooding #11), not a 4s flash: it carries `aria-current` AND
+    // actually PAINTS — the original defect was a DOM attribute set with no
+    // matching CSS rule at all.
+    await expect(tool).toHaveAttribute("data-tool", "dokumenty");
     await expect(targetRow).toHaveAttribute("data-document-highlighted", "true");
     await expect(targetRow).toHaveAttribute("aria-current", "true");
-    const targetColor = await targetRow.evaluate((el) => getComputedStyle(el).backgroundColor);
-    expect(targetColor).not.toBe("rgba(0, 0, 0, 0)");
+
+    const postPaint = await paintStyle(targetRow);
+    expect(
+      paintDiffers(prePaint, postPaint),
+      `Same-element paint must change once the row becomes the deep-link target. pre=${JSON.stringify(prePaint)} post=${JSON.stringify(postPaint)}`,
+    ).toBe(true);
+
+    // Extra (#476): a neutral sibling document (`doc_cdr_q2_2025`) stays
+    // unmarked and visibly different from the target — not the primary
+    // proof, but a second, independent signal the mark is real.
+    const siblingRow = page.locator('[data-document-id="doc_cdr_q2_2025"]');
+    await expect(siblingRow).not.toHaveAttribute("data-document-highlighted", "true");
+    await expect(siblingRow).not.toHaveAttribute("aria-current", "true");
+    const siblingPaint = await paintStyle(siblingRow);
+    expect(
+      paintDiffers(postPaint, siblingPaint),
+      `Target row paint ${JSON.stringify(postPaint)} must differ from the unmarked sibling ${JSON.stringify(siblingPaint)}`,
+    ).toBe(true);
   });
 
   // Dogfooding #10: `.activity-panel` used to be its OWN padding-less
