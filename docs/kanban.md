@@ -21,6 +21,7 @@ Active project tracking lives in **GitHub Issues + the "Brawler board" Project**
 | Area | label | e.g. `area:fundamentals`, `area:research-workspace`, `area:release-workflow`, `area:packaging` (repeated flags, never comma-joined). |
 | Epic | `epic` label + native **sub-issues** | Major capability issues; tasks attach as GitHub sub-issues (replacing `parent:<hex7>`). |
 | Release increment | `release:*` label on the PR | Exactly one of `release:major\|minor\|patch\|skip` per PR (required check); the merge ships the version ([ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md) § 5). Owner's decision — agents never set it to force a release. |
+| Tests-touched exemption | `tests:not-needed` label on the PR | Conscious, reviewed exemption from the **Tests touched** check (G14): a code-only diff with no test change (or inline Rust `#[cfg(test)]`/`#[test]` hunk) fails unless this label is present. Re-evaluates on labeled/unlabeled events — applying it flips a red PR green without a new push. |
 | Milestone | native GitHub milestone | Migrated `milestone:vX.Y.Z` labels are **historical grouping only** — new work groups by epics + sub-issues, not version milestones. |
 | Type | `bug` label | Deferred bugs; state via the board, priority/area via labels; `blocked:<n>` as a body link. |
 
