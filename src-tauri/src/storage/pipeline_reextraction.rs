@@ -145,14 +145,19 @@ impl PipelineReextractionStore {
             "INSERT INTO pipeline_reextraction_batches (id, company_id) VALUES (?1, ?2)",
             params![id, company_id],
         )?;
-        // Plain INSERT (sol round 4): `next_batch_id` already avoids ids
-        // taken in either table, and if a collision slips through anyway the
-        // whole transaction rolls back — a batch is never committed with its
-        // job silently suppressed.
-        tx.execute(
-            "INSERT INTO job_queue (id, kind, payload, max_attempts)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![id, job_kind, job_payload(&id), job_max_attempts.max(1)],
+        // Plain INSERT (sol round 4; `or_ignore = false`): `next_batch_id`
+        // already avoids ids taken in either table, and if a collision slips
+        // through anyway the whole transaction rolls back — a batch is never
+        // committed with its job silently suppressed. Shared with
+        // `history_sweeps.rs`'s `create_history_sweep_with_job` (issue #458)
+        // via `enqueue_in` — one INSERT statement for every job-queue writer.
+        super::jobs::enqueue_in(
+            &tx,
+            &id,
+            job_kind,
+            &job_payload(&id),
+            job_max_attempts,
+            false,
         )?;
         tx.commit()?;
         drop(connection);

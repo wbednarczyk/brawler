@@ -13,8 +13,26 @@ static BACKUP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const ROTATING_BACKUP_RETENTION: usize = 5;
 const ROTATING_PREFIX: &str = "backup-";
 const SNAPSHOT_PREFIX: &str = "pre-migration-";
+const PRE_RESTORE_PREFIX: &str = "pre-restore-";
 const RESTORE_STAGING_FILE: &str = "restore-pending.sqlite3";
+/// A staged/restore candidate that failed verification, kept for inspection
+/// (#319) — never read by the app itself, overwritten by the next rejection.
+const RESTORE_REJECTED_FILE: &str = "restore-rejected.sqlite3";
+/// Marks an in-progress swap (`apply_staged_restore`'s sidecar-removal +
+/// rename step) so a crash between those two file operations is resumable on
+/// the next start (#319) — see that fn's doc for the full protocol.
+const RESTORE_JOURNAL_FILE: &str = "restore-journal.json";
 const DATABASE_FILE: &str = "brawler.sqlite3";
+
+/// The crash-resumable journal `apply_staged_restore` writes right before the
+/// two file operations (sidecar removal + rename) a mid-swap crash could
+/// leave half-done. `pre_restore` is the absolute path to the ordinary backup
+/// the original database was copied to just before the swap.
+#[derive(Debug, Serialize, Deserialize)]
+struct RestoreJournal {
+    pre_restore: String,
+    started_at: String,
+}
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -154,9 +172,73 @@ pub(super) fn collect_status(data_dir: &Path) -> StorageResult<BackupStatus> {
     })
 }
 
+/// Verify a restore candidate is a real, intact Brawler database this build
+/// recognizes, before it is ever allowed to become the live database (#319).
+/// Read-only end to end ([`migrations::open_database_readonly`]): verification
+/// never mutates the candidate. Used both when a restore is staged
+/// ([`request_restore`]) and again right before it is applied
+/// ([`apply_staged_restore`]) — the staged file sat in a user-visible folder
+/// in between and could have been swapped out from under the app.
+pub(super) fn verify_backup_file(path: &Path) -> StorageResult<()> {
+    let reject = |reason: String| StorageError::RestoreRejected(reason);
+
+    let connection = migrations::open_database_readonly(path)
+        .map_err(|error| reject(format!("could not open the file as a database: {error}")))?;
+
+    let integrity: String = connection
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|error| reject(format!("integrity_check could not run: {error}")))?;
+    if integrity != "ok" {
+        return Err(reject(format!(
+            "database failed integrity_check: {integrity}"
+        )));
+    }
+
+    // A missing `schema_migrations` table reads as 0 applied migrations — the
+    // same signal as a bare non-Brawler SQLite file, and refused the same way
+    // (a marker table with zero rows would be indistinguishable otherwise).
+    let applied = migrations::count_applied_migrations(&connection)
+        .map_err(|error| reject(format!("could not read schema_migrations: {error}")))?;
+    if applied == 0 {
+        return Err(reject(
+            "no applied migrations found — not a Brawler database".to_owned(),
+        ));
+    }
+
+    // Every listed version must be one this build actually ships (set
+    // membership, not a row count): migrations are numbered 1..=migration_count()
+    // with no gaps or reuse (append-only, ADR-enforced), so a version outside
+    // that range is unrecognized — most likely a newer app version's database.
+    let known_versions = migrations::migration_count();
+    let mut statement = connection
+        .prepare("SELECT version FROM schema_migrations")
+        .map_err(|error| reject(format!("could not read schema_migrations: {error}")))?;
+    let versions = statement
+        .query_map([], |row| row.get::<_, i64>(0))
+        .map_err(|error| reject(format!("could not read schema_migrations: {error}")))?;
+    for version in versions {
+        let version = version
+            .map_err(|error| reject(format!("could not read schema_migrations: {error}")))?;
+        if !(1..=known_versions).contains(&version) {
+            return Err(reject(format!(
+                "schema_migrations lists version {version}, which this build does not \
+                 recognize (likely a newer app version's database)"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 /// Stage a chosen backup for restore on the next launch. The file name must be a
 /// plain backup file in the backups directory (no path traversal). The live
 /// database is not touched; the swap happens at startup (ADR 0032).
+///
+/// The candidate is copied to a private temp name and verified there — never
+/// the source backup file itself — so a failed verification leaves the
+/// backups directory untouched and publishes no new staging file (#319). A
+/// later successful request replaces an earlier pending one (the temp file is
+/// renamed onto the well-known staging name, an atomic publish).
 pub(super) fn request_restore(data_dir: &Path, file_name: &str) -> StorageResult<()> {
     if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
         return Err(StorageError::Io(std::io::Error::new(
@@ -173,26 +255,179 @@ pub(super) fn request_restore(data_dir: &Path, file_name: &str) -> StorageResult
         )));
     }
 
-    std::fs::copy(&source, data_dir.join(RESTORE_STAGING_FILE))?;
+    let staging_temp = data_dir.join(format!("{RESTORE_STAGING_FILE}.verify-{}", unix_nanos()));
+    std::fs::copy(&source, &staging_temp)?;
+
+    if let Err(error) = verify_backup_file(&staging_temp) {
+        let _ = std::fs::remove_file(&staging_temp);
+        return Err(error);
+    }
+
+    std::fs::rename(&staging_temp, data_dir.join(RESTORE_STAGING_FILE))?;
     Ok(())
 }
 
-/// Apply a staged restore, if any, before the database is opened. Replaces the
-/// database file and clears stale WAL sidecars so the restored copy is used.
-pub(super) fn apply_staged_restore(database_path: &Path, data_dir: &Path) -> StorageResult<()> {
-    let staged = data_dir.join(RESTORE_STAGING_FILE);
-    if !staged.is_file() {
-        return Ok(());
-    }
-
-    // Remove WAL/SHM sidecars of the current database so the restored file is authoritative.
+/// Remove the current database's WAL/SHM sidecars — the swap below only ever
+/// runs once they are checkpointed (empty) or about to be replaced outright.
+fn clear_database_sidecars(database_path: &Path) {
     for sidecar in ["-wal", "-shm"] {
         let path = database_path.with_file_name(format!("{DATABASE_FILE}{sidecar}"));
         let _ = std::fs::remove_file(path);
     }
+}
 
-    std::fs::rename(&staged, database_path)?;
+fn database_passes_integrity_check(database_path: &Path) -> bool {
+    migrations::open_database_readonly(database_path)
+        .ok()
+        .and_then(|connection| {
+            connection
+                .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+                .ok()
+        })
+        .map(|integrity| integrity == "ok")
+        .unwrap_or(false)
+}
+
+/// Recover from a crash mid-swap on the previous run (step 8 of
+/// [`apply_staged_restore`]'s protocol): a journal on disk means the
+/// sidecar-removal + rename step below was interrupted. If the live database
+/// still opens and passes `integrity_check`, the swap actually completed —
+/// just the journal cleanup didn't — so the journal is simply deleted.
+/// Otherwise the pre-restore copy the journal names is copied back over the
+/// live path. A failure copying it back is unrecoverable (`StorageError::Io`,
+/// propagated so `open_pool` aborts setup as it always has for a corrupt
+/// database) — there is no safe database to open at that point.
+fn recover_from_crash_journal(database_path: &Path, journal_path: &Path) -> StorageResult<()> {
+    if !journal_path.is_file() {
+        return Ok(());
+    }
+
+    let journal: RestoreJournal = serde_json::from_str(&std::fs::read_to_string(journal_path)?)?;
+
+    if !database_passes_integrity_check(database_path) {
+        std::fs::copy(&journal.pre_restore, database_path)?;
+        clear_database_sidecars(database_path);
+    }
+
+    std::fs::remove_file(journal_path)?;
     Ok(())
+}
+
+/// Apply a staged restore, if any, before the database is opened
+/// ([`open_pool`](super::pool::open_pool) calls this first thing). The
+/// original database is never renamed away — it is checkpointed and copied
+/// aside as an ordinary backup, and a journal makes a crash between the
+/// sidecar cleanup and the rename resumable on the next start (#319):
+///
+/// 1. Recover from a previous crash first ([`recover_from_crash_journal`]).
+/// 2. No staged file and no journal → nothing to do.
+/// 3. Verify the staged file again (it sat in a user-visible folder since
+///    [`request_restore`] accepted it) → reject on failure, original
+///    untouched, the bad candidate kept as `restore-rejected.sqlite3`.
+/// 4. Checkpoint the original (`PRAGMA wal_checkpoint(TRUNCATE)`) so its
+///    `.sqlite3` file alone is a complete, consistent copy.
+/// 5. Copy the checkpointed original to `backups/pre-restore-<ts>.sqlite3` —
+///    an ordinary rotating-adjacent backup, restorable like any other.
+/// 6. Write the journal, remove the (now empty) sidecars, rename the staged
+///    file onto the live path, open it and re-run `integrity_check`.
+/// 7. Success → delete the journal. Failure → copy the pre-restore backup
+///    back over the live path, clear sidecars, delete the journal, keep the
+///    bad candidate as `restore-rejected.sqlite3`.
+///
+/// Returns `Ok(Some(reason))` when a staged restore was recoverably refused —
+/// the live database is untouched and still authoritative; never fatal,
+/// `open_pool` continues normally and surfaces `reason` to the user via a
+/// Today attention event. Returns `Ok(None)` when there was nothing to do or
+/// the swap succeeded. Returns `Err` only for the unrecoverable case: crash
+/// recovery itself could not restore a safe database (setup aborts, as
+/// before this fix).
+pub(super) fn apply_staged_restore(
+    database_path: &Path,
+    data_dir: &Path,
+) -> StorageResult<Option<String>> {
+    let journal_path = data_dir.join(RESTORE_JOURNAL_FILE);
+    recover_from_crash_journal(database_path, &journal_path)?;
+
+    let staged = data_dir.join(RESTORE_STAGING_FILE);
+    if !staged.is_file() {
+        return Ok(None);
+    }
+
+    if let Err(error) = verify_backup_file(&staged) {
+        let reason = match error {
+            StorageError::RestoreRejected(reason) => reason,
+            other => other.to_string(),
+        };
+        let _ = std::fs::rename(&staged, data_dir.join(RESTORE_REJECTED_FILE));
+        return Ok(Some(reason));
+    }
+
+    {
+        // Scoped so the connection (and its own pooled resources) closes
+        // before the file is copied below. Function-call PRAGMA syntax
+        // (unlike `PRAGMA x = value`, which `pragma_update` builds) is what
+        // `wal_checkpoint` actually expects a mode argument through.
+        let connection = Connection::open(database_path)?;
+        connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+    }
+
+    let backups_directory = backups_dir(data_dir);
+    std::fs::create_dir_all(&backups_directory)?;
+    let pre_restore_path =
+        backups_directory.join(format!("{PRE_RESTORE_PREFIX}{}.sqlite3", unix_nanos()));
+    std::fs::copy(database_path, &pre_restore_path)?;
+
+    let journal = RestoreJournal {
+        pre_restore: pre_restore_path.to_string_lossy().into_owned(),
+        started_at: OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .unwrap_or_default(),
+    };
+    std::fs::write(&journal_path, serde_json::to_string(&journal)?)?;
+
+    clear_database_sidecars(database_path);
+
+    // Tracked separately from `swap_result` so the rollback below knows WHERE
+    // the bad candidate ended up: the rename either moved `staged` onto
+    // `database_path` (then integrity_check may still have failed) or never
+    // ran at all, leaving `staged` exactly where it was.
+    let rename_result = std::fs::rename(&staged, database_path);
+    let rename_succeeded = rename_result.is_ok();
+    let swap_result: StorageResult<()> = match rename_result {
+        Err(io_error) => Err(StorageError::RestoreRejected(format!(
+            "could not move the staged file onto the database path: {io_error}"
+        ))),
+        Ok(()) if database_passes_integrity_check(database_path) => Ok(()),
+        Ok(()) => Err(StorageError::RestoreRejected(
+            "restored database failed integrity_check after the swap".to_owned(),
+        )),
+    };
+
+    match swap_result {
+        Ok(()) => {
+            std::fs::remove_file(&journal_path)?;
+            Ok(None)
+        }
+        Err(error) => {
+            // Preserve whatever bad candidate exists for inspection before
+            // restoring the original.
+            if rename_succeeded {
+                let _ = std::fs::copy(database_path, data_dir.join(RESTORE_REJECTED_FILE));
+            } else if staged.is_file() {
+                let _ = std::fs::rename(&staged, data_dir.join(RESTORE_REJECTED_FILE));
+            }
+
+            std::fs::copy(&pre_restore_path, database_path)?;
+            clear_database_sidecars(database_path);
+            std::fs::remove_file(&journal_path)?;
+
+            let reason = match error {
+                StorageError::RestoreRejected(reason) => reason,
+                other => other.to_string(),
+            };
+            Ok(Some(reason))
+        }
+    }
 }
 
 /// Take a pre-migration snapshot when an existing database has pending

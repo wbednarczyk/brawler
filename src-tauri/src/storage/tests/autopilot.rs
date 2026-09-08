@@ -31,16 +31,86 @@ fn fetched_statement(state: &AppState, company_id: &str, title: &str, url: &str)
             attribution: None,
         })
         .expect("report document should create");
+    // A real file with a real content hash/size, not placeholders (issue #455's
+    // verified-identity capture check reads these back — `local_file_matches_row`
+    // — so a stale/absent hash would make an already-fetched seeded document look
+    // unverified and get silently re-fetched, stranding the offline pipeline at
+    // fetch/running with no fetcher to actually serve it). Filed under the doc's
+    // own id so parallel tests sharing `AppState::new`'s fixed data dir don't race.
+    let bytes = minimal_text_pdf(&["Nota objasniajaca do sprawozdania finansowego."]);
+    let local_path = format!("report_documents/{}.pdf", doc.id);
+    let full_path = state.data_dir().join(&local_path);
+    std::fs::create_dir_all(full_path.parent().expect("parent dir")).expect("mkdir");
+    std::fs::write(&full_path, &bytes).expect("write seed pdf");
     state
         .mark_report_document_fetched(
             &doc.id,
-            Some("report_documents/seed.pdf"),
+            Some(&local_path),
             Some("application/pdf"),
-            None,
-            Some(1),
+            Some(&crate::report_documents_capture::content_hash_hex(&bytes)),
+            Some(bytes.len() as i64),
         )
         .expect("mark fetched");
     doc.id
+}
+
+/// Builds a minimal, valid single-page PDF whose extracted text reproduces
+/// `lines` (padded past `pdf-extract`'s 200-chars/page no-text-layer floor with
+/// statement boilerplate) — duplicated from `jobs::autopilot`'s test module
+/// rather than shared, matching that module's own precedent (each module's
+/// tests stay self-contained).
+fn minimal_text_pdf(lines: &[&str]) -> Vec<u8> {
+    let filler = "Nota objasniajaca do sprawozdania finansowego za okres sprawozdawczy.";
+    let mut all_lines: Vec<&str> = lines.to_vec();
+    while all_lines.iter().map(|l| l.len() + 1).sum::<usize>() < 220 {
+        all_lines.push(filler);
+    }
+    let mut content = String::from("BT /F1 12 Tf 40 750 Td 16 TL\n");
+    for (i, line) in all_lines.iter().enumerate() {
+        if i > 0 {
+            content.push_str("T*\n");
+        }
+        let escaped = line
+            .replace('\\', "\\\\")
+            .replace('(', "\\(")
+            .replace(')', "\\)");
+        content.push_str(&format!("({escaped}) Tj\n"));
+    }
+    content.push_str("ET");
+
+    let objects = [
+        "<</Type/Catalog/Pages 2 0 R>>".to_owned(),
+        "<</Type/Pages/Kids[3 0 R]/Count 1>>".to_owned(),
+        "<</Type/Page/Parent 2 0 R/Resources<</Font<</F1 4 0 R>>>>/MediaBox[0 0 612 792]/Contents 5 0 R>>"
+            .to_owned(),
+        "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>".to_owned(),
+        format!(
+            "<</Length {}>>\nstream\n{}\nendstream",
+            content.len(),
+            content
+        ),
+    ];
+    let mut buf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::with_capacity(objects.len());
+    for (i, obj) in objects.iter().enumerate() {
+        offsets.push(buf.len());
+        buf.extend_from_slice(format!("{} 0 obj\n{obj}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref_offset = buf.len();
+    buf.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
+    buf.extend_from_slice(b"0000000000 65535 f \n");
+    for offset in &offsets {
+        buf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    buf.extend_from_slice(
+        format!(
+            "trailer\n<</Size {}/Root 1 0 R>>\nstartxref\n{}\n%%EOF",
+            objects.len() + 1,
+            xref_offset
+        )
+        .as_bytes(),
+    );
+    buf
 }
 
 #[test]

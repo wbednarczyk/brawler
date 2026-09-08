@@ -345,6 +345,10 @@ pub(super) fn list_pending_attachments(
         .map_err(StorageError::from)
 }
 
+/// Clears `fetch_error` too (#455): a stale error from a prior failed
+/// attempt must not linger once the document is genuinely fetched — this is
+/// also how the capture layer heals a `failed` row whose file still matches
+/// its identity, by calling this with the row's own already-stored values.
 pub(super) fn mark_fetched(
     connection: &Connection,
     id: &str,
@@ -367,6 +371,7 @@ pub(super) fn mark_fetched(
             content_hash = ?4,
             byte_size = ?5,
             fetch_status = ?6,
+            fetch_error = NULL,
             fetched_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE id = ?1
@@ -384,6 +389,14 @@ pub(super) fn mark_fetched(
     get_report_document(connection, id)
 }
 
+/// **Atomic guard** (#455, mirroring [`mark_metadata_only`]'s idiom): a
+/// `fetched` document with a stored file is never downgraded to `failed` —
+/// a race where a concurrent capture stored the file between this caller's
+/// fetch attempt and its failure write must not strand the row `failed`
+/// while bytes sit on disk. Zero-row (guard declined, or unknown id) always
+/// re-reads and returns the current row rather than erroring: the caller
+/// distinguishes "declined" from "applied" by checking the returned
+/// `fetch_status` (still `fetched` vs now `failed`).
 pub(super) fn mark_failed(
     connection: &Connection,
     id: &str,
@@ -399,10 +412,34 @@ pub(super) fn mark_failed(
             fetch_error = ?3,
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE id = ?1
+          AND NOT (fetch_status = 'fetched' AND local_path IS NOT NULL AND local_path <> '')
         ",
         params![id, "failed", error],
     )?;
 
+    get_report_document(connection, id)
+}
+
+/// Reset a `fetched` document back to `pending` when the identity check
+/// (#455, `report_documents_capture::local_file_matches_row`) finds the file
+/// missing or no longer matching its stored hash/size — the row must not
+/// keep claiming bytes that are not really there. `local_path` is cleared so
+/// the row cannot be misread as fetched again before the refetch lands.
+pub(super) fn mark_pending_for_refetch(
+    connection: &Connection,
+    id: &str,
+) -> StorageResult<ReportDocument> {
+    let _doc = get_report_document(connection, id)?;
+    connection.execute(
+        "
+        UPDATE report_documents
+        SET fetch_status = 'pending',
+            local_path = NULL,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?1
+        ",
+        params![id],
+    )?;
     get_report_document(connection, id)
 }
 
@@ -767,6 +804,17 @@ impl ReportDocumentStore {
         let connection = self.db.checkout()?;
 
         mark_metadata_only(&connection, id)
+    }
+
+    /// Reset a `fetched` document to `pending` when its file no longer
+    /// verifies against the row (#455) — see [`mark_pending_for_refetch`].
+    pub fn mark_report_document_pending_for_refetch(
+        &self,
+        id: &str,
+    ) -> StorageResult<ReportDocument> {
+        let connection = self.db.checkout()?;
+
+        mark_pending_for_refetch(&connection, id)
     }
 
     pub fn list_pending_attachment_documents(&self) -> StorageResult<Vec<ReportDocument>> {

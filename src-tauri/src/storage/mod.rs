@@ -36,6 +36,7 @@ mod analyst_recommendations;
 mod attention;
 mod autopilot;
 mod backup;
+mod backup_facade;
 mod companies;
 pub(crate) mod company_view_reads;
 mod database;
@@ -341,6 +342,11 @@ pub struct AppState {
     fundamentals_witness_fetcher: Option<
         Arc<dyn crate::source_adapters::biznesradar_fundamentals::FundamentalsWitnessFetcher>,
     >,
+    /// The reason a staged restore was recoverably refused at THIS startup
+    /// (#319), if any — set once by [`Self::with_pending_restore_notice`],
+    /// reached solely from `storage::open_pool`. `None` in the overwhelming
+    /// common case (no restore requested, or it applied cleanly).
+    pending_restore_notice: Option<String>,
 }
 
 impl AppState {
@@ -358,6 +364,7 @@ impl AppState {
             sources_in_flight: Arc::new(Mutex::new(HashSet::new())),
             activity_registry: Arc::new(Mutex::new(HashMap::new())),
             fundamentals_witness_fetcher: None,
+            pending_restore_notice: None,
         };
         state.seed_app_data();
         state
@@ -376,6 +383,7 @@ impl AppState {
             fundamentals_witness_fetcher: Some(Arc::new(
                 crate::source_adapters::biznesradar_fundamentals::HttpFundamentalsWitnessFetcher,
             )),
+            pending_restore_notice: None,
         };
         state.seed_app_data();
         state
@@ -751,20 +759,6 @@ impl AppState {
         let connection = self.checkout()?;
 
         migrations::database_status(&connection)
-    }
-
-    pub fn backup_status(&self) -> StorageResult<BackupStatus> {
-        backup::collect_status(&self.data_dir)
-    }
-
-    pub fn create_backup(&self) -> StorageResult<BackupStatus> {
-        let connection = self.checkout()?;
-
-        backup::create_rotating_backup(&connection, &self.data_dir)
-    }
-
-    pub fn request_restore(&self, file_name: &str) -> StorageResult<()> {
-        backup::request_restore(&self.data_dir, file_name)
     }
 
     /// Company operations as a focused domain store (Architecture v2 / ADR 0050).

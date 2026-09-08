@@ -142,8 +142,18 @@ fn fetch_ingest(url: &str) -> Result<FetchedDocument, DocumentFetcherError> {
 /// policy that re-runs the SAME guard on every hop (reqwest follows
 /// redirects by default — see [`agent_capture_redirect_policy`]), a
 /// content-type allowlist checked on the response header before any body
-/// bytes are read, and a 30 MiB cap enforced while streaming (never trusting
-/// `Content-Length`, which the server can lie about or omit).
+/// bytes are read (except the deferred fallback below), and a 30 MiB cap
+/// enforced while streaming (never trusting `Content-Length`, which the
+/// server can lie about or omit).
+///
+/// `application/octet-stream` or a missing header defers the accept/refuse
+/// decision until after the capped body is read, then accepts iff a
+/// [`sniff_strict_allowed_container`] match (#455): the maintainer's corpus
+/// proves octet-stream is the normal label for mislabelled ESEF/pdf2htmlEX
+/// documents, so refusing on that header alone loses legitimate captures.
+/// Every OTHER content type (e.g. `application/zip`, `text/xml`) is still
+/// refused immediately, before any body byte is read — the fallback exists
+/// only for the mislabelled/unlabelled case.
 fn fetch_agent_capture(url: &str) -> Result<FetchedDocument, DocumentFetcherError> {
     validate_url_target(url, &SystemDnsResolver)?;
 
@@ -161,14 +171,76 @@ fn fetch_agent_capture(url: &str) -> Result<FetchedDocument, DocumentFetcherErro
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_owned());
-    validate_content_type(content_type.as_deref())?;
+    let deferred = is_octet_stream_or_missing(content_type.as_deref());
+    if !deferred {
+        validate_content_type(content_type.as_deref())?;
+    }
 
     let bytes = read_capped(response, AGENT_CAPTURE_MAX_DOCUMENT_SIZE)?;
+
+    if deferred && !sniff_strict_allowed_container(&bytes) {
+        return Err(DocumentFetcherError::InvalidContentType(
+            content_type.unwrap_or_else(|| "missing content-type header".to_owned()),
+        ));
+    }
 
     Ok(FetchedDocument {
         bytes,
         content_type,
     })
+}
+
+/// Whether a response's content-type header defers to the strict body sniff
+/// (`application/octet-stream`, with or without parameters, or absent).
+fn is_octet_stream_or_missing(content_type: Option<&str>) -> bool {
+    match content_type {
+        None => true,
+        Some(raw) => raw
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .eq_ignore_ascii_case("application/octet-stream"),
+    }
+}
+
+/// Strict, offset-0-only sniff for the agent-capture mislabelled/unlabelled
+/// fallback (#455). Deliberately narrower than
+/// [`crate::fundamentals::extraction::container::detect_container`]: no 1 KiB
+/// scan window for the PDF magic and no "any leading `<`" catch-all — only
+/// the exact markers below, checked right after an optional BOM/leading
+/// whitespace, so a mislabelled document is recognised without opening the
+/// fallback to arbitrary bytes.
+fn sniff_strict_allowed_container(bytes: &[u8]) -> bool {
+    let trimmed = strip_bom_and_leading_whitespace(bytes);
+    if trimmed.starts_with(b"%PDF-") || trimmed.starts_with(b"PK\x03\x04") {
+        return true;
+    }
+    let lower: Vec<u8> = trimmed
+        .iter()
+        .take(16)
+        .map(u8::to_ascii_lowercase)
+        .collect();
+    lower.starts_with(b"<?xml")
+        || lower.starts_with(b"<!doctype html")
+        || lower.starts_with(b"<html")
+}
+
+/// Strip a leading UTF-8/UTF-16 byte-order mark and ASCII whitespace.
+fn strip_bom_and_leading_whitespace(bytes: &[u8]) -> &[u8] {
+    const BOMS: [&[u8]; 3] = [b"\xEF\xBB\xBF", b"\xFF\xFE", b"\xFE\xFF"];
+    let mut rest = bytes;
+    for bom in BOMS {
+        if let Some(stripped) = rest.strip_prefix(bom) {
+            rest = stripped;
+            break;
+        }
+    }
+    let start = rest
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .unwrap_or(rest.len());
+    &rest[start..]
 }
 
 /// reqwest's blocking client follows redirects by default (up to 10 hops,
@@ -327,6 +399,9 @@ fn read_capped(mut reader: impl Read, cap: usize) -> Result<Vec<u8>, DocumentFet
 #[cfg(test)]
 pub struct FakeDocumentFetcher {
     pub response: Result<FetchedDocument, DocumentFetcherError>,
+    /// How many times `fetch` was called — proves a healed/matched-identity
+    /// capture (#455) never re-hits the network.
+    pub calls: std::cell::Cell<usize>,
 }
 
 #[cfg(test)]
@@ -337,12 +412,14 @@ impl FakeDocumentFetcher {
                 bytes,
                 content_type,
             }),
+            calls: std::cell::Cell::new(0),
         }
     }
 
     pub fn new_error(error: DocumentFetcherError) -> Self {
         Self {
             response: Err(error),
+            calls: std::cell::Cell::new(0),
         }
     }
 }
@@ -350,6 +427,7 @@ impl FakeDocumentFetcher {
 #[cfg(test)]
 impl DocumentFetcher for FakeDocumentFetcher {
     fn fetch(&self, _url: &str) -> Result<FetchedDocument, DocumentFetcherError> {
+        self.calls.set(self.calls.get() + 1);
         // Since DocumentFetcherError is not Clone, we can't clone the response.
         // The fake fetcher is only used in capture tests where we don't reuse it.
         match &self.response {
@@ -604,5 +682,74 @@ mod tests {
     #[test]
     fn ingest_cap_constant_is_unchanged_at_50_mb() {
         assert_eq!(MAX_DOCUMENT_SIZE, 50 * 1024 * 1024);
+    }
+
+    // ---- strict sniff fallback (#455): octet-stream/missing header defers
+    // to a strict offset-0 sniff, never the broad `detect_container` window.
+
+    #[test]
+    fn octet_stream_header_is_deferred_missing_header_too() {
+        assert!(is_octet_stream_or_missing(Some("application/octet-stream")));
+        assert!(is_octet_stream_or_missing(Some(
+            "APPLICATION/OCTET-STREAM; charset=binary"
+        )));
+        assert!(is_octet_stream_or_missing(None));
+    }
+
+    #[test]
+    fn allowed_and_disallowed_headers_are_not_deferred() {
+        assert!(!is_octet_stream_or_missing(Some("application/pdf")));
+        assert!(!is_octet_stream_or_missing(Some("application/zip")));
+    }
+
+    #[test]
+    fn sniff_strict_allowed_container_accepts_pdf_magic_at_offset_zero() {
+        assert!(sniff_strict_allowed_container(b"%PDF-1.7\n..."));
+    }
+
+    #[test]
+    fn sniff_strict_allowed_container_accepts_zip_magic() {
+        assert!(sniff_strict_allowed_container(b"PK\x03\x04\x14\x00"));
+    }
+
+    #[test]
+    fn sniff_strict_allowed_container_accepts_xml_declaration() {
+        assert!(sniff_strict_allowed_container(
+            b"<?xml version=\"1.0\"?><html></html>"
+        ));
+    }
+
+    #[test]
+    fn sniff_strict_allowed_container_accepts_html_doctype_and_bare_html_tag() {
+        assert!(sniff_strict_allowed_container(
+            b"<!DOCTYPE html><html></html>"
+        ));
+        assert!(sniff_strict_allowed_container(b"<html><body/></html>"));
+        // Case-insensitive, matching the pipeline's own container sniff.
+        assert!(sniff_strict_allowed_container(b"<!doctype html><HTML>"));
+    }
+
+    #[test]
+    fn sniff_strict_allowed_container_tolerates_a_bom_and_leading_whitespace() {
+        let mut bytes = b"\xEF\xBB\xBF".to_vec();
+        bytes.extend_from_slice(b"\n\n  <?xml version=\"1.0\"?>");
+        assert!(sniff_strict_allowed_container(&bytes));
+    }
+
+    #[test]
+    fn sniff_strict_allowed_container_refuses_garbage_bytes() {
+        assert!(!sniff_strict_allowed_container(b"not a real document"));
+        assert!(!sniff_strict_allowed_container(b""));
+    }
+
+    /// The crux of "strict": unlike `detect_container`'s 1 KiB scan window,
+    /// `%PDF-` appearing after junk bytes (not at true offset 0) must be
+    /// refused — this fallback exists only for the mislabelled/unlabelled
+    /// case the corpus proves, not as a general-purpose sniffer.
+    #[test]
+    fn sniff_strict_allowed_container_requires_offset_zero_unlike_the_broad_pdf_window() {
+        let mut bytes = vec![0u8; 200];
+        bytes.extend_from_slice(b"%PDF-1.4 rest");
+        assert!(!sniff_strict_allowed_container(&bytes));
     }
 }

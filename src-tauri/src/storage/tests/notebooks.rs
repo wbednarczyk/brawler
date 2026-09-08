@@ -132,3 +132,202 @@ fn creates_and_lists_notebook_entries_for_future_exchange_company() {
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].id, entry.id);
 }
+
+/// Fault-injection tests (#461, docs/testing.md § Failure-path tests: fault
+/// injection): `create_notebook_entry`/`update_notebook_entry` now own a
+/// transaction around the entry row, its tags and its origins, so a failure
+/// mid-write must leave no partial state — never an entry with some but not
+/// all of its tags/origins, never an update that changed the row but dropped
+/// its tags.
+mod fault_injection {
+    use super::*;
+
+    fn sample_company(state: &AppState) -> Company {
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created")
+    }
+
+    #[test]
+    fn create_notebook_entry_rolls_back_when_the_tags_insert_fails() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = sample_company(&state);
+
+        // Targeted poison (docs/testing.md convention): only the specific tag
+        // this test inserts trips it, never an unrelated write.
+        let guard = state.checkout_for_tests().expect("checkout");
+        guard
+            .execute_batch(
+                "CREATE TRIGGER poison_notebook_tags_insert BEFORE INSERT ON notebook_entry_tags
+                 WHEN NEW.tag = 'poison-tag'
+                 BEGIN SELECT RAISE(ABORT, 'notebook_entry_tags poisoned for test'); END;",
+            )
+            .expect("install poison trigger");
+        drop(guard); // never hold the checkout across a store call — pool deadlock (#360/#376)
+
+        let result = state.create_notebook_entry(NewNotebookEntry {
+            company_id: company.id.clone(),
+            title: "Rolled back entry".to_owned(),
+            body: "Should never be visible.".to_owned(),
+            body_format: None,
+            tags: vec!["poison-tag".to_owned()],
+            kind: "manual".to_owned(),
+            claim_status: None,
+            event_date: None,
+            follow_up_after: None,
+            follow_up_date: None,
+            origins: vec![NewNotebookOrigin {
+                source_type: "manual".to_owned(),
+                source_id: None,
+                source_url: None,
+                label: Some("should also roll back".to_owned()),
+            }],
+        });
+
+        assert!(
+            result.is_err(),
+            "the poisoned tags insert must surface as an error"
+        );
+
+        let entries = state
+            .list_notebook_entries(&company.id)
+            .expect("notebook entries should list");
+        assert!(
+            entries.is_empty(),
+            "the entry row must not survive a failed tags insert — no partial state"
+        );
+    }
+
+    #[test]
+    fn create_notebook_entry_rolls_back_when_the_origins_insert_fails() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = sample_company(&state);
+
+        let guard = state.checkout_for_tests().expect("checkout");
+        guard
+            .execute_batch(
+                "CREATE TRIGGER poison_notebook_origins_insert BEFORE INSERT ON notebook_entry_origins
+                 WHEN NEW.label = 'poison-origin'
+                 BEGIN SELECT RAISE(ABORT, 'notebook_entry_origins poisoned for test'); END;",
+            )
+            .expect("install poison trigger");
+        drop(guard);
+
+        let result = state.create_notebook_entry(NewNotebookEntry {
+            company_id: company.id.clone(),
+            title: "Rolled back entry with tags".to_owned(),
+            body: "Should never be visible.".to_owned(),
+            body_format: None,
+            tags: vec!["some-tag".to_owned()],
+            kind: "manual".to_owned(),
+            claim_status: None,
+            event_date: None,
+            follow_up_after: None,
+            follow_up_date: None,
+            origins: vec![NewNotebookOrigin {
+                source_type: "manual".to_owned(),
+                source_id: None,
+                source_url: None,
+                label: Some("poison-origin".to_owned()),
+            }],
+        });
+
+        assert!(
+            result.is_err(),
+            "the poisoned origins insert must surface as an error"
+        );
+
+        let entries = state
+            .list_notebook_entries(&company.id)
+            .expect("notebook entries should list");
+        assert!(
+            entries.is_empty(),
+            "the entry row (and its already-inserted tags) must not survive a failed origins insert"
+        );
+    }
+
+    #[test]
+    fn update_notebook_entry_keeps_the_old_tags_when_the_tag_reinsert_fails() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = sample_company(&state);
+
+        let entry = state
+            .create_notebook_entry(NewNotebookEntry {
+                company_id: company.id.clone(),
+                title: "Original title".to_owned(),
+                body: "Original body.".to_owned(),
+                body_format: None,
+                tags: vec!["old-tag".to_owned()],
+                kind: "manual".to_owned(),
+                claim_status: None,
+                event_date: None,
+                follow_up_after: None,
+                follow_up_date: None,
+                origins: vec![NewNotebookOrigin {
+                    source_type: "manual".to_owned(),
+                    source_id: None,
+                    source_url: None,
+                    label: Some("kept origin".to_owned()),
+                }],
+            })
+            .expect("notebook entry should be created");
+
+        // Poison only the re-INSERT of the NEW tag — the DELETE of `old-tag`
+        // (which does not touch this table's INSERT path) is unaffected, so
+        // this targets the reinsert step specifically, not the whole update.
+        let guard = state.checkout_for_tests().expect("checkout");
+        guard
+            .execute_batch(
+                "CREATE TRIGGER poison_notebook_tag_reinsert BEFORE INSERT ON notebook_entry_tags
+                 WHEN NEW.tag = 'new-tag'
+                 BEGIN SELECT RAISE(ABORT, 'notebook_entry_tags reinsert poisoned for test'); END;",
+            )
+            .expect("install poison trigger");
+        drop(guard);
+
+        let result = state.update_notebook_entry(NotebookEntryUpdate {
+            id: entry.id.clone(),
+            title: "Changed title".to_owned(),
+            body: "Changed body.".to_owned(),
+            tags: vec!["new-tag".to_owned()],
+            kind: "manual".to_owned(),
+            claim_status: None,
+            event_date: None,
+            follow_up_after: None,
+            follow_up_date: None,
+        });
+
+        assert!(
+            result.is_err(),
+            "the poisoned tag reinsert must surface as an error"
+        );
+
+        let entries = state
+            .list_notebook_entries(&company.id)
+            .expect("notebook entries should list");
+        let after = entries
+            .into_iter()
+            .find(|candidate| candidate.id == entry.id)
+            .expect("the entry row must still exist — only the reinsert was poisoned");
+
+        // The WHOLE entry stays exactly as it was before the failed update —
+        // title/body (the same transaction as the tag reinsert) and tags
+        // (the old tag was never actually removed once the transaction rolled
+        // back), not just the tags in isolation.
+        assert_eq!(after.title, "Original title");
+        assert_eq!(after.body, "Original body.");
+        assert_eq!(after.tags, vec!["old-tag".to_owned()]);
+        assert_eq!(after.origins.len(), 1);
+        assert_eq!(after.origins[0].label.as_deref(), Some("kept origin"));
+    }
+}

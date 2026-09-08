@@ -94,6 +94,31 @@ pub fn run() {
                 })?;
             log::info!("local logging initialized at {}", logs_dir.display());
 
+            // A staged restore that `open_pool` recoverably refused (#319):
+            // the live database is untouched, but the user asked for a swap
+            // that did not happen, so it must not go unnoticed. Reuses the
+            // ADR 0091 system-attention writer for background job failures
+            // (`record_job_failure`) — there is no job row behind this
+            // event, so the evidence id is a synthetic per-boot value
+            // instead of a `job_queue.id`; best-effort, never blocks setup.
+            if let Some(reason) = state.pending_restore_notice() {
+                let evidence_id = format!(
+                    "restore-refused-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|elapsed| elapsed.as_nanos())
+                        .unwrap_or(0)
+                );
+                let notice = format!("Restore refused: {reason} — your data is unchanged");
+                if let Err(error) =
+                    state
+                        .attention()
+                        .record_job_failure(&evidence_id, None, Some(&notice))
+                {
+                    log::warn!("could not record the restore-refused attention event: {error}");
+                }
+            }
+
             // One-key-per-provider migration (ADR 0028): best-effort cleanup of
             // legacy purpose-scoped keychain entries, no fallback.
             providers::credentials::clear_legacy_credentials();

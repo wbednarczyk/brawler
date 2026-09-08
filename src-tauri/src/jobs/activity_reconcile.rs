@@ -6,6 +6,8 @@
 //! residue is still ambiguous. Idempotent: every rule only touches rows that
 //! are still in the state it looks for, so a second call is a no-op.
 
+use rusqlite::OptionalExtension;
+
 use crate::app_state::AppState;
 use crate::jobs::history_sweep::HISTORY_SWEEP_KIND;
 use crate::jobs::pipeline_reextraction::PIPELINE_REEXTRACTION_KIND;
@@ -90,44 +92,75 @@ fn fail_running_transcripts(state: &AppState) -> Result<(), String> {
 }
 
 /// A non-terminal `autopilot_run` (`pending`/`running`) with NO live stage job
-/// (pending/running `autopilot_stage` naming its `run_id`) cannot resume — the
-/// queue's own crash-residue reclaim already ran, so a run with no live stage
-/// job left is provably stranded. Terminalized `failed`. A run WITH a live
+/// (pending/running `autopilot_stage` naming its `run_id`) cannot resume on its
+/// own — the queue's own crash-residue reclaim already ran. Recovered like the
+/// queue's own crash contract (ADR 0109 amendment, issue #458): only a
+/// DEAD-LETTERED stage job (terminally `failed`, attempts exhausted) fails the
+/// run. A MISSING job, or a stale terminal (`succeeded`) row left by a
+/// PREVIOUS generation of the same deterministic run id
+/// (`create_run_if_absent`'s self-heal), is resumable — the run's
+/// last-started stage (`run.stage`, the last stage `run_stage` stamped
+/// `running` before executing it) is rescheduled once, exactly like
+/// `reclaim_stale_running` resumes a crashed `running` job. A run WITH a live
 /// stage job (including one in retry backoff) is left alone.
 fn fail_orphaned_autopilot_runs(state: &AppState) -> Result<(), String> {
     let connection = state.checkout().map_err(|e| e.to_string())?;
     let mut statement = connection
-        .prepare("SELECT id FROM autopilot_run WHERE status IN ('pending', 'running')")
+        .prepare("SELECT id, stage FROM autopilot_run WHERE status IN ('pending', 'running')")
         .map_err(|e| e.to_string())?;
-    let run_ids: Vec<String> = statement
-        .query_map([], |row| row.get::<_, String>(0))
+    let runs: Vec<(String, String)> = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|e| e.to_string())?
         .collect::<Result<_, _>>()
         .map_err(|e| e.to_string())?;
     drop(statement);
 
-    for run_id in run_ids {
+    let mut to_reschedule: Vec<(String, String)> = Vec::new();
+    for (run_id, stage) in &runs {
         // sol diff R1 #12: exact `IN` over the five deterministic stage ids
         // (`jobs::autopilot::has_live_stage_job`) — never a `LIKE` prefix
         // match, which a `run_id` containing `_` (a SQLite LIKE wildcard)
         // could exploit into a false-positive "still live" read.
-        let live_stage = crate::jobs::autopilot_liveness::has_live_stage_job(&connection, &run_id)
+        let live_stage = crate::jobs::autopilot_liveness::has_live_stage_job(&connection, run_id)
             .map_err(|e| e.to_string())?;
         if live_stage {
             continue;
         }
-        connection
-            .execute(
-                "
-                UPDATE autopilot_run
-                SET status = 'failed',
-                    last_error = COALESCE(last_error, 'Interrupted by app restart: no live stage job'),
-                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                WHERE id = ?1
-                ",
-                [&run_id],
+        let job_id = crate::jobs::autopilot::stage_job_id(run_id, stage);
+        let job_status: Option<String> = connection
+            .query_row(
+                "SELECT status FROM job_queue WHERE id = ?1",
+                [&job_id],
+                |row| row.get(0),
             )
+            .optional()
             .map_err(|e| e.to_string())?;
+        if job_status.as_deref() == Some("failed") {
+            connection
+                .execute(
+                    "
+                    UPDATE autopilot_run
+                    SET status = 'failed',
+                        last_error = COALESCE(last_error, 'Interrupted by app restart: stage job dead-lettered'),
+                        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    WHERE id = ?1
+                    ",
+                    [run_id],
+                )
+                .map_err(|e| e.to_string())?;
+        } else {
+            to_reschedule.push((run_id.clone(), stage.clone()));
+        }
+    }
+    drop(connection);
+
+    // Reschedule OUTSIDE the connection above: `enqueue_stage` checks out its
+    // own pooled connection, and interleaving a second checkout with one
+    // still held on this thread deadlocks the pool (#360/#376).
+    for (run_id, stage) in to_reschedule {
+        crate::jobs::autopilot::enqueue_stage(state, &run_id, &stage)?;
     }
     Ok(())
 }

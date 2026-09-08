@@ -115,6 +115,69 @@ fn marks_document_as_fetched() {
     assert!(updated.fetched_at.is_some());
 }
 
+/// #455: `mark_failed` must never downgrade an already-`fetched` document —
+/// a race where a concurrent capture stored the file between this caller's
+/// fetch attempt and its failure write must not strand the row `failed`
+/// while bytes sit on disk. A `pending` document (the ordinary case) still
+/// fails normally.
+#[test]
+fn mark_failed_never_downgrades_a_fetched_document() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let fetched_doc = state
+        .create_or_find_pending_report_document(CaptureReportDocumentInput {
+            company_id: company.id.clone(),
+            source_type: "user_url".to_owned(),
+            url: "https://example.com/already-fetched.pdf".to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: None,
+            attribution: None,
+        })
+        .expect("document should create");
+    state
+        .mark_report_document_fetched(
+            &fetched_doc.id,
+            Some("report_documents/already-fetched.pdf"),
+            Some("application/pdf"),
+            Some("deadbeef"),
+            Some(1024),
+        )
+        .expect("document should mark as fetched");
+
+    let after = state
+        .mark_report_document_failed(&fetched_doc.id, "a concurrent capture already won")
+        .expect("mark_failed must not error, only decline the downgrade");
+    assert_eq!(
+        after.fetch_status, "fetched",
+        "an already-fetched document must never be downgraded to failed"
+    );
+    assert_eq!(
+        after.local_path,
+        Some("report_documents/already-fetched.pdf".to_owned()),
+        "the fetched file's local_path must survive the declined downgrade"
+    );
+
+    let pending_doc = state
+        .create_or_find_pending_report_document(CaptureReportDocumentInput {
+            company_id: company.id.clone(),
+            source_type: "user_url".to_owned(),
+            url: "https://example.com/still-pending.pdf".to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: None,
+            attribution: None,
+        })
+        .expect("document should create");
+    let failed = state
+        .mark_report_document_failed(&pending_doc.id, "HTTP 404: Not Found")
+        .expect("a pending document must still fail normally");
+    assert_eq!(failed.fetch_status, "failed");
+    assert_eq!(failed.fetch_error, Some("HTTP 404: Not Found".to_owned()));
+}
+
 #[test]
 fn marks_document_as_failed_with_error() {
     let connection = open_in_memory_database().expect("database should initialize");

@@ -81,6 +81,9 @@ function runHook(command, { cwd = FEATURE_REPO, env = {}, payloadCwd } = {}) {
 
 // Deny cases that don't depend on which branch is checked out (evaluated on the feature repo).
 const DENY_BRANCH_INDEPENDENT = [
+  // harvest 2026-09-08: a reverse-applied patch discarded three agents' uncommitted work
+  "git apply -R /tmp/x.patch",
+  "git apply --reverse /tmp/x.patch",
   // astra r5: a boolean git global before the subcommand must never be read AS the subcommand
   "git --no-optional-locks reset --hard",
   "git --literal-pathspecs --no-pager stash",
@@ -213,6 +216,8 @@ const DENY_BRANCH_DEPENDENT = [
 ];
 
 const ALLOW_BRANCH_INDEPENDENT = [
+  "git apply --check /tmp/x.patch",
+  "git apply /tmp/x.patch",
   "git --no-optional-locks status",
   "git --namespace x log",
   'git commit --message="--no-verify"',
