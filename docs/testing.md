@@ -785,6 +785,41 @@ three gates:
   `mappingSuspects` on the pull summary + a `mapping_suspect` diagnostic + a warn log — the
   systematic signature of a mismapped row, distinct from scattered per-company noise.
 
+### Source-tree guards — storage writes & command shape (hard gates wave 2, G8/G9)
+
+`src-tauri/src/source_tree_guards/` is a directory module: `mod.rs` holds the wave-1 guards
+(`transform_modules_carry_their_property_and_golden_tests` and friends above); `storage_writes.rs`
+and `command_shapes.rs` hold G8/G9; `scan.rs` holds the shared DFS `.rs` walker, the 4-clause
+test-file predicate, and comment/string-safe span stripping (`strip_test_spans`,
+`strip_comments_and_strings`) every guard in the module reuses instead of re-deriving.
+
+- **G8 — own-connection multi-write without a transaction**
+  (`storage_writes::own_connection_multi_writes_are_transactional`): a `src/storage/**` fn that
+  checks out its OWN connection (`.checkout()`) and issues ≥2 write statements
+  (`.execute(`/`execute_batch(` with an INSERT/UPDATE/DELETE literal, case-insensitive) with no
+  `Transaction::new_unchecked`/`transaction` token in the real code is not atomic — a
+  crash/failure between the two writes leaves the database in a state no caller intended (#404's
+  class). Frozen pin `FROZEN_UNTRANSACTED_WRITERS` (wave-1 idiom: a fn that gains a transaction
+  must be deleted from the pin, loud; a new offender outside it fails) starts at today's three:
+  `storage/autopilot.rs:create_run_if_absent`, `storage/jobs.rs:mark_failed`,
+  `storage/jobs.rs:reclaim_stale_running`. **Scope is Group A only** (fns that own their
+  `checkout()`); Group B — a fn taking `&Connection` that issues ≥2 writes, e.g.
+  `storage::notebooks::create_notebook_entry` (#461) — is **not scanned**, since the connection's
+  provenance (is the caller already inside a transaction?) is not decidable by name. That rule is
+  written, not enforced: a `&Connection` writer issuing ≥2 statements is wrapped by its CALLER —
+  pass the held transaction in; #461 stays the tracked fix.
+- **G9 — command-shape guard** (`command_shapes::async_state_commands_offload_their_work` +
+  `command_shapes::sync_state_commands_are_pinned`): every `#[tauri::command]` fn over
+  `src/commands/**` taking a `State<'_, ...AppState>` param touches shared storage and must not
+  block the Tauri main thread. (a) Every `async` State command (or `#[tauri::command(async)]`) must
+  contain `spawn_blocking(`/`run_blocking_task(` in its body — an invariant, asserted empty. (b) The
+  set of today's SYNC State commands is frozen in `src-tauri/sync-commands-baseline.json`
+  (`include_str!`, like `transform-modules.json`) — a sync command missing from the list fails
+  ("make it `async fn` and offload"); a listed command no longer sync/no longer existing fails
+  asking to drop it (the pin may only shrink; a new command ships async from day one). This is a
+  **shape** guard, not a body auditor: whether an async command's inline work still blocks despite
+  the offload marker being present is review territory, not this scan.
+
 ### Mock-runtime fidelity — the dual-execution contract
 
 **Scope exemption (owner decision, 2026-07-22):** commands with **no frontend

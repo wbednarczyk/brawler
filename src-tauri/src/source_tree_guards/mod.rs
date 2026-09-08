@@ -3,6 +3,20 @@
 
 use std::path::{Path, PathBuf};
 
+/// G8 (own-connection multi-write without a transaction) and G9 (command
+/// shape: async State commands offload, sync State commands are pinned) —
+/// hard gates wave 2.
+mod command_shapes;
+mod storage_writes;
+
+/// Shared source-scan primitives (the DFS `.rs` walker, test-file/test-span
+/// exclusion, comment/string-safe token search) used by every guard in this
+/// module — kept in its own file so `mod.rs` stays under the file-size
+/// ratchet threshold (ADR 0103) after wave 2 grew it.
+mod scan;
+
+use scan::source_files;
+
 /// Whether the current process is running inside the cargo-mutants scratch
 /// sandbox, which copies only `src-tauri/` — never the sibling
 /// `package.json`/`src/api`/`src/shared` frontend tree (harvest, B5/ADR 0045:
@@ -27,19 +41,11 @@ pub(crate) fn is_crate_only_sandbox() -> bool {
 fn no_include_literal_escapes_the_workspace() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut violations = Vec::new();
-    let mut stack = vec![manifest_dir.join("src")];
-    while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir).expect("readable source dir") {
-            let path = entry.expect("readable dir entry").path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                let content = std::fs::read_to_string(&path).expect("readable source file");
-                for literal in include_literals(&content) {
-                    if escapes(&path, &literal, manifest_dir) {
-                        violations.push(format!("{}: {literal:?}", path.display()));
-                    }
-                }
+    for path in source_files(&manifest_dir.join("src")) {
+        let content = std::fs::read_to_string(&path).expect("readable source file");
+        for literal in include_literals(&content) {
+            if escapes(&path, &literal, manifest_dir) {
+                violations.push(format!("{}: {literal:?}", path.display()));
             }
         }
     }
@@ -267,18 +273,10 @@ fn generate_handler_command_names(lib_rs: &str) -> Vec<String> {
 fn no_runtime_cross_tree_read_escapes_the_workspace() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut violations = Vec::new();
-    let mut stack = vec![manifest_dir.join("src")];
-    while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir).expect("readable source dir") {
-            let path = entry.expect("readable dir entry").path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                let content = std::fs::read_to_string(&path).expect("readable source file");
-                for line_no in cross_tree_read_lines(&content) {
-                    violations.push(format!("{}:{line_no}", path.display()));
-                }
-            }
+    for path in source_files(&manifest_dir.join("src")) {
+        let content = std::fs::read_to_string(&path).expect("readable source file");
+        for line_no in cross_tree_read_lines(&content) {
+            violations.push(format!("{}:{line_no}", path.display()));
         }
     }
     assert!(
@@ -382,7 +380,7 @@ fn enclosing_fn_is_mutants_safe(lines: &[&str], idx: usize) -> bool {
 
 /// Whether `line` is a function signature, after stripping the modifier
 /// keywords that can precede `fn` (`pub fn`, `pub(crate) async fn`, ...).
-fn is_fn_signature(line: &str) -> bool {
+pub(super) fn is_fn_signature(line: &str) -> bool {
     let mut rest = line.trim_start();
     loop {
         let prefixes = [
@@ -424,7 +422,7 @@ fn is_fn_signature(line: &str) -> bool {
 #[test]
 fn transform_modules_carry_their_property_and_golden_tests() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let manifest_json = include_str!("../transform-modules.json");
+    let manifest_json = include_str!("../../transform-modules.json");
     let manifest: serde_json::Value =
         serde_json::from_str(manifest_json).expect("transform-modules.json is valid JSON");
     let modules = manifest["modules"]
@@ -669,17 +667,9 @@ fn contains_transform_shaped_fn(content: &str) -> bool {
 fn every_test_asserts_something() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut violations = Vec::new();
-    let mut stack = vec![manifest_dir.join("src")];
-    while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir).expect("readable source dir") {
-            let path = entry.expect("readable dir entry").path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                let content = std::fs::read_to_string(&path).expect("readable source file");
-                violations.extend(assertion_free_test_violations(&path, &content));
-            }
-        }
+    for path in source_files(&manifest_dir.join("src")) {
+        let content = std::fs::read_to_string(&path).expect("readable source file");
+        violations.extend(assertion_free_test_violations(&path, &content));
     }
     assert!(
         violations.is_empty(),
@@ -751,8 +741,10 @@ fn assertion_free_test_violations(path: &Path, content: &str) -> Vec<String> {
 }
 
 /// Extract the fn name from its signature line, after stripping the same
-/// modifier keywords `is_fn_signature` strips.
-fn extract_test_fn_name(line: &str) -> String {
+/// modifier keywords `is_fn_signature` strips. Despite the name (kept for the
+/// G10 caller below), this is a generic signature-line -> identifier
+/// extractor — G8/G9 reuse it for production (non-test) fn/command names too.
+pub(super) fn extract_test_fn_name(line: &str) -> String {
     let mut rest = line.trim_start();
     loop {
         let prefixes = [
@@ -776,7 +768,7 @@ fn extract_test_fn_name(line: &str) -> String {
 
 /// Brace-match the body of the fn whose signature starts at `lines[fn_line]`,
 /// from the first `{` at or after that line through its matching `}`.
-fn extract_fn_body(content: &str, lines: &[&str], fn_line: usize) -> String {
+pub(super) fn extract_fn_body(content: &str, lines: &[&str], fn_line: usize) -> String {
     let start_offset: usize = lines[..fn_line].iter().map(|l| l.len() + 1).sum();
     let rest = &content[start_offset..];
     let bytes = rest.as_bytes();
@@ -885,28 +877,20 @@ fn body_has_assertion(body: &str) -> bool {
 fn escape_hatch_reasons_are_non_empty() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut violations = Vec::new();
-    let mut stack = vec![manifest_dir.join("src")];
-    while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir).expect("readable source dir") {
-            let path = entry.expect("readable dir entry").path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                let content = std::fs::read_to_string(&path).expect("readable source file");
-                for (line_no, line) in content.lines().enumerate() {
-                    for marker in ["no-assert-ok:", "cross-tree-read-ok:"] {
-                        let Some(pos) = line.find(marker) else {
-                            continue;
-                        };
-                        let reason = line[pos + marker.len()..].trim();
-                        if reason.is_empty() {
-                            violations.push(format!(
-                                "{}:{} blank reason after {marker}",
-                                path.display(),
-                                line_no + 1
-                            ));
-                        }
-                    }
+    for path in source_files(&manifest_dir.join("src")) {
+        let content = std::fs::read_to_string(&path).expect("readable source file");
+        for (line_no, line) in content.lines().enumerate() {
+            for marker in ["no-assert-ok:", "cross-tree-read-ok:"] {
+                let Some(pos) = line.find(marker) else {
+                    continue;
+                };
+                let reason = line[pos + marker.len()..].trim();
+                if reason.is_empty() {
+                    violations.push(format!(
+                        "{}:{} blank reason after {marker}",
+                        path.display(),
+                        line_no + 1
+                    ));
                 }
             }
         }
