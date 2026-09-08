@@ -306,9 +306,9 @@ if (testsTouchedContent === null) {
         `    not a gate (G14, same class as an exit-ignored Makefile step).`,
     );
   }
-  if (!/gh api\s+"?repos\/\$\{\{\s*github\.repository\s*\}\}\/issues\/.*\/labels"?/.test(testsTouchedContent)) {
+  if (!/\/repos\/\$\{\{\s*github\.repository\s*\}\}\/issues\/[^"\n]*\/labels"/.test(testsTouchedContent)) {
     errors.push(
-      `\`${TESTS_TOUCHED_PATH}\` has no \`gh api repos/.../issues/.../labels\` step — labels must be fetched\n` +
+      `\`${TESTS_TOUCHED_PATH}\` has no live \`/repos/.../issues/.../labels\` fetch step — labels must be fetched\n` +
         `    LIVE at check time, not trusted from the (possibly stale, on a manual re-run) triggering event\n` +
         `    payload (G14).`,
     );

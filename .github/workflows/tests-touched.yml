@@ -48,8 +48,12 @@ jobs:
         id: labels
         env:
           GH_TOKEN: ${{ github.token }}
+        # The devshell container has no `gh`; curl + node (both present) hit the
+        # same REST endpoint and emit the JSON array of label names.
         run: |
-          labels=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels" --jq '[.[].name]')
+          labels=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels" \
+            | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.stringify(JSON.parse(d).map(l=>l.name))))')
           echo "labels=$labels" >> "$GITHUB_OUTPUT"
       - name: Check tests touched
         # Labels arrive as a JSON array via env — never interpolated into the
