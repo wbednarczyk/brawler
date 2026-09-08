@@ -227,7 +227,7 @@ behind expansion when short; fixed-height artifacts (calendar, matrix) scroll in
 
 | Panel | S (<420) | M (420–760) | L (>760) | short (<480h) |
 |---|---|---|---|---|
-| Fundamentals | sections stack; facts matrix scrolls; no Autopilot section (retired 2026-09-04, ADR 0056 amendment); period tables show the newest measured-capacity periods with a full-height "Rozwiń starsze" column | matrix + one form column | matrix + forms side-by-side | only matrix + section headers; forms fold |
+| Fundamentals | sections stack; no Autopilot section (retired 2026-09-04, ADR 0056 amendment); period tables show as many newest periods as fit (collapsed = clipped, no scrollbar; the S tier folds Trend and the Δ columns) behind a full-height "Rozwiń starsze" column; expanded tables scroll inside a bounded box | matrix + one form column | matrix + forms side-by-side | only matrix + section headers; forms fold |
 | Feed (company) | item = badge+title+date, meta folds | + summary line | + detail split-pane | list only, detail on click |
 | Claims | list only; composer behind "Dodaj tezę" button | list + inline composer | + verdict detail column | queue counts + top 3 due |
 | Quality | scorecard chips + criteria list; expression folds into expansion | + expression column | + history side panel | chips + criteria; history folds |

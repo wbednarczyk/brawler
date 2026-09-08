@@ -54,8 +54,9 @@ export function FundamentalsFactsMatrix({
   }
 
   return (
-    /* The KPI × period matrix is DELIBERATE wide content: it scrolls inside
-       this bounded wrapper (data-hscroll exempts it from the layout gate). */
+    /* Collapsed: the newest periods that fit, clipped wrapper, no scrollbar;
+       expanded: every period inside a bounded 2-axis scroller (data-hscroll
+       exempts it from the layout gate). */
     <div
       className="facts-matrix-scroll"
       data-hscroll

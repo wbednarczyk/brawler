@@ -244,9 +244,9 @@ export function FundamentalsPeriodsSection({
 
       {showTable ? (
         <>
-          {/* Deliberate wide content: the periods table scrolls inside its own
-              bounded scroller (data-hscroll), contained so it never forces a
-              panel- or pane-level horizontal scrollbar (narrow-window rule). */}
+          {/* Collapsed: the newest period groups that fit, clipped wrapper;
+              expanded: every period inside a bounded 2-axis scroller
+              (data-hscroll), never a pane-level horizontal scrollbar. */}
           <div
             className="fundamentals-periods-scroll"
             data-hscroll

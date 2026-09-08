@@ -336,3 +336,22 @@ for (const order of [["S", "M", "L"], ["L", "M", "S"]] as const) {
     }
   });
 }
+
+// Webfont swap (sol R4): the first measuring pass may run in the fallback
+// font; after the real face swaps in (`font-display: swap`) the cache is
+// invalidated and the collapsed count matches the oracle on the final metrics.
+test("a late webfont swap re-measures the collapsed capacity", async ({ page }) => {
+  await page.route("**/*.woff2", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  await openManyPeriodsFundamentals(page);
+  const pane = page.locator(".spolka-layout");
+  await setPaneSize(page, { ...TIER_SIZE.M, pane });
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(400);
+  const { capacity, periodHeaders } = await measure(page);
+  await expect(periodHeaders).toHaveCount(capacity);
+  const box = await page.locator(".facts-matrix-scroll").evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+  expect(box.scrollWidth, "collapsed table fits after the font swap").toBeLessThanOrEqual(box.clientWidth + 1);
+});

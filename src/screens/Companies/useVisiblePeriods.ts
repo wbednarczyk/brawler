@@ -112,6 +112,24 @@ export function useVisiblePeriods({
     return () => observer.disconnect();
   }, [recompute, scrollerRef]);
 
+  // Webfonts load with `font-display: swap`: a pass measured in the fallback
+  // font is stale once the real face swaps in, and the swap changes no
+  // wrapper size (no ResizeObserver tick) — re-measure on every font load.
+  useEffect(() => {
+    const fonts = typeof document === "undefined" ? undefined : document.fonts;
+    if (!fonts || typeof fonts.addEventListener !== "function") return;
+    let cancelled = false;
+    const invalidate = () => {
+      if (!cancelled) setMeasuredKey(null);
+    };
+    fonts.addEventListener("loadingdone", invalidate);
+    if (fonts.status === "loading") void fonts.ready.then(invalidate, () => undefined);
+    return () => {
+      cancelled = true;
+      fonts.removeEventListener("loadingdone", invalidate);
+    };
+  }, []);
+
   // Expanded state ignores capacity changes (owner decision): a resize never
   // yanks a user who expanded and scrolled into history.
   const visibleCount = expanded || measuring ? total : Math.min(capacity, total);

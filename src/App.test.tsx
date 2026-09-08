@@ -537,7 +537,7 @@ describe("Spółka keyboard shortcuts (F3c S1)", () => {
 
   it("Ctrl+. works while focus sits in the company picker (a company switch lands there)", async () => {
     // J8 in the real browser: `Open company: X` puts focus on the company
-    // picker `<select>` (intent `company`), and an editable-suppressed
+    // picker (the combobox input, intent `company`), and an editable-suppressed
     // shortcut would then ignore Ctrl+. — the chord has no editing meaning.
     const user = userEvent.setup();
     renderApp();

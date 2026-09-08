@@ -123,6 +123,32 @@ describe("useVisiblePeriods", () => {
     expect(screen.getByText("visibleCount:3")).toBeInTheDocument();
   });
 
+  it("re-measures after a webfont swap (document.fonts loadingdone)", () => {
+    const listeners = new Map<string, () => void>();
+    const fonts = {
+      status: "loaded",
+      ready: Promise.resolve(),
+      addEventListener: (type: string, listener: () => void) => listeners.set(type, listener),
+      removeEventListener: (type: string) => listeners.delete(type),
+    };
+    Object.defineProperty(document, "fonts", { configurable: true, value: fonts });
+    try {
+      const { rerender, unmount } = render(
+        <Harness total={20} clientWidth={1000} periodWidth={100} stickyWidth={100} onResult={() => {}} />,
+      );
+      expect(screen.getByText("visibleCount:9")).toBeInTheDocument();
+      // The real face is wider than the fallback the first pass measured.
+      rerender(<Harness total={20} clientWidth={1000} periodWidth={150} stickyWidth={100} onResult={() => {}} />);
+      expect(screen.getByText("visibleCount:9")).toBeInTheDocument();
+      act(() => listeners.get("loadingdone")?.());
+      expect(screen.getByText("visibleCount:6")).toBeInTheDocument();
+      unmount();
+      expect(listeners.has("loadingdone")).toBe(false);
+    } finally {
+      Reflect.deleteProperty(document, "fonts");
+    }
+  });
+
   it("clamps a tiny available width up to the minimum capacity of 1", () => {
     // available = 50 - 100 = negative -> floor negative -> clamp to 1.
     render(<Harness total={5} clientWidth={50} periodWidth={100} stickyWidth={100} onResult={() => {}} />);
