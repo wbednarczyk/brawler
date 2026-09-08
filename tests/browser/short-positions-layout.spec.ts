@@ -21,8 +21,8 @@ async function addShortPositionsPanel(page: import("@playwright/test").Page, com
   await page.getByRole("region", { name: "Company view" }).waitFor();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open ownership");
-  await palette.getByRole("option", { name: "Open ownership", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open tool: Ownership");
+  await palette.getByRole("option", { name: "Open tool: Ownership", exact: true }).first().click();
 }
 
 test("short-selling panel does not overflow at a narrow window — populated", async ({ page }) => {

@@ -13,7 +13,7 @@ import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 // command in the real backend either).
 
 // F3a S3 (ADR 0107): opening a company lands the Spółka screen; Coverage is
-// the `pokrycie` workshop tool, opened via the ⌘K palette's "Open coverage".
+// the `pokrycie` workshop tool, opened via the ⌘K palette's "Open tool: Coverage".
 async function openCoveragePanel(page: import("@playwright/test").Page) {
   await page.setViewportSize({ width: 1008, height: 900 });
   await openApp(page);
@@ -25,8 +25,8 @@ async function openCoveragePanel(page: import("@playwright/test").Page) {
   await page.getByRole("region", { name: "Company view" }).waitFor();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open coverage");
-  await palette.getByRole("option", { name: "Open coverage", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open tool: Coverage");
+  await palette.getByRole("option", { name: "Open tool: Coverage", exact: true }).first().click();
 }
 
 test("the raw capture line renders the counts and does not overflow", async ({ page }) => {

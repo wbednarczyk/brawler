@@ -34,31 +34,36 @@ import { useCommandPaletteCommands } from "../../app/commandPalette";
 import type { PaletteCommand } from "../../shared/components/CommandPalette";
 
 // Contextual palette entries (F3a S3, plan "Trasy powierzchni globalnych" +
-// ADR 0104 dec. 3) while the Spółka screen is active: one `Open <tool>` entry
-// per parameterless Tool variant (`feedItem` is excluded — it always needs a
-// specific `feedItemId`, so it has no standalone command), plus `Open
-// overview` (`tool: null`) for the closed-tool state — the same set the
-// workshop bar lists (owner dogfooding v0.74 wave 2, item 1). A palette
-// command is an ACTION ("Otwórz X") — the workshop-bar/core buttons that open
-// the SAME tool are DESTINATIONS and carry the noun form instead
-// (`WORKSHOP_TOOLS` below, ADR 0104 dec. 3 amendment, owner dogfooding v0.74
-// item 4); the two labels legitimately diverge.
+// ADR 0104 dec. 3) while the Spółka screen is active: one `Open tool: <Name>`
+// entry per parameterless Tool variant (`feedItem` is excluded — it always
+// needs a specific `feedItemId`, so it has no standalone command), plus `Open
+// tool: Overview` (`tool: null`) for the closed-tool state — the same set the
+// workshop bar lists (owner dogfooding v0.74 wave 2, item 1). The `tool:`
+// family (#454) distinguishes these from the global `Open screen: <Name>` /
+// `Open company: <Name>` command families and from the Ctrl+N screen
+// shortcuts, which on Spółka can share a same-named target (`Open Events` the
+// screen vs `Open tool: Events` the workshop tool) — before the family, both
+// read "Open events"/"Open Events" and differed only by case. A palette
+// command is an ACTION ("Otwórz narzędzie: X") — the workshop-bar/core
+// buttons that open the SAME tool are DESTINATIONS and carry the noun form
+// instead (`WORKSHOP_TOOLS` below, ADR 0104 dec. 3 amendment, owner
+// dogfooding v0.74 item 4); the two labels legitimately diverge.
 export const SPOLKA_TOOL_COMMANDS: ReadonlyArray<{ tool: Tool | null; label: string; actionKey: string }> = [
-  { tool: null, label: "Open overview", actionKey: "tool.open.overview" },
-  { tool: { t: "fundamenty" }, label: "Open fundamentals", actionKey: "tool.open.fundamenty" },
-  { tool: { t: "feed" }, label: "Open feed", actionKey: "tool.open.feed" },
-  { tool: { t: "pokrycie" }, label: "Open coverage", actionKey: "tool.open.pokrycie" },
-  { tool: { t: "rekomendacje" }, label: "Open recommendations", actionKey: "tool.open.rekomendacje" },
-  { tool: { t: "tezy" }, label: "Open claims", actionKey: "tool.open.tezy" },
-  { tool: { t: "notatnik" }, label: "Open notebook", actionKey: "tool.open.notatnik" },
-  { tool: { t: "dziennik" }, label: "Open decision journal", actionKey: "tool.open.dziennik" },
-  { tool: { t: "jakosc" }, label: "Open quality", actionKey: "tool.open.jakosc" },
-  { tool: { t: "diff" }, label: "Open report diff", actionKey: "tool.open.diff" },
-  { tool: { t: "research" }, label: "Open research", actionKey: "tool.open.research" },
-  { tool: { t: "akcjonariat" }, label: "Open ownership", actionKey: "tool.open.akcjonariat" },
-  { tool: { t: "sygnaly" }, label: "Open signals", actionKey: "tool.open.sygnaly" },
-  { tool: { t: "dokumenty" }, label: "Open documents", actionKey: "tool.open.dokumenty" },
-  { tool: { t: "wydarzenia" }, label: "Open events", actionKey: "tool.open.wydarzenia" },
+  { tool: null, label: "Open tool: Overview", actionKey: "tool.open.overview" },
+  { tool: { t: "fundamenty" }, label: "Open tool: Fundamentals", actionKey: "tool.open.fundamenty" },
+  { tool: { t: "feed" }, label: "Open tool: Feed", actionKey: "tool.open.feed" },
+  { tool: { t: "pokrycie" }, label: "Open tool: Coverage", actionKey: "tool.open.pokrycie" },
+  { tool: { t: "rekomendacje" }, label: "Open tool: Recommendations", actionKey: "tool.open.rekomendacje" },
+  { tool: { t: "tezy" }, label: "Open tool: Claims", actionKey: "tool.open.tezy" },
+  { tool: { t: "notatnik" }, label: "Open tool: Notebook", actionKey: "tool.open.notatnik" },
+  { tool: { t: "dziennik" }, label: "Open tool: Decision journal", actionKey: "tool.open.dziennik" },
+  { tool: { t: "jakosc" }, label: "Open tool: Quality", actionKey: "tool.open.jakosc" },
+  { tool: { t: "diff" }, label: "Open tool: Report diff", actionKey: "tool.open.diff" },
+  { tool: { t: "research" }, label: "Open tool: Research", actionKey: "tool.open.research" },
+  { tool: { t: "akcjonariat" }, label: "Open tool: Ownership", actionKey: "tool.open.akcjonariat" },
+  { tool: { t: "sygnaly" }, label: "Open tool: Signals", actionKey: "tool.open.sygnaly" },
+  { tool: { t: "dokumenty" }, label: "Open tool: Documents", actionKey: "tool.open.dokumenty" },
+  { tool: { t: "wydarzenia" }, label: "Open tool: Events", actionKey: "tool.open.wydarzenia" },
 ];
 
 // Company picker (dogfooding #3): filter by ticker or name, case- AND
@@ -182,7 +187,7 @@ export function SpolkaScreen({
     }
   }, [isToolActive]);
 
-  // The summary ticker / Overview bar tab / palette "Open overview" all
+  // The summary ticker / Overview bar tab / palette "Open tool: Overview" all
   // return to the SAME untouched core, focusing the Overview entry (plan §
   // Design 3) — distinct from ✕/Escape, which return to the CLOSED tool's
   // own entry ("entry", `closeTool`'s default).

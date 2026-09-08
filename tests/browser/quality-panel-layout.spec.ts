@@ -10,7 +10,7 @@ import {
 // plus a full-width guidance textarea — and agent-assessed result rows. Guard that
 // revealing that form does not force a horizontal scrollbar at a narrow window
 // (the quarter-ultrawide range, DoD §B). F3a S3 (ADR 0107): the Quality panel is
-// the `jakosc` workshop tool, opened via the ⌘K palette's "Open quality" entry;
+// the `jakosc` workshop tool, opened via the ⌘K palette's "Open tool: Quality" entry;
 // the dual-execution mock runtime seeds a framework.
 async function openQualityTool(page: import("@playwright/test").Page) {
   await page.setViewportSize({ width: 1008, height: 900 });
@@ -20,8 +20,8 @@ async function openQualityTool(page: import("@playwright/test").Page) {
   await page.getByRole("region", { name: "Company view" }).waitFor();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open quality");
-  await palette.getByRole("option", { name: "Open quality", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open tool: Quality");
+  await palette.getByRole("option", { name: "Open tool: Quality", exact: true }).first().click();
 }
 
 test("quality panel qualitative form does not horizontally overflow at a narrow window", async ({

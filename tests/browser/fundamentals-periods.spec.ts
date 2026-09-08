@@ -33,7 +33,7 @@ async function openManyPeriodsFundamentals(page: Page, locale: "en" | "pl" = "en
   await page.keyboard.press("Control+K");
   const paletteLabel = locale === "pl" ? "Paleta poleceń" : "Command palette";
   const searchLabel = locale === "pl" ? "Szukaj poleceń" : "Search commands";
-  const optionLabel = locale === "pl" ? "Otwórz fundamenty" : "Open fundamentals";
+  const optionLabel = locale === "pl" ? "Otwórz narzędzie: Fundamenty" : "Open tool: Fundamentals";
   const palette = page.getByRole("dialog", { name: paletteLabel });
   await palette.getByLabel(searchLabel).fill(optionLabel);
   await palette.getByRole("option", { name: optionLabel, exact: true }).first().click();
@@ -232,8 +232,8 @@ async function openSmokeCompanyFundamentals(page: Page) {
   await page.getByRole("region", { name: "Company view" }).waitFor();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open fundamentals");
-  await palette.getByRole("option", { name: "Open fundamentals", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open tool: Fundamentals");
+  await palette.getByRole("option", { name: "Open tool: Fundamentals", exact: true }).first().click();
   await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
 }
 

@@ -65,7 +65,7 @@ async function box(locator: Locator) {
 const PANEL_CONTRACTS: PanelContract[] = [
   {
     panel: "Fundamentals",
-    open: (page) => openCompanyTool(page, "Open fundamentals"),
+    open: (page) => openCompanyTool(page, "Open tool: Fundamentals"),
     tiers: {
       // S: the Autopilot fold is retired (dogfooding #4 — Companies > Manage
       // settings is the only autopilot editor now); sections stack, matrix scrolls.
@@ -99,7 +99,7 @@ const PANEL_CONTRACTS: PanelContract[] = [
   {
     panel: "Feed (company)",
     open: async (page) => {
-      const pane = await openCompanyTool(page, "Open feed");
+      const pane = await openCompanyTool(page, "Open tool: Feed");
       // Select a feed item so the detail renders (split-pane at L, stacked otherwise).
       await pane.locator("[data-company-feed-row]").first().click();
       await expect(pane.locator(".company-feed-detail")).toBeVisible();
@@ -162,7 +162,7 @@ test.describe("Fundamentals periods × deltas layout", { tag: "@clickable" }, ()
     page,
   }) => {
     await openApp(page);
-    const pane = await openCompanyTool(page, "Open fundamentals");
+    const pane = await openCompanyTool(page, "Open tool: Fundamentals");
     const section = pane.locator("section.fundamentals-periods");
     await expect(section).toBeVisible();
 
@@ -251,7 +251,7 @@ test.describe("Companies library density (companies-library cell)", { tag: "@cli
 test.describe("Fundamentals trend column per tier", { tag: "@clickable" }, () => {
   test("Trend folds at S and shows at M", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyTool(page, "Open fundamentals");
+    const pane = await openCompanyTool(page, "Open tool: Fundamentals");
     const trend = pane.locator(".facts-matrix-trend-head");
     await setPaneSize(page, { width: 380, height: 700, pane });
     await expect(trend).toBeHidden();

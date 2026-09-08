@@ -206,7 +206,8 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
 
 // `{t:"tezy"}` with no explicit `claimId`/root highlight: highlights the FIRST
 // claim in the review queue (overdue before due — plan §8, J2 red case) so
-// "Open claims" from the workshop bar always lands on something actionable.
+// opening the Claims tool (workshop bar, or the palette's "Open tool: Claims")
+// always lands on something actionable.
 function TezyTool({
   companyId,
   claimId,

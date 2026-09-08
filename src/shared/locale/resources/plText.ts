@@ -369,10 +369,6 @@ export const plText: Record<string, string> = {
   "Past reports": "Minione raporty",
   "No upcoming reports in scope. Widen the watchlist scope to see more.":
     "Brak nadchodzących raportów w tym zakresie. Poszerz zakres listy, aby zobaczyć więcej.",
-  // "Open claims" stays: the Spółka workshop-bar palette command
-  // `tool.open.tezy` (SpolkaScreen.tsx) shares this exact EN string —
-  // unrelated to Report Season's own `Claims` destination button (F4b S4).
-  "Open claims": "Otwórz tezy",
   "Open research questions": "Otwarte pytania badawcze",
   "Unresolved claims": "Nierozstrzygnięte tezy",
   "Due": "Wymagalne",
@@ -717,11 +713,12 @@ export const plText: Record<string, string> = {
   "Selected company metadata": "Metadane wybranej spółki",
   "feed": "kanał",
   "Company workspace tabs": "Zakładki obszaru roboczego spółki",
-  // "Feed"/"Claims" unified with the F3a Spółka dictionary (ADR 0104 dec. 3,
-  // owner dogfooding v0.74 item 4): the Spółka `feed`/`tezy` tools name the
-  // SAME concepts (company feed, management-claims tracker) as the Companies
-  // tab, so both surfaces now read the same word.
-  "Feed": "Feed",
+  // "Claims" unified with the F3a Spółka dictionary (ADR 0104 dec. 3, owner
+  // dogfooding v0.74 item 4): the Spółka `tezy` tool names the SAME concept
+  // (management-claims tracker) as the Companies tab, so both surfaces read
+  // the same word. "Feed" (#478): every other "feed" entry in this table
+  // already reads "kanał" — the Spółka `feed` tool button now matches.
+  "Feed": "Kanał",
   "Notebook": "Notatnik",
   "Claims": "Tezy",
   "Transcripts": "Transkrypcje",
@@ -1999,11 +1996,9 @@ export const plText: Record<string, string> = {
     "Nie udało się wczytać tabeli KPI. Reszta widoku jest aktualna.",
   "No confirmed annual figures yet — read a report to populate this table.":
     "Brak potwierdzonych rocznych wyników — przeczytaj raport, aby uzupełnić tę tabelę.",
-  "Open fundamentals": "Otwórz fundamenty",
   "Couldn't load the feed. The rest of the view is up to date.":
     "Nie udało się wczytać feedu. Reszta widoku jest aktualna.",
   "No filings or media yet for this company.": "Brak komunikatów lub mediów dla tej spółki.",
-  "Open feed": "Otwórz feed",
   "Price chart": "Kurs",
   "Couldn't load the price chart. The rest of the view is up to date.":
     "Nie udało się wczytać wykresu kursu. Reszta widoku jest aktualna.",
@@ -2018,21 +2013,11 @@ export const plText: Record<string, string> = {
   "No coverage tracked yet for this company.": "Brak śledzonego pokrycia dla tej spółki.",
   "fetched": "pobrany",
   "expected": "oczekiwany",
-  "Open coverage": "Otwórz pokrycie",
   "Recommendations": "Rekomendacje",
   "Couldn't load recommendations. The rest of the view is up to date.":
     "Nie udało się wczytać rekomendacji. Reszta widoku jest aktualna.",
   "No analyst recommendations yet for this company.": "Brak rekomendacji analityków dla tej spółki.",
-  "Open recommendations": "Otwórz rekomendacje",
   "Open notebook": "Otwórz notatnik",
-  "Open decision journal": "Otwórz dziennik decyzji",
-  "Open quality": "Otwórz jakość",
-  "Open report diff": "Otwórz diff raportów",
-  "Open research": "Otwórz research",
-  "Open ownership": "Otwórz akcjonariat",
-  "Open signals": "Otwórz sygnały",
-  "Open documents": "Otwórz dokumenty",
-  "Open events": "Otwórz wydarzenia",
   "Couldn't read this company's data.": "Nie udało się odczytać danych spółki.",
   "The connection to your data may be interrupted.": "Połączenie z Twoimi danymi mogło zostać przerwane.",
   "Loading company view…": "Wczytywanie widoku spółki…",
@@ -2049,9 +2034,29 @@ export const plText: Record<string, string> = {
   "Documents": "Dokumenty",
   "Overview": "Przegląd",
   "Back to overview": "Powrót do przeglądu",
-  // Owner dogfooding v0.74 wave 2 (2026-08-27):
-  "Open overview": "Otwórz przegląd",
   "Facts": "Fakty",
+
+  // ---- wave2 S1 ----
+  // #454: SPOLKA_TOOL_COMMANDS take the "Open tool: <Name>" family, distinct
+  // from the "Open screen: <Name>" / Ctrl+N shortcut labels a same-named
+  // screen can carry on Spółka. Nouns mirror the workshop-bar destination
+  // labels (WORKSHOP_TOOLS/"Overview" above) verbatim.
+  "Open tool: Overview": "Otwórz narzędzie: Przegląd",
+  "Open tool: Fundamentals": "Otwórz narzędzie: Fundamenty",
+  "Open tool: Feed": "Otwórz narzędzie: Kanał",
+  "Open tool: Coverage": "Otwórz narzędzie: Pokrycie",
+  "Open tool: Recommendations": "Otwórz narzędzie: Rekomendacje",
+  "Open tool: Claims": "Otwórz narzędzie: Tezy",
+  "Open tool: Notebook": "Otwórz narzędzie: Notatnik",
+  "Open tool: Decision journal": "Otwórz narzędzie: Dziennik decyzji",
+  "Open tool: Quality": "Otwórz narzędzie: Jakość",
+  "Open tool: Report diff": "Otwórz narzędzie: Diff raportów",
+  "Open tool: Research": "Otwórz narzędzie: Research",
+  "Open tool: Ownership": "Otwórz narzędzie: Akcjonariat",
+  "Open tool: Signals": "Otwórz narzędzie: Sygnały",
+  "Open tool: Documents": "Otwórz narzędzie: Dokumenty",
+  "Open tool: Events": "Otwórz narzędzie: Wydarzenia",
+  // ---- /wave2 S1 ----
 
   // F4b S2 — Transcripts (docs/plans/f4b-contracts/s2-transcripts.md)
   "New transcript": "Nowa transkrypcja",

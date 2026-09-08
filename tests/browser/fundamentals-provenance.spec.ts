@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 // Structured-first provenance UI (ADR 0061). F3a S3 (ADR 0107): opening a
 // company lands the Spółka screen; Fundamentals is the `fundamenty` workshop
-// tool, opened via the ⌘K palette's "Open fundamentals" entry — each fact the
+// tool, opened via the ⌘K palette's "Open tool: Fundamentals" entry — each fact the
 // deterministic pipeline produced carries a source-tier + validation badge,
 // and a fact whose layout drifted from the confirmed company profile shows a
 // clean "structure changed" label diff. The browser mock runtime
@@ -19,8 +19,8 @@ async function openFundamentals(page: Page) {
   await page.getByRole("region", { name: "Company view" }).waitFor();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open fundamentals");
-  await palette.getByRole("option", { name: "Open fundamentals", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open tool: Fundamentals");
+  await palette.getByRole("option", { name: "Open tool: Fundamentals", exact: true }).first().click();
   await expect(page.getByLabel("Company fundamentals")).toBeVisible();
 }
 
