@@ -153,6 +153,23 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     await expect(highlightedClaim).toBeVisible();
     await expect(highlightedClaim).toContainText(claimStatement);
 
+    // #476 sol R2 correction asked for a same-element before/after paint
+    // capture here, mirroring the Documents specs. Verified NOT reachable for
+    // this row: `TezyTool` (toolRegistry.tsx) auto-highlights the first
+    // review-queue claim whenever Claims opens with no explicit `claimId` —
+    // by design, so "Open claims" always lands on something actionable — and
+    // the "rich" scenario seeds exactly ONE management claim per company
+    // (`managementClaims: deep.map(makeManagementClaim)`, scenarios.ts), so
+    // CDR's `claim_sample_cdr` has neither an unmarked pre-state nor a
+    // sibling row to diff against; a real pre-visit here highlighted the SAME
+    // row every time (confirmed by an earlier run of this file). Real-paint
+    // proof instead: the highlighted row's background is a real painted
+    // color, not the transparent/unset default `.claim-row` carries at rest
+    // (`src/styles/claims.css`), so a DOM attribute with no matching CSS rule
+    // would still fail this the way it failed the original Documents defect.
+    const highlightedBackground = await highlightedClaim.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(highlightedBackground).not.toBe("rgba(0, 0, 0, 0)");
+
     // Back to Today, then close the day (contract §7 exit path).
     await j.click(page.getByLabel(/Primary navigation/).getByRole("button", { name: "Today" }));
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();

@@ -99,6 +99,9 @@ const LABELS = {
     export: "Export",
     import: "Import",
     reset: "Reset",
+    createBackup: "Create backup",
+    refresh: "Refresh",
+    restore: "Restore",
   },
   pl: {
     save: "Zapisz",
@@ -115,6 +118,9 @@ const LABELS = {
     export: "Eksport",
     import: "Import",
     reset: "Resetuj",
+    createBackup: "Utwórz kopię",
+    refresh: "Odśwież",
+    restore: "Przywróć",
   },
 } as const;
 
@@ -219,15 +225,54 @@ describe("Settings action inventory (F4c contract § Settings, plan dec. 5)", ()
   });
 
   it.each(LOCALES)(
-    "Data storage tab: Database + Queue reset controls (%s)",
+    // #451: Backups moved from developer-gated Diagnostics into this tab, as
+    // its own settings-group under the connection-pool group — Create backup
+    // (verb create), Refresh (control), one Restore (control) per seeded
+    // backup row (the sample scenario always seeds 2: a rotating backup and a
+    // pre-migration snapshot, EMPTY_SINGLETONS.backupStatus).
+    "Data storage tab: Database + Queue resets, plus Backups actions (%s)",
     async (locale) => {
       const t = LABELS[locale];
       const region = await openSettingsTab(locale, "database");
+      // Backups load async (own effect, not part of the settings bootstrap
+      // payload) — wait for the seeded rows before reading the inventory.
+      await within(region).findAllByRole("button", { name: t.restore });
       expect(collectActionInventory(region, locale)).toEqual(
         sorted([
           ...tabNavInventory(locale),
           { name: t.resetToDefaults, kind: "control" },
           { name: t.resetToDefaults, kind: "control" },
+          { name: t.createBackup, kind: "create" },
+          { name: t.refresh, kind: "control" },
+          { name: t.restore, kind: "control" },
+          { name: t.restore, kind: "control" },
+        ]),
+      );
+      expectPrimaryMarkerMatchesVariant(region);
+      expectSinglePrimary(region, 0);
+    },
+  );
+
+  it.each(LOCALES)(
+    // #451 sol R2 correction: exactly one Create-backup action lives in the
+    // section at all times (ADR 0104 dec. 4) — with no backups it moves into
+    // the empty-state invitation instead of the toolbar, so the inventory
+    // must stay the same shape (Create backup + Refresh, zero Restore rows).
+    "Data storage tab: Backups empty state still carries Create backup + Refresh, no Restore (%s)",
+    async (locale) => {
+      const t = LABELS[locale];
+      appTestState.backupStatusResponse = { lastBackupAt: null, backupCount: 0, backups: [] };
+      const region = await openSettingsTab(locale, "database");
+      await screen.findByText(
+        locale === "pl" ? "Lokalne kopie Twoich danych." : "Local copies of your data.",
+      );
+      expect(collectActionInventory(region, locale)).toEqual(
+        sorted([
+          ...tabNavInventory(locale),
+          { name: t.resetToDefaults, kind: "control" },
+          { name: t.resetToDefaults, kind: "control" },
+          { name: t.createBackup, kind: "create" },
+          { name: t.refresh, kind: "control" },
         ]),
       );
       expectPrimaryMarkerMatchesVariant(region);
