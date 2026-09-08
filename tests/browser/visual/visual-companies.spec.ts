@@ -29,21 +29,21 @@ async function openCompanyTool(page: Page, toolLabel: string): Promise<Locator> 
 test.describe("visual — company dashboard panels", () => {
   test("Fundamentals across pane tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyTool(page, "Open fundamentals");
+    const pane = await openCompanyTool(page, "Open tool: Fundamentals");
     await expect(pane.getByLabel("Financial facts matrix")).toBeVisible();
     await shootPanel(page, pane, "fundamentals");
   });
 
   test("Basic info across pane tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyTool(page, "Open ownership");
+    const pane = await openCompanyTool(page, "Open tool: Ownership");
     await expect(pane.getByText("ISIN")).toBeVisible();
     await shootPanel(page, pane, "basic-info");
   });
 
   test("Feed (company) across pane tiers", async ({ page }) => {
     await openApp(page);
-    const pane = await openCompanyTool(page, "Open feed");
+    const pane = await openCompanyTool(page, "Open tool: Feed");
     // Select a feed item so the detail renders (split at L, stacked/overlay else).
     await pane.locator("[data-company-feed-row]").first().click();
     await expect(pane.locator(".company-feed-detail")).toBeVisible();

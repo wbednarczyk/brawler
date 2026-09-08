@@ -1,6 +1,6 @@
 // The palette verb dictionary (ADR 0104 dec. 3, F3a S3): every palette command
 // label starts with one of these verbs. Enforced by the copy gate
-// (src/app/paletteCopy.test.ts). See docs/ui-authoring.md § i18n.
+// (src/app/paletteCopy.test.tsx). See docs/ui-authoring.md § i18n.
 //
 // F4a S1 (ADR 0104 dec. 3 amendment, 2026-08-28): five verbs added for the
 // Library screens' action inventories (`ActionButton`, F4a contract) —

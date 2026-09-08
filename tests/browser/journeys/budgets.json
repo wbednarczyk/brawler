@@ -46,7 +46,7 @@
       "byProject": {}
     },
     "J6": {
-      "_comment": "F3a S4 consent 5: redefined off the frozen view-creation flow (ADR 0107) — floor = first honest measurement of the new `Spółka → Otwórz dziennik decyzji` path + 1, re-based 2026-08-26.",
+      "_comment": "F3a S4 consent 5: redefined off the frozen view-creation flow (ADR 0107) — floor = first honest measurement of the new `Spółka → Dziennik decyzji` (workshop tool) path + 1, re-based 2026-08-26.",
       "interactions": 10,
       "screenTransitions": 3,
       "modalOpens": 1,

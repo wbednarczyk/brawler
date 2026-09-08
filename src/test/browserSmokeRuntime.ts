@@ -940,6 +940,16 @@ const reportDocuments: ReportDocument[] = [
     "26_06_17_formularz_do_wykonywana_prawa_glosu_przez_pelnomocnika_na_NWZ_cyber_Folks_S.A._w_dn._20.07.2026.pdf",
     "https://example.test/reports/CDPROJEKT_Q3_2025.pdf",
   ),
+  // #476: a neutral sibling document so the document-highlight paint specs
+  // (activity.spec.ts, spolka-documents.spec.ts) have an unmarked row to diff
+  // the deep-link target's computed style against — same period family, also
+  // `fetchStatus: "fetched"` (the `reportDocument()` helper's default).
+  reportDocument(
+    "doc_cdr_q2_2025",
+    "period_cdr_2025_q2",
+    "26_03_18_raport_kwartalny_Q2_2025_cyber_Folks_S.A.pdf",
+    "https://example.test/reports/CDPROJEKT_Q2_2025.pdf",
+  ),
 ];
 
 const irReportsUrls: Record<string, string> = {

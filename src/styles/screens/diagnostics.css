@@ -3,33 +3,6 @@
   overflow-y: auto;
 }
 
-.diagnostics-backups-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.diagnostics-backup-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.diagnostics-backup-row h3 {
-  margin: 0;
-  font-size: var(--font-base);
-  word-break: break-all;
-}
-
-.diagnostics-backup-row small {
-  color: var(--muted);
-}
-
 .diagnostics-actions {
   display: flex;
   flex-wrap: wrap;

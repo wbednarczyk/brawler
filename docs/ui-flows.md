@@ -394,7 +394,7 @@ Intent: recover the local data from an automatic backup after loss or a bad upgr
 
 Flow:
 
-1. User opens Developer Diagnostics and the backups section.
+1. User opens Settings › Data storage › Backups (moved out of Developer Diagnostics 2026-09-08, #451).
 2. User reviews backup status and the list of rotating backups and pre-migration snapshots.
 3. User chooses a backup and selects restore.
 4. App requires explicit confirmation and warns that restore is applied on relaunch.
@@ -404,7 +404,7 @@ Acceptance criteria:
 
 - A backup exists before every data-structure migration; a failed migration leaves the snapshot intact.
 - Rotating backups keep the last N and prune the oldest.
-- Restore from Diagnostics recovers a verified earlier state after relaunch.
+- Restore from Settings › Data storage recovers a verified earlier state after relaunch.
 - Restore never performs a hot in-place swap while connections are open.
 
 ## Screen Inventory

@@ -110,7 +110,6 @@ const FROZEN_IDENTICAL_KEYS = new Set([
   "Claude Code (HTTP)",
   "Digest",
   "EV/EBITDA",
-  "Feed",
   "Free float",
   "GPW",
   "Gemini",

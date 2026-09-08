@@ -31,6 +31,5 @@
   "Media": "cognate — identical spelling and meaning in Polish",
   "RB {n}": "abbreviation code (Raport Bieżący number), not prose",
   "GPW": "native Polish acronym (Giełda Papierów Wartościowych)",
-  "MB": "unit abbreviation (megabyte)",
-  "Feed": "kept as-is pending the owner's decision — see #478 (every other 'feed' entry is 'kanał'; translating moves the Spółka visual baselines)"
+  "MB": "unit abbreviation (megabyte)"
 }

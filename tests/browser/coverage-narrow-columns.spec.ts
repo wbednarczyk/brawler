@@ -16,7 +16,7 @@ import {
 // (`@container pane (max-width: 640px)`) instead of hiding them.
 
 // F3a S3 (ADR 0107) / ADR 0108: the row opens Spółka; Coverage is the
-// `pokrycie` workshop tool, opened via the ⌘K palette's "Open coverage".
+// `pokrycie` workshop tool, opened via the ⌘K palette's "Open tool: Coverage".
 async function openCoveragePanel(page: import("@playwright/test").Page, companyId: string) {
   await page.setViewportSize({ width: 1008, height: 900 });
   await openApp(page);
@@ -27,8 +27,8 @@ async function openCoveragePanel(page: import("@playwright/test").Page, companyI
   await page.locator(`[data-company-id="${companyId}"] .company-row-main`).click();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open coverage");
-  await palette.getByRole("option", { name: "Open coverage", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open tool: Coverage");
+  await palette.getByRole("option", { name: "Open tool: Coverage", exact: true }).first().click();
 }
 
 test("the compact-tier pane keeps the Data and Flagged counts under the period label", async ({

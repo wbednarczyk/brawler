@@ -42,19 +42,19 @@ test.describe("poor state — Spółka workshop tools with a broken read", { tag
 
     // The partial-data company's Fundamentals tool renders and states its own
     // emptiness (periods exist, facts do not) rather than showing nothing.
-    let tool = await openSpolkaTool(page, "Open fundamentals");
+    let tool = await openSpolkaTool(page, "Open tool: Fundamentals");
     await expect(tool.locator(".fundamentals-panel")).toBeVisible();
     await expect(tool.getByText("0 facts recorded")).toBeVisible();
 
     // The broken read: the warning-signals tool names the failure it hit.
-    tool = await openSpolkaTool(page, "Open signals");
+    tool = await openSpolkaTool(page, "Open tool: Signals");
     const redFlags = tool.locator(".red-flags-panel");
     await expect(redFlags).toBeVisible();
     await expect(redFlags.getByText(/Could not load warning signals/)).toContainText(CHAOS_MESSAGE);
     await expectNoPageOverflow(page);
 
     // ...and Fundamentals is unaffected — re-opening it renders exactly as before.
-    tool = await openSpolkaTool(page, "Open fundamentals");
+    tool = await openSpolkaTool(page, "Open tool: Fundamentals");
     await expect(tool.locator(".fundamentals-panel")).toBeVisible();
     await expect(tool.getByText("0 facts recorded")).toBeVisible();
     await expectNoPageOverflow(page);

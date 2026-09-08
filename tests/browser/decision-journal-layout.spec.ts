@@ -6,7 +6,7 @@ import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 // selecting it does not force a horizontal scrollbar at a narrow window (the
 // quarter-ultrawide range, DoD §B). F3a S3 (ADR 0107): opening a company lands
 // the Spółka screen; the journal is the `dziennik` workshop tool, opened via
-// the ⌘K palette's "Open decision journal" entry. The dual-execution mock
+// the ⌘K palette's "Open tool: Decision journal" entry. The dual-execution mock
 // runtime serves the (command-only) journal + the company timeline as the
 // evidence pool.
 test("decision journal panel does not horizontally overflow at a narrow window", async ({
@@ -19,8 +19,8 @@ test("decision journal panel does not horizontally overflow at a narrow window",
   await page.getByRole("region", { name: "Company view" }).waitFor();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open decision journal");
-  await palette.getByRole("option", { name: "Open decision journal", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open tool: Decision journal");
+  await palette.getByRole("option", { name: "Open tool: Decision journal", exact: true }).first().click();
 
   // Open the composer.
   const journalPanel = page.locator(".decision-journal-panel");

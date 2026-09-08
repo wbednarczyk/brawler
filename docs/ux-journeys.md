@@ -35,7 +35,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 - **Screens:** Companies, Watchlists, Company workspace.
 - **Budget:** ≤12 interactions to reach "company fueled".
 - **Done well:** after one session the company has feed, reports, fundamentals, and a recorded reason for being tracked.
-- Ownership sits behind the Spółka `Otwórz akcjonariat` tool (+1 interaction, owner-accepted 2026-08-26, ADR 0107 — the on-demand ownership chart from the F3a study).
+- Ownership sits behind the Spółka `Akcjonariat` workshop tool (palette `Otwórz narzędzie: Akcjonariat`) (+1 interaction, owner-accepted 2026-08-26, ADR 0107 — the on-demand ownership chart from the F3a study).
 
 ## J4 — Report-season preparation
 
@@ -56,7 +56,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J6 — Buy / pass decision (full from v0.52, enriched through v0.64)
 
 - **Trigger:** research maturity or a price condition (v0.54 alert: price enters my range).
-- **Steps:** Company synthesis (fundamentals, quality score, red flags, analyst-recommendation context — attributed third-party opinions with a vs-target readout (v0.58), valuation range, thesis when available) → record the decision in the journal (kind + rationale + evidence links) → (v0.64: link to thesis, plan the review). The journal is reached as `Spółka → Otwórz dziennik decyzji` (F3a, ADR 0107; the old Add-panel path was retired — [ADR 0108](adr/0108-retire-docking-engine.md)); budget floor re-based 2026-08-26 at first measurement +1 (consent 5).
+- **Steps:** Company synthesis (fundamentals, quality score, red flags, analyst-recommendation context — attributed third-party opinions with a vs-target readout (v0.58), valuation range, thesis when available) → record the decision in the journal (kind + rationale + evidence links) → (v0.64: link to thesis, plan the review). The journal is reached as `Spółka → the Dziennik decyzji workshop tool` (F3a, ADR 0107; the old Add-panel path was retired — [ADR 0108](adr/0108-retire-docking-engine.md)); budget floor re-based 2026-08-26 at first measurement +1 (consent 5).
 - **Relative position:** the Compare screen and its `J6-compare` sub-flow were removed 2026-08-10 (#351, ADR 0089 amendment — unused in real practice); peer context lives in the Fundamentals periods × deltas table and, for agents, the MCP comparison/valuation reads.
 - **Screens:** Spółka (quality + decision-journal workshop tools).
 - **Budget:** ≤15 interactions for the recording flow (the thinking is not budgeted).

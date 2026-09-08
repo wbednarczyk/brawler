@@ -37,7 +37,7 @@ export type SpolkaToolHostApi = {
   openTool: (companyId: string, tool: Tool) => void;
   /** Closes the open tool. `intent` defaults to "entry" (focus returns to the
    * closed tool's own bar entry — the ✕ button and the Escape-in-frame path);
-   * the summary ticker / Overview tab / palette "Open overview" pass
+   * the summary ticker / Overview tab / palette "Open tool: Overview" pass
    * "overview" instead (focus goes to the Overview entry). */
   closeTool: (intent?: FocusIntent) => void;
   /** Runs `next` immediately when NO registered draft handle is dirty;

@@ -10,7 +10,7 @@ import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 // red flags (CD PROJEKT populated, ORLEN empty).
 
 // F3a S3 (ADR 0107): opening a company lands the Spółka screen; the
-// warning-signals content is the `sygnaly` workshop tool ("Open signals").
+// warning-signals content is the `sygnaly` workshop tool ("Open tool: Signals").
 async function addRedFlagsPanel(page: import("@playwright/test").Page, companyId: string) {
   await page.setViewportSize({ width: 1008, height: 900 });
   await openApp(page);
@@ -22,8 +22,8 @@ async function addRedFlagsPanel(page: import("@playwright/test").Page, companyId
   await page.getByRole("region", { name: "Company view" }).waitFor();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open signals");
-  await palette.getByRole("option", { name: "Open signals", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open tool: Signals");
+  await palette.getByRole("option", { name: "Open tool: Signals", exact: true }).first().click();
 }
 
 test("red-flags panel renders active flags and does not overflow — populated", async ({ page }) => {

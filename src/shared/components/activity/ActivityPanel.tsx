@@ -150,7 +150,7 @@ function ActivityRow({
         isExpanded={expanded}
         onToggle={onToggle}
         actions={
-          <ActionButton kind="destination" onClick={() => onNavigate(item.target)}>
+          <ActionButton verb="open" onClick={() => onNavigate(item.target)}>
             {destinationLabel(item.target, text)}
           </ActionButton>
         }

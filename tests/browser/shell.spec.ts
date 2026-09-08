@@ -106,3 +106,27 @@ test.describe("mode-based shell (ADR 0054)", () => {
     await expectNoPageOverflow(page);
   });
 });
+
+// Global search on the shared combobox controller (#469): the keyboard-active
+// option must be VISIBLY marked (focus stays in the input, so `:focus-visible`
+// never paints it) — assert the paint, not the attribute.
+test.describe("global search (shared combobox controller)", () => {
+  test("ArrowDown paints the active option differently from its neighbours", async ({ page }) => {
+    await openApp(page);
+    const input = page.getByRole("combobox", { name: "Global search" });
+    await input.click();
+    await input.pressSequentially("a");
+    const options = page.getByRole("listbox", { name: "Global search" }).getByRole("option");
+    await expect.poll(() => options.count()).toBeGreaterThan(1);
+    await input.press("ArrowDown");
+    const active = page.locator('.global-search-result[aria-selected="true"]');
+    await expect(active).toHaveCount(1);
+    await expect(input).toHaveAttribute("aria-activedescendant", /.+/);
+    const [activeBg, otherBg] = await Promise.all([
+      active.evaluate((el) => getComputedStyle(el).backgroundColor),
+      page.locator('.global-search-result[aria-selected="false"]').first().evaluate((el) => getComputedStyle(el).backgroundColor),
+    ]);
+    expect(activeBg, "active option is painted").not.toBe(otherBg);
+    await expectNoPageOverflow(page);
+  });
+});

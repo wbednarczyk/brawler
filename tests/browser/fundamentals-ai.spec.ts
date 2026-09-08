@@ -18,12 +18,12 @@ test.describe("fundamentals visual harness", () => {
     // which can fall on a watchlist chip.
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
     // F3a S3 (ADR 0107): the row opens Spółka; Fundamentals is the `fundamenty`
-    // workshop tool, opened via the ⌘K palette's "Open fundamentals" entry.
+    // workshop tool, opened via the ⌘K palette's "Open tool: Fundamentals" entry.
     await page.getByRole("region", { name: "Company view" }).waitFor();
     await page.keyboard.press("Control+K");
     const palette = page.getByRole("dialog", { name: "Command palette" });
-    await palette.getByLabel("Search commands").fill("Open fundamentals");
-    await palette.getByRole("option", { name: "Open fundamentals", exact: true }).first().click();
+    await palette.getByLabel("Search commands").fill("Open tool: Fundamentals");
+    await palette.getByRole("option", { name: "Open tool: Fundamentals", exact: true }).first().click();
 
     const panel = page.getByLabel("Company fundamentals");
     await expect(panel).toBeVisible();
@@ -49,8 +49,8 @@ test.describe("fundamentals visual harness", () => {
     await page.getByRole("region", { name: "Widok spółki" }).waitFor();
     await page.keyboard.press("Control+K");
     const palette = page.getByRole("dialog", { name: "Paleta poleceń" });
-    await palette.getByLabel("Szukaj poleceń").fill("Otwórz fundamenty");
-    await palette.getByRole("option", { name: "Otwórz fundamenty", exact: true }).first().click();
+    await palette.getByLabel("Szukaj poleceń").fill("Otwórz narzędzie: Fundamenty");
+    await palette.getByRole("option", { name: "Otwórz narzędzie: Fundamenty", exact: true }).first().click();
 
     const panel = page.getByLabel("Wskaźniki finansowe spółki");
     await expect(panel).toBeVisible();

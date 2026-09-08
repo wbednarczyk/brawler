@@ -148,7 +148,7 @@ const SCREEN_PALETTE_ENTRIES: ReadonlyArray<{ section: Section; labelText: strin
 ];
 
 /** Builds AppShell's app-level palette commands — a pure function (no React)
- * so the copy gate (paletteCopy.test.ts) can exercise it directly with a rich
+ * so the copy gate (paletteCopy.test.tsx) can exercise it directly with a rich
  * fixture, in both locales, without rendering. */
 export function buildAppCommands(input: {
   shortcutBindings: Record<string, ShortcutBindingSetting>;
@@ -358,7 +358,7 @@ export function AppShell({
   // App-level palette commands: the resolved, enabled shortcuts (minus the
   // palette opener itself), every tracked company, and the global screens
   // (F3a S3, plan "Trasy powierzchni globalnych"). Building is a pure
-  // function (`buildAppCommands`, below) so the copy gate (paletteCopy.test.ts)
+  // function (`buildAppCommands`, below) so the copy gate (paletteCopy.test.tsx)
   // can exercise it directly, with a rich fixture, in both locales — without
   // rendering.
   const appCommands = useMemo<PaletteCommand[]>(

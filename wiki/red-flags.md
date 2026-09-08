@@ -4,7 +4,7 @@ The **Red flags** panel is a per-company watch-list of *things worth a second
 look* — collected automatically, each stated as a fact with a link to its
 evidence. It never says "sell" or "avoid"; it points at what changed and lets
 you judge. Open it from the company's [Spółka screen](company-view.md) —
-workshop bar → **Open signals** — or straight from the glance bar's signals
+workshop bar → **Signals** — or straight from the glance bar's signals
 counter, which drills here.
 
 ## The five flag types

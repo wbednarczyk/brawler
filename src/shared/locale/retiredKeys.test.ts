@@ -191,6 +191,40 @@ const RETIRED_PLTEXT_KEYS_F4C = [
 // Pinned here so it can't quietly reappear.
 const RETIRED_PLTEXT_KEYS_S4 = ["AI workers"];
 
+// Wave 2026-09b S2 (#451): Backups moves from developer-gated Diagnostics into
+// Settings › Data storage with product-language copy. The old Diagnostics
+// hint and the implementation-vocabulary kind labels ("Pre-migration
+// snapshot", "Automatic backup") are replaced by the human-title-first row
+// (`BackupsSettings.tsx` — "Backup"/"Copy before upgrade" + a `Figure
+// kind="datetime"`), so all three lose their last call site.
+const RETIRED_PLTEXT_KEYS_WAVE2_S2 = [
+  "Local data backups. Restore is applied on the next app launch.",
+  "Pre-migration snapshot",
+  "Automatic backup",
+];
+
+// wave2 S1 (#454): SPOLKA_TOOL_COMMANDS labels move to the "Open tool:
+// <Name>" family — the flat "Open fundamentals"-style labels retire. "Open
+// notebook" is EXCLUDED: TranscriptJobRow.tsx still renders it for its own
+// unrelated "open the linked note" destination (verified — the only other
+// live call site of any of these labels).
+const RETIRED_PLTEXT_KEYS_WAVE2_S1 = [
+  "Open overview",
+  "Open fundamentals",
+  "Open feed",
+  "Open coverage",
+  "Open recommendations",
+  "Open claims",
+  "Open decision journal",
+  "Open quality",
+  "Open report diff",
+  "Open research",
+  "Open ownership",
+  "Open signals",
+  "Open documents",
+  "Open events",
+];
+
 describe("retired Fundamentals vocabulary stays retired (dogfooding wave 2026-09, S1)", () => {
   it("is absent from the plText resource table", () => {
     const hits = RETIRED_PLTEXT_KEYS_WAVE_S1.filter((key) => key in plText).map((key) => `plText.ts: ${key}`);
@@ -241,6 +275,31 @@ describe("retired 'AI workers' vocabulary stays retired (F4c S4)", () => {
   });
 });
 
+describe("retired Diagnostics-Backups vocabulary stays retired (wave 2026-09b S2, #451)", () => {
+  it("is absent from the plText resource table", () => {
+    const hits = RETIRED_PLTEXT_KEYS_WAVE2_S2.filter((key) => key in plText).map((key) => `plText.ts: ${key}`);
+    expect(hits, `Retired keys still present:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("is absent from every src/** call site", () => {
+    const files = listSourceFiles(process.cwd(), SCAN_ROOT, []);
+    const needles = RETIRED_PLTEXT_KEYS_WAVE2_S2.flatMap((token) => [
+      `text("${token}")`,
+      `t("${token}")`,
+      `text('${token}')`,
+      `t('${token}')`,
+    ]);
+    const hits: string[] = [];
+    for (const rel of files) {
+      const content = readFileSync(join(process.cwd(), rel), "utf8");
+      for (const needle of needles) {
+        if (content.includes(needle)) hits.push(`${rel}: ${needle}`);
+      }
+    }
+    expect(hits, `Retired keys still referenced:\n${hits.join("\n")}`).toEqual([]);
+  });
+});
+
 describe("retired Notebooks-global-screen + Research tooltip-only vocabulary (F4c S1)", () => {
   it("is absent from every locale resource table", () => {
     const hits = [
@@ -255,6 +314,31 @@ describe("retired Notebooks-global-screen + Research tooltip-only vocabulary (F4
     const files = listSourceFiles(process.cwd(), SCAN_ROOT, []);
     const retiredTokens = [...RETIRED_T_KEYS_F4C, ...RETIRED_PLTEXT_KEYS_F4C];
     const needles = retiredTokens.flatMap((token) => [
+      `text("${token}")`,
+      `t("${token}")`,
+      `text('${token}')`,
+      `t('${token}')`,
+    ]);
+    const hits: string[] = [];
+    for (const rel of files) {
+      const content = readFileSync(join(process.cwd(), rel), "utf8");
+      for (const needle of needles) {
+        if (content.includes(needle)) hits.push(`${rel}: ${needle}`);
+      }
+    }
+    expect(hits, `Retired keys still referenced:\n${hits.join("\n")}`).toEqual([]);
+  });
+});
+
+describe("retired SPOLKA_TOOL_COMMANDS flat labels stay retired (wave2 S1, #454)", () => {
+  it("is absent from the plText resource table", () => {
+    const hits = RETIRED_PLTEXT_KEYS_WAVE2_S1.filter((key) => key in plText).map((key) => `plText.ts: ${key}`);
+    expect(hits, `Retired keys still present:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("is absent from every src/** call site", () => {
+    const files = listSourceFiles(process.cwd(), SCAN_ROOT, []);
+    const needles = RETIRED_PLTEXT_KEYS_WAVE2_S1.flatMap((token) => [
       `text("${token}")`,
       `t("${token}")`,
       `text('${token}')`,

@@ -646,8 +646,10 @@ describe("CompanyReportDocumentsPanel", () => {
       const row = screen.getByText("signature.xades").closest("[data-document-id]");
       expect(row).toHaveAttribute("data-document-id", "d_sig");
       expect(row).toHaveAttribute("data-document-highlighted", "true");
+      // Poll for the scroll too: the effect runs after the render that paints
+      // the mark (a bare assertion after the waitFor flaked under load).
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
     });
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
   });
 
   it("does not highlight anything when no document ref is targeted", async () => {

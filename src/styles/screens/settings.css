@@ -141,6 +141,13 @@
   background: var(--surface-raised);
 }
 
+/* Backups row secondary metadata (#451): the file name is an identifier, so
+   it stays mono per ADR 0104 dec. 2 (mono reserved for identifiers/filenames)
+   while the ListRow title above it renders the human-first label. */
+.settings-backup-filename {
+  font-family: var(--font-mono);
+}
+
 .import-export-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

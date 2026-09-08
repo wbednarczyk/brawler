@@ -5,7 +5,7 @@ import { test, expect, openApp, expectNoPageOverflow, setPaneSize } from "./help
 // recommendations for the selected company" (J6 buy/pass), plus the signal badge
 // in the feed (J1 morning review) and a narrow-pane inner-scroll overflow guard.
 // F3a S3 (ADR 0107): opening a company lands the Spółka screen directly; the
-// Recommendations tool opens via the ⌘K palette's "Open recommendations" entry
+// Recommendations tool opens via the ⌘K palette's "Open tool: Recommendations" entry
 // (SPOLKA_TOOL_COMMANDS) — the dual-execution mock runtime serves the seeded
 // history (CD PROJEKT populated, ORLEN empty).
 
@@ -22,8 +22,8 @@ async function addRecommendationsPanel(
   await page.getByRole("region", { name: "Company view" }).waitFor();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open recommendations");
-  await palette.getByRole("option", { name: "Open recommendations", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open tool: Recommendations");
+  await palette.getByRole("option", { name: "Open tool: Recommendations", exact: true }).first().click();
 }
 
 test("pinned panel lists attributed recommendations for the selected company", async ({ page }) => {

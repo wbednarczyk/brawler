@@ -25,8 +25,8 @@ async function openManyPeriodsFundamentals(page: Page) {
   await page.getByRole("region", { name: "Company view" }).waitFor();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByLabel("Search commands").fill("Open fundamentals");
-  await palette.getByRole("option", { name: "Open fundamentals", exact: true }).first().click();
+  await palette.getByLabel("Search commands").fill("Open tool: Fundamentals");
+  await palette.getByRole("option", { name: "Open tool: Fundamentals", exact: true }).first().click();
   await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
 }
 
