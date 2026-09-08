@@ -101,6 +101,19 @@ test("round-3 matrix defects stay closed (option arity, cargo globals, chain pre
   assert.equal(runHook("cargo test", manyJsThenRustc), "deny", "rustc beyond the first five lines");
 });
 
+test("round-4 bypasses stay closed (redirections are not scope; shell wrappers are inspected)", () => {
+  for (const cmd of ["npx vitest run > /tmp/vitest.log", "npx playwright test > /tmp/browser.log 2>&1", "npx vitest run 2>&1 | tee /tmp/v.log", "vitest run >>log"]) {
+    assert.equal(runHook(cmd, JS_ALIVE), "deny", `redirected full suite: ${cmd}`);
+  }
+  assert.equal(runHook("npx vitest run src/a.test.ts > /tmp/v.log", JS_ALIVE), "allow", "scoped + redirect");
+  for (const cmd of ['nix develop -c bash -lc "cd src-tauri && cargo test"', "bash -c 'CARGO_BUILD_JOBS=8 cargo nextest run x'", 'sh -ec "rtk cargo clippy --all-targets"']) {
+    assert.equal(runHook(cmd, HEAVY_ALIVE), "deny", `wrapped cargo while compile alive: ${cmd}`);
+  }
+  assert.equal(runHook("bash -c 'npm test'", JS_ALIVE), "deny", "wrapped full suite");
+  assert.equal(runHook('sh -c "echo make check"', JS_ALIVE), "allow", "echo inside a wrapper is not a run");
+  assert.equal(runHook("bash scripts/x.sh", HEAVY_ALIVE), "allow", "a script file is not inspected (no inline body)");
+});
+
 test("nothing heavy alive: every command is allowed", () => {
   for (const cmd of [...DENY_COMMANDS, ...ALLOW_COMMANDS]) {
     assert.equal(runHook(cmd, ""), "allow", `expected allow when idle for: ${cmd}`);

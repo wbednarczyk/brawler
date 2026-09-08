@@ -491,6 +491,25 @@ fn transform_modules_carry_their_property_and_golden_tests() {
         "src/storage/ingestion.rs",
         "src/report_documents_capture.rs",
     ];
+    const FROZEN_NO_INSTA: &[&str] = &[
+        "src/fundamentals/expr",
+        "src/fundamentals/extraction/esef.rs",
+        "src/fundamentals/extraction/esef_package.rs",
+        "src/fundamentals/extraction/html.rs",
+        "src/fundamentals/extraction/mod.rs",
+        "src/fundamentals/extraction/text_numbers.rs",
+        "src/fundamentals/extraction/pipeline",
+        "src/source_adapters/parsing.rs",
+        "src/source_adapters/bankier_rss.rs",
+        "src/source_adapters/biznesradar_fundamentals.rs",
+        "src/source_adapters/biznesradar_ownership.rs",
+        "src/source_adapters/company_directory.rs",
+        "src/source_adapters/gpw_espi_ebi.rs",
+        "src/source_adapters/gpw_market_events.rs",
+        "src/storage/feed_matching.rs",
+        "src/storage/ingestion.rs",
+        "src/report_documents_capture.rs",
+    ];
     let proptest_true = modules
         .iter()
         .filter(|m| m["proptest"].as_bool() == Some(true))
@@ -519,8 +538,23 @@ fn transform_modules_carry_their_property_and_golden_tests() {
             ));
         }
     }
+    for frozen in FROZEN_NO_INSTA {
+        let has_insta = modules
+            .iter()
+            .any(|m| m["path"].as_str() == Some(frozen) && m["insta"].as_bool() == Some(true));
+        if has_insta {
+            violations.push(format!(
+                "{frozen}: now carries insta:true — delete it from FROZEN_NO_INSTA so it can never flip back (per-module ratchet)"
+            ));
+        }
+    }
     for module in modules {
         let path = module["path"].as_str().expect("path");
+        if module["insta"].as_bool() == Some(false) && !FROZEN_NO_INSTA.contains(&path) {
+            violations.push(format!(
+                "{path}: insta:false is only allowed for the frozen pre-existing offenders — a new transform ships with its golden snapshot (ADR 0049)"
+            ));
+        }
         if module["proptest"].as_bool() == Some(false) && !FROZEN_NO_PROPTEST.contains(&path) {
             violations.push(format!(
                 "{path}: proptest:false is only allowed for the frozen pre-existing offenders — a new transform ships with its properties (ADR 0049)"

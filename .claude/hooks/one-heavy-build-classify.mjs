@@ -242,6 +242,87 @@ function classifyTokens(tokens) {
   }
 }
 
+/** Drop shell redirections (`> f`, `>>f`, `2>&1`, `< f`, `&> f`) — never scope. */
+function stripRedirections(tokens) {
+  const out = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (/^(\d*>>?|<|&>|\d*>&\d*)$/.test(t)) {
+      if (!/&\d+$/.test(t)) i++; // bare operator: skip its target too
+      continue;
+    }
+    if (/^(\d*>>?|<|&>)[^\s]+$/.test(t)) continue; // attached target: `>file`
+    out.push(t);
+  }
+  return out;
+}
+
+/** Quote-aware tokenizer keeping the INNER text of quoted spans (for wrapper bodies). */
+function tokenizeRaw(segment) {
+  const tokens = [];
+  let cur = "";
+  let quote = null;
+  let sawQuote = false;
+  let inToken = false;
+  const flush = () => {
+    if (inToken) tokens.push({ text: cur, quoted: sawQuote });
+    cur = "";
+    sawQuote = false;
+    inToken = false;
+  };
+  for (let i = 0; i < segment.length; i++) {
+    const c = segment[i];
+    if (c === "\\" && quote !== "'" && i + 1 < segment.length) {
+      cur += segment[i + 1];
+      inToken = true;
+      i++;
+      continue;
+    }
+    if (quote) {
+      if (c === quote) quote = null;
+      else cur += c;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      sawQuote = true;
+      inToken = true;
+      continue;
+    }
+    if (/\s/.test(c)) {
+      flush();
+      continue;
+    }
+    cur += c;
+    inToken = true;
+  }
+  flush();
+  return tokens;
+}
+
+const SHELL_WRAPPERS = new Set(["bash", "sh", "zsh", "dash"]);
+
+/**
+ * A `bash -c "<script>"`-style wrapper (also behind env/rtk/nix/cd prefixes):
+ * return the script text so it can be classified as a shell program itself —
+ * quoting must not hide a compile (review 2026-09-08).
+ */
+function wrappedScript(segment) {
+  const raw = tokenizeRaw(segment);
+  const texts = stripPrefixes(raw.map((t) => (t.quoted ? "__quoted__" : t.text)));
+  const offset = raw.length - texts.length;
+  if (!SHELL_WRAPPERS.has(texts[0] ?? "")) return null;
+  for (let i = 1; i < texts.length; i++) {
+    const t = texts[i];
+    if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(t)) {
+      const body = raw[offset + i + 1];
+      return body ? body.text : null;
+    }
+    if (!t.startsWith("-")) return null; // `bash script.sh` — not an inline body
+  }
+  return null;
+}
+
 /** The strictest class among the command's segments: "full" > "cargo" > null. */
 export function classifyCommand(cmd) {
   // "full" dominates "cargo": its denial condition (anything heavy alive) is
@@ -249,8 +330,11 @@ export function classifyCommand(cmd) {
   // must be judged by its strictest member.
   let worst = null;
   for (const segment of splitSegments(cmd)) {
-    const tokens = stripQuotes(segment).trim().split(/\s+/).filter(Boolean);
-    const c = classifyTokens(stripPrefixes(tokens));
+    const inner = wrappedScript(segment);
+    const c =
+      inner !== null
+        ? classifyCommand(inner)
+        : classifyTokens(stripPrefixes(stripRedirections(stripQuotes(segment).trim().split(/\s+/).filter(Boolean))));
     if (c === "full") return "full";
     if (c === "cargo") worst = "cargo";
   }
