@@ -58,7 +58,28 @@ Realistic test data comes from a **canonical sample-data factory**, not a checke
 
 Suites run in parallel within and across frameworks to keep the loop fast, with isolation (above) as the precondition that keeps quality intact. Within frameworks: Rust uses `cargo nextest`, Vitest uses its default pool, Playwright runs `fullyParallel`. Across frameworks: `make check` is a staged concurrent orchestrator (fast-fail typecheck/fmt/lint stage, then heavy suites concurrently), the main win being the Rust compile overlapping the JS suites. Worker counts are capped so the sum ≈ core count (oversubscription causes false-timeout flakiness), output is grouped with hard-stop on first failure, and changes are kept only on a measured win. See [Engineering Workflow](engineering-workflow.md) and [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
 
-**Resource discipline (WSL OOM guardrail, 2026-07-10).** The WSL VM has ~15 GB RAM vs 24 cores; parallel `rustc` test builds saturate it and can kill the whole VM. Rules for every agent and script running tests OUTSIDE `make check` (whose orchestrator already stages suites): run **one heavy build/test invocation at a time** — never two cargo/nextest/vitest processes concurrently; bound compile parallelism with `CARGO_BUILD_JOBS=8` (or `-j 8`); scope `cargo nextest` to touched modules, never the whole suite ad hoc. A crashed VM can leave a **corrupted test binary** behind — a SIGSEGV in `nextest --list` right after a crash means delete the stale `target/debug/deps/<crate>-*` binary and relink, not a code bug.
+**Resource discipline (WSL OOM guardrail, 2026-07-10).** The WSL VM has ~15 GB
+RAM vs 24 cores; parallel `rustc` test builds saturate it and can kill the whole
+VM. Rules for every agent and script running tests OUTSIDE `make check` (whose
+orchestrator already stages suites): run **one heavy build/test invocation at a
+time** — never two cargo/nextest/vitest processes concurrently; bound compile
+parallelism with `CARGO_BUILD_JOBS=8` (or `-j 8`); scope `cargo nextest` to
+touched modules, never the whole suite ad hoc. A crashed VM can leave a
+**corrupted test binary** behind — a SIGSEGV in `nextest --list` right after a
+crash means delete the stale `target/debug/deps/<crate>-*` binary and relink,
+not a code bug. **Mechanical since 2026-09-07 (hard gate G2):** the `one-heavy-build` PreToolUse
+hook (`.claude/hooks/one-heavy-build.{sh,mjs}` + `-classify.mjs`, wired in
+`.claude/settings.json`, self-tested by `scripts/check/one-heavy-build.test.mjs`)
+applies the matrix the owner set on 2026-09-08 for every agent and subagent:
+a `cargo …` run (it compiles — two `rustc` builds at once is the OOM class) is
+denied only while another cargo/rustc/nextest is alive; a FULL JS suite or a
+composite target (`vitest`/`playwright test` with no file, `make check*`,
+coverage, `npm test`/`run build`) is denied while anything heavy is alive;
+SCOPED vitest/playwright runs (a file or pattern argument) always pass.
+`BRAWLER_ALLOW_PARALLEL_BUILD=1` is the deliberate escape hatch. The hook is
+defence-in-depth behind this rule, not a mutex: it classifies ordinary agent
+command syntax (prefixes, wrappers, redirections, `bash -c` bodies) and
+cannot see a run started outside the Bash tool.
 
 **Delegation contracts name the consumers of a changed boundary (harvested 2026-07-10, ADR 0045).** When a delegated slice changes what a creation/normalization boundary produces (e.g. a create call starts folding a legacy label), scoped module tests miss the OTHER modules whose seeds or reads assumed the old shape — the collision surfaces only at the full gate. The slice contract must enumerate the boundary's consumers (`repoctx callers <fn>` / `rdeps`) as modules the agent runs tests for, and any test that needs the legacy shape seeds it via raw SQL like migration tests do, never through the now-normalizing public surface.
 
@@ -618,6 +639,21 @@ which fail on the long tail and at volume, not on the happy path. The
 following layers test that class. Policy: [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md)
 (extends [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)).
 
+**Transform manifest.** `src-tauri/transform-modules.json` lists every
+data-transform module (`path`, `why`, and whether it carries `proptest`/`insta`
+coverage today) and is enforced by
+`source_tree_guards::transform_modules_carry_their_property_and_golden_tests`:
+every listed path must exist and a `true` claim must be backed by a real
+`proptest!`/`insta::` usage (the ratchet flips `false→true` only), and every
+module directory/file under `src/fundamentals/extraction/` or
+`src/source_adapters/` defining a `parse*`/`normalize*`/`resolve*`/`dedup*`/
+`match*` fn must be listed — a new transform declares itself in the manifest in
+the same change it lands in, even before its property/golden tests follow.
+**Discovery limit**: the guard only lists direct children of those two
+directories (`std::fs::read_dir`, non-recursive) — a transform nested one
+level deeper, or one living outside both roots, is not auto-discovered and
+must be added to the manifest by hand.
+
 ### Property-based & invariant testing
 
 Data transforms are tested by the **invariants** they satisfy, not only by
@@ -799,6 +835,24 @@ seed-independent assertions, and reuse each created entity's returned id, so the
 hold regardless of either side's id-derivation scheme. **Add a journey to the
 corpus when you add or change a command's observable behavior.**
 
+**Membership gate.** Every `#[tauri::command]` must land in the corpus, be
+declared in `src/test/scenarios/headless-only.json` (a reason per entry:
+MCP-only
+— no frontend/mock caller, verified against `src-tauri/src/mcp` and `src/api` —
+or a headless acquisition driver per the scope exemption above), or be a
+`fidelity-membership.baseline.json` entry — the ratchet floor of pre-existing
+offenders, which may only shrink (a command that gains a corpus step must drop
+out of the baseline in the same change). Enforced from both sides: the Vitest
+`src/test/scenarios/fidelity-membership.test.ts` derives every command name from
+`src-tauri/src/**/*.rs` and checks it against the same three manifests; the Rust
+`source_tree_guards::every_registered_command_is_reachable_from_the_frontend_or_declared_headless`
+separately parses `tauri::generate_handler![...]` and requires each name appear
+either as a `"<name>"` literal under `src/api/**/*.ts` or in
+`headless-only.json`
+(a command can be both `headless-only` for frontend-reachability and in the
+corpus for backend dual-execution coverage — the two manifests answer different
+questions and are not mutually exclusive).
+
 ### End-to-end ingestion pipeline tests
 
 A small set of tests feeds sample source payloads through a real adapter, into
@@ -875,6 +929,19 @@ missed mutants — fails. The exit code alone never decides, only the missed
 tally does. (The 2026-07-30 full sweep, 288 mutants and 0 missed, went red on
 one timeout per shard and sent triage hunting a survivor that did not exist.)
 
+**A finding always gets an addressee** (ADR 0096 dec. 5 + owner 2026-09-07):
+two prior sweeps (runs `33203998627`/`32237111937`) each reported 2 missed
+mutants with no card filed, because "advisory" had come to mean "silent". A
+final per-shard step, gated `if: always()`, files a `gh issue create` when the
+baseline failed (exit `4`) or `missed.txt` is non-empty — titled
+`mutation-audit: <baseline failed|N missed mutants> on <sha> shard k/n` so a
+rerun of the same shard/commit reuses the existing open issue instead of
+duplicating it. The step is best-effort (every `gh` call tolerates failure)
+and never turns the workflow itself red — `check-docs-gates`'
+`gate-integrity.mjs` instead requires every workflow whose name contains
+"advisory" to carry a `gh issue create` step, so the carding step itself
+cannot be silently deleted.
+
 ## Generated API types (Rust → TypeScript)
 
 The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the Rust source** with `ts-rs`, so a Rust struct and its TS shape cannot silently drift (ADR 0048). The Rust DTO carries `#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]` + `#[ts(export, export_to = "../../src/api/generated/")]` (ts-rs honors the existing `#[serde(rename_all = "camelCase")]` via serde-compat); `make types` emits `src/api/generated/`, and the hand-written `src/api/*Types.ts` module re-exports the generated types so consumers keep a stable import path. `make types-check` regenerates and fails if regeneration changes the working-tree bindings (a before/after hash self-consistency check — independent of git staging state, so it works both mid-work and in CI). `ts-rs` is behind the off-by-default `ts-export` feature, so it never ships in the binary; `src/api/generated/` is lint-excluded and **knip-ignored** (`ignore` in `knip.json`), because it is a generated contract mirror governed by `types-check`, not authored source — knip's unused-file check would flag generated leaf DTOs that nothing imports, and deleting them is invalid (regenerate, don't hand-edit). Authored dead-code detection stays strict everywhere else.
@@ -949,6 +1016,12 @@ Every behavior lives at the **cheapest authoritative layer** — the layer that 
 | Real Tauri backend / real DB / WebView2 / native desktop | **live drive** (`tests/live/`) + native Windows | only the real runtime is authoritative |
 
 **Rules.** (1) A cross-screen case is **moved** to Playwright only when the browser is genuinely the cheaper authoritative layer *and* churn is justified by **measured flake**, never speculatively (Q8 STOP-AND-ASK). (2) Playwright coverage does **not** count toward Vitest V8 line coverage — retain/extract equivalent component coverage before deleting any Vitest assertion, and **never lower `coverage-baseline.json`**. (3) A multi-slice task names its layer split in planning via the [experience-contract template](plans/EXPERIENCE-CONTRACT-TEMPLATE.md) § 12, not at the gate. (4) **An absence assertion about a transition converges, it never samples**: `expect(queryBy…).toBeNull()` written straight after an `await findBy…` on a *different* element reads a single tick, and the outgoing node (a swapped tab, a replaced row) can outlive its replacement by one render — green locally, red under gate load. Wrap it in `waitFor`; what is asserted stays the same, only its synchronization changes (harvest 2026-08-02, `CockpitScreen.test.tsx` unpin/retarget). **The wrap alone was not enough** — Testing Library's default budget is **1 second**, generous locally but marginal on a 4-vCPU runner with four workers over a full app render, and the same test flaked again in CI with the `waitFor` in place. The budget is therefore set centrally in `src/test/setup.ts` (`configure({ asyncUtilTimeout: 5_000 })`); do **not** sprinkle per-call `{ timeout }` overrides, and treat a *new* need for one as a signal the code is slow, not the test (second harvest 2026-08-02, PR #316).
+
+**Test hygiene gates** (owner-approved hard gates 2026-09-07): `.only()`/
+`.skip()`/`.fixme()`/`.todo()` discipline, the assertion-required ratchet,
+paint-not-attribute, and the English-in-PL detector are canonically described
+in [ui-authoring.md § Enforcement](ui-authoring.md#enforcement) — not
+duplicated here.
 
 ## User-journey E2E and step budgets (ADR 0074)
 

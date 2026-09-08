@@ -9,6 +9,7 @@ import type { ActivitySummary } from "../../../api/generated/ActivitySummary";
 // indicator may render (adding a failure count reddens this at compile time),
 // and the rendered control never uses the danger tone.
 describe("ActivityIndicator", () => {
+  // no-assert-ok: a compile-time pin — `expectTypeOf` reddens the typecheck, not the run
   it("the summary DTO has exactly active, queued and lastFinishedAt", () => {
     expectTypeOf<ActivitySummary>().toEqualTypeOf<{ active: number; queued: number; lastFinishedAt: string | null }>();
   });

@@ -1,25 +1,7 @@
-import type { Locator } from "@playwright/test";
+import { captureMarkStyle, expectVisiblyMarked } from "./helpers/paint";
 import { test, expect, openApp, expectNoA11yViolations, expectNoHorizontalOverflow, openPalette } from "./helpers/harness";
 import { expectActionInsideScroller } from "./helpers/interactionContracts";
 
-// Inline paint capture (#476, sol R2 correction) — mirrors PR #477's
-// (open) `tests/browser/helpers/paint.ts` (`expectVisiblyMarked`) property
-// set exactly (backgroundColor/outline/boxShadow, never borderColor) so the
-// integrator can swap this for the shared helper without redesigning the
-// assertion shape.
-function paintStyle(locator: Locator) {
-  return locator.evaluate((el) => {
-    const style = getComputedStyle(el);
-    return { backgroundColor: style.backgroundColor, outline: style.outline, boxShadow: style.boxShadow };
-  });
-}
-
-function paintDiffers(
-  a: { backgroundColor: string; outline: string; boxShadow: string },
-  b: { backgroundColor: string; outline: string; boxShadow: string },
-): boolean {
-  return a.backgroundColor !== b.backgroundColor || a.outline !== b.outline || a.boxShadow !== b.boxShadow;
-}
 
 // Activity center (ADR 0109, #133) — the first red journey test (plan § 1):
 // seeded active + queued + a failed reading + a sweep parent via the
@@ -76,8 +58,7 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
     await expect(tool).toHaveAttribute("data-tool", "dokumenty");
     const targetRow = page.locator('[data-document-id="doc_cdr_q3_2025"]');
     await expect(targetRow).toBeVisible();
-    await expect(targetRow).not.toHaveAttribute("data-document-highlighted", "true");
-    const prePaint = await paintStyle(targetRow);
+    const prePaint = await captureMarkStyle(targetRow);
     // The proof is on the SAME node: keep its handle and re-verify it after the deep link.
     const targetHandle = await targetRow.elementHandle();
 
@@ -104,28 +85,20 @@ test.describe("Activity panel — journey-independent utility", { tag: "@clickab
     // actually PAINTS — the original defect was a DOM attribute set with no
     // matching CSS rule at all.
     await expect(tool).toHaveAttribute("data-tool", "dokumenty");
-    await expect(targetRow).toHaveAttribute("data-document-highlighted", "true");
     await expect(targetRow).toHaveAttribute("aria-current", "true");
 
     expect(await targetHandle!.evaluate((el) => el.isConnected), "target row survived the navigation").toBe(true);
     expect(await targetRow.evaluate((el, handle) => el === handle, targetHandle), "locator resolves to the original node").toBe(true);
-    const postPaint = await paintStyle(targetRow);
-    expect(
-      paintDiffers(prePaint, postPaint),
-      `Same-element paint must change once the row becomes the deep-link target. pre=${JSON.stringify(prePaint)} post=${JSON.stringify(postPaint)}`,
-    ).toBe(true);
+    await expectVisiblyMarked(targetRow, prePaint);
+    const postPaint = await captureMarkStyle(targetRow);
 
     // Extra (#476): a neutral sibling document (`doc_cdr_q2_2025`) stays
     // unmarked and visibly different from the target — not the primary
     // proof, but a second, independent signal the mark is real.
     const siblingRow = page.locator('[data-document-id="doc_cdr_q2_2025"]');
-    await expect(siblingRow).not.toHaveAttribute("data-document-highlighted", "true");
     await expect(siblingRow).not.toHaveAttribute("aria-current", "true");
-    const siblingPaint = await paintStyle(siblingRow);
-    expect(
-      paintDiffers(postPaint, siblingPaint),
-      `Target row paint ${JSON.stringify(postPaint)} must differ from the unmarked sibling ${JSON.stringify(siblingPaint)}`,
-    ).toBe(true);
+    const siblingPaint = await captureMarkStyle(siblingRow);
+    expect(JSON.stringify(siblingPaint), "the unmarked sibling paints differently").not.toBe(JSON.stringify(postPaint));
   });
 
   // Dogfooding #10: `.activity-panel` used to be its OWN padding-less

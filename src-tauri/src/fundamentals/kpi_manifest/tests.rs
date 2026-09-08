@@ -1024,6 +1024,7 @@ fn golden_failed_manifest_bytes() {
 }
 
 proptest::proptest! {
+    // no-assert-ok: no-panic invariant (ADR 0049) — not panicking IS the test.
     #[test]
     fn evaluate_never_panics_on_arbitrary_strings(
         raw in ".{0,20}",

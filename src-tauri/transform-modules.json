@@ -1,0 +1,184 @@
+{
+  "modules": [
+    {
+      "path": "src/fundamentals/expr",
+      "why": "quality-framework criterion expression parser/evaluator (ADR 0049's originally-committed proptest)",
+      "proptest": true,
+      "insta": false
+    },
+    {
+      "path": "src/fundamentals/extraction/classify.rs",
+      "why": "GPW/NewConnect document-kind classifier over a labeled real-title corpus (ADR 0077 doc taxonomy)",
+      "proptest": true,
+      "insta": true
+    },
+    {
+      "path": "src/fundamentals/extraction/esef",
+      "why": "ESEF XBRL extraction tier",
+      "proptest": true,
+      "insta": true
+    },
+    {
+      "path": "src/fundamentals/extraction/esef.rs",
+      "why": "ESEF top-level detection/orchestration for a filing",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/fundamentals/extraction/esef_package.rs",
+      "why": "ESEF package (zip/XBRL) unpacking and parsing",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/fundamentals/extraction/espi_cover_note.rs",
+      "why": "EspiCoverNote parser (ADR 0061 tier 2a) — follows the property + golden pattern (testing.md)",
+      "proptest": true,
+      "insta": true
+    },
+    {
+      "path": "src/fundamentals/extraction/html",
+      "why": "HTML statement extraction tier",
+      "proptest": true,
+      "insta": true
+    },
+    {
+      "path": "src/fundamentals/extraction/html.rs",
+      "why": "HTML table/statement extraction orchestration",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/fundamentals/extraction/mod.rs",
+      "why": "extraction-tier dispatch/orchestration across esef/html/pipeline",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/fundamentals/extraction/text_numbers.rs",
+      "why": "PL-locale numeric text normalization (thousand/decimal separators)",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/fundamentals/extraction/pipeline",
+      "why": "structured-extraction pipeline orchestration tier (CLAUDE.md 'extraction pipeline tiers')",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/source_adapters/parsing.rs",
+      "why": "shared adapter parsing helpers used across source adapters",
+      "proptest": true,
+      "insta": false
+    },
+    {
+      "path": "src/source_adapters/bankier_calendar.rs",
+      "why": "bankier.pl earnings-calendar adapter parser",
+      "proptest": false,
+      "insta": true
+    },
+    {
+      "path": "src/source_adapters/bankier_company.rs",
+      "why": "bankier.pl company-page adapter — includes IR-document URL resolution",
+      "proptest": false,
+      "insta": true
+    },
+    {
+      "path": "src/source_adapters/bankier_rss.rs",
+      "why": "bankier.pl RSS feed adapter parser",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/source_adapters/biznesradar_fundamentals.rs",
+      "why": "biznesradar.pl fundamentals adapter parser",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/source_adapters/biznesradar_ownership.rs",
+      "why": "biznesradar.pl ownership adapter parser",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/source_adapters/biznesradar_recommendations.rs",
+      "why": "biznesradar.pl analyst-recommendations adapter parser",
+      "proptest": false,
+      "insta": true
+    },
+    {
+      "path": "src/source_adapters/company_directory.rs",
+      "why": "GPW/NewConnect company-directory listing parser feeding company matching",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/source_adapters/gpw_company_registry.rs",
+      "why": "GPW company registry adapter parser",
+      "proptest": false,
+      "insta": true
+    },
+    {
+      "path": "src/source_adapters/gpw_espi_ebi.rs",
+      "why": "GPW ESPI/EBI filing adapter parser (primary official-report source)",
+      "proptest": true,
+      "insta": false
+    },
+    {
+      "path": "src/source_adapters/gpw_market_events.rs",
+      "why": "GPW market-events adapter parser",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/source_adapters/knf_short_selling.rs",
+      "why": "KNF short-position register adapter parser",
+      "proptest": false,
+      "insta": true
+    },
+    {
+      "path": "src/source_adapters/nbp_fx.rs",
+      "why": "NBP FX-rate adapter parser",
+      "proptest": true,
+      "insta": true
+    },
+    {
+      "path": "src/source_adapters/newconnect_company_directory.rs",
+      "why": "NewConnect company-directory listing parser",
+      "proptest": false,
+      "insta": true
+    },
+    {
+      "path": "src/source_adapters/yahoo_eod.rs",
+      "why": "Yahoo end-of-day price adapter parser",
+      "proptest": true,
+      "insta": true
+    },
+    {
+      "path": "src/storage/feed_matching.rs",
+      "why": "cross-source feed-item/company matching (ADR 0049's committed order-independence invariant)",
+      "proptest": true,
+      "insta": false
+    },
+    {
+      "path": "src/storage/ingestion.rs",
+      "why": "unified ingestion spine — dedup on (source_adapter_id, dedupe_key), company matching, event derivation (testing.md 'End-to-end ingestion pipeline tests'); supersedes the doc-referenced src/entity_resolution.rs, which no longer exists in the tree (deleted in b4a06c2c, v0.52)",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/report_documents_capture.rs",
+      "why": "report-document capture — resolves an IR page into a downloadable document URL",
+      "proptest": false,
+      "insta": false
+    },
+    {
+      "path": "src/report_diff/classify.rs",
+      "why": "SSF/JSF statement classifier for report-over-report diff (testing.md golden corpus: classification_corpus_golden)",
+      "proptest": true,
+      "insta": true
+    }
+  ]
+}

@@ -433,8 +433,11 @@ mod tests {
     #[test]
     fn https_scheme_with_a_public_address_is_allowed() {
         let resolver = FakeResolver::new(&[("example.com", &[PUBLIC_V4])]);
-        validate_url_target("https://example.com/doc.pdf", &resolver)
-            .expect("public https URL must be allowed");
+        let result = validate_url_target("https://example.com/doc.pdf", &resolver);
+        assert!(
+            result.is_ok(),
+            "public https URL must be allowed: {result:?}"
+        );
     }
 
     // ---- SSRF guard: every resolved address ----------------------------

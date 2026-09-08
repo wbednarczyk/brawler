@@ -1,5 +1,6 @@
 import { test, expect, openApp, setPaneSize, type Page } from "./helpers/harness";
 import { primeMockScenario } from "./helpers/mockRuntime";
+import { expectOpaqueSticky } from "./helpers/paint";
 
 // Dogfooding wave 2026-09, #5 — sticky first column / header guard.
 //
@@ -126,6 +127,9 @@ for (const [tierName, size] of Object.entries(TIERS)) {
       Math.abs(kpiBoxAfter.x - kpiBoxBefore.x),
       "sticky KPI column doesn't move on horizontal scroll",
     ).toBeLessThan(2);
+    // Paint contract of the pinned column under scroll (helper shared with
+    // other sticky surfaces): computed sticky, opaque, on top of its row.
+    await expectOpaqueSticky(page.locator(".facts-matrix-kpi").first());
 
     // Vertical scroll: the sticky header's top edge never moves once docked.
     const cornerBoxBefore = (await page.locator(".facts-matrix-corner").boundingBox())!;

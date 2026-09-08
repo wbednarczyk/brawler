@@ -334,7 +334,8 @@ mod tests {
             .expect("seed");
         // A weekend-only recent window returns 404 for every chunk — the pull
         // still succeeds (no new rate that day is not an error).
-        run_fx_pull_with(&state, "{}", &AllMissing).expect("404 window is not a failure");
+        let result = run_fx_pull_with(&state, "{}", &AllMissing);
+        assert!(result.is_ok(), "404 window is not a failure: {result:?}");
     }
 
     #[test]

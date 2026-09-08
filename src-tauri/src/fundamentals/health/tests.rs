@@ -524,6 +524,7 @@ mod properties {
         }
 
         /// Totality: never panics over any partial input, any period count.
+        // no-assert-ok: totality/no-panic invariant (ADR 0049) — not panicking IS the test.
         #[test]
         fn total_no_panic(years in prop::collection::vec(arbitrary_year(), 0..4)) {
             let _ = company_health(&ctx_from(&years), INDUSTRIAL_STATEMENT_TYPE);

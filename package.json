@@ -1,7 +1,7 @@
 {
   "name": "brawler",
   "private": true,
-  "version": "0.81.0",
+  "version": "0.82.0",
   "license": "MPL-2.0",
   "type": "module",
   "engines": {
@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json",
-    "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" --max-warnings 0",
     "stylelint": "stylelint \"src/**/*.css\"",
     "knip": "knip && node scripts/check/api-surface-guard.mjs",
     "test": "TZ=Europe/Warsaw vitest run src",

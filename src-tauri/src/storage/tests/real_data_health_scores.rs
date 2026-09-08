@@ -157,6 +157,7 @@ fn real_data_health_scores() {
 /// as confirmed facts before the score harness runs. Mutates the throwaway DB —
 /// run it BEFORE `real_data_health_scores` on the same copy. Needs the real data
 /// dir (the stored packages) via `BRAWLER_REAL_DATA_DIR`.
+// no-assert-ok: real-data backfill driver that mutates a throwaway DB copy before real_data_health_scores runs; not itself a correctness check.
 #[test]
 #[ignore = "real-data backfill driver; needs BRAWLER_REAL_DB + BRAWLER_REAL_DATA_DIR"]
 fn real_data_backfill_health_facts() {

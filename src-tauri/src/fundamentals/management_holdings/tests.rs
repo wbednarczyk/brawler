@@ -515,6 +515,7 @@ use proptest::prelude::*;
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(200))]
 
+    // no-assert-ok: no-panic invariant (ADR 0049) — not panicking IS the test.
     #[test]
     fn never_panics_on_arbitrary_input(text in ".{0,4000}") {
         let _ = parse(&text);

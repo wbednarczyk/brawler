@@ -789,6 +789,7 @@ mod tests {
             // `project_period` must never panic on arbitrary (even
             // self-contradictory) Layer 1 rows — a hostile/malformed
             // extraction feeds it, it does not crash the pipeline.
+            // no-assert-ok: no-panic invariant (ADR 0049) — not panicking IS the test.
             #[test]
             fn never_panics(mut facts in prop::collection::vec(arbitrary_fact(), 0..12)) {
                 for (i, f) in facts.iter_mut().enumerate() {

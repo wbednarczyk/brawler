@@ -233,11 +233,13 @@ mod proptests {
     use proptest::prelude::*;
 
     proptest! {
+        // no-assert-ok: no-panic invariant (ADR 0049) — not panicking IS the test.
         #[test]
         fn parse_yahoo_chart_never_panics_on_arbitrary_input(input in ".*") {
             let _ = parse_yahoo_chart(&input);
         }
 
+        // no-assert-ok: no-panic invariant (ADR 0049) — not panicking IS the test.
         #[test]
         fn parse_yahoo_chart_never_panics_on_arbitrary_json_like_input(
             input in r#"\{"chart":\s*\{[^{}]{0,80}\}\}"#

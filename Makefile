@@ -217,6 +217,11 @@ check-docs-gates:
 	$(NIX) node scripts/check/file-size-ratchet.mjs
 	$(NIX) node --test "scripts/check/*.test.mjs" "scripts/ux/*.test.mjs"
 	$(NIX) npm run release:version-check
+	# G4 (ADR 0081 Q7 follow-up): a malformed escaped-defect table (wrong cell
+	# count, unknown enum value, duplicate ref) is a docs-hygiene gap the
+	# advisory `report-escaped-defects` never enforces on its own — --validate
+	# is silent on success, non-zero + the row errors on failure.
+	$(NIX) node scripts/ux/escaped-defects-report.mjs --validate
 
 # Commit-message gate (ADR 0090): validate every commit subject in RANGE against
 # the Conventional Commits schema. CI passes the PR's commit range
