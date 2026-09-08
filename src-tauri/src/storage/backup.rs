@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -297,20 +298,117 @@ fn database_passes_integrity_check(database_path: &Path) -> bool {
 /// live path. A failure copying it back is unrecoverable (`StorageError::Io`,
 /// propagated so `open_pool` aborts setup as it always has for a corrupt
 /// database) — there is no safe database to open at that point.
-fn recover_from_crash_journal(database_path: &Path, journal_path: &Path) -> StorageResult<()> {
+///
+/// The journal itself is published atomically ([`write_journal_atomically`]),
+/// but a crash could still predate this fix, or a filesystem could lie about
+/// a completed write — so a journal that fails to parse is handled
+/// explicitly rather than aborting startup forever (#319 P1): if the live
+/// database is intact, the malformed journal is simply dropped (the swap
+/// completed; only the cleanup didn't). Otherwise the newest
+/// `pre-restore-*.sqlite3` in `backups/` is used as the recovery source
+/// instead of the journal's own (unreadable) pointer — fatal only when no
+/// such backup exists either.
+fn recover_from_crash_journal(
+    database_path: &Path,
+    data_dir: &Path,
+    journal_path: &Path,
+) -> StorageResult<()> {
     if !journal_path.is_file() {
         return Ok(());
     }
 
-    let journal: RestoreJournal = serde_json::from_str(&std::fs::read_to_string(journal_path)?)?;
+    let parsed: Option<RestoreJournal> = std::fs::read_to_string(journal_path)
+        .ok()
+        .and_then(|contents| serde_json::from_str(&contents).ok());
+
+    if parsed.is_none() {
+        log::warn!(
+            "restore journal at {} is malformed (likely a truncated write mid-crash) — \
+             recovering without it",
+            journal_path.display()
+        );
+    }
 
     if !database_passes_integrity_check(database_path) {
-        std::fs::copy(&journal.pre_restore, database_path)?;
-        clear_database_sidecars(database_path);
+        let pre_restore_source = match &parsed {
+            Some(journal) => Some(PathBuf::from(&journal.pre_restore)),
+            None => newest_pre_restore_backup(data_dir),
+        };
+
+        match pre_restore_source {
+            Some(source) => {
+                std::fs::copy(&source, database_path)?;
+                clear_database_sidecars(database_path);
+            }
+            None => {
+                return Err(StorageError::Io(std::io::Error::other(
+                    "crash recovery: restore journal is unreadable and no pre-restore backup \
+                     exists to recover the database from",
+                )));
+            }
+        }
     }
 
     std::fs::remove_file(journal_path)?;
     Ok(())
+}
+
+/// The most recently modified `pre-restore-*.sqlite3` in `backups/` — the
+/// fallback recovery source when the crash journal itself is unreadable
+/// (#319 P1), since the journal's own `pre_restore` pointer can't be trusted
+/// if the journal didn't parse.
+fn newest_pre_restore_backup(data_dir: &Path) -> Option<PathBuf> {
+    let dir = backups_dir(data_dir);
+    std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.starts_with(PRE_RESTORE_PREFIX))
+                .unwrap_or(false)
+        })
+        .filter_map(|path| {
+            let modified = std::fs::metadata(&path).ok()?.modified().ok()?;
+            Some((path, modified))
+        })
+        .max_by_key(|(_, modified)| *modified)
+        .map(|(path, _)| path)
+}
+
+/// Publish the crash-recovery journal atomically: write to a private,
+/// uniquely-named temp file, `sync_all` it, then rename onto the well-known
+/// journal path. A crash mid-write leaves the temp file half-written, never
+/// the journal itself, so [`recover_from_crash_journal`] never has to parse
+/// truncated JSON (#319 P1).
+fn write_journal_atomically(journal_path: &Path, journal: &RestoreJournal) -> StorageResult<()> {
+    let temp_path =
+        journal_path.with_file_name(format!("{RESTORE_JOURNAL_FILE}.tmp-{}", unix_nanos()));
+    let mut file = std::fs::File::create(&temp_path)?;
+    file.write_all(serde_json::to_string(journal)?.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    std::fs::rename(&temp_path, journal_path)?;
+    Ok(())
+}
+
+/// Reject a staged restore candidate recoverably: keep it as
+/// `restore-rejected.sqlite3` for inspection and report `reason`. Used both
+/// for a failed re-verification and for any pre-swap failure (#319 P2) —
+/// nothing has touched the live database yet in either case.
+fn reject_staged_candidate(staged: &Path, data_dir: &Path, reason: String) -> Option<String> {
+    let _ = std::fs::rename(staged, data_dir.join(RESTORE_REJECTED_FILE));
+    Some(reason)
+}
+
+/// The human-readable rejection reason from a `StorageError` produced during
+/// restore verification or the swap itself.
+fn reject_reason(error: StorageError) -> String {
+    match error {
+        StorageError::RestoreRejected(reason) => reason,
+        other => other.to_string(),
+    }
 }
 
 /// Apply a staged restore, if any, before the database is opened
@@ -334,6 +432,12 @@ fn recover_from_crash_journal(database_path: &Path, journal_path: &Path) -> Stor
 ///    back over the live path, clear sidecars, delete the journal, keep the
 ///    bad candidate as `restore-rejected.sqlite3`.
 ///
+/// Everything through the journal write (checkpoint, `backups/` creation,
+/// pre-restore copy) touches nothing the live database depends on — a
+/// failure at any of those steps is a recoverable rejection (`Ok(Some(_))`,
+/// #319 P2), not fatal. Only the sidecar-clear + rename after it is
+/// irreversible.
+///
 /// Returns `Ok(Some(reason))` when a staged restore was recoverably refused —
 /// the live database is untouched and still authoritative; never fatal,
 /// `open_pool` continues normally and surfaces `reason` to the user via a
@@ -345,8 +449,21 @@ pub(super) fn apply_staged_restore(
     database_path: &Path,
     data_dir: &Path,
 ) -> StorageResult<Option<String>> {
+    apply_staged_restore_with(database_path, data_dir, |_staged| {})
+}
+
+/// [`apply_staged_restore`] with a test-only seam: `after_verify` runs right
+/// after the staged file passes its second (re-)verification and before the
+/// swap begins — the only way to exercise the post-verify rollback path,
+/// since verification alone would otherwise always catch a bad candidate
+/// first. Production always passes a no-op.
+pub(super) fn apply_staged_restore_with(
+    database_path: &Path,
+    data_dir: &Path,
+    after_verify: impl FnOnce(&Path),
+) -> StorageResult<Option<String>> {
     let journal_path = data_dir.join(RESTORE_JOURNAL_FILE);
-    recover_from_crash_journal(database_path, &journal_path)?;
+    recover_from_crash_journal(database_path, data_dir, &journal_path)?;
 
     let staged = data_dir.join(RESTORE_STAGING_FILE);
     if !staged.is_file() {
@@ -354,28 +471,51 @@ pub(super) fn apply_staged_restore(
     }
 
     if let Err(error) = verify_backup_file(&staged) {
-        let reason = match error {
-            StorageError::RestoreRejected(reason) => reason,
-            other => other.to_string(),
-        };
-        let _ = std::fs::rename(&staged, data_dir.join(RESTORE_REJECTED_FILE));
-        return Ok(Some(reason));
+        return Ok(reject_staged_candidate(
+            &staged,
+            data_dir,
+            reject_reason(error),
+        ));
     }
 
-    {
+    after_verify(&staged);
+
+    let checkpoint_result: StorageResult<()> = (|| {
         // Scoped so the connection (and its own pooled resources) closes
         // before the file is copied below. Function-call PRAGMA syntax
         // (unlike `PRAGMA x = value`, which `pragma_update` builds) is what
         // `wal_checkpoint` actually expects a mode argument through.
         let connection = Connection::open(database_path)?;
         connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
+    })();
+    if let Err(error) = checkpoint_result {
+        return Ok(reject_staged_candidate(
+            &staged,
+            data_dir,
+            error.to_string(),
+        ));
     }
 
     let backups_directory = backups_dir(data_dir);
-    std::fs::create_dir_all(&backups_directory)?;
+    if let Err(error) = std::fs::create_dir_all(&backups_directory) {
+        return Ok(reject_staged_candidate(
+            &staged,
+            data_dir,
+            error.to_string(),
+        ));
+    }
+
     let pre_restore_path =
         backups_directory.join(format!("{PRE_RESTORE_PREFIX}{}.sqlite3", unix_nanos()));
-    std::fs::copy(database_path, &pre_restore_path)?;
+    if let Err(error) = std::fs::copy(database_path, &pre_restore_path) {
+        let _ = std::fs::remove_file(&pre_restore_path);
+        return Ok(reject_staged_candidate(
+            &staged,
+            data_dir,
+            error.to_string(),
+        ));
+    }
 
     let journal = RestoreJournal {
         pre_restore: pre_restore_path.to_string_lossy().into_owned(),
@@ -383,7 +523,14 @@ pub(super) fn apply_staged_restore(
             .format(&Rfc3339)
             .unwrap_or_default(),
     };
-    std::fs::write(&journal_path, serde_json::to_string(&journal)?)?;
+    if let Err(error) = write_journal_atomically(&journal_path, &journal) {
+        let _ = std::fs::remove_file(&pre_restore_path);
+        return Ok(reject_staged_candidate(
+            &staged,
+            data_dir,
+            error.to_string(),
+        ));
+    }
 
     clear_database_sidecars(database_path);
 
@@ -421,11 +568,7 @@ pub(super) fn apply_staged_restore(
             clear_database_sidecars(database_path);
             std::fs::remove_file(&journal_path)?;
 
-            let reason = match error {
-                StorageError::RestoreRejected(reason) => reason,
-                other => other.to_string(),
-            };
-            Ok(Some(reason))
+            Ok(Some(reject_reason(error)))
         }
     }
 }

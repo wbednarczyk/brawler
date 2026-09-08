@@ -99,6 +99,22 @@ fn resolve_before_fetch(
     state: &crate::storage::AppState,
     doc: crate::storage::ReportDocument,
 ) -> StorageResult<crate::storage::ReportDocument> {
+    resolve_before_fetch_bounded(state, doc, 1)
+}
+
+/// [`resolve_before_fetch`], bounded to one retry (#487 P2): the `fetched`
+/// branch's reset-to-pending is a compare-and-set on the identity this call
+/// inspected (`mark_report_document_pending_for_refetch`'s guard) — a
+/// concurrent capture that published a fresh, valid identity for this
+/// document between the inspection and the reset must not be erased. When
+/// the guard declines, the row that won is re-inspected once more (not
+/// looped unboundedly — a live, ongoing race converges on the caller's own
+/// next attempt, not inside this call).
+fn resolve_before_fetch_bounded(
+    state: &crate::storage::AppState,
+    doc: crate::storage::ReportDocument,
+    retries_left: u8,
+) -> StorageResult<crate::storage::ReportDocument> {
     match doc.fetch_status.as_str() {
         "fetched" => {
             if local_file_matches_row(state, &doc).is_some() {
@@ -109,20 +125,35 @@ fn resolve_before_fetch(
                      matches its stored hash/size; resetting to pending for refetch",
                     doc.id
                 );
-                state
+                let (after, applied) = state
                     .report_documents()
-                    .mark_report_document_pending_for_refetch(&doc.id)
+                    .mark_report_document_pending_for_refetch(
+                        &doc.id,
+                        &doc.fetch_status,
+                        doc.local_path.as_deref(),
+                        doc.content_hash.as_deref(),
+                    )?;
+                if applied || retries_left == 0 {
+                    Ok(after)
+                } else {
+                    // Declined: a concurrent capture published a different
+                    // identity since this snapshot. Re-inspect the fresher
+                    // row instead of erasing what it just published.
+                    resolve_before_fetch_bounded(state, after, retries_left - 1)
+                }
             }
         }
         "failed" => {
             if local_file_matches_row(state, &doc).is_some() {
-                state.mark_report_document_fetched(
-                    &doc.id,
-                    doc.local_path.as_deref(),
-                    doc.content_type.as_deref(),
-                    doc.content_hash.as_deref(),
-                    doc.byte_size,
-                )
+                state
+                    .report_documents()
+                    .heal_report_document_failed_if_unchanged(
+                        &doc.id,
+                        doc.local_path.as_deref(),
+                        doc.content_type.as_deref(),
+                        doc.content_hash.as_deref(),
+                        doc.byte_size,
+                    )
             } else {
                 Ok(doc)
             }
@@ -266,24 +297,55 @@ impl std::fmt::Display for FetchDocumentError {
 
 /// Write fetched bytes under `report_documents/`, recording the relative path, content type,
 /// SHA-256 content hash, byte size, and the **magic-byte container** on the document.
-/// Returns the relative `local_path`.
+/// Returns the relative `local_path` of whichever identity ends up published — this
+/// attempt's, or a concurrent attempt's if this one lost the race (see below).
+fn store_fetched_document(
+    state: &crate::storage::AppState,
+    doc_id: &str,
+    url: &str,
+    fetched: &FetchedDocument,
+) -> StorageResult<String> {
+    store_fetched_document_with(state, doc_id, url, fetched, || {})
+}
+
+/// [`store_fetched_document`] with a test-only interleaving seam.
+/// `before_publish` runs after this attempt's bytes are durably on disk
+/// under their own unique temp name (written + fsynced) and right before
+/// the no-clobber publish onto the final path — production always passes a
+/// no-op closure; a test can run a second, competing capture of the SAME
+/// document inside it to deterministically reproduce the concurrent-capture
+/// race (#487 P1).
 ///
-/// **Atomic publish** (#455): bytes land at `<final>.part` first, then a single
-/// `rename` publishes them at the final path — the row is updated only after that
-/// rename succeeds, so a crash mid-write never leaves a truncated file at the path
-/// the row claims (an interrupted publish leaves only the `.part` file behind, and
-/// the final path is untouched — whatever it was before).
+/// **Unique temp name + fsync + no-clobber publish**: two concurrent
+/// captures of the same document must never share one `.part` name (a
+/// shared name lets the slower writer corrupt the faster one's still-in-flight
+/// bytes before either publishes), so each attempt writes to
+/// `<final>.<pid>-<nanos>.part` and `fsync`s it before publishing. Publishing
+/// uses `hard_link` rather than `rename`: `hard_link` fails with
+/// `AlreadyExists` instead of silently overwriting, so whichever attempt
+/// publishes first keeps its bytes at the final path — a slower attempt can
+/// never clobber them. The loser never touches the final path; it deletes
+/// its own temp file and reports whichever identity actually won (re-read
+/// from the row, converging with the winner's own guarded write below).
+///
+/// The row update is itself guarded (`mark_report_document_fetched_if_unchanged`,
+/// #487 P1): it writes this attempt's identity only if the row is not
+/// already `fetched` with a DIFFERENT hash, so even the rare case of two
+/// attempts both winning the file race in different runs (e.g. concurrent
+/// retention pruning) cannot end with the row claiming an identity that
+/// doesn't match the file its own publish just created.
 ///
 /// The server's `content_type` is stored **verbatim** — it is the audit value that
 /// makes the "server said X, bytes are Y" mismatch measurable (epic #229 T1). The
 /// container is recorded alongside it, from the bytes, so nothing downstream has to
 /// trust the extension or the header (T2). If the container write fails the row stays
 /// `NULL` and the startup self-heal repairs it, so a fetch is never lost over it.
-fn store_fetched_document(
+fn store_fetched_document_with(
     state: &crate::storage::AppState,
     doc_id: &str,
     url: &str,
     fetched: &FetchedDocument,
+    before_publish: impl FnOnce(),
 ) -> StorageResult<String> {
     let extension = determine_extension(&fetched.content_type, url);
     let local_path = format!("report_documents/{doc_id}.{extension}");
@@ -294,25 +356,51 @@ fn store_fetched_document(
             .map_err(|e| storage::StorageError::Json(serde_json::Error::io(e)))?;
     }
 
-    let mut part_path_os = full_path.clone().into_os_string();
-    part_path_os.push(".part");
-    let part_path = std::path::PathBuf::from(part_path_os);
+    let part_path = {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let mut os = full_path.clone().into_os_string();
+        os.push(format!(".{}-{nanos}.part", std::process::id()));
+        std::path::PathBuf::from(os)
+    };
 
-    std::fs::write(&part_path, &fetched.bytes)
-        .map_err(|e| storage::StorageError::Json(serde_json::Error::io(e)))?;
-    std::fs::rename(&part_path, &full_path)
-        .map_err(|e| storage::StorageError::Json(serde_json::Error::io(e)))?;
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&part_path)
+            .map_err(|e| storage::StorageError::Json(serde_json::Error::io(e)))?;
+        file.write_all(&fetched.bytes)
+            .map_err(|e| storage::StorageError::Json(serde_json::Error::io(e)))?;
+        file.sync_all()
+            .map_err(|e| storage::StorageError::Json(serde_json::Error::io(e)))?;
+    }
+
+    before_publish();
+
+    let published_here = publish_no_clobber(state, doc_id, &part_path, &full_path)?;
+
+    if !published_here {
+        // Lost the race: another attempt's bytes are already at the final
+        // path. Never touch them — report whichever identity the row
+        // resolves to (the winner's, once its own guarded write lands).
+        let winner = state.get_report_document(doc_id)?;
+        return Ok(winner.local_path.unwrap_or(local_path));
+    }
 
     let content_hash = content_hash_hex(&fetched.bytes);
     let byte_size = fetched.bytes.len() as i64;
 
-    state.mark_report_document_fetched(
-        doc_id,
-        Some(&local_path),
-        fetched.content_type.as_deref(),
-        Some(&content_hash),
-        Some(byte_size),
-    )?;
+    let published = state
+        .report_documents()
+        .mark_report_document_fetched_if_unchanged(
+            doc_id,
+            Some(&local_path),
+            fetched.content_type.as_deref(),
+            &content_hash,
+            byte_size,
+        )?;
+
     if let Err(error) = state.set_report_document_detected_container(
         doc_id,
         crate::fundamentals::extraction::container::detect_container(&fetched.bytes).as_str(),
@@ -323,7 +411,84 @@ fn store_fetched_document(
         log::warn!("container stamp failed for report document {doc_id}: {error}");
     }
 
-    Ok(local_path)
+    Ok(published.local_path.unwrap_or(local_path))
+}
+
+/// Publish `part_path` onto `full_path` without clobbering a concurrent
+/// attempt's already-published bytes (#487 P1). Returns whether THIS call's
+/// bytes are the ones now at `full_path`.
+///
+/// `hard_link` (not `rename`) is the publish primitive: it fails with
+/// `AlreadyExists` instead of silently overwriting, so a slower attempt can
+/// never clobber a faster one's already-published file. But a plain regular
+/// file already sitting at `full_path` is ambiguous — it can be either a
+/// concurrent capture's legitimate publish (must not be touched) or this
+/// SAME document's own stale bytes left over from an earlier fetch this
+/// call is superseding (a corrupted/mismatched file `resolve_before_fetch`
+/// already reset the row away from — see its `local_path`-cleared
+/// `pending` row). The row breaks the tie: re-read it fresh and check
+/// [`local_file_matches_row`] — if the on-disk file still verifies against
+/// a currently-`fetched` row, it is a legitimate concurrent publish and
+/// this attempt lost the race; otherwise it is orphaned/stale and safe to
+/// clear before retrying the publish once.
+/// Publish `part` at `full` without clobbering an existing file. `hard_link`
+/// refuses an existing target on every platform; where the filesystem has no
+/// hard links (exFAT/FAT32 data dirs, some network mounts) fall back to
+/// `rename`, which on Windows also refuses an existing target and on Unix
+/// replaces it — the row guard (`mark_fetched_if_unchanged`) still keeps the
+/// row consistent with whichever bytes landed.
+fn link_or_rename(part: &std::path::Path, full: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::hard_link(part, full) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(e),
+        Err(_) => std::fs::rename(part, full),
+    }
+}
+
+fn publish_no_clobber(
+    state: &crate::storage::AppState,
+    doc_id: &str,
+    part_path: &std::path::Path,
+    full_path: &std::path::Path,
+) -> StorageResult<bool> {
+    match link_or_rename(part_path, full_path) {
+        Ok(()) => {
+            let _ = std::fs::remove_file(part_path);
+            Ok(true)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let is_regular_file = std::fs::metadata(full_path)
+                .map(|m| m.is_file())
+                .unwrap_or(false);
+            if !is_regular_file {
+                // A directory (or other non-file obstruction) can never be a
+                // legitimate publish — surface it, don't silently swallow it
+                // as "someone else already fetched it".
+                return Err(storage::StorageError::Io(e));
+            }
+
+            let fresh_row = state.get_report_document(doc_id)?;
+            if local_file_matches_row(state, &fresh_row).is_some() {
+                // A concurrent capture legitimately owns this path. Leave it
+                // alone; this attempt lost the race.
+                let _ = std::fs::remove_file(part_path);
+                return Ok(false);
+            }
+
+            // Orphaned/stale bytes at this document's own path (no row
+            // currently claims them as its verified `fetched` identity) —
+            // safe to clear and retry once.
+            let _ = std::fs::remove_file(full_path);
+            match link_or_rename(part_path, full_path) {
+                Ok(()) => {
+                    let _ = std::fs::remove_file(part_path);
+                    Ok(true)
+                }
+                Err(e) => Err(storage::StorageError::Io(e)),
+            }
+        }
+        Err(e) => Err(storage::StorageError::Json(serde_json::Error::io(e))),
+    }
 }
 
 /// SHA-256 lowercase-hex of a byte buffer — shared with the MCP source-blob
@@ -381,382 +546,4 @@ fn determine_extension(content_type: &Option<String>, url: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn determine_extension_from_content_type() {
-        assert_eq!(
-            determine_extension(&Some("application/pdf".to_owned()), "http://example.com"),
-            "pdf"
-        );
-        assert_eq!(
-            determine_extension(&Some("text/html".to_owned()), "http://example.com"),
-            "html"
-        );
-        // Structured ESEF/iXBRL statements (ADR 0061 decision 1b).
-        assert_eq!(
-            determine_extension(
-                &Some("application/xhtml+xml".to_owned()),
-                "http://example.com"
-            ),
-            "xhtml"
-        );
-    }
-
-    #[test]
-    fn determine_extension_from_url() {
-        assert_eq!(
-            determine_extension(&None, "http://example.com/document.pdf"),
-            "pdf"
-        );
-        assert_eq!(
-            determine_extension(&None, "http://example.com/doc?v=1"),
-            "doc"
-        );
-    }
-
-    #[test]
-    fn determine_extension_default() {
-        assert_eq!(
-            determine_extension(&None, "http://example.com/document"),
-            "bin"
-        );
-    }
-
-    /// Epic #229 T2: the fetch path records what the bytes REALLY are. The
-    /// maintainer's corpus stores 38 XML documents under a `.pdf` name served as
-    /// `application/pdf` — name and header agree with each other and both lie.
-    /// The stored `content_type` stays verbatim (it is the audit value); the new
-    /// `detected_container` carries the truth.
-    #[test]
-    fn store_time_sniff_records_the_real_container_not_the_lying_name() {
-        use crate::document_fetcher::FakeDocumentFetcher;
-        use crate::storage::{AppState, CaptureReportDocumentInput};
-
-        let dir = std::env::temp_dir().join(format!(
-            "brawler-capture-sniff-{}-{}",
-            std::process::id(),
-            "xhtml-under-pdf"
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("data dir");
-        let connection = crate::storage::open_in_memory_database().expect("db");
-        connection
-            .execute(
-                "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
-                 VALUES ('c1', 'gpw', 'ABC', 'GPW:ABC', 'ABC SA')",
-                [],
-            )
-            .expect("company");
-        let state = AppState::with_data_dir(connection, dir);
-
-        // The real pdf2htmlEX shape from the corpus: XHTML bytes, `.pdf` URL,
-        // `application/pdf` header.
-        let fetcher = FakeDocumentFetcher::new_success(
-            b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!-- Created by pdf2htmlEX -->\n<html></html>"
-                .to_vec(),
-            Some("application/pdf".to_owned()),
-        );
-        let captured = capture_report_document(
-            &state,
-            &fetcher,
-            CaptureReportDocumentInput {
-                company_id: "c1".to_owned(),
-                source_type: "espi_attachment".to_owned(),
-                url: "https://x/raport-okresowy.pdf".to_owned(),
-                period_id: None,
-                origin_ref: None,
-                title: Some("Raport okresowy".to_owned()),
-                attribution: None,
-            },
-        )
-        .expect("capture");
-        assert!(captured.success);
-
-        let document = state
-            .get_report_document(&captured.document_id)
-            .expect("document");
-        assert_eq!(
-            document.detected_container,
-            Some("xml".to_owned()),
-            "the fetch path must record the magic-byte container, not the .pdf name"
-        );
-        assert_eq!(
-            document.content_type,
-            Some("application/pdf".to_owned()),
-            "the server's content type stays verbatim — it is the audit value"
-        );
-        assert_eq!(
-            crate::report_documents_container::resolved_source_format(&document),
-            Some(crate::report_diff::extraction::SourceFormat::Xhtml),
-            "container truth must beat the extension for every downstream consumer"
-        );
-    }
-
-    // -----------------------------------------------------------------
-    // #455: capture never downgrades a fetched document; verified identity
-    // decides heal-vs-refetch, never "bytes on disk win" unchecked.
-    // -----------------------------------------------------------------
-
-    fn fresh_capture_state(suffix: &str) -> (crate::storage::AppState, String) {
-        use crate::storage::AppState;
-
-        let dir = std::env::temp_dir().join(format!(
-            "brawler-capture-455-{}-{suffix}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("data dir");
-        let connection = crate::storage::open_in_memory_database().expect("db");
-        connection
-            .execute(
-                "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
-                 VALUES ('c1', 'gpw', 'ABC', 'GPW:ABC', 'ABC SA')",
-                [],
-            )
-            .expect("company");
-        (AppState::with_data_dir(connection, dir), "c1".to_owned())
-    }
-
-    fn capture_input(company_id: &str, url: &str) -> crate::storage::CaptureReportDocumentInput {
-        crate::storage::CaptureReportDocumentInput {
-            company_id: company_id.to_owned(),
-            source_type: "user_url".to_owned(),
-            url: url.to_owned(),
-            period_id: None,
-            origin_ref: None,
-            title: None,
-            attribution: None,
-        }
-    }
-
-    #[test]
-    fn capture_returns_the_fetched_row_without_refetching() {
-        use crate::document_fetcher::FakeDocumentFetcher;
-
-        let (state, company_id) = fresh_capture_state("no-refetch");
-        let first_fetcher = FakeDocumentFetcher::new_success(
-            b"%PDF-1.7 real bytes".to_vec(),
-            Some("application/pdf".to_owned()),
-        );
-        let first = capture_report_document(
-            &state,
-            &first_fetcher,
-            capture_input(&company_id, "https://x/report.pdf"),
-        )
-        .expect("first capture");
-        assert!(first.success);
-
-        let second_fetcher = FakeDocumentFetcher::new_error(
-            crate::document_fetcher::DocumentFetcherError::InvalidUrl("must not be called".into()),
-        );
-        let second = capture_report_document(
-            &state,
-            &second_fetcher,
-            capture_input(&company_id, "https://x/report.pdf"),
-        )
-        .expect("second capture");
-        assert!(
-            second.success,
-            "an already-fetched matching file must report success"
-        );
-        assert_eq!(second.document_id, first.document_id);
-        assert_eq!(second.local_path, first.local_path);
-        assert_eq!(
-            second_fetcher.calls.get(),
-            0,
-            "a matching identity must never trigger a network fetch"
-        );
-    }
-
-    #[test]
-    fn capture_heals_a_failed_row_whose_file_matches_its_hash() {
-        use crate::document_fetcher::FakeDocumentFetcher;
-
-        let (state, company_id) = fresh_capture_state("heal-failed");
-        let first_fetcher = FakeDocumentFetcher::new_success(
-            b"%PDF-1.7 real bytes".to_vec(),
-            Some("application/pdf".to_owned()),
-        );
-        let first = capture_report_document(
-            &state,
-            &first_fetcher,
-            capture_input(&company_id, "https://x/report.pdf"),
-        )
-        .expect("first capture");
-        assert!(first.success);
-
-        // Simulate the pre-#455 bug: an unconditional mark_failed downgraded
-        // an already-fetched row while its file/hash stayed on disk.
-        {
-            let raw = state.checkout_for_tests().expect("raw connection");
-            raw.execute(
-                "UPDATE report_documents SET fetch_status = 'failed', fetch_error = 'stale error' WHERE id = ?1",
-                rusqlite::params![first.document_id],
-            )
-            .expect("seed the downgraded state");
-        }
-
-        let second_fetcher = FakeDocumentFetcher::new_error(
-            crate::document_fetcher::DocumentFetcherError::InvalidUrl("must not be called".into()),
-        );
-        let second = capture_report_document(
-            &state,
-            &second_fetcher,
-            capture_input(&company_id, "https://x/report.pdf"),
-        )
-        .expect("healing capture");
-        assert!(
-            second.success,
-            "a matching-hash failed row must heal to fetched"
-        );
-        assert_eq!(
-            second_fetcher.calls.get(),
-            0,
-            "healing a verified-identity row must never trigger a network fetch"
-        );
-
-        let healed = state
-            .get_report_document(&first.document_id)
-            .expect("document");
-        assert_eq!(healed.fetch_status, "fetched");
-        assert!(
-            healed.fetch_error.is_none(),
-            "the stale error must be cleared on heal"
-        );
-    }
-
-    #[test]
-    fn capture_refetches_when_the_file_is_missing() {
-        use crate::document_fetcher::FakeDocumentFetcher;
-
-        let (state, company_id) = fresh_capture_state("missing-file");
-        let first_fetcher = FakeDocumentFetcher::new_success(
-            b"%PDF-1.7 real bytes".to_vec(),
-            Some("application/pdf".to_owned()),
-        );
-        let first = capture_report_document(
-            &state,
-            &first_fetcher,
-            capture_input(&company_id, "https://x/report.pdf"),
-        )
-        .expect("first capture");
-        assert!(first.success);
-        let full_path = state.data_dir().join(first.local_path.as_ref().unwrap());
-        std::fs::remove_file(&full_path).expect("delete the stored file");
-
-        let second_fetcher = FakeDocumentFetcher::new_success(
-            b"%PDF-1.7 refetched bytes".to_vec(),
-            Some("application/pdf".to_owned()),
-        );
-        let second = capture_report_document(
-            &state,
-            &second_fetcher,
-            capture_input(&company_id, "https://x/report.pdf"),
-        )
-        .expect("refetch capture");
-        assert!(second.success);
-        assert_eq!(
-            second_fetcher.calls.get(),
-            1,
-            "a missing file must trigger exactly one refetch"
-        );
-
-        let refetched = state
-            .get_report_document(&first.document_id)
-            .expect("document");
-        assert_eq!(refetched.fetch_status, "fetched");
-        assert!(
-            std::fs::exists(state.data_dir().join(refetched.local_path.unwrap())).unwrap_or(false)
-        );
-    }
-
-    #[test]
-    fn capture_refetches_when_the_file_hash_mismatches() {
-        use crate::document_fetcher::FakeDocumentFetcher;
-
-        let (state, company_id) = fresh_capture_state("hash-mismatch");
-        let first_fetcher = FakeDocumentFetcher::new_success(
-            b"%PDF-1.7 real bytes".to_vec(),
-            Some("application/pdf".to_owned()),
-        );
-        let first = capture_report_document(
-            &state,
-            &first_fetcher,
-            capture_input(&company_id, "https://x/report.pdf"),
-        )
-        .expect("first capture");
-        assert!(first.success);
-        let full_path = state.data_dir().join(first.local_path.as_ref().unwrap());
-        std::fs::write(&full_path, b"truncated garbage").expect("corrupt the stored file");
-
-        let second_fetcher = FakeDocumentFetcher::new_success(
-            b"%PDF-1.7 refetched bytes".to_vec(),
-            Some("application/pdf".to_owned()),
-        );
-        let second = capture_report_document(
-            &state,
-            &second_fetcher,
-            capture_input(&company_id, "https://x/report.pdf"),
-        )
-        .expect("refetch capture");
-        assert!(second.success);
-        assert_eq!(
-            second_fetcher.calls.get(),
-            1,
-            "a hash mismatch must trigger exactly one refetch"
-        );
-
-        let refetched_bytes =
-            std::fs::read(state.data_dir().join(second.local_path.unwrap())).expect("bytes");
-        assert_eq!(refetched_bytes, b"%PDF-1.7 refetched bytes");
-    }
-
-    #[test]
-    fn an_interrupted_publish_leaves_no_partial_final_file() {
-        use crate::document_fetcher::FakeDocumentFetcher;
-        use crate::storage::CaptureReportDocumentInput;
-
-        let (state, company_id) = fresh_capture_state("interrupted-publish");
-        let doc = state
-            .create_or_find_pending_report_document(CaptureReportDocumentInput {
-                company_id: company_id.clone(),
-                source_type: "user_url".to_owned(),
-                url: "https://x/report.pdf".to_owned(),
-                period_id: None,
-                origin_ref: None,
-                title: None,
-                attribution: None,
-            })
-            .expect("pending document");
-
-        // Pre-create the FINAL path as a directory so the atomic rename step
-        // fails after the `.part` write succeeds — proving the final path is
-        // only ever touched by that rename, never a direct partial write.
-        let final_path = state
-            .data_dir()
-            .join(format!("report_documents/{}.pdf", doc.id));
-        std::fs::create_dir_all(&final_path).expect("pre-create final path as a directory");
-
-        let fetcher = FakeDocumentFetcher::new_success(
-            b"%PDF-1.7 real bytes".to_vec(),
-            Some("application/pdf".to_owned()),
-        );
-        let fetched = fetcher.fetch(&doc.url).expect("fake fetch");
-        let result = store_fetched_document(&state, &doc.id, &doc.url, &fetched);
-        assert!(result.is_err(), "the rename onto a directory must fail");
-
-        let part_path = state
-            .data_dir()
-            .join(format!("report_documents/{}.pdf.part", doc.id));
-        assert!(
-            part_path.exists(),
-            "the .part file must remain after a failed publish"
-        );
-        assert!(
-            final_path.is_dir(),
-            "the final path must never become a partial file — it stays whatever it was before the failed rename"
-        );
-    }
-}
+mod tests;

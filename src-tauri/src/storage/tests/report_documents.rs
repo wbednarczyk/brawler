@@ -1094,3 +1094,98 @@ fn mark_metadata_only_succeeds_on_an_unprotected_document() {
     assert_eq!(updated.fetch_status, "metadata_only");
     assert!(updated.local_path.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// #487 P2: `mark_pending_for_refetch`'s compare-and-set guard. A stale
+// refetch reset (decided from a snapshot taken before a concurrent capture
+// published) must decline rather than erase that concurrent success.
+// ---------------------------------------------------------------------------
+
+/// A stale reset — computed from a snapshot ("A's inspection") that no
+/// longer matches the row — must be refused once a concurrent capture ("B")
+/// has published a fresh identity in between, exactly the #487 P2 race in
+/// `report_documents_capture::resolve_before_fetch`'s `fetched` branch: A
+/// inspects a `fetched` row whose file is missing, decides to reset it to
+/// `pending`, but B races in and successfully republishes the document
+/// before A's guarded write lands.
+#[test]
+fn a_stale_refetch_reset_cannot_erase_a_concurrent_successful_capture() {
+    let dir = std::env::temp_dir().join(format!(
+        "brawler-report-documents-487-p2-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("data dir");
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::with_data_dir(connection, dir);
+    let company = test_company(&state);
+
+    // Seed a `fetched` row whose file is missing — the identity A inspects.
+    let doc = state
+        .create_or_find_pending_report_document(CaptureReportDocumentInput {
+            company_id: company.id.clone(),
+            source_type: "user_url".to_owned(),
+            url: "https://example.com/race.pdf".to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: None,
+            attribution: None,
+        })
+        .expect("document should create");
+    state
+        .mark_report_document_fetched(
+            &doc.id,
+            Some("report_documents/stale-path.pdf"),
+            Some("application/pdf"),
+            Some("stale-hash-a"),
+            Some(11),
+        )
+        .expect("seed the stale fetched identity A inspects");
+    let inspected = state.get_report_document(&doc.id).expect("document");
+    assert_eq!(inspected.fetch_status, "fetched");
+
+    // B races in between A's inspection and A's reset: a real file lands
+    // and the row is republished under a NEW identity.
+    let winning_local_path = format!("report_documents/{}.pdf", doc.id);
+    let winning_full_path = state.data_dir().join(&winning_local_path);
+    std::fs::create_dir_all(winning_full_path.parent().unwrap()).expect("report_documents dir");
+    let winning_bytes = b"%PDF-1.7 real bytes from B";
+    std::fs::write(&winning_full_path, winning_bytes).expect("write B's bytes");
+    let winning_hash = crate::report_documents_capture::content_hash_hex(winning_bytes);
+    state
+        .mark_report_document_fetched(
+            &doc.id,
+            Some(&winning_local_path),
+            Some("application/pdf"),
+            Some(&winning_hash),
+            Some(winning_bytes.len() as i64),
+        )
+        .expect("B publishes its identity");
+
+    // A's reset, guarded on the identity it inspected (now stale) — must
+    // decline, never erase B's just-published identity.
+    let (after, applied) = state
+        .report_documents()
+        .mark_report_document_pending_for_refetch(
+            &doc.id,
+            &inspected.fetch_status,
+            inspected.local_path.as_deref(),
+            inspected.content_hash.as_deref(),
+        )
+        .expect("a declined guard must not error");
+
+    assert!(
+        !applied,
+        "a stale expected identity must never apply the reset"
+    );
+    assert_eq!(after.fetch_status, "fetched");
+    assert_eq!(after.content_hash, Some(winning_hash));
+    assert_eq!(after.local_path, Some(winning_local_path));
+    assert!(
+        state
+            .data_dir()
+            .join(after.local_path.as_ref().unwrap())
+            .exists(),
+        "B's file must still be present"
+    );
+}
