@@ -18,11 +18,22 @@
 //! heavier on-demand run.
 
 use brawler_lib::fundamentals::extraction::html;
-use brawler_lib::source_adapters::{
-    bankier_calendar, bankier_company, bankier_rss, biznesradar_fundamentals,
-    biznesradar_ownership, biznesradar_recommendations, company_directory, gpw_company_registry,
-    gpw_espi_ebi, gpw_market_events, knf_short_selling, newconnect_company_directory,
-};
+// One `use` per module (not a braced list) so each line literally contains
+// `source_adapters::<stem>` — the manifest guard's `proptest_in` attribution
+// check greps for exactly that path, and `source_adapters::{a, b}` does not
+// contain `source_adapters::a` as a contiguous substring.
+use brawler_lib::source_adapters::bankier_calendar;
+use brawler_lib::source_adapters::bankier_company;
+use brawler_lib::source_adapters::bankier_rss;
+use brawler_lib::source_adapters::biznesradar_fundamentals;
+use brawler_lib::source_adapters::biznesradar_ownership;
+use brawler_lib::source_adapters::biznesradar_recommendations;
+use brawler_lib::source_adapters::company_directory;
+use brawler_lib::source_adapters::gpw_company_registry;
+use brawler_lib::source_adapters::gpw_espi_ebi;
+use brawler_lib::source_adapters::gpw_market_events;
+use brawler_lib::source_adapters::knf_short_selling;
+use brawler_lib::source_adapters::newconnect_company_directory;
 use proptest::prelude::*;
 use rust_decimal::Decimal;
 use std::collections::{HashMap, HashSet};
@@ -854,7 +865,7 @@ proptest! {
         // checked, silently passing a wrong pairing. The basis date is the
         // max over every accepted row, independent of name collisions too.
         let mut expected_basis: Option<String> = None;
-        let mut expected_holders: Vec<(String, Decimal, Decimal)> = Vec::new();
+        let mut expected_holders: Vec<(String, Option<Decimal>, Option<Decimal>)> = Vec::new();
         for row in &rows {
             if let OwnershipRowGen::Valid {
                 holder_normalized,
@@ -868,23 +879,23 @@ proptest! {
             {
                 let capital = Decimal::new(*capital_bp as i64, 2);
                 let votes = Decimal::new(*votes_bp as i64, 2);
-                expected_holders.push((holder_normalized.clone(), capital, votes));
+                // Every generated Valid row's percentage renders as a
+                // parseable number (dot or comma decimal) — the parser must
+                // return `Some(value)`, never `None`. Comparing `Option`,
+                // not `unwrap_or_default()`, so a parser that silently
+                // turns a real value into `None` (indistinguishable from an
+                // actual `Some(0)`) still reddens this.
+                expected_holders.push((holder_normalized.clone(), Some(capital), Some(votes)));
                 let iso = format!("{year:04}-{month:02}-{day:02}");
                 if expected_basis.as_deref().is_none_or(|current| iso.as_str() > current) {
                     expected_basis = Some(iso);
                 }
             }
         }
-        let mut actual_holders: Vec<(String, Decimal, Decimal)> = page
+        let mut actual_holders: Vec<(String, Option<Decimal>, Option<Decimal>)> = page
             .holders
             .iter()
-            .map(|h| {
-                (
-                    h.holder_name.clone(),
-                    h.capital_pct.unwrap_or_default(),
-                    h.votes_pct.unwrap_or_default(),
-                )
-            })
+            .map(|h| (h.holder_name.clone(), h.capital_pct, h.votes_pct))
             .collect();
         expected_holders.sort();
         actual_holders.sort();

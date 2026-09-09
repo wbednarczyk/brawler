@@ -93,13 +93,29 @@ fn non_code_spans(content: &str) -> Vec<(usize, usize)> {
                 }
                 spans.push((start, i));
             }
+            // Rust block comments NEST (`/* outer /* inner */ still-comment */`
+            // is one comment, not "outer" plus the code between the two `*/`s)
+            // — a depth counter tracks that instead of stopping at the first
+            // `*/`.
+            // Rust block comments NEST (`/* outer /* inner */ still-comment */`
+            // is one comment, not "outer" plus the code between the two `*/`s)
+            // — a depth counter tracks that instead of stopping at the first
+            // `*/`.
             b'/' if bytes.get(i + 1) == Some(&b'*') => {
                 let start = i;
+                let mut depth = 1usize;
                 i += 2;
-                while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-                    i += 1;
+                while depth > 0 && i < bytes.len() {
+                    if bytes[i] == b'/' && bytes.get(i + 1) == Some(&b'*') {
+                        depth += 1;
+                        i += 2;
+                    } else if bytes[i] == b'*' && bytes.get(i + 1) == Some(&b'/') {
+                        depth -= 1;
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
                 }
-                i = (i + 2).min(bytes.len());
                 spans.push((start, i));
             }
             _ => i += 1,
@@ -287,4 +303,29 @@ pub(super) fn strip_test_spans(content: &str) -> String {
         }
     }
     String::from_utf8(out).expect("blanking only replaces bytes with ASCII spaces")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_comments_and_strings_blanks_a_nested_block_comment_fully() {
+        let content = "/* outer /* inner */\ncode_after_inner();\n*/\nreal_code();\n";
+        let stripped = strip_comments_and_strings(content);
+        assert!(
+            !stripped.contains("code_after_inner"),
+            "text between the inner and outer `*/` is still inside the outer \
+             comment (Rust block comments nest): {stripped:?}"
+        );
+        assert!(
+            stripped.contains("real_code();"),
+            "code after the (fully closed) nested comment must survive: {stripped:?}"
+        );
+        assert_eq!(
+            stripped.len(),
+            content.len(),
+            "blanking must be byte-length-preserving"
+        );
+    }
 }

@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use super::extract_fn_body;
-use super::scan::strip_comments_and_strings;
+use super::scan::{contains_word_token, strip_comments_and_strings};
 
 /// The content of every module `path` (a `.rs` file) declares at top level
 /// with `mod x;` (any visibility) — a preceding `#[path = "P"]` attribute
@@ -83,6 +83,22 @@ fn module_stem(module_path: &str) -> &str {
     name.strip_suffix(".rs").unwrap_or(name)
 }
 
+/// The Rust module path segment a real `<parent>::<stem>` reference would
+/// use — `module_path`'s directory segment immediately above the stem
+/// (`src/source_adapters/bankier_rss.rs` -> `source_adapters`;
+/// `src/storage/ingestion.rs` -> `storage`;
+/// `src/fundamentals/extraction/html.rs` -> `extraction`). `None` for a
+/// module directly under `src/` (`src/foo.rs`): `src` is a file-system
+/// prefix, never written in a Rust `use`/path, so there is no parent to
+/// require.
+fn module_parent(module_path: &str) -> Option<&str> {
+    let parts: Vec<&str> = module_path.split('/').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    Some(parts[parts.len() - 2])
+}
+
 /// Validates a manifest row's `"proptest_in": "<file>::<fn>"` claim (the
 /// property test lives elsewhere, e.g. `tests/parser_fuzz.rs`, rather than in
 /// the module's own file/declared test submodule): `<file>` (relative to
@@ -99,11 +115,14 @@ fn module_stem(module_path: &str) -> &str {
 /// commented-out `fn`/`proptest!` line is never matched. Any failure is a
 /// plain reason string — the caller names the manifest row.
 ///
-/// Note the inherent limit this leaves: `<stem>::` cannot distinguish two
-/// different modules that happen to share a file stem (`foo/bar.rs` and
-/// `baz/bar.rs` both stem to `bar`) — the manifest lists the full path per
-/// row, so a reviewer can catch a cross-module false-positive by eye even
-/// though this helper cannot.
+/// Two more checks close the gap `<stem>::` alone leaves: the body must not
+/// hide its `<stem>::` reference inside a never-called nested `fn` item
+/// (`body_defines_nested_fn` — an uncalled decoy can wrap a real call while
+/// the outer body does nothing), and — since `<stem>::` alone cannot
+/// distinguish two different modules that happen to share a file stem
+/// (`foo/bar.rs` and `baz/bar.rs` both stem to `bar`) — the FILE itself must
+/// reference the module's full `<parent>::<stem>` path (`module_parent`) in
+/// a `use` or path, not just name-match the stem.
 pub(super) fn proptest_in_is_valid(
     manifest_dir: &Path,
     module_path: &str,
@@ -160,11 +179,59 @@ pub(super) fn proptest_in_is_valid(
     }
 
     let body = extract_fn_body(&content, &lines, fn_line);
+    if body_defines_nested_fn(&body) {
+        return Err(
+            "nested fn inside a property body is unsupported — call the transform directly"
+                .to_owned(),
+        );
+    }
     let stem = module_stem(module_path);
     if !body_references_stem(&body, stem) {
         return Err(format!("fn {fn_name} body never references {stem}::"));
     }
+    if let Some(parent) = module_parent(module_path) {
+        let parent_path = format!("{parent}::{stem}");
+        if !contains_word_token(&stripped, &parent_path) {
+            return Err(format!(
+                "{file_rel} never references {parent_path} (use or path) — <stem>:: alone \
+                 cannot tell two same-stem modules apart"
+            ));
+        }
+    }
     Ok(())
+}
+
+/// Whether `body` (raw, unstripped — comments/strings are blanked here)
+/// defines a nested `fn <ident>(` item, as opposed to a function-pointer
+/// TYPE like `fn(Args) -> Ret` (no identifier before the parens, so never
+/// matches). A nested fn lets an attacker wrap a genuine `<stem>::` call in
+/// a helper that the outer body never actually calls.
+fn body_defines_nested_fn(body: &str) -> bool {
+    let stripped = strip_comments_and_strings(body);
+    let bytes = stripped.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut search_from = 0;
+    while let Some(relative) = stripped[search_from..].find("fn") {
+        let start = search_from + relative;
+        let word_boundary_ok = start == 0 || !is_ident(bytes[start - 1]);
+        let mut after_kw = start + 2;
+        let ws_start = after_kw;
+        while after_kw < bytes.len() && bytes[after_kw].is_ascii_whitespace() {
+            after_kw += 1;
+        }
+        let has_ws = after_kw > ws_start;
+        let ident_start = after_kw;
+        let mut end = ident_start;
+        while end < bytes.len() && is_ident(bytes[end]) {
+            end += 1;
+        }
+        let has_ident = end > ident_start;
+        if word_boundary_ok && has_ws && has_ident && bytes.get(end) == Some(&b'(') {
+            return true;
+        }
+        search_from = start + 2;
+    }
+    false
 }
 
 /// Whether `body` makes a genuine call/path reference to `<stem>::` — not
@@ -321,6 +388,30 @@ mod tests {
     }
 
     #[test]
+    fn read_module_content_ignores_a_nested_block_comment_mod_tests() {
+        let scratch = TempScratch::new("nested-comment-mod");
+        let file = scratch.path().join("widget.rs");
+        fs::write(
+            &file,
+            "pub fn widget() {}\n\n/* outer /* inner */\nmod tests;\n*/\n",
+        )
+        .unwrap();
+        fs::create_dir_all(scratch.path().join("widget")).unwrap();
+        fs::write(
+            scratch.path().join("widget").join("tests.rs"),
+            "proptest! { #[test] fn t(x in 0u32..1) { let _ = widget::widget(); } }\n",
+        )
+        .unwrap();
+
+        let own = fs::read_to_string(&file).unwrap();
+        let extra = declared_test_module_content(&file, &own);
+        assert!(
+            extra.is_empty(),
+            "a `mod tests;` still inside a NESTED block comment must not be honored: {extra:?}"
+        );
+    }
+
+    #[test]
     fn read_module_content_ignores_an_indented_mod_tests() {
         let scratch = TempScratch::new("indented-mod");
         let file = scratch.path().join("widget.rs");
@@ -428,5 +519,42 @@ mod tests {
         );
         let err = proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").unwrap_err();
         assert!(err.contains("ambiguous"), "{err}");
+    }
+
+    #[test]
+    fn proptest_in_rejects_an_uncalled_nested_fn_wrapping_the_reference() {
+        let scratch = TempScratch::new("nested-fn");
+        write_spec_file(
+            &scratch,
+            "proptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        fn inner() { foo::parse(); }\n        let _ = inner as fn();\n        prop_assert!(x < 1);\n    }\n}\n",
+        );
+        let err = proptest_in_is_valid(scratch.path(), "src/source_adapters/foo.rs", "tests.rs::t")
+            .unwrap_err();
+        assert!(err.contains("nested fn"), "{err}");
+    }
+
+    #[test]
+    fn proptest_in_rejects_a_file_that_only_imports_a_different_same_stem_module() {
+        let scratch = TempScratch::new("cross-module-stem");
+        write_spec_file(
+            &scratch,
+            "use report_diff::foo;\n\nproptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        let _ = foo::parse(x);\n    }\n}\n",
+        );
+        let err = proptest_in_is_valid(scratch.path(), "src/extraction/foo.rs", "tests.rs::t")
+            .unwrap_err();
+        assert!(err.contains("extraction::foo"), "{err}");
+    }
+
+    #[test]
+    fn proptest_in_accepts_a_file_that_imports_the_real_parent_path() {
+        let scratch = TempScratch::new("real-parent-import");
+        write_spec_file(
+            &scratch,
+            "use extraction::foo;\n\nproptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        let _ = foo::parse(x);\n    }\n}\n",
+        );
+        assert!(
+            proptest_in_is_valid(scratch.path(), "src/extraction/foo.rs", "tests.rs::t").is_ok(),
+            "a call-shaped reference plus a real parent-path import should validate"
+        );
     }
 }
