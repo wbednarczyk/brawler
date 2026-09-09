@@ -1,8 +1,17 @@
 //! Transform-manifest guard helpers (G7, ADR 0049, issue #194 S0): resolving
-//! a file module's declared test submodule into its content, and validating
-//! an out-of-file `"proptest_in": "<file>::<fn>"` cross-reference. Kept out
-//! of `mod.rs` to stay under the file-size ratchet threshold (ADR 0103) —
-//! same reasoning as `scan.rs`.
+//! a file module's declared test submodule into its content (`mod`/`#[path]`
+//! declarations at brace depth 0 of the file), and validating a manifest
+//! row's out-of-file `"proptest_in": "<file>::<fn>"` claim. That claim is a
+//! TEXT-LEVEL contract, not Rust scope resolution: over comment/string-
+//! stripped, brace-depth-tracked text (no parser), it verifies `<fn>` is a
+//! `#[test]` fn sitting at brace depth exactly 1 — a direct child — inside a
+//! `proptest! { ... }` block in `<file>`, that its body calls `<stem>::…`
+//! (never a decoy nested fn), and that `<file>` itself imports the
+//! module's `<parent>::<stem>` path. It cannot tell which of two modules
+//! sharing a file stem a bare `<stem>::` call means — the manifest row's
+//! full path + fn name is what a reviewer actually reads. Kept out of
+//! `mod.rs` to stay under the file-size ratchet threshold (ADR 0103) — same
+//! reasoning as `scan.rs`.
 
 use std::path::Path;
 
@@ -17,13 +26,18 @@ use super::scan::{contains_word_token, strip_comments_and_strings};
 /// `mod tests;` -> `esef/tests.rs`; `report_documents_capture.rs`'s
 /// `#[path = "report_documents_capture_tests.rs"] mod tests;`) counts toward
 /// the manifest guard's `proptest!`/`insta::` search without the guard
-/// having to know every file's test-module layout by hand. Only a **column-0**
-/// declaration counts — an indented `mod tests;` is a nested item, not a
-/// file-level one — and comments/strings are blanked before matching (via
-/// `strip_comments_and_strings`) so a `mod tests;` sitting inside `/* … */`
-/// or a multi-line string fixture is never mistaken for a real declaration.
-/// The `#[path = "…"]` filename itself is read back from the *unstripped*
-/// line, since the stripper blanks its own string value too.
+/// having to know every file's test-module layout by hand. Only a
+/// **brace-depth-0** declaration counts — depth tracked over the whole file
+/// (a running `{`/`}` counter, comment/string-blanked so a brace inside a
+/// literal never perturbs it), not indentation: `mod tests;` nested inside
+/// some other block (`#[cfg(any())]\nmod disabled {\nmod tests;\n}`, even
+/// unindented) is at depth 1 and does not count, while an oddly-indented but
+/// genuinely top-level declaration does. Comments/strings are blanked before
+/// matching (via `strip_comments_and_strings`) so a `mod tests;` sitting
+/// inside `/* … */` or a multi-line string fixture is never mistaken for a
+/// real declaration either. The `#[path = "…"]` filename itself is read back
+/// from the *unstripped* line, since the stripper blanks its own string
+/// value too.
 pub(super) fn declared_test_module_content(path: &Path, content: &str) -> String {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     let stem = path
@@ -32,16 +46,28 @@ pub(super) fn declared_test_module_content(path: &Path, content: &str) -> String
         .unwrap_or_default();
     let mut extra = String::new();
     let mut pending_path_attr: Option<&str> = None;
-    // Comments and string literals are blanked (length/line-preserving)
-    // before matching, and — unlike the old `line.trim_start()` — the
-    // prefix checks below run against the line's own indentation, so only a
-    // column-0 (top-level) `mod`/`#[path]` counts: an indented one is a
-    // nested item, and a commented-out or string-embedded one collapses to
-    // blank spaces that match no prefix either.
     let stripped = strip_comments_and_strings(content);
-    for (line, trimmed) in content.lines().zip(stripped.lines()) {
+    let mut depth = 0i32;
+    for (line, stripped_line) in content.lines().zip(stripped.lines()) {
+        // The depth THIS line starts at (before its own braces, if any, are
+        // counted below) is what decides top-level-ness — a `mod`/`#[path]`
+        // written anywhere but depth 0 is nested, regardless of indentation.
+        let line_depth = depth;
+        for byte in stripped_line.bytes() {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                _ => {}
+            }
+        }
+        if line_depth != 0 {
+            pending_path_attr = None;
+            continue;
+        }
+        let trimmed = stripped_line.trim_start();
         if trimmed.starts_with("#[path") {
             pending_path_attr = line
+                .trim_start()
                 .strip_prefix("#[path")
                 .and_then(|rest| rest.trim_start().strip_prefix('='))
                 .and_then(|rest| rest.trim().trim_start_matches('"').split('"').next());
@@ -102,18 +128,16 @@ fn module_parent(module_path: &str) -> Option<&str> {
 /// Validates a manifest row's `"proptest_in": "<file>::<fn>"` claim (the
 /// property test lives elsewhere, e.g. `tests/parser_fuzz.rs`, rather than in
 /// the module's own file/declared test submodule): `<file>` (relative to
-/// `manifest_dir`, i.e. `src-tauri/`) exists and declares `fn <name>(`
-/// exactly once (two-or-more `fn <name>(` definitions in the file is an
-/// "ambiguous property name" violation rather than silently picking the
-/// first); that fn sits inside a `proptest! { ... }` block — the nearest
-/// preceding line whose trimmed text starts with `proptest!`, whose
-/// same-indentation closing `}` comes after the fn; and the fn's own
-/// brace-matched body (via `extract_fn_body`) makes a genuine call/path
-/// reference to `<stem>::` (`body_references_stem`), where `<stem>` is
-/// `module_path`'s (`module_stem`). Fn discovery and the `proptest!` block
-/// search both run over `strip_comments_and_strings`-blanked lines, so a
-/// commented-out `fn`/`proptest!` line is never matched. Any failure is a
-/// plain reason string — the caller names the manifest row.
+/// `manifest_dir`, i.e. `src-tauri/`) exists and `<fn>` names a genuine
+/// top-level property — `find_property_fn_line` — a `#[test]` fn at brace
+/// depth exactly 1 (a direct child) inside a `proptest! { ... }` block, not
+/// merely present somewhere in the file (a helper nested deeper, or a
+/// same-named fn outside any `proptest!` block, does not count; two or more
+/// qualifying fns of that name is "ambiguous"). The fn's own brace-matched
+/// body (via `extract_fn_body`) then makes a genuine call/path reference to
+/// `<stem>::` (`body_references_stem`), where `<stem>` is `module_path`'s
+/// (`module_stem`). Any failure is a plain reason string — the caller names
+/// the manifest row.
 ///
 /// Two more checks close the gap `<stem>::` alone leaves: the body must not
 /// hide its `<stem>::` reference inside a never-called nested `fn` item
@@ -135,48 +159,9 @@ pub(super) fn proptest_in_is_valid(
         .map_err(|_| format!("file {file_rel} does not exist"))?;
     let lines: Vec<&str> = content.lines().collect();
     let stripped = strip_comments_and_strings(&content);
-    let stripped_lines: Vec<&str> = stripped.lines().collect();
-    let target = format!("{fn_name}(");
-    let is_target_fn = |line: &str| {
-        strip_fn_modifiers(line)
-            .strip_prefix("fn ")
-            .is_some_and(|after| after.starts_with(&target))
-    };
-    let matches: Vec<usize> = stripped_lines
-        .iter()
-        .enumerate()
-        .filter_map(|(index, line)| is_target_fn(line).then_some(index))
-        .collect();
-    if matches.len() > 1 {
-        return Err(format!(
-            "ambiguous property name: fn {fn_name} is defined {} times in {file_rel}",
-            matches.len()
-        ));
-    }
-    let fn_line = *matches
-        .first()
-        .ok_or_else(|| format!("fn {fn_name} not found in {file_rel}"))?;
 
-    let proptest_line = stripped_lines[..fn_line]
-        .iter()
-        .rposition(|line| line.trim_start().starts_with("proptest!"))
-        .ok_or_else(|| format!("fn {fn_name} is not inside a proptest! block"))?;
-    let block_indent = lines[proptest_line].len() - lines[proptest_line].trim_start().len();
-    let closing_line = stripped_lines[proptest_line + 1..]
-        .iter()
-        .position(|line| {
-            let indent = line.len() - line.trim_start().len();
-            indent == block_indent && line.trim() == "}"
-        })
-        .map(|rel| proptest_line + 1 + rel);
-    match closing_line {
-        Some(c) if c > fn_line => {}
-        _ => {
-            return Err(format!(
-                "fn {fn_name} is not inside its nearest proptest! block"
-            ))
-        }
-    }
+    let fn_line = find_property_fn_line(&stripped, fn_name)
+        .map_err(|reason| format!("fn {fn_name} {reason} in {file_rel}"))?;
 
     let body = extract_fn_body(&content, &lines, fn_line);
     if body_defines_nested_fn(&body) {
@@ -267,26 +252,95 @@ fn body_references_stem(body: &str, stem: &str) -> bool {
     false
 }
 
-/// `line` with its leading modifier keywords (`pub`, `async`, ...) stripped,
-/// same rule `is_fn_signature` checks against — shared here so the fn-name
-/// match below does not re-derive it.
-fn strip_fn_modifiers(line: &str) -> &str {
-    let mut rest = line.trim_start();
-    loop {
-        let prefixes = [
-            "pub(crate) ",
-            "pub(super) ",
-            "pub ",
-            "async ",
-            "unsafe ",
-            "const ",
-        ];
-        match prefixes.iter().find_map(|p| rest.strip_prefix(p)) {
-            Some(stripped) => rest = stripped,
-            None => break,
+/// The line index (into `content.lines()` — identical line boundaries to
+/// `stripped`, the comment/string-blanked text this scans) of the `fn
+/// <fn_name>(` that is a genuine top-level property: a DIRECT child of a
+/// `proptest! { ... }` block — a brace-depth stack, not indentation, so a
+/// helper nested one level deeper inside that property's own body never
+/// qualifies (`fn t(` sitting behind `proptest! { fn outer() { fn t() {}
+/// } }` is at depth 2, not depth 1) — with the nearest preceding non-blank
+/// line, skipping any other stacked attribute, being `#[test]` (a plain
+/// helper carries no such attribute). Modifier keywords (`pub`, `async`, …)
+/// before `fn` need no special handling: they are always separated from
+/// `fn` by whitespace, which already satisfies the left word-boundary check.
+/// `Err` names why: the name never appears in the file at all, or it
+/// appears but never as a top-level `#[test]` property, or it qualifies
+/// more than once (ambiguous).
+fn find_property_fn_line(stripped: &str, fn_name: &str) -> Result<usize, String> {
+    let bytes = stripped.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let target = format!("fn {fn_name}(");
+    let stripped_lines: Vec<&str> = stripped.lines().collect();
+
+    // Stack of whether each currently-open (unmatched) `{` is a `proptest!`
+    // macro block's own opening brace — "direct child" means this stack's
+    // TOP is `true` right when the fn signature is found (not merely that
+    // some ancestor brace is a proptest! block).
+    let mut brace_stack: Vec<bool> = Vec::new();
+    let mut name_found_anywhere = false;
+    let mut candidate_lines: Vec<usize> = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'{' => {
+                let mut before = i;
+                while before > 0 && bytes[before - 1].is_ascii_whitespace() {
+                    before -= 1;
+                }
+                brace_stack.push(stripped[..before].ends_with("proptest!"));
+                i += 1;
+                continue;
+            }
+            b'}' => {
+                brace_stack.pop();
+                i += 1;
+                continue;
+            }
+            _ => {}
         }
+        if stripped[i..].starts_with(&target) && (i == 0 || !is_ident(bytes[i - 1])) {
+            name_found_anywhere = true;
+            let is_direct_child = brace_stack.last() == Some(&true);
+            let line = stripped[..i].matches('\n').count();
+            if is_direct_child && has_test_attr_above(&stripped_lines, line) {
+                candidate_lines.push(line);
+            }
+        }
+        i += 1;
     }
-    rest
+
+    if !name_found_anywhere {
+        return Err("not found".to_owned());
+    }
+    match candidate_lines.len() {
+        0 => Err("is not a #[test] property directly inside a proptest! block".to_owned()),
+        1 => Ok(candidate_lines[0]),
+        n => Err(format!("is ambiguous: {n} qualifying #[test] properties")),
+    }
+}
+
+/// Whether the nearest preceding non-blank line above `stripped_lines[line]`
+/// is `#[test]` (or `#[tokio::test...]`) — blank lines and any OTHER
+/// stacked attribute (`#[should_panic]` can sit above or below `#[test]`)
+/// are skipped, but the walk stops (returning `false`) at the first real
+/// code line.
+fn has_test_attr_above(stripped_lines: &[&str], line: usize) -> bool {
+    let mut idx = line;
+    while idx > 0 {
+        idx -= 1;
+        let trimmed = stripped_lines[idx].trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed == "#[test]" || trimmed.starts_with("#[tokio::test") {
+            return true;
+        }
+        if trimmed.starts_with("#[") {
+            continue;
+        }
+        return false;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -435,6 +489,64 @@ mod tests {
         );
     }
 
+    #[test]
+    fn read_module_content_ignores_mod_tests_nested_inside_an_inline_mod_block() {
+        // Column 0 is not the same as brace depth 0: this `mod tests;` is
+        // unindented but sits at depth 1, inside the (disabled) inline
+        // `mod disabled { ... }` block — a column-only check would wrongly
+        // accept it.
+        let scratch = TempScratch::new("nested-inline-mod");
+        let file = scratch.path().join("widget.rs");
+        fs::write(
+            &file,
+            "pub fn widget() {}\n\n#[cfg(any())]\nmod disabled {\nmod tests;\n}\n",
+        )
+        .unwrap();
+        fs::create_dir_all(scratch.path().join("widget")).unwrap();
+        fs::write(
+            scratch.path().join("widget").join("tests.rs"),
+            "proptest! { #[test] fn t(x in 0u32..1) { let _ = widget::widget(); } }\n",
+        )
+        .unwrap();
+
+        let own = fs::read_to_string(&file).unwrap();
+        let extra = declared_test_module_content(&file, &own);
+        assert!(
+            extra.is_empty(),
+            "a `mod tests;` nested inside another (disabled) inline mod block, even at column \
+             0, must not be honored: {extra:?}"
+        );
+    }
+
+    #[test]
+    fn read_module_content_resolves_an_indented_but_top_level_mod_tests() {
+        // The flip side of brace depth replacing column 0: this `mod
+        // tests;` is indented, but is not nested inside any block — real
+        // top-level declaration, oddly formatted, and it must still
+        // resolve.
+        let scratch = TempScratch::new("indented-top-level-mod");
+        let file = scratch.path().join("widget.rs");
+        fs::write(
+            &file,
+            "pub fn widget() {}\n\n    #[cfg(test)]\n    mod tests;\n",
+        )
+        .unwrap();
+        fs::create_dir_all(scratch.path().join("widget")).unwrap();
+        fs::write(
+            scratch.path().join("widget").join("tests.rs"),
+            "proptest! { #[test] fn t(x in 0u32..1) { let _ = widget::widget(); } }\n",
+        )
+        .unwrap();
+
+        let own = fs::read_to_string(&file).unwrap();
+        let extra = declared_test_module_content(&file, &own);
+        assert!(
+            extra.contains("proptest!"),
+            "an indented but genuinely top-level (depth-0) `mod tests;` should still resolve: \
+             {extra:?}"
+        );
+    }
+
     /// `manifest_dir` for `proptest_in_is_valid` calls below: a scratch dir
     /// containing one `tests.rs` file, addressed as `"tests.rs::<fn>"`.
     fn write_spec_file(scratch: &TempScratch, content: &str) {
@@ -512,13 +624,59 @@ mod tests {
 
     #[test]
     fn proptest_in_rejects_ambiguous_duplicate_fn_names() {
+        // A same-named fn that is NOT a top-level `#[test]` property (here,
+        // buried in an unrelated `mod other`) no longer counts as a
+        // candidate at all under brace-depth + `#[test]` selection — so
+        // genuine ambiguity now needs TWO fns that both qualify: two
+        // separate `proptest! { ... }` blocks each declaring `#[test] fn
+        // t(...)`.
         let scratch = TempScratch::new("duplicate-fn");
+        write_spec_file(
+            &scratch,
+            "proptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        let _ = foo::parse(x);\n    }\n}\n\nproptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        let _ = foo::parse(x);\n    }\n}\n",
+        );
+        let err = proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").unwrap_err();
+        assert!(err.contains("ambiguous"), "{err}");
+    }
+
+    #[test]
+    fn proptest_in_accepts_the_real_property_despite_an_unrelated_same_named_fn() {
+        let scratch = TempScratch::new("unrelated-same-name-fn");
         write_spec_file(
             &scratch,
             "proptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        let _ = foo::parse(x);\n    }\n}\n\nmod other {\n    fn t() {}\n}\n",
         );
+        assert!(
+            proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").is_ok(),
+            "the real proptest! property must still resolve when an unrelated fn happens \
+             to share its name outside any proptest! block"
+        );
+    }
+
+    #[test]
+    fn proptest_in_rejects_a_property_nested_inside_another_test_fn() {
+        let scratch = TempScratch::new("nested-property");
+        write_spec_file(
+            &scratch,
+            "proptest! {\n    #[test]\n    fn outer(x in 0u32..1) {\n        fn t() { foo::parse(); }\n        let _ = t as fn();\n        prop_assert!(x < 1);\n    }\n}\n",
+        );
         let err = proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").unwrap_err();
-        assert!(err.contains("ambiguous"), "{err}");
+        assert!(err.contains("proptest! block"), "{err}");
+    }
+
+    #[test]
+    fn proptest_in_rejects_a_test_attributed_fn_nested_at_depth_2() {
+        // Isolates the DEPTH condition from the `#[test]` condition: this
+        // nested fn carries `#[test]` too, so only the brace-depth check
+        // (top of the brace stack must be the proptest! block itself, not
+        // merely SOME ancestor) can reject it.
+        let scratch = TempScratch::new("nested-test-attr");
+        write_spec_file(
+            &scratch,
+            "proptest! {\n    #[test]\n    fn outer(x in 0u32..1) {\n        #[test]\n        fn t() { foo::parse(); }\n        prop_assert!(x < 1);\n    }\n}\n",
+        );
+        let err = proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").unwrap_err();
+        assert!(err.contains("proptest! block"), "{err}");
     }
 
     #[test]
