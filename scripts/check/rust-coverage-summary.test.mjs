@@ -759,6 +759,25 @@ test("P5b: an ordinary module directory named bin deeper in the tree is not a cr
   }
 });
 
+test("self-check 14: a `)]` inside a comment does not end a cfg_attr early (astra r3 #4)", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/lib.rs": ["#[cfg(test)]", "#[cfg_attr( /* )] */", "    test,", '    path = "alternate.rs"', ")]", "mod helper;"].join("\n"),
+      "src/helper.rs": "// decoy\n",
+      "src/alternate.rs": "// the real test file\n",
+      "rust.lcov": lcovRecord("src/lib.rs", []),
+    });
+    const { r, outPath } = selfCheckHarness(dir, {});
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /unsupported: cfg_attr\(test, path/);
+    assert.match(r.stderr, /src[/\\]lib\.rs:2/);
+    assert.equal(existsSync(outPath), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 // ---- structuralTokens: a couple of direct sanity checks -----------------------
 
 test("structuralTokens ignores brackets inside strings/comments and treats lifetimes as non-char", () => {

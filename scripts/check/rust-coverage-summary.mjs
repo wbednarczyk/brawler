@@ -231,21 +231,30 @@ const CFG_START_RE = /^#\[cfg\s*\(/;
 const CFG_ATTR_START_RE = /^#\[cfg_attr\s*\(/;
 
 /** The full text of the column-0 attribute starting at `idx`, joining
- * continuation lines up to the closing `)]` (so a multi-line cfg_attr is
- * judged as a whole, not by its first line). */
-function attrText(lines, idx) {
-  let text = lines[idx];
-  for (let j = idx + 1; !text.includes(")]") && j < lines.length && j - idx < 50; j++) text += ` ${lines[j].trim()}`;
-  return text;
+ * continuation lines up to the `]` that closes the attribute's opening `[`
+ * per the TOKENIZER (so a `)]` inside a comment or string cannot end it
+ * early), or null when the bracket never closes. */
+function attrText(lines, tokens, idx) {
+  const lineNo = idx + 1;
+  let t = 0;
+  while (t < tokens.length && (tokens[t].line < lineNo || (tokens[t].line === lineNo && tokens[t].ch !== "["))) t++;
+  if (t >= tokens.length || tokens[t].line !== lineNo) return null;
+  let depth = 0;
+  for (; t < tokens.length; t++) {
+    const ch = tokens[t].ch;
+    if (BRACKETS_OPEN.includes(ch)) depth++;
+    else if (BRACKETS_CLOSE.includes(ch) && --depth === 0) return lines.slice(idx, tokens[t].line).join(" ");
+  }
+  return null;
 }
 
-function validateAttrLine(filePath, lines, idx) {
+function validateAttrLine(filePath, lines, tokens, idx) {
   const first = lines[idx];
   const isCfg = CFG_START_RE.test(first);
   if (!isCfg && !CFG_ATTR_START_RE.test(first)) return;
-  const text = attrText(lines, idx);
+  const text = attrText(lines, tokens, idx);
   const lineNo = idx + 1;
-  if (!text.includes(")]")) throw new Error(`unterminated attribute${loc(filePath, lineNo)}`);
+  if (text === null) throw new Error(`unterminated attribute${loc(filePath, lineNo)}`);
   if (isCfg) {
     const isExact = text === "#[cfg(test)]" || text === "#[cfg(not(test))]";
     if (!isExact && TEST_WORD_RE.test(text)) {
@@ -278,7 +287,7 @@ function collectLeadingAttrs(lines, tokens, startIdx, filePath) {
   while (idx < lines.length) {
     const line = lines[idx];
     const isCode = tokens.codeLines.has(idx + 1);
-    if (isCode && line.startsWith("#[")) validateAttrLine(filePath, lines, idx);
+    if (isCode && line.startsWith("#[")) validateAttrLine(filePath, lines, tokens, idx);
     if (isCode && line === "#[cfg(test)]") {
       cfgTest = true;
       idx++;
@@ -337,7 +346,7 @@ function cfgTestSpans(filePath, src) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (!tokens.codeLines.has(i + 1)) continue; // comment/string content, not code
-    if (line.startsWith("#[")) validateAttrLine(filePath, lines, i);
+    if (line.startsWith("#[")) validateAttrLine(filePath, lines, tokens, i);
     if (line !== "#[cfg(test)]") continue;
     const attrStartLine = i + 1;
     const { idx: j } = collectLeadingAttrs(lines, tokens, i + 1, filePath);
