@@ -330,9 +330,13 @@ coverage-frontend:
 	$(NIX) npm run test:coverage
 	$(NIX) npm run coverage:ratchet -- --layer=frontend
 
+# Rust measurement is PRODUCTION-ONLY (#488): llvm-cov's per-line lcov, minus the
+# `#[cfg(test)]` spans and test-only files derived from the source, becomes the
+# summary the ratchet reads — moving tests between files never shifts a floor.
 coverage-rust:
 	@mkdir -p coverage
-	$(NIX) bash -c 'cd src-tauri && cargo llvm-cov nextest --summary-only --json --output-path ../coverage/rust-summary.json'
+	$(NIX) bash -c 'cd src-tauri && cargo llvm-cov nextest --lcov --output-path ../coverage/rust.lcov'
+	$(NIX) node scripts/check/rust-coverage-summary.mjs
 	$(NIX) npm run coverage:ratchet -- --layer=rust
 
 coverage: coverage-frontend coverage-rust

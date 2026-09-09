@@ -148,12 +148,16 @@ jobs:
           COVERAGE_BASE_REF: ${{ github.event.pull_request.base.sha }}
       # G15 bootstrap (hard gates wave 2): the per-directory coverage ratchet
       # seeds/refreshes its pins from this summary via `coverage-ratchet.mjs
-      # --seed` — no coverage run needed locally once it's downloaded.
+      # --seed` — no coverage run needed locally once it's downloaded. The raw
+      # lcov ships too (#488) so the production-only summary can be re-derived
+      # against the same source revision without a coverage run.
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: rust-coverage-summary
-          path: coverage/rust-summary.json
+          path: |
+            coverage/rust-summary.json
+            coverage/rust.lcov
           retention-days: 7
           if-no-files-found: warn
 

@@ -52,6 +52,15 @@
 // can hide behind an aggregate that still clears the floor. Revisit if it
 // bites (split the bucket, or lean on the module's own file-size-ratchet pin).
 //
+// Measurement identity (#488): a collector emits a top-level `measurement`
+// integer (and, for the Rust layer, `testOnlyDirs`) into its summary; missing
+// means 1. Every run compares the head baseline's `<layer>.measurement`
+// against the summary's — a mismatch fails outright (a baseline's measurement
+// may only ever follow a collector change, never a hand edit). When the BASE
+// baseline's measurement differs from head's, the run is in transition: an
+// existing pin may drop (re-seeded lower under the new collector), and a
+// base-only key survives only when the summary's `testOnlyDirs` names it.
+//
 // Inputs:
 //   coverage/frontend/coverage-summary.json  (per-file .lines + .total.lines.pct)
 //   coverage/rust-summary.json               (.data[0].files[] + .data[0].totals.lines.percent)
@@ -129,6 +138,10 @@ function validPct(n) {
   return typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100;
 }
 
+function isPositiveInt(n) {
+  return Number.isInteger(n) && n >= 1;
+}
+
 function rustDirKey(rawPath) {
   const marker = "src-tauri/src/";
   const rel = afterMarker(rawPath, marker);
@@ -187,13 +200,14 @@ function baselineReadTarget() {
 // --- --seed: print the `dirs` block for each requested layer, touch nothing --
 if (seed) {
   for (const layer of layers) {
-    const { aggregated } = loadAggregated(layer);
+    const { json, aggregated } = loadAggregated(layer);
     const dirs = {};
     for (const [key, entry] of Object.entries(aggregated)) {
       if (entry.total === 0) continue;
       dirs[key] = Math.round(pctOf(entry) * 10) / 10;
     }
-    console.log(`\n"${layer}": { "dirs": ${JSON.stringify(sortObj(dirs), null, 2)} }`);
+    const block = { measurement: json.measurement ?? 1, dirs: sortObj(dirs) };
+    console.log(`\n"${layer}": ${JSON.stringify(block, null, 2)}`);
   }
   process.exit(0);
 }
@@ -256,6 +270,32 @@ const raises = [];
 for (const layer of layers) {
   const { json, aggregated } = loadAggregated(layer);
 
+  // Measurement identity (#488): the head baseline's declared measurement
+  // must match what this run's collector actually emitted — a hand-edited
+  // baseline number can never masquerade as a collector change.
+  const summaryMeasurement = json.measurement ?? 1;
+  const baselineMeasurement = baseline[layer].measurement ?? 1;
+  if (!isPositiveInt(baselineMeasurement)) {
+    console.error(`coverage-ratchet: ${layer}.measurement in coverage-baseline.json is not a valid positive integer (${baselineMeasurement}).`);
+    failed = true;
+    continue;
+  }
+  if (!isPositiveInt(summaryMeasurement)) {
+    console.error(
+      `coverage-ratchet: ${layer} "measurement" in the coverage summary (collector) is not a valid positive integer (${summaryMeasurement}) — check the coverage summary input.`,
+    );
+    failed = true;
+    continue;
+  }
+  if (baselineMeasurement !== summaryMeasurement) {
+    console.error(
+      `coverage-ratchet: ${layer} measurement mismatch — coverage-baseline.json says ${baselineMeasurement}, the coverage summary (collector) says ${summaryMeasurement}; the baseline's measurement may only follow a collector change.`,
+    );
+    failed = true;
+    continue;
+  }
+  const headMeasurement = baselineMeasurement;
+
   const floor = baseline[layer].lines;
   if (!validPct(floor)) {
     console.error(`coverage-ratchet: ${layer}.lines in coverage-baseline.json is not a valid percentage (${floor}).`);
@@ -286,6 +326,18 @@ for (const layer of layers) {
   }
 
   const baseDirs = baseBaseline?.[layer]?.dirs ?? null;
+
+  // Transition mode (#488): the base and head baselines disagree on
+  // measurement — a collector change is landing in this PR. Existing pins
+  // may drop (test-only coverage no longer counts), and a base-only key
+  // survives only with explicit testOnlyDirs evidence (below).
+  const baseMeasurement = baseBaseline ? (baseBaseline[layer]?.measurement ?? 1) : null;
+  const transition = baseBaseline !== null && baseMeasurement !== headMeasurement;
+  if (transition) {
+    console.log(
+      `  note ${layer} measurement ${baseMeasurement} -> ${headMeasurement}: existing pins may be re-seeded; base-only keys need testOnlyDirs evidence.`,
+    );
+  }
 
   for (const [key, entry] of Object.entries(aggregated)) {
     if (entry.total === 0) continue; // zero-executable-line directory — nothing to enforce
@@ -327,7 +379,7 @@ for (const layer of layers) {
           );
           continue;
         }
-      } else if (pin < basePin) {
+      } else if (!transition && pin < basePin) {
         failed = true;
         console.error(
           `  FAIL ${layer} ${key} pin lowered from ${basePin}% (base) to ${pin}% (head) — an existing directory's pin must never drop.`,
@@ -385,6 +437,12 @@ for (const layer of layers) {
       if (!existsOnDisk) {
         console.log(
           `  note ${layer} ${key} — pinned at ${baseDirs[key]}% in the base baseline but no longer present in the head baseline; the directory no longer exists on disk, so the dropped pin is expected.`,
+        );
+        continue;
+      }
+      if (transition && Array.isArray(json.testOnlyDirs) && json.testOnlyDirs.includes(key)) {
+        console.log(
+          `  note ${layer} ${key} — pinned at ${baseDirs[key]}% in the base baseline, dropped from the head baseline under the new measurement (testOnlyDirs).`,
         );
         continue;
       }
