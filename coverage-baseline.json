@@ -1,6 +1,6 @@
 {
-  "_comment": "Coverage ratchet floors (ADR 0048). `make coverage` fails if line coverage drops below these. When coverage rises, the ratchet prints the new floors to commit here. Set a hair below current to absorb measurement noise.",
-  "_commentDirs": "Per-directory floors (G15, ADR 0096 dec. 4 amendment 2026-09-08) go under each layer's own `dirs: { \"<key>\": <floor> }` \u2014 frontend keys: src/screens/<name>, src/ui, src/shared, src/app, src/api, src/(root) (catch-all for every other measured file under src/); Rust keys: src-tauri/src/<top-level-dir> or src-tauri/src/(root). `dirs` is REQUIRED once present for a layer (missing \u2192 the gate fails with a --seed hint); a pinned key with no measured coverage fails unless its directory is gone from disk; a key NEW relative to the base revision's baseline (COVERAGE_BASE_REF) must measure and pin >= 70%, and an existing key's pin may never read lower than at base. Bootstrap with `node scripts/check/coverage-ratchet.mjs --seed [--layer=frontend|rust]` against the coverage-summary.json artifacts, then paste the printed block in by hand. Intentionally absent here until the integrator seeds it from a CI run's uploaded summaries.",
+  "_comment": "Coverage ratchet floors (ADR 0048). `make coverage-frontend` / `make coverage-rust` fail if line coverage drops below these. When coverage rises, the ratchet prints the new floors to commit here. Set a hair below current to absorb measurement noise. `measurement` (per layer, absent = 1) is the collector's identity: the Rust summary is produced by scripts/check/rust-coverage-summary.mjs (measurement 2 = physical lcov lines minus cfg(test) code, #488) and the ratchet fails when this file and the summary disagree; pins may be re-seeded lower only in the run whose base revision carries a different measurement (a reviewed, collector-driven transition).",
+  "_commentDirs": "Per-directory floors (G15, ADR 0096 dec. 4 amendment 2026-09-08) go under each layer's own `dirs: { \"<key>\": <floor> }` — frontend keys: src/screens/<name>, src/ui, src/shared, src/app, src/api, src/(root) (catch-all for every other measured file under src/); Rust keys: src-tauri/src/<top-level-dir> or src-tauri/src/(root). `dirs` is REQUIRED once present for a layer (missing → the gate fails with a --seed hint); a pinned key with no measured coverage fails unless its directory is gone from disk; a key NEW relative to the base revision's baseline (COVERAGE_BASE_REF) must measure and pin >= 70%, and an existing key's pin may never read lower than at base (except during a measurement transition, where a base-only key may also be dropped when the summary's testOnlyDirs names it). Refresh from a CI run's uploaded summary: `node scripts/check/coverage-ratchet.mjs --seed [--layer=frontend|rust]`, then paste the printed block in by hand.",
   "frontend": {
     "lines": 81.5,
     "dirs": {
@@ -24,6 +24,7 @@
     }
   },
   "rust": {
+    "measurement": 2,
     "lines": 89.5,
     "dirs": {
       "src-tauri/src/(root)": 86,

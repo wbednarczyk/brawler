@@ -13,7 +13,7 @@ The `make` target catalog agents work from (extracted from [engineering-workflow
 | `check-docs` | docs-only subset | Docs-only changes. |
 | `docs-drift` | `node scripts/check/docs-drift.mjs` | Spec↔code drift gate standalone (also a `check` step); `--write-adr-index` regenerates `docs/adr/INDEX.md`. |
 | `coverage-frontend` | Vitest v8 coverage + ratchet | PR required check; floor 80.0% vs `coverage-baseline.json` ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)). |
-| `coverage-rust` | `cargo-llvm-cov` + ratchet | PR required check; floor 86.5% vs `coverage-baseline.json`. |
+| `coverage-rust` | `cargo-llvm-cov --lcov` → `rust-coverage-summary.mjs` (production-only) → ratchet | PR required check; floors vs `coverage-baseline.json`; Rust counts physical lcov lines minus `#[cfg(test)]` code ([Testing § Coverage ratchet](testing.md#coverage-ratchet), #488). |
 | `disk-clean` | caches, mutants artifacts, old nix generations, fstrim | Run when `disk-guard` warns. |
 | `disk-clean-deep` | + `src-tauri/target` + full nix GC | Space emergencies; full rebuild after. |
 | `test` | `npm run test` | Frontend unit tests (Vitest, `src`). |

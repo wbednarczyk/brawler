@@ -69,6 +69,8 @@ coverage-summary artifacts each coverage job now uploads). A directory absent fr
 admitted only at/above a 70% floor — otherwise the PR fails outright. Policy detail:
 [testing.md § Coverage ratchet](../testing.md#coverage-ratchet).
 
+**Amendment (2026-09-09, #488, decision 4).** The Rust layer measures **production code only**: `cargo llvm-cov --lcov` per-line data minus the `#[cfg(test)]` spans and test-only files derived from the source (`scripts/check/rust-coverage-summary.mjs`), so moving tests between files never shifts a floor. The collector stamps a `measurement` identity into the summary; the baseline must match it, and pins may be re-seeded lower only in the transition run whose base revision carries a different measurement. Definition and rules: [testing.md § Coverage ratchet](../testing.md#coverage-ratchet).
+
 **Amendment (2026-09-08, hard gates wave 2, decision 5).** Two related but distinct path lists for
 the mutation audit had drifted (`entity_resolution.rs` documented as monitored but not a
 `mutation-audit.yml` trigger path; `storage/ingestion.rs` a trigger path but undocumented): the

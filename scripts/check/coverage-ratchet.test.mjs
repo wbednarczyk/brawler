@@ -409,3 +409,271 @@ test("a base pin dropped from the head baseline passes with a note when its dire
     cleanup(dir);
   }
 });
+
+// --- #488: measurement identity ----------------------------------------------
+
+test("a measurement mismatch between the baseline and the summary fails with both numbers", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 80.0, measurement: 2, dirs: { "src/screens/Today": 90, "src/ui": 70, "src/app": 30 } },
+      rust: { lines: 86.5 },
+    },
+    summary: SUMMARY, // no top-level "measurement" -> defaults to 1
+  });
+  try {
+    const r = run(dir);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /measurement mismatch/);
+    assert.match(r.stderr, /says 2/);
+    assert.match(r.stderr, /says 1/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("no measurement field anywhere passes exactly as before, with no measurement FAIL", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 80.0, dirs: { "src/screens/Today": 90, "src/ui": 70, "src/app": 30 } },
+      rust: { lines: 86.5 },
+    },
+    summary: SUMMARY,
+  });
+  try {
+    const r = run(dir);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(/measurement/i.test(r.stdout + r.stderr), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+for (const bad of [0, 1.5, "2"]) {
+  test(`a malformed baseline measurement (${JSON.stringify(bad)}) fails with a clear message`, () => {
+    const dir = setup({
+      baseline: {
+        frontend: { lines: 80.0, measurement: bad, dirs: { "src/screens/Today": 90, "src/ui": 70, "src/app": 30 } },
+        rust: { lines: 86.5 },
+      },
+      summary: SUMMARY,
+    });
+    try {
+      const r = run(dir);
+      assert.equal(r.status, 1, r.stdout + r.stderr);
+      assert.match(r.stderr, /frontend\.measurement.*not a valid positive integer/is);
+    } finally {
+      cleanup(dir);
+    }
+  });
+}
+
+test("a malformed measurement in the coverage summary fails with a clear message", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 80.0, dirs: { "src/screens/Today": 90, "src/ui": 70, "src/app": 30 } },
+      rust: { lines: 86.5 },
+    },
+    summary: { ...SUMMARY, measurement: 1.5 },
+  });
+  try {
+    const r = run(dir);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /"measurement".*not a valid positive integer/is);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// --- #488: transition mode (base and head measurements disagree) ------------
+
+const TRANSITION_SUMMARY = {
+  total: { lines: { total: 100, covered: 61, skipped: 0, pct: 61 } },
+  "src/ui/Button.tsx": { lines: { total: 100, covered: 61, skipped: 0, pct: 61 } },
+  measurement: 2,
+};
+
+test("transition: an existing pin lowered under a new measurement passes with the transition note", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 50.0, measurement: 2, dirs: { "src/ui": 60 } },
+      rust: { lines: 86.5 },
+    },
+    summary: TRANSITION_SUMMARY,
+  });
+  try {
+    const baseSha = commitAsBase(dir, {
+      frontend: { lines: 50.0, dirs: { "src/ui": 80 } }, // no measurement -> defaults to 1
+      rust: { lines: 86.5 },
+    });
+    const r = run(dir, [], { COVERAGE_BASE_REF: baseSha });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /measurement 1 -> 2/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("transition: a base-only key survives with a note when testOnlyDirs names it", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 50.0, measurement: 2, dirs: { "src/ui": 60 } },
+      rust: { lines: 86.5 },
+    },
+    summary: { ...TRANSITION_SUMMARY, testOnlyDirs: ["src/app"] },
+  });
+  try {
+    mkdirSync(path.join(dir, "src/app"), { recursive: true });
+    writeFileSync(path.join(dir, "src/app/.gitkeep"), "");
+    const baseSha = commitAsBase(dir, {
+      frontend: { lines: 50.0, dirs: { "src/ui": 80, "src/app": 30 } },
+      rust: { lines: 86.5 },
+    });
+    const r = run(dir, [], { COVERAGE_BASE_REF: baseSha });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /src\/app.*testOnlyDirs/s);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("transition: a base-only key still fails when testOnlyDirs is absent", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 50.0, measurement: 2, dirs: { "src/ui": 60 } },
+      rust: { lines: 86.5 },
+    },
+    summary: TRANSITION_SUMMARY, // no testOnlyDirs field
+  });
+  try {
+    mkdirSync(path.join(dir, "src/app"), { recursive: true });
+    writeFileSync(path.join(dir, "src/app/.gitkeep"), "");
+    const baseSha = commitAsBase(dir, {
+      frontend: { lines: 50.0, dirs: { "src/ui": 80, "src/app": 30 } },
+      rust: { lines: 86.5 },
+    });
+    const r = run(dir, [], { COVERAGE_BASE_REF: baseSha });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /src\/app.*pin is missing from the head baseline/s);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("transition: a base-only key still fails when testOnlyDirs does not include it", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 50.0, measurement: 2, dirs: { "src/ui": 60 } },
+      rust: { lines: 86.5 },
+    },
+    summary: { ...TRANSITION_SUMMARY, testOnlyDirs: ["src/some_other_dir"] },
+  });
+  try {
+    mkdirSync(path.join(dir, "src/app"), { recursive: true });
+    writeFileSync(path.join(dir, "src/app/.gitkeep"), "");
+    const baseSha = commitAsBase(dir, {
+      frontend: { lines: 50.0, dirs: { "src/ui": 80, "src/app": 30 } },
+      rust: { lines: 86.5 },
+    });
+    const r = run(dir, [], { COVERAGE_BASE_REF: baseSha });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /src\/app.*pin is missing from the head baseline/s);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("transition: a NEW key still fails the admission floor even at high measured coverage", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 50.0, measurement: 2, dirs: { "src/ui": 60, "src/app": 50 } },
+      rust: { lines: 86.5 },
+    },
+    summary: {
+      total: { lines: { total: 110, covered: 70, skipped: 0, pct: 63.6 } },
+      "src/ui/Button.tsx": { lines: { total: 100, covered: 61, skipped: 0, pct: 61 } },
+      "src/app/AppStateRoot.tsx": { lines: { total: 10, covered: 9, skipped: 0, pct: 90 } },
+      measurement: 2,
+    },
+  });
+  try {
+    const baseSha = commitAsBase(dir, {
+      frontend: { lines: 50.0, dirs: { "src/ui": 80 } }, // src/app absent at base -> NEW key
+      rust: { lines: 86.5 },
+    });
+    const r = run(dir, [], { COVERAGE_BASE_REF: baseSha });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /src\/app.*new directory/is);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("no transition: a lowered pin still fails under a matching measurement", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 50.0, measurement: 2, dirs: { "src/ui": 60 } },
+      rust: { lines: 86.5 },
+    },
+    summary: TRANSITION_SUMMARY,
+  });
+  try {
+    const baseSha = commitAsBase(dir, {
+      frontend: { lines: 50.0, measurement: 2, dirs: { "src/ui": 80 } },
+      rust: { lines: 86.5 },
+    });
+    const r = run(dir, [], { COVERAGE_BASE_REF: baseSha });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /src\/ui.*pin lowered/is);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("no transition: a dropped base-only key still fails exactly as today, even with testOnlyDirs set", () => {
+  const dir = setup({
+    baseline: {
+      frontend: { lines: 50.0, measurement: 2, dirs: { "src/ui": 60 } },
+      rust: { lines: 86.5 },
+    },
+    summary: { ...TRANSITION_SUMMARY, testOnlyDirs: ["src/app"] },
+  });
+  try {
+    mkdirSync(path.join(dir, "src/app"), { recursive: true });
+    writeFileSync(path.join(dir, "src/app/.gitkeep"), "");
+    const baseSha = commitAsBase(dir, {
+      frontend: { lines: 50.0, measurement: 2, dirs: { "src/ui": 80, "src/app": 30 } },
+      rust: { lines: 86.5 },
+    });
+    const r = run(dir, [], { COVERAGE_BASE_REF: baseSha });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /src\/app.*pin is missing from the head baseline/s);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// --- #488: --seed carries the measurement ------------------------------------
+
+test("--seed includes the summary's measurement in the printed block", () => {
+  const baseline = { frontend: { lines: 80.0 }, rust: { lines: 86.5 } };
+  const dir = setup({ baseline, summary: { ...SUMMARY, measurement: 2 } });
+  try {
+    const r = run(dir, ["--seed"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /"measurement": 2/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("--seed defaults measurement to 1 when the summary carries none", () => {
+  const baseline = { frontend: { lines: 80.0 }, rust: { lines: 86.5 } };
+  const dir = setup({ baseline, summary: SUMMARY });
+  try {
+    const r = run(dir, ["--seed"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /"measurement": 1/);
+  } finally {
+    cleanup(dir);
+  }
+});
