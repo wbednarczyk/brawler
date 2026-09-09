@@ -715,8 +715,8 @@ input → same output and same canonical id; no wall-clock/random leakage), and
 **totality / no-panic** (a result or typed error for every input, never a
 panic). Property tests run in the normal stable test binary and are part of
 `make check` (bounded case counts). `tests/parser_fuzz.rs`'s adversarial-markup
-fuzzer honors the `PROPTEST_CASES` env var as a real override of its bounded
-default (128 cases) — set it higher for a heavier on-demand run.
+fuzzer uses a plain `ProptestConfig::with_cases(128)`; the `PROPTEST_CASES` env
+var raises that bounded default for a heavier on-demand run.
 
 **Associativity of merge** — ADR 0049's sixth invariant, "multi-source
 unification cannot depend on grouping" — is committed for

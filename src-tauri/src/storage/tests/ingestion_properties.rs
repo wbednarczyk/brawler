@@ -184,6 +184,41 @@ fn items_strategy(max_len: usize) -> impl Strategy<Value = Vec<GenItem>> {
     })
 }
 
+/// A batch that may repeat the same `(source_adapter_id, dedupe_key)` more
+/// than once — always with an IDENTICAL payload each repeat (same
+/// id/title/summary/body_text/published_at), since a repeat is a literal
+/// clone of one of `max_distinct` distinct generated items. `items_strategy`
+/// cannot exercise this: its keys are distinct by construction, so a broken
+/// `ON CONFLICT ... DO UPDATE` merge path never gets exercised against
+/// itself.
+fn items_with_repeats_strategy(max_distinct: usize) -> impl Strategy<Value = Vec<GenItem>> {
+    (
+        prop::collection::vec(item_content_strategy(), 1..=max_distinct),
+        prop::collection::vec(0usize..max_distinct, 0..=(max_distinct * 2)),
+    )
+        .prop_map(|(contents, repeat_indices)| {
+            let distinct: Vec<GenItem> = contents
+                .into_iter()
+                .enumerate()
+                .map(
+                    |(index, (title, summary, body_text, published_at))| GenItem {
+                        id: format!("feed-item-{index}"),
+                        dedupe_key: format!("dedupe-{index}"),
+                        title,
+                        summary,
+                        body_text,
+                        published_at,
+                    },
+                )
+                .collect();
+            let mut batch = distinct.clone();
+            for index in repeat_indices {
+                batch.push(distinct[index % distinct.len()].clone());
+            }
+            batch
+        })
+}
+
 fn state_value(state: &AppState, key: &str) -> String {
     let connection = state.checkout().expect("connection");
     connection
@@ -228,6 +263,36 @@ proptest! {
                 let state = new_state();
                 insert_batch(&state, &batch);
                 projection(&state)
+            },
+            items,
+        );
+    }
+
+    /// (b2) Batch-order independence WITH repeated keys: a batch that
+    /// repeats the same `(source_adapter_id, dedupe_key)` — always with an
+    /// identical payload — still yields the same projection for any
+    /// permutation, and the row count equals the number of DISTINCT keys,
+    /// never the batch length. `items_strategy`'s distinct-key generator
+    /// can never exercise a real in-batch conflict; this arm does.
+    #[test]
+    fn batch_order_is_independent_with_repeated_keys(items in items_with_repeats_strategy(4)) {
+        let expected_len = {
+            let mut keys: Vec<&str> = items.iter().map(|item| item.dedupe_key.as_str()).collect();
+            keys.sort_unstable();
+            keys.dedup();
+            keys.len()
+        };
+        assert_order_independent(
+            |batch: Vec<GenItem>| {
+                let state = new_state();
+                insert_batch(&state, &batch);
+                let rows = projection(&state);
+                assert_eq!(
+                    rows.len(),
+                    expected_len,
+                    "row count must equal distinct dedupe keys, not batch length"
+                );
+                rows
             },
             items,
         );

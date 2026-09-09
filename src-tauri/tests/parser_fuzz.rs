@@ -58,20 +58,6 @@ fn adversarial_markup() -> impl Strategy<Value = String> {
     prop::collection::vec(token, 0..48).prop_map(|parts| parts.concat())
 }
 
-/// `PROPTEST_CASES`, parsed as `u32`; falls back to the standard-gate default
-/// of 128 cases when unset or unparseable (a heavier on-demand run sets it
-/// higher, per the module doc comment above).
-fn bounded_cases(env_value: Option<&str>) -> u32 {
-    env_value.and_then(|v| v.parse().ok()).unwrap_or(128)
-}
-
-#[test]
-fn bounded_cases_falls_back_to_128() {
-    assert_eq!(bounded_cases(None), 128);
-    assert_eq!(bounded_cases(Some("2000")), 2000);
-    assert_eq!(bounded_cases(Some("x")), 128);
-}
-
 // ---------------------------------------------------------------------------
 // Structured generators (issue #194 S2): a GUARANTEED valid shape mixed with
 // malformed entries, so each parser's real transformation is exercised, not
@@ -336,8 +322,34 @@ fn fin_expected_by_period(rows: &[FinRowGen], periods: usize) -> Vec<HashMap<&'s
 
 /// A holder name for the akcjonariat generator: never itself a percentage,
 /// never empty.
-fn ownership_holder_name() -> impl Strategy<Value = String> {
-    "[A-Z][a-z]{2,9}( [A-Z][a-z]{2,9}){0,2}"
+/// A holder name in TWO forms: `raw` — the literal `<td>` inner HTML
+/// Brawler must parse, which may carry an unescaped `&amp;` entity or
+/// irregular whitespace (a double space or a tab) the way a real
+/// BiznesRadar page occasionally renders — and `normalized`, the value the
+/// parser must actually produce once html5ever decodes the entity and
+/// `collapse_ws` folds whitespace. Exercises normalization instead of
+/// bypassing it. Never itself a percentage, never empty.
+fn ownership_holder_name() -> impl Strategy<Value = (String, String)> {
+    let base = "[A-Z][a-z]{2,9}( [A-Z][a-z]{2,9}){0,2}";
+    prop_oneof![
+        base.prop_map(|name: String| (name.clone(), name)),
+        base.prop_map(|name: String| (format!("{name} &amp; Co"), format!("{name} & Co"))),
+        base.prop_map(|name: String| (name.replace(' ', "  "), name)),
+        base.prop_map(|name: String| (name.replace(' ', "\t"), name)),
+    ]
+}
+
+/// Render `bp` (hundredths, e.g. `9322` -> `93.22`) as a percentage string,
+/// with a comma decimal separator when `comma` is set — the Polish-locale
+/// rendering `parse_pct` must normalize (`replace(',', ".")`) alongside the
+/// dot form.
+fn ownership_pct(bp: u32, comma: bool) -> String {
+    let value = Decimal::new(bp as i64, 2).to_string();
+    if comma {
+        value.replace('.', ",")
+    } else {
+        value
+    }
 }
 
 /// One generated `qTableFull` row: a genuine holder (capital/votes percent,
@@ -347,9 +359,12 @@ fn ownership_holder_name() -> impl Strategy<Value = String> {
 #[derive(Debug, Clone)]
 enum OwnershipRowGen {
     Valid {
-        holder: String,
+        holder_raw: String,
+        holder_normalized: String,
         capital_bp: u32,
+        capital_comma: bool,
         votes_bp: u32,
+        votes_comma: bool,
         year: i64,
         month: u32,
         day: u32,
@@ -365,19 +380,35 @@ fn ownership_row_gen() -> impl Strategy<Value = OwnershipRowGen> {
         3 => (
             ownership_holder_name(),
             0u32..=10_000,
+            any::<bool>(),
             0u32..=10_000,
+            any::<bool>(),
             2000i64..=2099,
             1u32..=12,
             1u32..=28,
         )
-            .prop_map(|(holder, capital_bp, votes_bp, year, month, day)| OwnershipRowGen::Valid {
-                holder,
-                capital_bp,
-                votes_bp,
-                year,
-                month,
-                day,
-            }),
+            .prop_map(
+                |(
+                    (holder_raw, holder_normalized),
+                    capital_bp,
+                    capital_comma,
+                    votes_bp,
+                    votes_comma,
+                    year,
+                    month,
+                    day,
+                )| OwnershipRowGen::Valid {
+                    holder_raw,
+                    holder_normalized,
+                    capital_bp,
+                    capital_comma,
+                    votes_bp,
+                    votes_comma,
+                    year,
+                    month,
+                    day,
+                }
+            ),
         1 => Just(OwnershipRowGen::HeaderRow),
         1 => Just(OwnershipRowGen::TooFewCells),
         1 => Just(OwnershipRowGen::EmptyHolder),
@@ -388,17 +419,20 @@ fn ownership_row_gen() -> impl Strategy<Value = OwnershipRowGen> {
 fn ownership_row_html(row: &OwnershipRowGen) -> String {
     match row {
         OwnershipRowGen::Valid {
-            holder,
+            holder_raw,
             capital_bp,
+            capital_comma,
             votes_bp,
+            votes_comma,
             year,
             month,
             day,
+            ..
         } => {
-            let capital = Decimal::new(*capital_bp as i64, 2);
-            let votes = Decimal::new(*votes_bp as i64, 2);
+            let capital = ownership_pct(*capital_bp, *capital_comma);
+            let votes = ownership_pct(*votes_bp, *votes_comma);
             format!(
-                "<tr><td>{holder}</td><td>{capital} %</td><td>1000</td><td>50000</td><td>{votes} %</td><td>1000000</td><td>{day:02}.{month:02}.{year:04}</td></tr>"
+                "<tr><td>{holder_raw}</td><td>{capital} %</td><td>1000</td><td>50000</td><td>{votes} %</td><td>1000000</td><td>{day:02}.{month:02}.{year:04}</td></tr>"
             )
         }
         OwnershipRowGen::HeaderRow => "<tr><th>Razem</th><td>93.22 %</td><td>1</td><td>2</td><td>93.22 %</td><td>3</td><td>01.01.2020</td></tr>".to_owned(),
@@ -406,6 +440,24 @@ fn ownership_row_html(row: &OwnershipRowGen) -> String {
         OwnershipRowGen::EmptyHolder => "<tr><td></td><td>1.00 %</td><td>1</td><td>2</td><td>1.00 %</td><td>3</td><td>01.01.2020</td></tr>".to_owned(),
         OwnershipRowGen::OverHundred => "<tr><td>Drifted Holder</td><td>150.00 %</td><td>1</td><td>2</td><td>10.00 %</td><td>3</td><td>01.01.2020</td></tr>".to_owned(),
     }
+}
+
+/// Directed regression for the property oracle bug fixed above (the
+/// `.find()`-by-name lookup silently skipped a second same-named row): two
+/// valid rows sharing a holder name, with different dates, must both
+/// survive as separate holder entries, and the LATER date must win as the
+/// page basis.
+#[test]
+fn biznesradar_ownership_duplicate_holder_names_both_survive() {
+    let page_html = "<html><body><h2>Główni akcjonariusze</h2><table class=\"qTableFull\">\
+        <tr><th>Akcjonariusz</th><th>Udział</th><th>Liczba akcji</th><th>Wartość rynkowa</th><th>Udział na WZA</th><th>Liczba głosów</th><th>Data aktualizacji</th></tr>\
+        <tr><td>Aaa</td><td>1.00 %</td><td>1</td><td>2</td><td>1.00 %</td><td>3</td><td>01.01.2020</td></tr>\
+        <tr><td>Aaa</td><td>2.00 %</td><td>1</td><td>2</td><td>2.00 %</td><td>3</td><td>02.01.2020</td></tr>\
+        </table></body></html>";
+    let page = biznesradar_ownership::parse_akcjonariat_page(page_html)
+        .expect("a page with a Główni akcjonariusze table must parse");
+    assert_eq!(page.holders.len(), 2, "both same-named rows must survive");
+    assert_eq!(page.basis_as_of.as_deref(), Some("2020-01-02"));
 }
 
 /// One rating BiznesRadar's recommendation page vocabulary uses, verbatim.
@@ -594,10 +646,7 @@ fn recommendation_row_html(row: &RecommendationRowGen) -> String {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig {
-        cases: bounded_cases(std::env::var("PROPTEST_CASES").ok().as_deref()),
-        ..ProptestConfig::default()
-    })]
+    #![proptest_config(ProptestConfig::with_cases(128))]
 
     #[test]
     fn bankier_rss_parser_is_total_and_bounded(doc in adversarial_markup()) {
@@ -797,30 +846,49 @@ proptest! {
         prop_assert!(page.holders.iter().all(|h| h.capital_pct.is_none_or(|v| v <= hundred)));
         prop_assert!(page.holders.iter().all(|h| h.votes_pct.is_none_or(|v| v <= hundred)));
 
+        // Multiset comparison, not a per-name `.find()`: two Valid rows can
+        // share a generated holder name (a rare regex collision) with
+        // DIFFERENT percentages, and the real parser keeps one holder entry
+        // per row (never deduped by name) — `.find()` would always resolve
+        // to the first same-named entry regardless of which row is being
+        // checked, silently passing a wrong pairing. The basis date is the
+        // max over every accepted row, independent of name collisions too.
         let mut expected_basis: Option<String> = None;
-        let mut seen_names: HashSet<String> = HashSet::new();
+        let mut expected_holders: Vec<(String, Decimal, Decimal)> = Vec::new();
         for row in &rows {
-            if let OwnershipRowGen::Valid { holder, capital_bp, votes_bp, year, month, day } = row {
-                // A rare regex-collision on the same generated name makes the
-                // per-value check ambiguous (which row's percentages does the
-                // stored holder reflect?) — skip it, the length/bound checks
-                // above still cover it.
-                if !seen_names.insert(holder.clone()) {
-                    continue;
-                }
+            if let OwnershipRowGen::Valid {
+                holder_normalized,
+                capital_bp,
+                votes_bp,
+                year,
+                month,
+                day,
+                ..
+            } = row
+            {
                 let capital = Decimal::new(*capital_bp as i64, 2);
                 let votes = Decimal::new(*votes_bp as i64, 2);
-                let found = page.holders.iter().find(|h| &h.holder_name == holder);
-                prop_assert!(found.is_some(), "valid holder {holder} missing");
-                let found = found.unwrap();
-                prop_assert_eq!(found.capital_pct, Some(capital));
-                prop_assert_eq!(found.votes_pct, Some(votes));
+                expected_holders.push((holder_normalized.clone(), capital, votes));
                 let iso = format!("{year:04}-{month:02}-{day:02}");
                 if expected_basis.as_deref().is_none_or(|current| iso.as_str() > current) {
                     expected_basis = Some(iso);
                 }
             }
         }
+        let mut actual_holders: Vec<(String, Decimal, Decimal)> = page
+            .holders
+            .iter()
+            .map(|h| {
+                (
+                    h.holder_name.clone(),
+                    h.capital_pct.unwrap_or_default(),
+                    h.votes_pct.unwrap_or_default(),
+                )
+            })
+            .collect();
+        expected_holders.sort();
+        actual_holders.sort();
+        prop_assert_eq!(actual_holders, expected_holders);
         prop_assert_eq!(page.basis_as_of, expected_basis);
     }
 

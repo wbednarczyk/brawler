@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use super::extract_fn_body;
+use super::scan::strip_comments_and_strings;
 
 /// The content of every module `path` (a `.rs` file) declares at top level
 /// with `mod x;` (any visibility) — a preceding `#[path = "P"]` attribute
@@ -16,7 +17,13 @@ use super::extract_fn_body;
 /// `mod tests;` -> `esef/tests.rs`; `report_documents_capture.rs`'s
 /// `#[path = "report_documents_capture_tests.rs"] mod tests;`) counts toward
 /// the manifest guard's `proptest!`/`insta::` search without the guard
-/// having to know every file's test-module layout by hand.
+/// having to know every file's test-module layout by hand. Only a **column-0**
+/// declaration counts — an indented `mod tests;` is a nested item, not a
+/// file-level one — and comments/strings are blanked before matching (via
+/// `strip_comments_and_strings`) so a `mod tests;` sitting inside `/* … */`
+/// or a multi-line string fixture is never mistaken for a real declaration.
+/// The `#[path = "…"]` filename itself is read back from the *unstripped*
+/// line, since the stripper blanks its own string value too.
 pub(super) fn declared_test_module_content(path: &Path, content: &str) -> String {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     let stem = path
@@ -25,14 +32,19 @@ pub(super) fn declared_test_module_content(path: &Path, content: &str) -> String
         .unwrap_or_default();
     let mut extra = String::new();
     let mut pending_path_attr: Option<&str> = None;
-    for line in content.lines() {
-        let trimmed = line.trim_start();
-        if let Some(inner) = trimmed
-            .strip_prefix("#[path")
-            .and_then(|rest| rest.trim_start().strip_prefix('='))
-            .and_then(|rest| rest.trim().trim_start_matches('"').split('"').next())
-        {
-            pending_path_attr = Some(inner);
+    // Comments and string literals are blanked (length/line-preserving)
+    // before matching, and — unlike the old `line.trim_start()` — the
+    // prefix checks below run against the line's own indentation, so only a
+    // column-0 (top-level) `mod`/`#[path]` counts: an indented one is a
+    // nested item, and a commented-out or string-embedded one collapses to
+    // blank spaces that match no prefix either.
+    let stripped = strip_comments_and_strings(content);
+    for (line, trimmed) in content.lines().zip(stripped.lines()) {
+        if trimmed.starts_with("#[path") {
+            pending_path_attr = line
+                .strip_prefix("#[path")
+                .and_then(|rest| rest.trim_start().strip_prefix('='))
+                .and_then(|rest| rest.trim().trim_start_matches('"').split('"').next());
             continue;
         }
         let mod_name = ["mod ", "pub mod ", "pub(crate) mod ", "pub(super) mod "]
@@ -74,13 +86,24 @@ fn module_stem(module_path: &str) -> &str {
 /// Validates a manifest row's `"proptest_in": "<file>::<fn>"` claim (the
 /// property test lives elsewhere, e.g. `tests/parser_fuzz.rs`, rather than in
 /// the module's own file/declared test submodule): `<file>` (relative to
-/// `manifest_dir`, i.e. `src-tauri/`) exists and declares `fn <name>(`; that
-/// fn sits inside a `proptest! { ... }` block — the nearest preceding line
-/// whose trimmed text starts with `proptest!`, whose same-indentation closing
-/// `}` comes after the fn; and the fn's own brace-matched body (via
-/// `extract_fn_body`) contains `<stem>::`, where `<stem>` is `module_path`'s
-/// (`module_stem`). Any failure is a plain reason string — the caller names
-/// the manifest row.
+/// `manifest_dir`, i.e. `src-tauri/`) exists and declares `fn <name>(`
+/// exactly once (two-or-more `fn <name>(` definitions in the file is an
+/// "ambiguous property name" violation rather than silently picking the
+/// first); that fn sits inside a `proptest! { ... }` block — the nearest
+/// preceding line whose trimmed text starts with `proptest!`, whose
+/// same-indentation closing `}` comes after the fn; and the fn's own
+/// brace-matched body (via `extract_fn_body`) makes a genuine call/path
+/// reference to `<stem>::` (`body_references_stem`), where `<stem>` is
+/// `module_path`'s (`module_stem`). Fn discovery and the `proptest!` block
+/// search both run over `strip_comments_and_strings`-blanked lines, so a
+/// commented-out `fn`/`proptest!` line is never matched. Any failure is a
+/// plain reason string — the caller names the manifest row.
+///
+/// Note the inherent limit this leaves: `<stem>::` cannot distinguish two
+/// different modules that happen to share a file stem (`foo/bar.rs` and
+/// `baz/bar.rs` both stem to `bar`) — the manifest lists the full path per
+/// row, so a reviewer can catch a cross-module false-positive by eye even
+/// though this helper cannot.
 pub(super) fn proptest_in_is_valid(
     manifest_dir: &Path,
     module_path: &str,
@@ -92,22 +115,35 @@ pub(super) fn proptest_in_is_valid(
     let content = std::fs::read_to_string(manifest_dir.join(file_rel))
         .map_err(|_| format!("file {file_rel} does not exist"))?;
     let lines: Vec<&str> = content.lines().collect();
+    let stripped = strip_comments_and_strings(&content);
+    let stripped_lines: Vec<&str> = stripped.lines().collect();
     let target = format!("{fn_name}(");
-    let fn_line = lines
+    let is_target_fn = |line: &str| {
+        strip_fn_modifiers(line)
+            .strip_prefix("fn ")
+            .is_some_and(|after| after.starts_with(&target))
+    };
+    let matches: Vec<usize> = stripped_lines
         .iter()
-        .position(|line| {
-            strip_fn_modifiers(line)
-                .strip_prefix("fn ")
-                .is_some_and(|after| after.starts_with(&target))
-        })
+        .enumerate()
+        .filter_map(|(index, line)| is_target_fn(line).then_some(index))
+        .collect();
+    if matches.len() > 1 {
+        return Err(format!(
+            "ambiguous property name: fn {fn_name} is defined {} times in {file_rel}",
+            matches.len()
+        ));
+    }
+    let fn_line = *matches
+        .first()
         .ok_or_else(|| format!("fn {fn_name} not found in {file_rel}"))?;
 
-    let proptest_line = lines[..fn_line]
+    let proptest_line = stripped_lines[..fn_line]
         .iter()
         .rposition(|line| line.trim_start().starts_with("proptest!"))
         .ok_or_else(|| format!("fn {fn_name} is not inside a proptest! block"))?;
     let block_indent = lines[proptest_line].len() - lines[proptest_line].trim_start().len();
-    let closing_line = lines[proptest_line + 1..]
+    let closing_line = stripped_lines[proptest_line + 1..]
         .iter()
         .position(|line| {
             let indent = line.len() - line.trim_start().len();
@@ -125,10 +161,43 @@ pub(super) fn proptest_in_is_valid(
 
     let body = extract_fn_body(&content, &lines, fn_line);
     let stem = module_stem(module_path);
-    if !body.contains(&format!("{stem}::")) {
+    if !body_references_stem(&body, stem) {
         return Err(format!("fn {fn_name} body never references {stem}::"));
     }
     Ok(())
+}
+
+/// Whether `body` makes a genuine call/path reference to `<stem>::` — not
+/// merely the text appearing inside a comment or a string literal (blanked
+/// via `strip_comments_and_strings` before matching), and not a bare
+/// mention with nothing after it: a `<stem>::` word-bounded on the left,
+/// followed by an identifier, followed by `(` (a call) or `::` (a further
+/// path segment, including turbofish). A bare `stem::SOME_CONST` path use
+/// with no call/further segment does not count — it is not enough to prove
+/// the property actually exercises the module.
+fn body_references_stem(body: &str, stem: &str) -> bool {
+    let stripped = strip_comments_and_strings(body);
+    let bytes = stripped.as_bytes();
+    let needle = format!("{stem}::");
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut search_from = 0;
+    while let Some(relative) = stripped[search_from..].find(&needle) {
+        let start = search_from + relative;
+        let word_boundary_ok = start == 0 || !is_ident(bytes[start - 1]);
+        let ident_start = start + needle.len();
+        let mut end = ident_start;
+        while end < bytes.len() && is_ident(bytes[end]) {
+            end += 1;
+        }
+        let has_ident = end > ident_start;
+        let followed_by_call_or_path = matches!(bytes.get(end), Some(b'('))
+            || (bytes.get(end) == Some(&b':') && bytes.get(end + 1) == Some(&b':'));
+        if word_boundary_ok && has_ident && followed_by_call_or_path {
+            return true;
+        }
+        search_from = start + 1;
+    }
+    false
 }
 
 /// `line` with its leading modifier keywords (`pub`, `async`, ...) stripped,
@@ -227,6 +296,54 @@ mod tests {
         );
     }
 
+    #[test]
+    fn read_module_content_ignores_a_commented_out_mod_tests() {
+        let scratch = TempScratch::new("commented-mod");
+        let file = scratch.path().join("widget.rs");
+        fs::write(
+            &file,
+            "pub fn widget() {}\n\n/*\n#[cfg(test)]\nmod tests;\n*/\n",
+        )
+        .unwrap();
+        fs::create_dir_all(scratch.path().join("widget")).unwrap();
+        fs::write(
+            scratch.path().join("widget").join("tests.rs"),
+            "proptest! { #[test] fn t(x in 0u32..1) { let _ = widget::widget(); } }\n",
+        )
+        .unwrap();
+
+        let own = fs::read_to_string(&file).unwrap();
+        let extra = declared_test_module_content(&file, &own);
+        assert!(
+            extra.is_empty(),
+            "a `mod tests;` inside a block comment must not be honored: {extra:?}"
+        );
+    }
+
+    #[test]
+    fn read_module_content_ignores_an_indented_mod_tests() {
+        let scratch = TempScratch::new("indented-mod");
+        let file = scratch.path().join("widget.rs");
+        fs::write(
+            &file,
+            "pub fn widget() {}\n\nfn inner() {\n    #[cfg(test)]\n    mod tests;\n}\n",
+        )
+        .unwrap();
+        fs::create_dir_all(scratch.path().join("widget")).unwrap();
+        fs::write(
+            scratch.path().join("widget").join("tests.rs"),
+            "proptest! { #[test] fn t(x in 0u32..1) { let _ = widget::widget(); } }\n",
+        )
+        .unwrap();
+
+        let own = fs::read_to_string(&file).unwrap();
+        let extra = declared_test_module_content(&file, &own);
+        assert!(
+            extra.is_empty(),
+            "a non-top-level (indented) `mod tests;` must not be honored: {extra:?}"
+        );
+    }
+
     /// `manifest_dir` for `proptest_in_is_valid` calls below: a scratch dir
     /// containing one `tests.rs` file, addressed as `"tests.rs::<fn>"`.
     fn write_spec_file(scratch: &TempScratch, content: &str) {
@@ -278,5 +395,38 @@ mod tests {
             proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").is_ok(),
             "a fn inside proptest! referencing the module stem should validate"
         );
+    }
+
+    #[test]
+    fn proptest_in_rejects_a_reference_inside_a_string_literal() {
+        let scratch = TempScratch::new("string-literal-ref");
+        write_spec_file(
+            &scratch,
+            "proptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        let _ = \"foo::not_a_real_call(x)\";\n    }\n}\n",
+        );
+        let err = proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").unwrap_err();
+        assert!(err.contains("never references"), "{err}");
+    }
+
+    #[test]
+    fn proptest_in_rejects_a_reference_inside_a_comment() {
+        let scratch = TempScratch::new("comment-ref");
+        write_spec_file(
+            &scratch,
+            "proptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        // foo::parse(x) is called conceptually\n        let _ = x;\n    }\n}\n",
+        );
+        let err = proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").unwrap_err();
+        assert!(err.contains("never references"), "{err}");
+    }
+
+    #[test]
+    fn proptest_in_rejects_ambiguous_duplicate_fn_names() {
+        let scratch = TempScratch::new("duplicate-fn");
+        write_spec_file(
+            &scratch,
+            "proptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        let _ = foo::parse(x);\n    }\n}\n\nmod other {\n    fn t() {}\n}\n",
+        );
+        let err = proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").unwrap_err();
+        assert!(err.contains("ambiguous"), "{err}");
     }
 }

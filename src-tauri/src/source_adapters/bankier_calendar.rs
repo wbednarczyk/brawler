@@ -460,16 +460,33 @@ mod tests {
                 prop_assert_eq!(parse_polish_calendar_date(&rendered), Some(expected));
             }
 
-            /// An invalid day token or an unrecognized month word (the
-            /// nominative "styczen" instead of the genitive "stycznia", or
-            /// pure junk) must yield `None`, never a guess.
+            /// Invalid day, VALID month word: an out-of-range day must yield
+            /// `None` on its own, not only when the month is also broken.
+            /// Mutation proof: removing the day-range filter makes
+            /// `32. stycznia 2026` parse (the `u8` still holds 32 fine, and
+            /// `polish_month_number` validates "stycznia" regardless).
             #[test]
-            fn invalid_day_or_month_word_yields_none(
-                day_str in prop_oneof![Just("0"), Just("32"), Just("abc")],
+            fn invalid_day_yields_none_with_a_valid_month(
+                day_str in prop_oneof![Just("0"), Just("32"), Just("99")],
+                month_idx in 0usize..12,
+                year in 2000u16..=2100,
+            ) {
+                let (_, word) = month_words()[month_idx];
+                let rendered = format!("{day_str}. {word} {year}");
+                prop_assert_eq!(parse_polish_calendar_date(&rendered), None);
+            }
+
+            /// VALID day, invalid month word (the nominative "styczen"
+            /// instead of the genitive "stycznia", or pure junk): must
+            /// yield `None` on its own, not only when the day is also
+            /// broken.
+            #[test]
+            fn invalid_month_word_yields_none_with_a_valid_day(
+                day in 1u8..=28,
                 word in prop_oneof![Just("styczen"), Just("foo")],
                 year in 2000u16..=2100,
             ) {
-                let rendered = format!("{day_str}. {word} {year}");
+                let rendered = format!("{day}. {word} {year}");
                 prop_assert_eq!(parse_polish_calendar_date(&rendered), None);
             }
         }
