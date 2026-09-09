@@ -157,13 +157,18 @@ pub(super) fn proptest_in_is_valid(
         .ok_or_else(|| format!("{spec:?} is not \"<file>::<fn>\""))?;
     let content = std::fs::read_to_string(manifest_dir.join(file_rel))
         .map_err(|_| format!("file {file_rel} does not exist"))?;
-    let lines: Vec<&str> = content.lines().collect();
     let stripped = strip_comments_and_strings(&content);
+    let stripped_lines: Vec<&str> = stripped.lines().collect();
 
     let fn_line = find_property_fn_line(&stripped, fn_name)
         .map_err(|reason| format!("fn {fn_name} {reason} in {file_rel}"))?;
 
-    let body = extract_fn_body(&content, &lines, fn_line);
+    // Extracted from the comment/string-stripped (length-preserving) text,
+    // not raw `content`: `extract_fn_body`'s own brace-matcher skips
+    // strings but not comments or char literals, so a `// }` or a `'}'`
+    // literal before the real call would otherwise end the body early and
+    // the call the property actually makes is never seen.
+    let body = extract_fn_body(&stripped, &stripped_lines, fn_line);
     if body_defines_nested_fn(&body) {
         return Err(
             "nested fn inside a property body is unsupported — call the transform directly"
@@ -650,6 +655,39 @@ mod tests {
         assert!(
             proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").is_ok(),
             "non-ASCII text anywhere in the file must not panic or block validation"
+        );
+    }
+
+    #[test]
+    fn proptest_in_accepts_a_body_with_a_closing_brace_char_literal_before_the_call() {
+        // `extract_fn_body`'s own brace-matcher skips strings but not char
+        // literals — a closing-brace char literal before the real call must
+        // not be mistaken for the body's own closing brace, which would cut
+        // extraction short and hide the `foo::parse(x)` call from
+        // `body_references_stem`.
+        let scratch = TempScratch::new("char-literal-brace-in-body");
+        write_spec_file(
+            &scratch,
+            "proptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        let _ = '}';\n        prop_assert_eq!(foo::parse(x), x);\n    }\n}\n",
+        );
+        assert!(
+            proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").is_ok(),
+            "a `'}}'` char literal before the real call must not end body extraction early"
+        );
+    }
+
+    #[test]
+    fn proptest_in_accepts_a_body_with_a_closing_brace_comment_before_the_call() {
+        // Same class of bug, via a closing-brace line comment instead of a
+        // char literal.
+        let scratch = TempScratch::new("comment-brace-in-body");
+        write_spec_file(
+            &scratch,
+            "proptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        // }\n        prop_assert_eq!(foo::parse(x), x);\n    }\n}\n",
+        );
+        assert!(
+            proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").is_ok(),
+            "a `// }}` comment before the real call must not end body extraction early"
         );
     }
 
