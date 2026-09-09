@@ -266,10 +266,18 @@ fn body_references_stem(body: &str, stem: &str) -> bool {
 /// `Err` names why: the name never appears in the file at all, or it
 /// appears but never as a top-level `#[test]` property, or it qualifies
 /// more than once (ambiguous).
+///
+/// Scans `bytes`/byte-slice comparisons throughout, never a `&str` slice at
+/// an arbitrary offset: `i` walks one BYTE at a time and can land inside a
+/// multi-byte UTF-8 character (any non-ASCII text anywhere in the file, in
+/// or out of a comment/string — e.g. `const Ż: u8 = 0;`), and `stripped[i..]`
+/// panics at a non-boundary index. `[u8]::starts_with`/`ends_with` and raw
+/// byte comparisons have no such requirement.
 fn find_property_fn_line(stripped: &str, fn_name: &str) -> Result<usize, String> {
     let bytes = stripped.as_bytes();
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
     let target = format!("fn {fn_name}(");
+    let target_bytes = target.as_bytes();
     let stripped_lines: Vec<&str> = stripped.lines().collect();
 
     // Stack of whether each currently-open (unmatched) `{` is a `proptest!`
@@ -287,7 +295,7 @@ fn find_property_fn_line(stripped: &str, fn_name: &str) -> Result<usize, String>
                 while before > 0 && bytes[before - 1].is_ascii_whitespace() {
                     before -= 1;
                 }
-                brace_stack.push(stripped[..before].ends_with("proptest!"));
+                brace_stack.push(bytes[..before].ends_with(b"proptest!"));
                 i += 1;
                 continue;
             }
@@ -298,10 +306,10 @@ fn find_property_fn_line(stripped: &str, fn_name: &str) -> Result<usize, String>
             }
             _ => {}
         }
-        if stripped[i..].starts_with(&target) && (i == 0 || !is_ident(bytes[i - 1])) {
+        if bytes[i..].starts_with(target_bytes) && (i == 0 || !is_ident(bytes[i - 1])) {
             name_found_anywhere = true;
             let is_direct_child = brace_stack.last() == Some(&true);
-            let line = stripped[..i].matches('\n').count();
+            let line = bytes[..i].iter().filter(|&&b| b == b'\n').count();
             if is_direct_child && has_test_attr_above(&stripped_lines, line) {
                 candidate_lines.push(line);
             }
@@ -547,6 +555,34 @@ mod tests {
         );
     }
 
+    #[test]
+    fn read_module_content_resolves_mod_tests_after_a_char_literal_brace() {
+        // A `'{'` char literal earlier in the file must not be mistaken for
+        // a real opening brace — that would make the brace-depth counter
+        // see `mod tests;` as nested (depth 1) and skip it, exactly the
+        // regression fixed in `scan::strip_comments_and_strings`.
+        let scratch = TempScratch::new("char-literal-brace");
+        let file = scratch.path().join("widget.rs");
+        fs::write(
+            &file,
+            "const OPEN: char = '{';\n\n#[cfg(test)]\nmod tests;\n",
+        )
+        .unwrap();
+        fs::create_dir_all(scratch.path().join("widget")).unwrap();
+        fs::write(
+            scratch.path().join("widget").join("tests.rs"),
+            "proptest! { #[test] fn t(x in 0u32..1) { let _ = widget::widget(); } }\n",
+        )
+        .unwrap();
+
+        let own = fs::read_to_string(&file).unwrap();
+        let extra = declared_test_module_content(&file, &own);
+        assert!(
+            extra.contains("proptest!"),
+            "a `'{{' char literal must not corrupt the brace-depth count: {extra:?}"
+        );
+    }
+
     /// `manifest_dir` for `proptest_in_is_valid` calls below: a scratch dir
     /// containing one `tests.rs` file, addressed as `"tests.rs::<fn>"`.
     fn write_spec_file(scratch: &TempScratch, content: &str) {
@@ -597,6 +633,23 @@ mod tests {
         assert!(
             proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").is_ok(),
             "a fn inside proptest! referencing the module stem should validate"
+        );
+    }
+
+    #[test]
+    fn proptest_in_does_not_panic_on_multi_byte_utf8_before_the_property() {
+        // A byte-at-a-time scan over `&str` slicing panics the instant it
+        // lands mid-character; a validation guard panicking on valid Rust
+        // source (a Polish identifier, a `// ż` comment, a `"ż"` string) is
+        // itself a bug — it reddens the gate on innocent code.
+        let scratch = TempScratch::new("multi-byte-utf8");
+        write_spec_file(
+            &scratch,
+            "const Ż: u8 = 0;\n// ż\nlet _ = \"ż\";\n\nproptest! {\n    #[test]\n    fn t(x in 0u32..1) {\n        let _ = foo::parse(x);\n    }\n}\n",
+        );
+        assert!(
+            proptest_in_is_valid(scratch.path(), "src/foo.rs", "tests.rs::t").is_ok(),
+            "non-ASCII text anywhere in the file must not panic or block validation"
         );
     }
 

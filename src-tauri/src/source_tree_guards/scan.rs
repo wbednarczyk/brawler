@@ -93,10 +93,27 @@ fn non_code_spans(content: &str) -> Vec<(usize, usize)> {
                 }
                 spans.push((start, i));
             }
-            // Rust block comments NEST (`/* outer /* inner */ still-comment */`
-            // is one comment, not "outer" plus the code between the two `*/`s)
-            // — a depth counter tracks that instead of stopping at the first
-            // `*/`.
+            // A char/byte-char literal (`'{'`, `'\''`, `'\u{7b}'`, `b'{'`)
+            // must be blanked too — an unblanked `'{'` corrupts a caller's
+            // brace-depth count — but a LIFETIME (`'a`, `impl<'a>`) must
+            // survive untouched, so this only fires when the `'` is
+            // actually followed by a closing `'` (escaped or one-char).
+            b'\'' => {
+                if let Some(end) = char_literal_end(bytes, i) {
+                    spans.push((i, end));
+                    i = end;
+                    continue;
+                }
+                i += 1;
+            }
+            b'b' if bytes.get(i + 1) == Some(&b'\'') => {
+                if let Some(end) = char_literal_end(bytes, i + 1) {
+                    spans.push((i, end));
+                    i = end;
+                    continue;
+                }
+                i += 1;
+            }
             // Rust block comments NEST (`/* outer /* inner */ still-comment */`
             // is one comment, not "outer" plus the code between the two `*/`s)
             // — a depth counter tracks that instead of stopping at the first
@@ -122,6 +139,28 @@ fn non_code_spans(content: &str) -> Vec<(usize, usize)> {
         }
     }
     spans
+}
+
+/// If `bytes[quote_pos]` (a `'`) opens a char/byte-char literal — an
+/// escaped one (`'\n'`, `'\''`, `'\u{7b}'`) or a plain one-char literal
+/// (`'{'`) — the exclusive end offset just past its closing `'`. `None` for
+/// a lifetime (`'a`, `'static`), which the caller then leaves untouched.
+fn char_literal_end(bytes: &[u8], quote_pos: usize) -> Option<usize> {
+    if bytes.get(quote_pos + 1) == Some(&b'\\') {
+        // Escaped: the same "skip 2 after `\`, else 1" scan the plain
+        // string-literal branch above uses — it can't be fooled by an
+        // escaped quote (`\'`, 2 bytes) into stopping early, regardless of
+        // which escape kind (`\n`, `\xHH`, `\u{...}`, ...) follows.
+        let mut j = quote_pos + 1;
+        while j < bytes.len() && bytes[j] != b'\'' {
+            j += if bytes[j] == b'\\' { 2 } else { 1 };
+        }
+        return Some((j + 1).min(bytes.len()));
+    }
+    if bytes.get(quote_pos + 2) == Some(&b'\'') {
+        return Some(quote_pos + 3);
+    }
+    None
 }
 
 /// Blank (space out, preserving newlines) every quoted-string, raw-string,
@@ -327,5 +366,29 @@ mod tests {
             content.len(),
             "blanking must be byte-length-preserving"
         );
+    }
+
+    #[test]
+    fn strip_comments_and_strings_blanks_char_and_byte_char_literals() {
+        for literal in ["'{'", "'\\''", "'\\u{7b}'", "b'{'"] {
+            let content = format!("const OPEN: char = {literal};\nmod tests;\n");
+            let stripped = strip_comments_and_strings(&content);
+            assert!(
+                !stripped.contains('{') && !stripped.contains('}'),
+                "the char/byte-char literal {literal} must be blanked so it \
+                 cannot corrupt a caller's brace count: {stripped:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn strip_comments_and_strings_leaves_lifetimes_alone() {
+        for content in ["fn f(x: &'a str) {}", "impl<'a> Widget<'a> {}"] {
+            let stripped = strip_comments_and_strings(content);
+            assert_eq!(
+                stripped, content,
+                "a lifetime must never be mistaken for a char literal: {stripped:?}"
+            );
+        }
     }
 }
