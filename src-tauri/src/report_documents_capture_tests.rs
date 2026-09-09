@@ -624,9 +624,24 @@ mod properties {
             url in ".{0,60}",
         ) {
             let ext = determine_extension(&content_type, &url);
-            prop_assert!(ext.len() <= 9, "unexpectedly long extension: {ext:?}");
-            prop_assert_eq!(ext.to_lowercase(), ext);
+            // The contract an on-disk filename relies on: "bin", or 1..=9
+            // ASCII lowercase alphanumerics — never a NUL, a symbol, or a
+            // non-ASCII char whose lowercase form is longer than its input.
+            prop_assert!(
+                ext == "bin" || (ext.len() <= 9 && ext.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())),
+                "extension outside the filename contract: {ext:?}"
+            );
         }
+    }
+
+    /// Counter-example the 2000-case property run found (#194): a URL whose
+    /// "extension" holds a NUL and a non-ASCII char that grows under
+    /// lowercasing passed the byte bound and reached the filename.
+    #[test]
+    fn determine_extension_rejects_non_ascii_or_control_extensions() {
+        assert_eq!(determine_extension(&None, ".a0\0\u{10000}\u{023A}"), "bin");
+        assert_eq!(determine_extension(&None, "https://x/report.PDF"), "pdf");
+        assert_eq!(determine_extension(&None, "https://x/report.p-d"), "bin");
     }
 
     /// Meaning check (table-driven, not random): every documented
