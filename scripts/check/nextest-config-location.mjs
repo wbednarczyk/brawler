@@ -57,7 +57,9 @@ export function checkNextestConfigLocation(repoRoot) {
   let overrideQualifies = false;
 
   for (const line of lines) {
-    const trimmed = line.trim();
+    // A header may carry a trailing comment (`[test-groups] # socket limits`)
+    // — TOML ignores it, so must this scan.
+    const trimmed = line.replace(/\s*#.*$/, "").trim();
     if (trimmed.startsWith("[")) {
       if (inOverrides && overrideHasTestGroup && overrideHasFilter) {
         overrideQualifies = true;

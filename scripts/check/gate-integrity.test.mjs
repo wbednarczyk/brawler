@@ -139,3 +139,19 @@ test("passes when the config lives only at src-tauri/.config/nextest.toml with t
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("accepts trailing comments on the TOML headers (TOML ignores them, so must the scan)", () => {
+  const withHeaderComments = VALID_CONFIG.replace("[test-groups]", "[test-groups] # socket limits").replace(
+    "[[profile.default.overrides]]",
+    "[[profile.default.overrides]] # socket assignments",
+  );
+  assert.notEqual(withHeaderComments, VALID_CONFIG);
+  const root = makeTree({
+    "src-tauri/.config/nextest.toml": withHeaderComments,
+  });
+  try {
+    assert.deepEqual(checkNextestConfigLocation(root), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
