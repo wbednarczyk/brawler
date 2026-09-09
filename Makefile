@@ -324,7 +324,7 @@ disk-clean-deep: disk-clean
 # Rust coverage runs under NEXTEST (process-per-test), not plain `cargo test`
 # (threads-in-one-process): env-mutating hermetic tests (credential scrubs,
 # BRAWLER_MCP_TOKEN) and the loopback-socket test group rely on process
-# isolation + .config/nextest.toml — under threaded cargo-test they race each
+# isolation + src-tauri/.config/nextest.toml — under threaded cargo-test they race each
 # other (5 tests reddened the v0.52 closure run exactly this way, 2026-07-12).
 coverage-frontend:
 	$(NIX) npm run test:coverage

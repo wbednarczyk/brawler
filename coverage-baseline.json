@@ -28,7 +28,7 @@
     "lines": 85.5,
     "dirs": {
       "src-tauri/src/(root)": 77.8,
-      "src-tauri/src/bin": 45.3,
+      "src-tauri/src/bin": 97,
       "src-tauri/src/commands": 50.3,
       "src-tauri/src/fundamentals": 93.2,
       "src-tauri/src/interpretation": 87.9,
