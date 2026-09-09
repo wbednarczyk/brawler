@@ -6,3 +6,21 @@
 # which rejects --test-threads (found 2026-07-03).
 [profile.mutants]
 test-threads = 2
+
+# Guardrail 2026-07-12 (v0.52 closure): tests that bind real loopback sockets
+# (MCP lifecycle/server + the live-toggle command test) race each other for
+# probed ports under nextest's default parallelism — the probe→bind window let
+# a parallel test steal the port and redden the gate intermittently. Serialize
+# them among themselves; everything else keeps full parallelism. Widened
+# 2026-09 to the whole `brawler-mcp-stdio` bin and its CLI subprocess test:
+# both spawn real loopback stub HTTP servers to cover the stdin→POST→stdout
+# loop. Relocated here from the repo-root `.config/nextest.toml` 2026-09 (PR
+# #491 review) — nextest resolves config relative to the Cargo workspace root
+# (here), so the repo-root copy was silently ignored and this group was
+# inactive since 2026-07-12; see scripts/check/nextest-config-location.mjs.
+[test-groups]
+loopback-sockets = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'test(mcp::lifecycle) | test(mcp::server) | test(set_enabled_starts_and_stops_live) | binary(=brawler-mcp-stdio) | binary(=mcp_stdio_cli)'
+test-group = 'loopback-sockets'

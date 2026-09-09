@@ -5,10 +5,15 @@
 //! environment (see [`bin`]) rather than mutating the test process's own env
 //! — the bin's `#[cfg(test)]` unit tests stay hermetic (no
 //! `std::env::set_var`).
+//!
+//! These tests join the serialized `loopback-sockets` nextest group
+//! (`src-tauri/.config/nextest.toml`, `binary(=mcp_stdio_cli)`).
 
-use std::io::Write;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 /// A `Command` for the compiled binary, pre-cleared of the process env so
 /// each test controls exactly what config the child sees. `LLVM_PROFILE_FILE`
@@ -34,6 +39,115 @@ fn closed_port() -> u16 {
     let port = listener.local_addr().expect("local addr").port();
     drop(listener);
     port
+}
+
+/// What the one-shot stub observed on the single connection it accepted.
+struct StubResult {
+    path: String,
+    authorization: Option<String>,
+}
+
+/// A minimal, ONE-SHOT loopback HTTP/1.1 stub for the subprocess-facing CLI
+/// tests: binds an ephemeral port (`127.0.0.1:0`, never a probe-then-drop),
+/// accepts exactly one connection bounded by a 5s deadline (so a binary that
+/// never posts — e.g. because an env/flag fallback silently broke — fails
+/// this test fast instead of hanging it), reads the request head + body,
+/// replies 200 with `body`, and returns what it observed. Deliberately
+/// separate from the bin's own internal `spawn_stub_server`
+/// (src/bin/brawler-mcp-stdio.rs) — that one lives in a different test
+/// binary and this one only ever needs a single request/response.
+fn spawn_one_shot_stub(body: &'static str) -> (u16, JoinHandle<StubResult>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub listener");
+    listener
+        .set_nonblocking(true)
+        .expect("stub listener nonblocking");
+    let port = listener.local_addr().expect("stub local addr").port();
+
+    let handle = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        panic!(
+                            "stub timed out after 5s waiting for the binary's POST — a \
+                             production regression likely broke the port/token it used"
+                        );
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => panic!("stub accept failed: {e}"),
+            }
+        };
+        stream.set_nonblocking(false).expect("stub stream blocking");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("stub read timeout");
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .expect("stub write timeout");
+
+        let mut reader = BufReader::new(stream.try_clone().expect("clone stub stream"));
+        let mut request_line = String::new();
+        reader
+            .read_line(&mut request_line)
+            .expect("read request line");
+        let path = request_line
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or_default()
+            .to_owned();
+
+        let mut content_length = 0usize;
+        let mut authorization = None;
+        loop {
+            let mut header_line = String::new();
+            reader
+                .read_line(&mut header_line)
+                .expect("read header line");
+            let trimmed = header_line.trim_end_matches(['\r', '\n']);
+            if trimmed.is_empty() {
+                break;
+            }
+            if let Some((name, value)) = trimmed.split_once(':') {
+                let value = value.trim().to_owned();
+                match name.trim().to_ascii_lowercase().as_str() {
+                    "content-length" => content_length = value.parse().unwrap_or(0),
+                    "authorization" => authorization = Some(value),
+                    _ => {}
+                }
+            }
+        }
+        let mut body_bytes = vec![0u8; content_length];
+        reader
+            .read_exact(&mut body_bytes)
+            .expect("read request body");
+
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("write stub response");
+
+        StubResult {
+            path,
+            authorization,
+        }
+    });
+
+    (port, handle)
+}
+
+fn send_one_request_line(child: &mut std::process::Child) {
+    {
+        let stdin = child.stdin.as_mut().expect("piped stdin");
+        writeln!(stdin, r#"{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}"#)
+            .expect("write request line");
+    }
+    drop(child.stdin.take());
 }
 
 #[test]
@@ -74,47 +188,70 @@ fn invalid_port_flag_is_fatal_with_exit_code_2() {
 }
 
 #[test]
-fn env_config_with_empty_stdin_exits_0_at_eof() {
-    let status = bin()
-        .env("BRAWLER_MCP_TOKEN", "envtoken")
-        .env("BRAWLER_MCP_PORT", "9001")
-        .stdin(Stdio::null())
-        .status()
-        .expect("spawn brawler-mcp-stdio");
+fn env_config_relays_a_real_request_through_the_stub() {
+    // A real round trip, not just "empty stdin exits 0" (which survives
+    // deleting the env-port fallback entirely, since no connection is ever
+    // attempted): if BRAWLER_MCP_PORT's fallback were broken, the binary
+    // would fall back to the DEFAULT_PORT (8317) instead, almost certainly
+    // miss the stub, and this test would see a connection-error envelope
+    // instead of the stub's body.
+    let body = r#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#;
+    let (port, stub) = spawn_one_shot_stub(body);
 
-    assert_eq!(status.code(), Some(0), "config from env is accepted");
+    let mut child = bin()
+        .env("BRAWLER_MCP_TOKEN", "x")
+        .env("BRAWLER_MCP_PORT", port.to_string())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn brawler-mcp-stdio");
+    send_one_request_line(&mut child);
+
+    let output = child.wait_with_output().expect("wait for exit");
+    let result = stub.join().expect("stub thread joins");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(result.path, "/mcp");
+    assert_eq!(result.authorization.as_deref(), Some("Bearer x"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout,
+        format!("{body}\n"),
+        "the binary must print the stub's body verbatim"
+    );
 }
 
 #[test]
-fn flags_win_over_env_and_the_error_names_the_flag_port() {
-    let port = closed_port();
+fn flags_win_over_env_and_the_stub_observes_the_flag_token() {
+    // Env points at a CLOSED port with the WRONG token; only the flags point
+    // at the real stub with the right token. This proves both halves flags
+    // must win on: if the PORT fallback leaked through, the request would hit
+    // the closed port (never the stub) and `stub.join()` would time out; if
+    // the TOKEN fallback leaked through, the stub would observe "Bearer
+    // wrongtoken" instead of the flag token.
+    let body = r#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#;
+    let (stub_port, stub) = spawn_one_shot_stub(body);
+    let closed = closed_port();
+
     let mut child = bin()
-        // Env would point elsewhere; the flags must win.
-        .env("BRAWLER_MCP_TOKEN", "envtoken")
-        .env("BRAWLER_MCP_PORT", "1")
-        .args(["--port", &port.to_string(), "--token", "flagtoken"])
+        .env("BRAWLER_MCP_TOKEN", "wrongtoken")
+        .env("BRAWLER_MCP_PORT", closed.to_string())
+        .args(["--port", &stub_port.to_string(), "--token", "flagtoken"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
         .spawn()
         .expect("spawn brawler-mcp-stdio");
-
-    {
-        let stdin = child.stdin.as_mut().expect("piped stdin");
-        writeln!(stdin, r#"{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}"#)
-            .expect("write request line");
-    }
-    // Drop stdin (EOF) by taking it, then wait for the process to exit.
-    drop(child.stdin.take());
+    send_one_request_line(&mut child);
 
     let output = child.wait_with_output().expect("wait for exit");
-    assert_eq!(output.status.code(), Some(0));
+    let result = stub.join().expect("stub thread joins");
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let lines: Vec<&str> = stdout.lines().collect();
-    assert_eq!(lines.len(), 1, "one connection-error envelope: {stdout}");
-    assert!(
-        lines[0].contains(&port.to_string()),
-        "error names the flag port ({port}), proving flags won over env: {stdout}"
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        result.authorization.as_deref(),
+        Some("Bearer flagtoken"),
+        "the stub observed the FLAG token, proving flags win over env"
     );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout, format!("{body}\n"));
 }

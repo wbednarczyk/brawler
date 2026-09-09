@@ -324,7 +324,10 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
     use std::sync::{Arc, Mutex};
     use std::thread::{self, JoinHandle};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
+
+    /// Bound on a single stub `accept()`/read/write — see [`accept_with_deadline`].
+    const STUB_TIMEOUT: Duration = Duration::from_secs(5);
 
     /// One request the stub server observed.
     struct RecordedRequest {
@@ -335,22 +338,64 @@ mod tests {
         body: String,
     }
 
+    /// Poll a nonblocking `listener` for a connection, up to `deadline` from
+    /// now (sleeping 10ms between tries). A production regression that skips
+    /// the expected POST would otherwise leave a plain blocking `accept()`
+    /// waiting forever and hang the whole test suite; this turns that into a
+    /// bounded, clearly-labeled failure instead. Panics (rather than
+    /// returning an error) on timeout so the spawning thread's `.join()`
+    /// surfaces it immediately as a test failure.
+    fn accept_with_deadline(listener: &TcpListener, deadline: Duration) -> TcpStream {
+        let by = Instant::now() + deadline;
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => return stream,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= by {
+                        panic!(
+                            "stub server timed out after {deadline:?} waiting for a connection \
+                             — a production regression likely skipped the expected POST"
+                        );
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => panic!("stub accept failed: {e}"),
+            }
+        }
+    }
+
     /// A minimal loopback HTTP/1.1 stub: binds an ephemeral port, replies to
     /// each request with the next scripted `(status, body)` pair in order,
     /// then stops. Reads and drains the real `Content-Length` body (rather
     /// than assuming none) so `post_line`'s blocking `send()` never hangs
-    /// waiting for a body the stub never wrote.
+    /// waiting for a body the stub never wrote. `accept()` and the accepted
+    /// stream's reads/writes are all bounded by `STUB_TIMEOUT`, so a test
+    /// whose production code fails to send the expected request fails fast
+    /// with a clear message instead of hanging the suite.
     fn spawn_stub_server(
         responses: Vec<(u16, &'static str)>,
     ) -> (u16, Arc<Mutex<Vec<RecordedRequest>>>, JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub listener");
+        listener
+            .set_nonblocking(true)
+            .expect("stub listener nonblocking");
         let port = listener.local_addr().expect("stub local addr").port();
         let recorded = Arc::new(Mutex::new(Vec::new()));
         let recorded_in_thread = Arc::clone(&recorded);
 
         let handle = thread::spawn(move || {
             for (status, body) in responses {
-                let (mut stream, _) = listener.accept().expect("accept stub connection");
+                let mut stream = accept_with_deadline(&listener, STUB_TIMEOUT);
+                // A nonblocking listener's accepted stream inherits nonblocking
+                // mode on some platforms (Linux) — reset it so the read/write
+                // timeouts below actually apply.
+                stream.set_nonblocking(false).expect("stub stream blocking");
+                stream
+                    .set_read_timeout(Some(STUB_TIMEOUT))
+                    .expect("stub read timeout");
+                stream
+                    .set_write_timeout(Some(STUB_TIMEOUT))
+                    .expect("stub write timeout");
                 let request = read_request(&mut stream);
                 recorded_in_thread
                     .lock()
@@ -427,9 +472,13 @@ mod tests {
 
     /// A client with a short timeout, so a test that expects "connection
     /// refused" against a closed port fails fast instead of hanging on the
-    /// default (unbounded) reqwest blocking client.
+    /// default (unbounded) reqwest blocking client. `.no_proxy()` disables
+    /// reqwest's env-based proxy discovery (`HTTP_PROXY`/`http_proxy`/etc.) —
+    /// without it, a proxy set in the ambient shell would divert every test
+    /// request away from the loopback stub instead of reaching it directly.
     fn test_client() -> reqwest::blocking::Client {
         reqwest::blocking::Client::builder()
+            .no_proxy()
             .timeout(Duration::from_secs(2))
             .build()
             .expect("test client builds")
@@ -465,6 +514,40 @@ mod tests {
             Some("application/json")
         );
         assert_eq!(requests[0].body, REQUEST_WITH_ID);
+    }
+
+    #[test]
+    fn test_client_ignores_an_env_proxy_and_reaches_the_stub_directly() {
+        // Safe under nextest's process-per-test model (testing.md § Hermetic
+        // tests): each #[test] gets its own process, so this env mutation
+        // cannot leak into a sibling test. Without `.no_proxy()` on
+        // `test_client()`, reqwest's proxy discovery would try to route this
+        // request through the bogus proxy below instead of hitting the stub
+        // directly, and the request would never arrive.
+        std::env::set_var("HTTP_PROXY", "http://127.0.0.1:1");
+        std::env::set_var("http_proxy", "http://127.0.0.1:1");
+
+        let body = r#"{"jsonrpc":"2.0","id":1,"result":"ok"}"#;
+        let (port, recorded, handle) = spawn_stub_server(vec![(200, body)]);
+        let client = test_client();
+        let url = format!("http://127.0.0.1:{port}/mcp");
+
+        let outcome = post_line(&client, &url, "tok", port, REQUEST_WITH_ID);
+        handle.join().expect("stub thread joins");
+
+        std::env::remove_var("HTTP_PROXY");
+        std::env::remove_var("http_proxy");
+
+        match outcome {
+            Ok(PostOutcome::Body(text)) => assert_eq!(text, body),
+            Ok(PostOutcome::Empty) => panic!("expected the stub's body, got an empty outcome"),
+            Err(message) => panic!("expected to reach the stub directly, got: {message}"),
+        }
+        assert_eq!(
+            recorded.lock().unwrap().len(),
+            1,
+            "the stub, not a proxy, must have received the request"
+        );
     }
 
     #[test]
@@ -554,27 +637,53 @@ mod tests {
     }
 
     #[test]
-    fn run_loop_skips_blank_lines_without_touching_the_server() {
-        // No responses scripted: if a request were sent, `post_line` would
-        // either hang (nothing to accept it) or, with the short test client
-        // timeout, surface a connection error — either way `output` would be
-        // non-empty. It stays empty because blank/whitespace-only lines never
-        // reach `post`.
-        let (port, recorded, handle) = spawn_stub_server(vec![]);
+    fn run_loop_skips_blank_lines_and_still_posts_the_real_line() {
+        // Exactly ONE response scripted, not zero: with zero scripted
+        // responses this test could not tell "blank lines correctly skipped"
+        // apart from "post is broken and nothing was ever tried" — both leave
+        // `output` empty and the stub untouched. Scripting one response and
+        // asserting it comes back verbatim proves the real line *was* posted,
+        // while the request count proves the blank lines were not.
+        let real_line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#;
+        let body = r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#;
+        let (port, recorded, handle) = spawn_stub_server(vec![(200, body)]);
         let client = test_client();
         let url = format!("http://127.0.0.1:{port}/mcp");
         let mut output = Vec::new();
 
-        let code = run_loop(cursor("\n   \n\t\n"), &mut output, |line| {
+        let input = format!("\n   \n\t\n{real_line}\n");
+        let code = run_loop(cursor(&input), &mut output, |line| {
             post_line(&client, &url, "tok", port, line)
         });
-        handle
-            .join()
-            .expect("stub thread joins (no accepts needed)");
+        handle.join().expect("stub thread joins");
 
         assert_eq!(code, 0);
-        assert!(output.is_empty());
-        assert!(recorded.lock().unwrap().is_empty(), "stub saw no requests");
+        assert_eq!(String::from_utf8(output).unwrap(), format!("{body}\n"));
+
+        let requests = recorded.lock().unwrap();
+        assert_eq!(
+            requests.len(),
+            1,
+            "exactly one request — the blank lines never posted"
+        );
+        assert_eq!(requests[0].body, real_line);
+    }
+
+    #[test]
+    fn spawn_stub_server_times_out_instead_of_hanging_when_no_request_arrives() {
+        // Regression proof for the accept() deadline: this test intentionally
+        // sends no requests to a stub scripted for one response. Without
+        // `accept_with_deadline`'s bound, the stub thread's `accept()` would
+        // block forever and this test — and the whole suite behind it under
+        // nextest's serial `loopback-sockets` group — would hang rather than
+        // fail. The join returning Err (the accept thread panicked on
+        // timeout) proves the bound is what stops that.
+        let (_port, _recorded, handle) = spawn_stub_server(vec![(200, "unused")]);
+        let result = handle.join();
+        assert!(
+            result.is_err(),
+            "the stub thread must time out with a clear panic, not hang, when no connection arrives"
+        );
     }
 
     /// A `BufRead` whose `read_line` always errors, to exercise the fatal
@@ -602,47 +711,131 @@ mod tests {
         assert_eq!(code, 1);
     }
 
-    /// A `Write` that can be told to fail on `write` or on `flush`, to
-    /// exercise the "client went away" early-return-0 path.
+    /// A `Write` that can be told to fail on `write` or on `flush`, and
+    /// records how many times each was called — so a test can prove the loop
+    /// stopped after the FIRST attempt rather than merely happening to return
+    /// the right exit code because input ran out anyway (the tautology this
+    /// replaced: a single-line input reaches EOF and returns 0 whether or not
+    /// the early-return-on-error branch exists at all).
+    #[derive(Clone, Default)]
+    struct FailCounts {
+        writes: Arc<Mutex<usize>>,
+        flushes: Arc<Mutex<usize>>,
+    }
+
     enum FailAt {
         Write,
         Flush,
     }
 
-    struct FailingWriter(FailAt);
+    struct FailingWriter {
+        fail_at: FailAt,
+        counts: FailCounts,
+    }
 
     impl Write for FailingWriter {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            match self.0 {
+            *self.counts.writes.lock().unwrap() += 1;
+            match self.fail_at {
                 FailAt::Write => Err(std::io::Error::other("stub write failure")),
                 FailAt::Flush => Ok(buf.len()),
             }
         }
         fn flush(&mut self) -> std::io::Result<()> {
-            match self.0 {
+            *self.counts.flushes.lock().unwrap() += 1;
+            match self.fail_at {
                 FailAt::Write => Ok(()),
                 FailAt::Flush => Err(std::io::Error::other("stub flush failure")),
             }
         }
     }
 
-    #[test]
-    fn run_loop_returns_0_on_a_sink_write_error() {
-        let code = run_loop(
-            cursor(REQUEST_WITH_ID),
-            FailingWriter(FailAt::Write),
-            |_| Ok(PostOutcome::Body("irrelevant".to_owned())),
-        );
-        assert_eq!(code, 0);
+    /// Two lines in the input, so "the loop stops after the sink errors on
+    /// the first" is distinguishable from "there was only one line anyway".
+    fn two_line_input() -> String {
+        format!(
+            "{}\n{}\n",
+            r#"{"jsonrpc":"2.0","id":1,"method":"a"}"#, r#"{"jsonrpc":"2.0","id":2,"method":"b"}"#
+        )
     }
 
     #[test]
-    fn run_loop_returns_0_on_a_sink_flush_error() {
+    fn run_loop_returns_0_on_a_sink_write_error_and_never_posts_the_second_line() {
+        let counts = FailCounts::default();
+        let post_calls = Arc::new(Mutex::new(0usize));
+        let post_calls_in_closure = Arc::clone(&post_calls);
+
         let code = run_loop(
-            cursor(REQUEST_WITH_ID),
-            FailingWriter(FailAt::Flush),
-            |_| Ok(PostOutcome::Body("irrelevant".to_owned())),
+            cursor(&two_line_input()),
+            FailingWriter {
+                fail_at: FailAt::Write,
+                counts: counts.clone(),
+            },
+            move |_| {
+                *post_calls_in_closure.lock().unwrap() += 1;
+                Ok(PostOutcome::Body("irrelevant".to_owned()))
+            },
         );
+
         assert_eq!(code, 0);
+        assert_eq!(
+            *post_calls.lock().unwrap(),
+            1,
+            "must stop after the first line's write fails, never posting the second"
+        );
+        // `writeln!` issues one write() for the body and one for the trailing
+        // "\n" (verified: a plain custom Write sees exactly two calls for a
+        // single successful writeln! of one argument) — the first call here
+        // fails immediately, so the second (the "\n") is never attempted, and
+        // flush() is never reached (short-circuiting `||`).
+        assert_eq!(
+            *counts.writes.lock().unwrap(),
+            1,
+            "only one write attempted"
+        );
+        assert_eq!(
+            *counts.flushes.lock().unwrap(),
+            0,
+            "flush is never reached when write itself fails"
+        );
+    }
+
+    #[test]
+    fn run_loop_returns_0_on_a_sink_flush_error_and_never_posts_the_second_line() {
+        let counts = FailCounts::default();
+        let post_calls = Arc::new(Mutex::new(0usize));
+        let post_calls_in_closure = Arc::clone(&post_calls);
+
+        let code = run_loop(
+            cursor(&two_line_input()),
+            FailingWriter {
+                fail_at: FailAt::Flush,
+                counts: counts.clone(),
+            },
+            move |_| {
+                *post_calls_in_closure.lock().unwrap() += 1;
+                Ok(PostOutcome::Body("irrelevant".to_owned()))
+            },
+        );
+
+        assert_eq!(code, 0);
+        assert_eq!(
+            *post_calls.lock().unwrap(),
+            1,
+            "must stop after the first line's flush fails, never posting the second"
+        );
+        // Both writes (body + trailing "\n") succeed here, then flush fails —
+        // exactly one flush attempted, and (because the loop stops) never a
+        // second round of writes for the second line's response.
+        assert_eq!(
+            *counts.writes.lock().unwrap(),
+            2,
+            "one writeln! worth of writes"
+        );
+        assert_eq!(
+            *counts.flushes.lock().unwrap(),
+            1,
+            "only one flush attempted"
+        );
     }
 }

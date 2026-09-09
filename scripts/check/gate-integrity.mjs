@@ -24,6 +24,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
+import { checkNextestConfigLocation } from "./nextest-config-location.mjs";
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const makefilePath = resolve(repoRoot, "Makefile");
 
@@ -583,6 +585,10 @@ for (const hookFile of [
     contextArchErrors.push(`\`${hookFile}\` not found (hard gate G1/G2).`);
   }
 }
+
+// (4c) Nextest config must live where nextest actually reads it (2026-09
+// fix, PR #491 review) — see nextest-config-location.mjs.
+contextArchErrors.push(...checkNextestConfigLocation(repoRoot));
 
 const claudeMdContent = readIfExists("CLAUDE.md");
 if (claudeMdContent === null) {
