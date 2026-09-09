@@ -227,17 +227,33 @@ function scanItemEnd(tokens, startTokenIdx, kind) {
 // `all(test, ...)`, or a cfg_attr(test, path = "...") redirect).
 const TEST_WORD_RE = /\btest\b/;
 
-function validateAttrLine(filePath, line, lineNo) {
-  if (line.startsWith("#[cfg(")) {
-    const isExactTest = line === "#[cfg(test)]";
-    const isExactNotTest = line === "#[cfg(not(test))]";
-    const closesOnLine = line.includes(")]");
-    if (!closesOnLine || (!isExactTest && !isExactNotTest && TEST_WORD_RE.test(line))) {
+const CFG_START_RE = /^#\[cfg\s*\(/;
+const CFG_ATTR_START_RE = /^#\[cfg_attr\s*\(/;
+
+/** The full text of the column-0 attribute starting at `idx`, joining
+ * continuation lines up to the closing `)]` (so a multi-line cfg_attr is
+ * judged as a whole, not by its first line). */
+function attrText(lines, idx) {
+  let text = lines[idx];
+  for (let j = idx + 1; !text.includes(")]") && j < lines.length && j - idx < 50; j++) text += ` ${lines[j].trim()}`;
+  return text;
+}
+
+function validateAttrLine(filePath, lines, idx) {
+  const first = lines[idx];
+  const isCfg = CFG_START_RE.test(first);
+  if (!isCfg && !CFG_ATTR_START_RE.test(first)) return;
+  const text = attrText(lines, idx);
+  const lineNo = idx + 1;
+  if (!text.includes(")]")) throw new Error(`unterminated attribute${loc(filePath, lineNo)}`);
+  if (isCfg) {
+    const isExact = text === "#[cfg(test)]" || text === "#[cfg(not(test))]";
+    if (!isExact && TEST_WORD_RE.test(text)) {
       throw new Error(`unsupported cfg attribute form (only #[cfg(test)] on one line is recognized)${loc(filePath, lineNo)}`);
     }
     return;
   }
-  if (line.startsWith("#[cfg_attr(") && TEST_WORD_RE.test(line) && /\bpath\b/.test(line)) {
+  if (TEST_WORD_RE.test(text) && /\bpath\b/.test(text)) {
     throw new Error(`unsupported: cfg_attr(test, path = …)${loc(filePath, lineNo)}`);
   }
 }
@@ -262,9 +278,7 @@ function collectLeadingAttrs(lines, tokens, startIdx, filePath) {
   while (idx < lines.length) {
     const line = lines[idx];
     const isCode = tokens.codeLines.has(idx + 1);
-    if (isCode && (line.startsWith("#[cfg(") || line.startsWith("#[cfg_attr("))) {
-      validateAttrLine(filePath, line, idx + 1);
-    }
+    if (isCode && line.startsWith("#[")) validateAttrLine(filePath, lines, idx);
     if (isCode && line === "#[cfg(test)]") {
       cfgTest = true;
       idx++;
@@ -323,7 +337,7 @@ function cfgTestSpans(filePath, src) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (!tokens.codeLines.has(i + 1)) continue; // comment/string content, not code
-    if (line.startsWith("#[cfg(") || line.startsWith("#[cfg_attr(")) validateAttrLine(filePath, line, i + 1);
+    if (line.startsWith("#[")) validateAttrLine(filePath, lines, i);
     if (line !== "#[cfg(test)]") continue;
     const attrStartLine = i + 1;
     const { idx: j } = collectLeadingAttrs(lines, tokens, i + 1, filePath);
@@ -382,12 +396,14 @@ function walk(dir, out = []) {
   return out;
 }
 
-function moduleDirFor(f) {
+function moduleDirFor(f, root) {
   const base = path.basename(f);
   const dir = path.dirname(f);
-  // A binary crate root (src/bin/tool.rs) resolves its submodules under
-  // bin/, like main.rs/lib.rs/mod.rs — not under bin/tool/.
-  const isBinCrateRoot = path.basename(dir) === "bin";
+  // A binary crate root (<root>/bin/tool.rs — cargo's auto-discovered bin
+  // targets) resolves its submodules under bin/, like main.rs/lib.rs/mod.rs —
+  // not under bin/tool/. An ordinary module directory that merely happens to
+  // be named `bin` deeper in the tree is NOT a crate root.
+  const isBinCrateRoot = dir === path.join(root, "bin");
   return ["mod.rs", "lib.rs", "main.rs"].includes(base) || isBinCrateRoot ? dir : path.join(dir, base.replace(/\.rs$/, ""));
 }
 
@@ -413,7 +429,7 @@ function testOnlyFiles(root) {
     } catch (err) {
       throw new Error(`${err.message}${loc(f, err.line)}`);
     }
-    const dir = moduleDirFor(f);
+    const dir = moduleDirFor(f, root);
 
     // Self-check: an indented (non-column-0) mod declaration is only
     // supported inside an inline #[cfg(test)] block (already rejected by

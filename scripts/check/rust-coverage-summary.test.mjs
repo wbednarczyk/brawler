@@ -704,6 +704,61 @@ test("P5: a binary crate root (src/bin/tool.rs) resolves its declared modules un
   }
 });
 
+test("self-check 12: a multi-line #[cfg_attr(...)] attribute is an unsupported form (astra r2 #4)", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/lib.rs": ["#[cfg(test)]", "#[cfg_attr(", "    test,", '    path = "alternate.rs"', ")]", "mod helper;"].join("\n"),
+      "src/helper.rs": "// decoy\n",
+      "src/alternate.rs": "// the real test file\n",
+      "rust.lcov": lcovRecord("src/lib.rs", []),
+    });
+    const { r, outPath } = selfCheckHarness(dir, {});
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /unsupported: cfg_attr\(test, path/);
+    assert.match(r.stderr, /src[/\\]lib\.rs:2/);
+    assert.equal(existsSync(outPath), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("self-check 13: #[cfg (test)] (whitespace variant) is an unsupported form, not a silent no-span (astra r2 #4)", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/lib.rs": ["#[cfg (test)]", "mod tests {", "    fn t() {}", "}"].join("\n"),
+      "rust.lcov": lcovRecord("src/lib.rs", [[3, 1]]),
+    });
+    const { r, outPath } = selfCheckHarness(dir, {});
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /unsupported cfg attribute form/);
+    assert.match(r.stderr, /src[/\\]lib\.rs:1/);
+    assert.equal(existsSync(outPath), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("P5b: an ordinary module directory named bin deeper in the tree is not a crate root (astra r2 #5)", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/lib.rs": "mod domain;\n",
+      "src/domain/mod.rs": "mod bin;\n",
+      "src/domain/bin/mod.rs": ["#[cfg(test)]", "mod helper;"].join("\n"),
+      "src/domain/bin/helper.rs": "mod child;\n",
+      "src/domain/bin/helper/child.rs": "// test helper code\n",
+    });
+    const { testOnly, errors } = testOnlyFiles(path.join(dir, "src"));
+    assert.deepEqual(errors, []);
+    const rels = [...testOnly].map((p) => path.relative(dir, p)).sort();
+    assert.deepEqual(rels, ["src/domain/bin/helper.rs", "src/domain/bin/helper/child.rs"]);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 // ---- structuralTokens: a couple of direct sanity checks -----------------------
 
 test("structuralTokens ignores brackets inside strings/comments and treats lifetimes as non-char", () => {
