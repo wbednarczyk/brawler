@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.83.3 - 2026-09-09
+
+
+### Bug Fixes
+
+- **tests**: user-event click actionability guard; brawler-mcp-stdio ignores ambient proxy configuration (#493, #494) (#495)
+
 ## v0.83.2 - 2026-09-09
 
 
