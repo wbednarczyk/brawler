@@ -31,11 +31,25 @@ function SelfRemoving({ onClick }: { onClick: () => void }) {
 
 // Reacts to `pointerdown` — the first event of user-event's click sequence —
 // so the target changes deterministically BEFORE the click would dispatch.
-function ChangesOnPress({ effect, onClick }: { effect: "remove" | "disable"; onClick: () => void }) {
+function ChangesOnPress({
+  effect,
+  on = "pointerdown",
+  onClick,
+}: {
+  effect: "remove" | "disable";
+  on?: "pointerdown" | "mouseup";
+  onClick: () => void;
+}) {
   const [pressed, setPressed] = useState(false);
   if (pressed && effect === "remove") return null;
+  const press = () => setPressed(true);
   return (
-    <button disabled={pressed} onClick={onClick} onPointerDown={() => setPressed(true)}>
+    <button
+      disabled={pressed}
+      onClick={onClick}
+      onPointerDown={on === "pointerdown" ? press : undefined}
+      onMouseUp={on === "mouseup" ? press : undefined}
+    >
       Press me
     </button>
   );
@@ -107,6 +121,17 @@ describe("user-event click actionability wrapper", () => {
   it("throws BY NAME when the target becomes disabled while the click is dispatching", async () => {
     const onClick = vi.fn();
     render(<ChangesOnPress effect="disable" onClick={onClick} />);
+    const user = userEvent.setup();
+
+    await expect(user.click(screen.getByRole("button", { name: "Press me" }))).rejects.toThrow(
+      /received no click/,
+    );
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("throws BY NAME when the target is disabled between mouseup and click (React drops the native click)", async () => {
+    const onClick = vi.fn();
+    render(<ChangesOnPress effect="disable" on="mouseup" onClick={onClick} />);
     const user = userEvent.setup();
 
     await expect(user.click(screen.getByRole("button", { name: "Press me" }))).rejects.toThrow(

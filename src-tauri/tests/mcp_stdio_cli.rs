@@ -258,11 +258,8 @@ fn flags_win_over_env_and_the_stub_observes_the_flag_token() {
 
 #[test]
 fn ambient_proxy_configuration_is_ignored_for_the_loopback_post() {
-    // Ambient proxy env must never redirect the loopback POST (#494). Reddens
-    // on a plain `Client::new()` (env proxy discovery sends the POST to the
-    // bogus closed-port proxy; the stub's 5s accept deadline fires). `bin()`
-    // is `env_clear()`-ed, so no inherited `NO_PROXY` can exempt loopback on
-    // its own — only `.no_proxy()` in the binary can.
+    // The bridge ignores ambient proxy configuration (#494); `bin()` is
+    // `env_clear()`-ed, so no inherited `NO_PROXY` can exempt loopback for it.
     let body = r#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#;
     let (port, stub) = spawn_one_shot_stub(body);
     let bogus_proxy = "http://127.0.0.1:1";

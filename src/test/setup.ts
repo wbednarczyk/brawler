@@ -103,23 +103,23 @@ vi.mock("@testing-library/user-event", async (importOriginal) => {
         }
       }
       // user-event dispatches over several macrotasks; a target replaced or
-      // disabled meanwhile takes no click at all. Witness at the document
-      // (first in the capture path, so no listener can stop it): only a click
-      // received while connected reaches React's root listener.
+      // disabled meanwhile takes no click, or a native click React ignores.
+      // Witness at the window (earliest capture point): a click counts only
+      // if the target is connected and enabled when it arrives.
       let receivedWhileConnected = false;
       const witness = (event: Event) => {
         const target = event.target;
         if (target instanceof Node && (target === element || element.contains(target))) {
-          receivedWhileConnected ||= element.isConnected;
+          receivedWhileConnected ||= element.isConnected && !isDisabled(element);
         }
       };
-      const document = element.ownerDocument;
-      document.addEventListener("click", witness, true);
+      const scope = element.ownerDocument.defaultView ?? element.ownerDocument;
+      scope.addEventListener("click", witness, true);
       let result: R;
       try {
         result = await fn(element, ...args);
       } finally {
-        document.removeEventListener("click", witness, true);
+        scope.removeEventListener("click", witness, true);
       }
       if (!receivedWhileConnected) {
         throw element.isConnected
