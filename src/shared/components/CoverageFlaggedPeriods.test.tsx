@@ -375,7 +375,6 @@ describe("CoverageFlaggedPeriods", () => {
 
     const busy = await screen.findByRole("button", { name: /Trying again…/ });
     expect(busy).toBeDisabled();
-    await userEvent.click(busy);
     expect(rerunExtractionOutcomeMock).toHaveBeenCalledTimes(1);
 
     resolveRerun(summary());

@@ -40,7 +40,13 @@ fn run() -> i32 {
         }
     };
 
-    let client = reqwest::blocking::Client::new();
+    // The bridge only ever talks to loopback, so ambient proxy configuration
+    // (`HTTP_PROXY`/`ALL_PROXY`…) is ignored — a proxy would swallow the
+    // request and see the bearer token (#494).
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .build()
+        .expect("reqwest client");
     let url = format!("http://127.0.0.1:{}/mcp", config.port);
 
     let stdin = std::io::stdin();

@@ -102,6 +102,8 @@ omit the flags. Point the client's stdio-server command at this executable
 (it sits next to `brawler.exe` in the portable folder). The bridge does no
 thinking of its own — it just pipes your assistant's requests to the same local
 server, so Brawler must be **open with the server enabled** for it to work.
+Proxy settings in your shell (`HTTP_PROXY` and friends) are ignored — the
+bridge always connects directly to the local server.
 
 ## What the assistant can do
 

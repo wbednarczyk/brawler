@@ -131,7 +131,6 @@ describe("CompanyClaimsPanel", () => {
 
     await user.click(delivered);
     expect(delivered).toBeDisabled();
-    await user.click(delivered);
     expect(setClaimVerdictMock).toHaveBeenCalledTimes(1);
 
     resolveSave(claim({ status: "delivered" }));

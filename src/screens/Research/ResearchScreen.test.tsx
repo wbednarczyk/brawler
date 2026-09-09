@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 import { act, render } from "@testing-library/react";
 import {
   expect,
+  findEnabledButton,
   invoke,
   vi,
   renderApp,
@@ -149,11 +150,8 @@ describe("Research screen workflows", () => {
       expect(screen.getAllByText("Will margins recover?").length).toBeGreaterThan(0);
     });
 
-    await user.click(await screen.findByRole("button", { name: "Add question" }));
-    await user.type(
-      await screen.findByLabelText("Question title", {}, { timeout: 5000 }),
-      "What changed in the report?",
-    );
+    await user.click(await findEnabledButton("Add question"));
+    await user.type(await screen.findByLabelText("Question title"), "What changed in the report?");
     await user.type(screen.getByLabelText("Question context"), "Track the source report and notes.");
     await user.click(screen.getByRole("button", { name: "Save question" }));
 
@@ -200,11 +198,11 @@ describe("Research screen workflows", () => {
     // tool (F3a S3, ADR 0107 mapping "preset 'evidence'→research").
     renderApp({ section: "Research" });
 
-    await user.click(await screen.findByRole("button", { name: "Add question" }));
-    await user.type(
-      await screen.findByLabelText("Question title", {}, { timeout: 5000 }),
-      "Should backlog normalize?",
-    );
+    // The seeded question row proves the questions load landed — "Add question"
+    // relocates out of the empty state on that load (testing.md rule 7).
+    await screen.findAllByText("Will margins recover?");
+    await user.click(await findEnabledButton("Add question"));
+    await user.type(await screen.findByLabelText("Question title"), "Should backlog normalize?");
     await user.click(screen.getByRole("button", { name: "Save question" }));
 
     await waitFor(() => {
@@ -405,7 +403,10 @@ describe("Research screen workflows", () => {
 
     renderApp({ section: "Research" });
 
-    await user.click(await screen.findByRole("button", { name: "Add reminder" }));
+    // The seeded reminder row proves the reminders load landed — "Add reminder"
+    // relocates out of the empty state on that load (testing.md rule 7).
+    await screen.findAllByText("Review open claim follow-up");
+    await user.click(await findEnabledButton("Add reminder"));
     await user.type(await screen.findByLabelText("Reminder title"), "Check next report");
     await user.type(screen.getByLabelText("Reminder notes"), "Look for margin commentary.");
     await user.click(screen.getByRole("button", { name: "Save reminder" }));
