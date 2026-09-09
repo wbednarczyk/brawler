@@ -264,6 +264,92 @@ fn full_refresh_sweep_membership_is_pinned() {
     );
 }
 
+/// Every `Fetcher`-arm runtime adapter must record its source outcome
+/// (`last_success_at`/error fields the Sources screen reads — DoD §C);
+/// `Disabled`-arm adapters need no entry.
+const OUTCOME_RECORDERS: &[(&str, &str)] = &[
+    (
+        "bankier-company-komunikaty",
+        "storage::ingest_bankier_company_items (sources.rs)",
+    ),
+    (
+        "bankier-kalendarium-html",
+        "ingest_bankier_calendar_event_items (events.rs)",
+    ),
+    (
+        "gpw-market-events-rss",
+        "ingest_gpw_market_event_items (events.rs)",
+    ),
+    (
+        "bankier-market-rss",
+        "ingest_bankier_rss_items (sources.rs)",
+    ),
+    (
+        "knf-short-selling",
+        "ingest_knf_short_positions (short_positions.rs)",
+    ),
+    (
+        "biznesradar-akcjonariat",
+        "record_witness_comparisons (ownership.rs)",
+    ),
+    (
+        "biznesradar-rekomendacje",
+        "ingest_analyst_recommendations (analyst_recommendations.rs)",
+    ),
+    (
+        "yahoo-eod",
+        "market_data::record_pull_outcome (via jobs/quote_daily_pull.rs)",
+    ),
+    (
+        "gpw-espi-ebi",
+        "reconcile_gpw_espi_witness (reconciliation.rs)",
+    ),
+    (
+        "gpw-company-registry",
+        "refresh_company_directory (companies.rs)",
+    ),
+    (
+        "newconnect-company-directory",
+        "refresh_company_directory (companies.rs)",
+    ),
+];
+
+#[test]
+fn every_fetcher_adapter_has_an_outcome_recording_entry() {
+    use super::{runtime_adapters, RefreshBehavior};
+
+    let adapters = runtime_adapters();
+    let mut violations = Vec::new();
+
+    for adapter in &adapters {
+        let is_fetcher = matches!(adapter.behavior, RefreshBehavior::Fetcher(_));
+        if is_fetcher && !OUTCOME_RECORDERS.iter().any(|(id, _)| *id == adapter.id) {
+            violations.push(format!(
+                "runtime adapter `{}` has no outcome-recording entry in \
+                 OUTCOME_RECORDERS — every adapter-backed ingest path must \
+                 record its source outcome (DoD §C)",
+                adapter.id
+            ));
+        }
+    }
+
+    let registered_ids: std::collections::HashSet<&str> = adapters.iter().map(|a| a.id).collect();
+    for (id, _) in OUTCOME_RECORDERS {
+        if !registered_ids.contains(id) {
+            violations.push(format!(
+                "OUTCOME_RECORDERS entry `{id}` names no registered runtime \
+                 adapter — stale entry, delete it"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "source-outcome recording membership pin (#194 S4):\n{}",
+        violations.join("\n")
+    );
+}
+
 #[test]
 fn bankier_company_refresh_plans_one_job_per_tracked_company() {
     // Chunked refresh (ADR 0059): the company-scoped refresh is a planner that

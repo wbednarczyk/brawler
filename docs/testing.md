@@ -81,6 +81,40 @@ defence-in-depth behind this rule, not a mutex: it classifies ordinary agent
 command syntax (prefixes, wrappers, redirections, `bash -c` bodies) and
 cannot see a run started outside the Bash tool.
 
+**Hard gates wave 3 (S1/S2, 2026-09-09, DoD §C/§K).** `ts-export-reminder`
+(`.claude/hooks/ts-export-reminder.{sh,mjs}`, PostToolUse on Edit/Write/MultiEdit)
+reminds — once per changed state, via `scripts/check/ts-export-spans.mjs`'s
+span cache — that an edited `#[ts(export)]` Rust item needs `make types`
+before handover; a reminder only, no escape env, Claude-tool defence-in-depth
+for DoD §C (the written rule stays the rule). `check-evidence`
+(`.claude/hooks/check-evidence.{sh,mjs}`, PreToolUse Bash) denies `gh pr
+create`/`gh pr ready` (without `--undo`, and without `--draft`/`-d` — a draft
+is WIP, and its detection is value-aware so a `--title`/`--body`/etc. value
+that happens to read `--draft` is never mistaken for the flag) and a `git
+push` **whose destination branch has an open non-draft PR** — a first push,
+a push to a branch with no PR or only a draft PR, and a deletion or
+`--delete` push are never denied — unless `scripts/check/check-stamp.mjs`
+certifies `check-local`/`check-docs` ran green on the exact tree being
+published: each pushed refspec's `dst` drives the PR lookup and `src` is the
+tree checked (a bare `branch` is `branch:branch`; a leading `+` force marker
+and a `refs/heads/` prefix are stripped from both sides first). `gh pr
+create --head`/`-H` resolves DIRECTLY to the named local branch's own tree
+(the PR doesn't exist yet, so nothing is looked up); `gh pr ready
+<number|branch|url>`/`--head` resolves the PR's actual head COMMIT via `gh pr
+view` and requires it present locally, denying with the `git fetch` needed
+otherwise — stale local content can never stand in for the real evidence.
+Leading global options (`git -C`/`-c`/`--git-dir`/`--work-tree`/`--no-pager`,
+`gh -R`/`--repo`/`--hostname`) are skipped to find the subcommand;
+`--git-dir`/`--work-tree`/`-C` redirect every evidence lookup to that actual
+repository (not the invoking cwd), and `gh -R`/`--repo` is compared against
+the checkout's own `origin` remote — a different repository denies, since
+evidence is per-checkout. `BRAWLER_CHECK_EVIDENCE_OFF=1` is the escape hatch;
+a shell alias, a script file's own body, or a hand-edited `.artifacts/*.json`
+stamp sit outside what this hook (or check-stamp's own index-flag refusal on
+assume-unchanged/skip-worktree entries, including both set together) can
+intercept — Claude-tool defence-in-depth for DoD §K, the written rule stays
+the rule.
+
 **Delegation contracts name the consumers of a changed boundary (harvested 2026-07-10, ADR 0045).** When a delegated slice changes what a creation/normalization boundary produces (e.g. a create call starts folding a legacy label), scoped module tests miss the OTHER modules whose seeds or reads assumed the old shape — the collision surfaces only at the full gate. The slice contract must enumerate the boundary's consumers (`repoctx callers <fn>` / `rdeps`) as modules the agent runs tests for, and any test that needs the legacy shape seeds it via raw SQL like migration tests do, never through the now-normalizing public surface.
 
 ## Coverage ratchet
@@ -902,6 +936,25 @@ test-file predicate, and comment/string-safe span stripping (`strip_test_spans`,
   `escape_hatch_reasons_are_non_empty`, extended to cover this marker). This is a **shape** guard, not
   a body auditor: whether an async command's inline work still blocks despite the offload marker
   being present is review territory, not this scan.
+- **Recency guard** (`recency::recency_selection_never_leads_with_created_at`, audit gates wave 3): scans every
+  production `.rs` file under `src-tauri/src/**` (test files/spans excluded) for every SQL `ORDER BY`
+  clause — inside a string literal, possibly multiline or built via `concat!`/`format!`, including an
+  `OVER (ORDER BY …)` window — whose FIRST sort key is `created_at` (bare, aliased `x.created_at`, or
+  `datetime(created_at)`); a domain-date-first tie-breaker (`ORDER BY as_of DESC, created_at DESC`)
+  does not match (data-model.md § Model principles, guardrail `d60305c`). `ORDER BY` text inside a
+  comment is excluded. Frozen allowlist `ALLOWED` pins every real site as `(file, fn, ordinal,
+  Reason)` — `QueueOrRunChronology` (queue/run/attempt order), `LocalAuthoringOrder` (user-authored
+  content with no other domain date), `AssessmentSnapshot` (a point-in-time evaluation), `SharedPublicationEvent`
+  (attachments of one publication event), or `Debt("#issue")` (a genuine offender, tracked, not fixed
+  here — #496 today). Fails loud on a new unreviewed site, a stale allowlist entry whose site no
+  longer matches (ratchet shrinks only), or a fn gaining more offending sites than pinned ordinals.
+  Ceiling: a query built by concatenating fragments where no single literal contains `ORDER BY`
+  plus the offending key is invisible to this text scan.
+  Also enforces membership (`source_refresh_tests::OUTCOME_RECORDERS`, audit gates wave 3): every runtime source
+  adapter behind the `Fetcher` arm (`jobs::source_refresh::runtime_adapters`) must name the storage fn
+  that records its source outcome (`last_success_at`/error fields) — a `Fetcher` adapter with no entry
+  fails ("every adapter-backed ingest path must record its source outcome, DoD §C"); a stale entry
+  naming a since-removed adapter id fails too.
 
 ### Mock-runtime fidelity — the dual-execution contract
 

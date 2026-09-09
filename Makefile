@@ -281,7 +281,9 @@ check-release-label:
 # docs-only; any code/config change still runs the full gate. Seconds, not minutes.
 check-docs:
 	@node scripts/check/disk-guard.mjs
-	$(MAKE) check-docs-gates
+	@before=$$(node scripts/check/check-stamp.mjs fingerprint); \
+	$(MAKE) check-docs-gates && \
+	node scripts/check/check-stamp.mjs write check-docs "$$before"
 
 # Staged concurrent check (ADR 0048): fast-fail static stage, then the heavy
 # suites (Rust clippy+nextest+doc, Vitest, build) concurrently — overlaps the
@@ -291,8 +293,10 @@ check-docs:
 # NEVER proof of done; the PR's required checks are the gate.
 check-local:
 	@node scripts/check/disk-guard.mjs
-	$(NIX) npm run check:parallel
-	@printf 'CHECK_LOCAL_EXIT=0\n'
+	@before=$$(node scripts/check/check-stamp.mjs fingerprint); \
+	$(NIX) npm run check:parallel && \
+	node scripts/check/check-stamp.mjs write check-local "$$before" && \
+	printf 'CHECK_LOCAL_EXIT=0\n'
 
 # Disk hygiene (guardrail 2026-07-11: a full host drive killed a session
 # mid-work; disk-guard above fails the gate before that point). `disk-clean` is
@@ -479,6 +483,7 @@ audit-mutants:
 # Decimal/monetary fields stay explicit `#[ts(type = "string")]` on the field.
 types:
 	$(NIX) bash -c 'cd src-tauri && TS_RS_LARGE_INT=number cargo test --features ts-export export_bindings'
+	node scripts/check/ts-export-spans.mjs --write
 
 # Drift guard: regenerate, then fail if regeneration CHANGED the working-tree
 # bindings (self-consistency). Deliberately independent of git staging state:

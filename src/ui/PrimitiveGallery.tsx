@@ -1,5 +1,5 @@
 import { Plus } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { ActionButton } from "./ActionButton";
 import { ActionRow } from "./ActionRow";
@@ -13,8 +13,14 @@ import { ComboboxField } from "./ComboboxField";
 import { DenseRow } from "./DenseRow";
 import { DetailSection } from "./DetailSection";
 import { DonutChart, donutSwatchClass } from "./DonutChart";
+import { ExpandableRow } from "./ExpandableRow";
+import { FilterToolbar } from "./FilterToolbar";
+import { FocusOverlay } from "./FocusOverlay";
+import { LineChart } from "./LineChart";
+import { Modal } from "./Modal";
 import { MultiLineChart } from "./MultiLineChart";
 import { RangeBarChart } from "./RangeBarChart";
+import { RangeField } from "./RangeField";
 import { EmptyState } from "./EmptyState";
 import { ErrorText } from "./ErrorText";
 import { FieldRow, SelectField } from "./Fields";
@@ -27,12 +33,16 @@ import { Panel, PanelHeader } from "./Panel";
 import { SearchField } from "./SearchField";
 import { SectionHeader } from "./SectionHeader";
 import { SegmentedControl, SegmentedControlOption } from "./SegmentedControl";
+import { Skeleton } from "./Skeleton";
+import { Sparkline } from "./Sparkline";
 import { StatusChip } from "./StatusChip";
 import { StatusPill } from "./StatusPill";
+import { Subnav } from "./Subnav";
 import { DateField } from "./DateField";
 import { TextField } from "./TextField";
 import { TextareaField } from "./TextareaField";
 import { ToastProvider, useToast } from "./Toast";
+import { TrendChart } from "./TrendChart";
 
 const noop = () => {};
 
@@ -69,6 +79,53 @@ function ToastGalleryTriggers() {
   }, [show]);
   return null;
 }
+
+// Modal/FocusOverlay have no static "closed" markup either (see Toast above) —
+// each demo owns its own open/close state and a trigger button, modelled on
+// ToastGalleryDemo.
+function ModalGalleryDemo() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>Open modal</Button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Modal demo" ariaLabel="Modal demo">
+        <p>Modal body content.</p>
+      </Modal>
+    </>
+  );
+}
+
+function FocusOverlayGalleryDemo() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>Open focus overlay</Button>
+      <FocusOverlay
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Focus overlay demo"
+        ariaLabel="Focus overlay demo"
+      >
+        <p>Distraction-free content.</p>
+      </FocusOverlay>
+    </>
+  );
+}
+
+const LINE_CHART_POINTS = [
+  { label: "2026-01-05", value: 132 },
+  { label: "2026-01-06", value: 128 },
+  { label: "2026-01-07", value: 141 },
+  { label: "2026-01-08", value: 150 },
+  { label: "2026-01-09", value: 146 },
+  { label: "2026-01-12", value: 155 },
+];
+
+const TREND_CHART_POINTS = [
+  { label: "2024", value: 42 },
+  { label: "2025", value: -12 },
+  { label: "2026", value: 58 },
+];
 
 const BUTTON_VARIANTS: ButtonVariant[] = [
   "primary",
@@ -197,6 +254,7 @@ export function PrimitiveGallery() {
             <option value="NC">NewConnect</option>
           </SelectField>
           <DateField label="DateField" defaultValue="2026-06-01" />
+          <RangeField label="RangeField" defaultValue={50} min={0} max={100} onChange={noop} />
         </FieldRow>
         <ComboboxField
           label="ComboboxField"
@@ -246,6 +304,8 @@ export function PrimitiveGallery() {
           }
         />
         <EmptyState kind="quiet" reason="All quiet — nothing has fired. That's the point." />
+        <Skeleton variant="block" />
+        <Skeleton variant="list-row" count={3} />
       </section>
 
       <section aria-labelledby="g-figure">
@@ -296,6 +356,14 @@ export function PrimitiveGallery() {
         <DenseRow interactive selected>
           <span>Selectable dense row</span>
         </DenseRow>
+        <ExpandableRow
+          isExpanded
+          label="Expandable row demo"
+          onToggle={noop}
+          detail={<p>Expanded detail content.</p>}
+        >
+          <span>Row summary</span>
+        </ExpandableRow>
         <ProvenanceFigure
           label="Zysk na akcję"
           value="3,49 zł"
@@ -304,7 +372,13 @@ export function PrimitiveGallery() {
       </section>
 
       <section aria-labelledby="g-charts">
-        <SectionHeader title="Donut chart" titleId="g-charts" level="h3" />
+        <SectionHeader title="Sparkline" titleId="g-charts" level="h3" />
+        <Sparkline values={[12, 15, 11, 18, 22, 19, 25]} ariaLabel="Sparkline demo" />
+        <SectionHeader title="Line chart" titleId="g-linechart" level="h3" />
+        <LineChart ariaLabel="Line chart demo" points={LINE_CHART_POINTS} />
+        <SectionHeader title="Trend chart" titleId="g-trendchart" level="h3" />
+        <TrendChart ariaLabel="Trend chart demo" points={TREND_CHART_POINTS} />
+        <SectionHeader title="Donut chart" titleId="g-donut" level="h3" />
         <div className="ui-donut-wrap-demo">
           <DonutChart
             ariaLabel="Ownership structure by holder type"
@@ -394,6 +468,46 @@ export function PrimitiveGallery() {
         <InlineConfirm onConfirm={noop} onCancel={noop}>
           Delete this item?
         </InlineConfirm>
+        <SectionHeader title="Subnav" titleId="g-subnav" level="h3" />
+        <Subnav
+          activeId="overview"
+          ariaLabel="Subnav demo"
+          items={[
+            { id: "overview", label: "Overview" },
+            { id: "details", label: "Details" },
+          ]}
+          onSelect={noop}
+        />
+      </section>
+
+      <section aria-labelledby="g-filter-toolbar">
+        <SectionHeader title="FilterToolbar" titleId="g-filter-toolbar" level="h3" />
+        <FilterToolbar
+          ariaLabel="Filter toolbar demo"
+          search={
+            <SearchField
+              ariaLabel="Filter search"
+              placeholder="Search…"
+              value=""
+              onChange={noop}
+              onClear={noop}
+              clearLabel="Clear search"
+            />
+          }
+        >
+          <SelectField label="Status" defaultValue="all">
+            <option value="all">All</option>
+            <option value="open">Open</option>
+          </SelectField>
+        </FilterToolbar>
+      </section>
+
+      <section aria-labelledby="g-overlays">
+        <SectionHeader title="Modal / FocusOverlay" titleId="g-overlays" level="h3" />
+        <ActionRow ariaLabel="Overlay triggers">
+          <ModalGalleryDemo />
+          <FocusOverlayGalleryDemo />
+        </ActionRow>
       </section>
 
       <section aria-labelledby="g-containers">

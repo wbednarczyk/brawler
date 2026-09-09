@@ -15,6 +15,11 @@ mod storage_writes;
 /// ratchet threshold (ADR 0103) after wave 2 grew it.
 mod scan;
 
+/// S3 (#194-adjacent, docs/testing.md § Source-tree guards): "newest / latest
+/// / most recent" selection must order by the domain date, never
+/// `created_at` (data-model.md § Model principles, guardrail d60305c).
+mod recency;
+
 /// G7 (transform-manifest guard, #194 S0): declared-test-module resolution
 /// and `proptest_in` cross-reference validation — kept out of `mod.rs` for
 /// the same file-size reason as `scan.rs`.
