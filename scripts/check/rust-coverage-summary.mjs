@@ -7,7 +7,12 @@
 // counts, so moving tests between files never changes a coverage number. A
 // NESTED (indented) #[cfg(test)] inside a fn/impl/struct body is NOT stripped
 // (it counts as production — a documented, narrow limitation: ~14 small seams
-// today; see docs/testing.md § Coverage ratchet).
+// today; see docs/testing.md § Coverage ratchet). Only single-line
+// #[cfg(test)]/#[cfg(not(test))] and non-test cfg_attr forms are recognized;
+// anything else that plausibly gates on `test` fails closed rather than
+// silently mis-detecting. An SF: path resolves against `root` by marker (like
+// coverage-ratchet.mjs's afterMarker), so a foreign absolute workspace prefix
+// (a CI artifact's lcov) still gets production-only filtering.
 // measurement 2 = physical DA lines after exclusion (#488).
 
 import { readFileSync, readdirSync, statSync, existsSync, writeFileSync } from "node:fs";
@@ -30,6 +35,7 @@ function loc(file, line) {
 
 function structuralTokens(src) {
   const out = [];
+  const codeLines = new Set();
   let i = 0;
   let line = 1;
   const n = src.length;
@@ -135,28 +141,49 @@ function structuralTokens(src) {
       i++; // lifetime: consume just the quote
       continue;
     }
+    if (!/\s/.test(c)) codeLines.add(line);
     if (STRUCTURAL.includes(c)) out.push({ line, ch: c, pos: i });
     i++;
   }
+  out.codeLines = codeLines;
   return out;
 }
 
 // ---- item classification -----------------------------------------------------
-// class1 (const/static/use/type/extern-crate) ends at the first depth-0 `;`.
-// class2 (everything else: fn/impl/mod/struct/enum/union/trait/macro items)
-// ends at the matching `}` of its first depth-0 `{`, or at a depth-0 `;`
-// reached before any `{` (tuple/unit structs, macro_rules!(...);  etc).
+// class1 (static/use/type/extern-crate, and `const` NOT followed by `fn`)
+// ends at the first depth-0 `;`. class2 (everything else: fn/impl/mod/struct/
+// enum/union/trait/macro items, including `const fn`) ends at the matching
+// `}` of its first depth-0 `{`, or at a depth-0 `;` reached before any `{`
+// (tuple/unit structs, macro_rules!(...);  etc).
 
 function classifyItem(text) {
   let t = text;
   t = t.replace(/^pub(?:\((?:crate|super|self|in\s+[\w:]+)\))?\s+/, "");
-  t = t.replace(/^unsafe\s+/, "");
-  t = t.replace(/^async\s+/, "");
-  const externAbi = t.match(/^extern\s+"[^"]*"\s+/);
-  if (externAbi) t = t.slice(externAbi[0].length);
+  let sawConst = false;
+  for (;;) {
+    if (/^const\s+/.test(t)) {
+      sawConst = true;
+      t = t.replace(/^const\s+/, "");
+      continue;
+    }
+    if (/^unsafe\s+/.test(t)) {
+      t = t.replace(/^unsafe\s+/, "");
+      continue;
+    }
+    if (/^async\s+/.test(t)) {
+      t = t.replace(/^async\s+/, "");
+      continue;
+    }
+    const externAbi = t.match(/^extern\s+"[^"]*"\s+/);
+    if (externAbi) {
+      t = t.slice(externAbi[0].length);
+      continue;
+    }
+    break;
+  }
   const m = t.match(/^([A-Za-z_][A-Za-z0-9_]*)/);
   const keyword = m ? m[1] : "";
-  const kind = ["const", "static", "use", "type", "extern"].includes(keyword) ? "class1" : "class2";
+  const kind = sawConst ? (keyword === "fn" ? "class2" : "class1") : ["static", "use", "type", "extern"].includes(keyword) ? "class1" : "class2";
   return { kind, keyword };
 }
 
@@ -192,12 +219,38 @@ function scanItemEnd(tokens, startTokenIdx, kind) {
   return null;
 }
 
+// ---- unsupported cfg/cfg_attr forms: fail closed -----------------------------
+// Only `#[cfg(test)]` and `#[cfg(not(test))]`, each on one line, are
+// recognized; only `#[cfg_attr(...)]` forms that don't combine `test` with
+// `path` are. Anything else that plausibly means "gate on test" is rejected
+// rather than silently mis-detected (a multi-line #[cfg(...)], an
+// `all(test, ...)`, or a cfg_attr(test, path = "...") redirect).
+const TEST_WORD_RE = /\btest\b/;
+
+function validateAttrLine(filePath, line, lineNo) {
+  if (line.startsWith("#[cfg(")) {
+    const isExactTest = line === "#[cfg(test)]";
+    const isExactNotTest = line === "#[cfg(not(test))]";
+    const closesOnLine = line.includes(")]");
+    if (!closesOnLine || (!isExactTest && !isExactNotTest && TEST_WORD_RE.test(line))) {
+      throw new Error(`unsupported cfg attribute form (only #[cfg(test)] on one line is recognized)${loc(filePath, lineNo)}`);
+    }
+    return;
+  }
+  if (line.startsWith("#[cfg_attr(") && TEST_WORD_RE.test(line) && /\bpath\b/.test(line)) {
+    throw new Error(`unsupported: cfg_attr(test, path = …)${loc(filePath, lineNo)}`);
+  }
+}
+
 // ---- shared attribute/comment skipping ---------------------------------------
 // Skips a run of top-level (column-0) `#[...]` attribute lines (bracket-depth
 // aware, so a multi-line attribute is handled by the tokenizer, not a regex)
 // and `//` comment lines starting at `idx`. Returns the resulting line index
 // plus whether a `#[cfg(test)]` line and/or a `#[path = "..."]` line were seen.
-function collectLeadingAttrs(lines, tokens, startIdx) {
+// A text-matched `#[cfg(test)]` only counts when the tokenizer confirms the
+// line is CODE (not inside a comment/string/raw-string) — a bare text match
+// alone (e.g. inside a block comment) is ignored.
+function collectLeadingAttrs(lines, tokens, startIdx, filePath) {
   let idx = startIdx;
   let pathAttr = null;
   let cfgTest = false;
@@ -208,7 +261,11 @@ function collectLeadingAttrs(lines, tokens, startIdx) {
   }
   while (idx < lines.length) {
     const line = lines[idx];
-    if (line === "#[cfg(test)]") {
+    const isCode = tokens.codeLines.has(idx + 1);
+    if (isCode && (line.startsWith("#[cfg(") || line.startsWith("#[cfg_attr("))) {
+      validateAttrLine(filePath, line, idx + 1);
+    }
+    if (isCode && line === "#[cfg(test)]") {
       cfgTest = true;
       idx++;
       continue;
@@ -217,7 +274,7 @@ function collectLeadingAttrs(lines, tokens, startIdx) {
       idx++;
       continue;
     }
-    if (line.startsWith("#[")) {
+    if (isCode && line.startsWith("#[")) {
       const m = line.match(PATH_ATTR_RE);
       if (m) pathAttr = m[1];
       let t = firstTokenAtOrAfter(idx + 1);
@@ -264,9 +321,12 @@ function cfgTestSpans(filePath, src) {
     return cursor;
   }
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i] !== "#[cfg(test)]") continue;
+    const line = lines[i];
+    if (!tokens.codeLines.has(i + 1)) continue; // comment/string content, not code
+    if (line.startsWith("#[cfg(") || line.startsWith("#[cfg_attr(")) validateAttrLine(filePath, line, i + 1);
+    if (line !== "#[cfg(test)]") continue;
     const attrStartLine = i + 1;
-    const { idx: j } = collectLeadingAttrs(lines, tokens, i + 1);
+    const { idx: j } = collectLeadingAttrs(lines, tokens, i + 1, filePath);
     if (j >= lines.length) throw new Error(`cfg(test) attribute has no following item${loc(filePath, attrStartLine)}`);
     const itemLine = j + 1;
     const { kind, keyword } = classifyItem(lines[j].trimStart());
@@ -324,7 +384,11 @@ function walk(dir, out = []) {
 
 function moduleDirFor(f) {
   const base = path.basename(f);
-  return ["mod.rs", "lib.rs", "main.rs"].includes(base) ? path.dirname(f) : path.join(path.dirname(f), base.replace(/\.rs$/, ""));
+  const dir = path.dirname(f);
+  // A binary crate root (src/bin/tool.rs) resolves its submodules under
+  // bin/, like main.rs/lib.rs/mod.rs — not under bin/tool/.
+  const isBinCrateRoot = path.basename(dir) === "bin";
+  return ["mod.rs", "lib.rs", "main.rs"].includes(base) || isBinCrateRoot ? dir : path.join(dir, base.replace(/\.rs$/, ""));
 }
 
 /** Full-tree scan for the module graph: which files are test-only (declared,
@@ -350,11 +414,26 @@ function testOnlyFiles(root) {
       throw new Error(`${err.message}${loc(f, err.line)}`);
     }
     const dir = moduleDirFor(f);
+
+    // Self-check: an indented (non-column-0) mod declaration is only
+    // supported inside an inline #[cfg(test)] block (already rejected by
+    // checkNoNestedModDecl via cfgTestSpans below); anywhere else in an
+    // inline module it's unsupported rather than silently invisible to the
+    // module graph (none exist in the tree today).
+    const spans = cfgTestSpans(f, src);
+    for (let ln = 1; ln <= lines.length; ln++) {
+      const raw = lines[ln - 1];
+      if (!tokens.codeLines.has(ln) || !/^[ \t]/.test(raw)) continue;
+      if (!MOD_DECL_RE.test(raw.trim())) continue;
+      if (spans.some(([a, b]) => ln >= a && ln <= b)) continue;
+      throw new Error(`unsupported: external module declared inside an inline module${loc(f, ln)}`);
+    }
+
     const decls = [];
     let i = 0;
     while (i < lines.length) {
-      const { idx: j, pathAttr, cfgTest } = collectLeadingAttrs(lines, tokens, i);
-      const modMatch = j < lines.length ? lines[j].match(MOD_DECL_RE) : null;
+      const { idx: j, pathAttr, cfgTest } = collectLeadingAttrs(lines, tokens, i, f);
+      const modMatch = j < lines.length && tokens.codeLines.has(j + 1) ? lines[j].match(MOD_DECL_RE) : null;
       if (!modMatch) {
         i = j > i ? j : i + 1;
         continue;
@@ -435,6 +514,20 @@ function lineSummary(covered, count) {
   return { lines: { count, covered, percent: count === 0 ? 0 : (covered / count) * 100 } };
 }
 
+/** The suffix of `rawPath` starting right after `marker`, whether rawPath is
+ * already relative (starts with marker) or absolute with a FOREIGN prefix
+ * (e.g. a CI artifact's lcov produced under a different checkout root) —
+ * boundary-safe, same idiom as coverage-ratchet.mjs's afterMarker. Returns
+ * null if marker isn't found at a path-segment boundary (truly out-of-tree). */
+function afterMarker(rawPath, marker) {
+  const p = rawPath.replace(/\\/g, "/");
+  const m = marker.replace(/\\/g, "/");
+  if (p === m) return "";
+  if (p.startsWith(`${m}/`)) return p.slice(m.length + 1);
+  const idx = p.indexOf(`/${m}/`);
+  return idx === -1 ? null : p.slice(idx + m.length + 2);
+}
+
 function computeTestOnlyDirs(root, absRoot, testOnlyAbsSet) {
   const byDir = new Map();
   for (const f of walk(absRoot)) {
@@ -464,9 +557,22 @@ function convert({ lcovText, root, cwd }) {
   let totT = 0;
 
   for (const rec of parseLcov(lcovText)) {
-    const sfAbs = path.isAbsolute(rec.sf) ? rec.sf : path.resolve(cwd, rec.sf);
-    const rel = path.relative(cwd, sfAbs);
-    const inTree = rel === rootRel || rel.startsWith(rootRel + path.sep);
+    let sfAbs = path.isAbsolute(rec.sf) ? rec.sf : path.resolve(cwd, rec.sf);
+    let rel = path.relative(cwd, sfAbs);
+    let inTree = rel === rootRel || rel.startsWith(rootRel + path.sep);
+
+    if (!inTree) {
+      // Not in-tree relative to OUR cwd — but a foreign absolute workspace
+      // prefix (a CI artifact's lcov) still names an in-tree file once the
+      // root marker is found at a segment boundary; resolve it locally
+      // instead of treating it as pass-through raw numbers.
+      const suffix = afterMarker(rec.sf, root);
+      if (suffix !== null) {
+        sfAbs = path.resolve(absRoot, suffix);
+        rel = path.relative(cwd, sfAbs);
+        inTree = true;
+      }
+    }
 
     if (!inTree) {
       const t = rec.das.length;

@@ -497,6 +497,12 @@ test("real tree: testOnlyFiles and cfgTestSpans complete with zero errors over s
   const { testOnly, errors } = testOnlyFiles(root);
   assert.deepEqual(errors, []);
   assert.ok(testOnly.size > 0);
+  // Silent non-detection (a fail-open bug) must redden here: a real count
+  // floor, plus two known test-only files, plus at least one real inline span.
+  assert.ok(testOnly.size >= 90, `expected >= 90 test-only files, got ${testOnly.size}`);
+  const rels = [...testOnly].map((p) => path.relative(REPO_ROOT, p));
+  assert.ok(rels.includes("src-tauri/src/test_support.rs"), rels.join(","));
+  assert.ok(rels.includes(path.join("src-tauri", "src", "storage", "tests", "mod.rs")), rels.join(","));
 
   function walk(d, out = []) {
     for (const entry of readdirSync(d)) {
@@ -508,6 +514,193 @@ test("real tree: testOnlyFiles and cfgTestSpans complete with zero errors over s
   }
   for (const f of walk(root)) {
     assert.doesNotThrow(() => cfgTestSpans(f, readFileSync(f, "utf8")), f);
+  }
+  const libRs = path.join(root, "lib.rs");
+  const libSpans = cfgTestSpans(libRs, readFileSync(libRs, "utf8"));
+  assert.ok(libSpans.length >= 1, "expected at least one #[cfg(test)] span in lib.rs");
+});
+
+// ---- P1: comment/string content is not code — attribute/mod-decl detection ---
+
+test("P1: an inline #[cfg(test)] hidden inside a block comment creates no span; production lines are untouched", () => {
+  const src = ["/*", "#[cfg(test)]", "*/", "pub fn production() {", '    println!("prod");', "}"].join("\n");
+  assert.deepEqual(cfgTestSpans("f.rs", src), []);
+});
+
+test("P1: #[cfg(test)] mod x; hidden inside a block comment does not make x.rs test-only", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/lib.rs": ["/*", "#[cfg(test)]", "mod helper;", "*/", "pub fn production() {}"].join("\n"),
+      "src/helper.rs": "// would be test-only if the comment were code\n",
+    });
+    const { testOnly, errors } = testOnlyFiles(path.join(dir, "src"));
+    assert.deepEqual(errors, []);
+    const rels = [...testOnly].map((p) => path.relative(dir, p));
+    assert.ok(!rels.includes("src/helper.rs"), rels.join(","));
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("P1: a raw string containing #[cfg(test)] on its own line does not create a span", () => {
+  const src = ['let s = r#"', "#[cfg(test)]", '"#;'].join("\n");
+  assert.deepEqual(cfgTestSpans("f.rs", src), []);
+});
+
+// ---- P2: SF: resolved by root marker, not cwd-relative-only -------------------
+
+test("P2: an SF: path with a foreign absolute workspace prefix resolves via the root marker (like coverage-ratchet's afterMarker), not as out-of-tree raw pass-through", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/a.rs": [
+        "pub fn add(a: i32, b: i32) -> i32 {",
+        "    a + b",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "    #[test]",
+        "    fn it_adds() { assert_eq!(add(1, 2), 3); }",
+        "}",
+      ].join("\n"),
+    });
+    const das = [
+      [1, 5],
+      [2, 5],
+      [7, 3],
+      [8, 3],
+    ];
+    const localLcov = lcovRecord("src/a.rs", das);
+    const foreignLcov = lcovRecord("/home/runner/work/brawler/brawler/src/a.rs", das);
+
+    const outLocal = convert({ lcovText: localLcov, root: "src", cwd: dir });
+    const outForeign = convert({ lcovText: foreignLcov, root: "src", cwd: dir });
+
+    assert.deepEqual(outForeign.data[0].totals.lines, outLocal.data[0].totals.lines);
+    assert.deepEqual(outLocal.data[0].totals.lines, { count: 2, covered: 2, percent: 100 });
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// ---- P3: const fn is a fn item (class2), not a `;`-terminated class1 item ----
+
+test("P3: const fn is class2 (ends at its own closing brace); a following const item and production fn survive", () => {
+  const src = ["#[cfg(test)]", "const fn helper() -> u8 {", "    1", "}", "const PROD: u8 = 2;", "pub fn production() {", "    2", "}"].join(
+    "\n",
+  );
+  assert.deepEqual(cfgTestSpans("f.rs", src), [[1, 4]]);
+
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, { "src/a.rs": src });
+    const lcovText = lcovRecord("src/a.rs", [
+      [3, 5], // inside the const fn helper's body — must be stripped
+      [7, 2], // production fn body — must survive with exact counts
+    ]);
+    const out = convert({ lcovText, root: "src", cwd: dir });
+    const a = out.data[0].files.find((f) => f.filename === "src/a.rs");
+    assert.deepEqual(a.summary.lines, { count: 1, covered: 1, percent: 100 });
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// ---- P4: unsupported cfg/cfg_attr forms fail closed ---------------------------
+
+test("self-check 8: a multi-line #[cfg(...)] attribute is an unsupported form", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/lib.rs": ["#[cfg(", "    test", ")]", "fn f() {}"].join("\n"),
+      "rust.lcov": lcovRecord("src/lib.rs", []),
+    });
+    const { r, outPath } = selfCheckHarness(dir, {});
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /unsupported cfg attribute form/);
+    assert.equal(existsSync(outPath), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("self-check 9: #[cfg(all(test, feature = \"x\"))] is an unsupported form", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/lib.rs": ['#[cfg(all(test, feature = "x"))]', "fn f() {}"].join("\n"),
+      "rust.lcov": lcovRecord("src/lib.rs", []),
+    });
+    const { r, outPath } = selfCheckHarness(dir, {});
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /unsupported cfg attribute form/);
+    assert.equal(existsSync(outPath), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("P4: #[cfg(not(test))] is recognized — no error, no span", () => {
+  const src = ["#[cfg(not(test))]", "fn f() {}"].join("\n");
+  assert.doesNotThrow(() => cfgTestSpans("f.rs", src));
+  assert.deepEqual(cfgTestSpans("f.rs", src), []);
+});
+
+test("self-check 10: #[cfg_attr(test, path = \"alternate.rs\")] is an unsupported form", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/lib.rs": ["#[cfg(test)]", '#[cfg_attr(test, path = "alternate.rs")]', "mod helper;"].join("\n"),
+      "src/helper.rs": "// production\n",
+      "src/alternate.rs": "// the real cfg_attr target\n",
+      "rust.lcov": lcovRecord("src/lib.rs", []),
+    });
+    const { r, outPath } = selfCheckHarness(dir, {});
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /unsupported: cfg_attr\(test, path/);
+    assert.equal(existsSync(outPath), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// ---- P5: indented declarations inside inline modules; bin/ crate roots -------
+
+test("self-check 11: an external mod declared inside a production inline module is unsupported", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/lib.rs": ["#[cfg(test)]", "mod shared;", "", "pub mod wrapper {", '    #[path = "../shared.rs"]', "    mod shared;", "}"].join(
+        "\n",
+      ),
+      "src/shared.rs": "// shared\n",
+      "rust.lcov": lcovRecord("src/lib.rs", []),
+    });
+    const { r, outPath } = selfCheckHarness(dir, {});
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /unsupported: external module declared inside an inline module/);
+    assert.match(r.stderr, /src[/\\]lib\.rs:6/);
+    assert.equal(existsSync(outPath), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("P5: a binary crate root (src/bin/tool.rs) resolves its declared modules under bin/, not bin/tool/", () => {
+  const dir = tmpTree();
+  try {
+    writeFiles(dir, {
+      "src/bin/tool.rs": ["#[cfg(test)]", "mod helpers;"].join("\n"),
+      "src/bin/helpers.rs": "// sibling of tool.rs under bin/, not bin/tool/helpers.rs\n",
+    });
+    const { testOnly, errors } = testOnlyFiles(path.join(dir, "src"));
+    assert.deepEqual(errors, []);
+    const rels = [...testOnly].map((p) => path.relative(dir, p)).sort();
+    assert.deepEqual(rels, ["src/bin/helpers.rs"]);
+  } finally {
+    cleanup(dir);
   }
 });
 

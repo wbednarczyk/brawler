@@ -25,22 +25,21 @@
   },
   "rust": {
     "measurement": 2,
-    "lines": 89.5,
+    "lines": 85.5,
     "dirs": {
-      "src-tauri/src/(root)": 86,
-      "src-tauri/src/bin": 61.1,
-      "src-tauri/src/commands": 72.9,
-      "src-tauri/src/fundamentals": 95.2,
-      "src-tauri/src/interpretation": 95.5,
-      "src-tauri/src/jobs": 91.9,
-      "src-tauri/src/licensing": 84.8,
-      "src-tauri/src/mcp": 95.3,
-      "src-tauri/src/providers": 74.1,
-      "src-tauri/src/report_diff": 99.2,
-      "src-tauri/src/source_adapters": 81.7,
-      "src-tauri/src/source_tree_guards": 88.2,
-      "src-tauri/src/storage": 93.5,
-      "src-tauri/src/valuation": 98.7
+      "src-tauri/src/(root)": 77.8,
+      "src-tauri/src/bin": 45.3,
+      "src-tauri/src/commands": 50.3,
+      "src-tauri/src/fundamentals": 93.2,
+      "src-tauri/src/interpretation": 87.9,
+      "src-tauri/src/jobs": 82.2,
+      "src-tauri/src/licensing": 73.1,
+      "src-tauri/src/mcp": 92,
+      "src-tauri/src/providers": 68.7,
+      "src-tauri/src/report_diff": 98.7,
+      "src-tauri/src/source_adapters": 77.8,
+      "src-tauri/src/storage": 92,
+      "src-tauri/src/valuation": 97.6
     }
   }
 }
