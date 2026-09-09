@@ -1,9 +1,9 @@
-import { render } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { downloadDir, join } from "@tauri-apps/api/path";
 import { save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { beforeEach, vi } from "vitest";
+import { beforeEach, expect, vi } from "vitest";
 import { App } from "../app/App";
 import type { Section } from "../app/navigation";
 import {
@@ -214,6 +214,18 @@ export const initialNotebookEntry = legacyNotebookEntry;
 export const initialTranscriptJobs = SEED.transcriptJobs;
 export const invalidLicenseStatus = legacyInvalidLicenseStatus;
 export const missingLicenseStatus = legacyMissingLicenseStatus;
+
+// Re-queries by role/name on every poll (the RTL equivalent of a Playwright
+// locator) so it survives a control that relocates in the DOM while data
+// loads, not just one that starts disabled — use instead of
+// `user.click(await findByRole(...))` for any control gated on async state.
+export async function findEnabledButton(name: string | RegExp): Promise<HTMLElement> {
+  return waitFor(() => {
+    const button = screen.getByRole("button", { name });
+    expect(button).toBeEnabled();
+    return button;
+  });
+}
 
 // The harness defaults to Inbox to keep workflow tests focused on their
 // subject. The PRODUCTION default is Today/Pulse (ADR 0054) — asserted

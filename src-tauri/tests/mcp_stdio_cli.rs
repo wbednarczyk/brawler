@@ -255,3 +255,42 @@ fn flags_win_over_env_and_the_stub_observes_the_flag_token() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(stdout, format!("{body}\n"));
 }
+
+#[test]
+fn ambient_proxy_configuration_is_ignored_for_the_loopback_post() {
+    // Ambient proxy env must never redirect the loopback POST (#494). Reddens
+    // on a plain `Client::new()` (env proxy discovery sends the POST to the
+    // bogus closed-port proxy; the stub's 5s accept deadline fires). `bin()`
+    // is `env_clear()`-ed, so no inherited `NO_PROXY` can exempt loopback on
+    // its own — only `.no_proxy()` in the binary can.
+    let body = r#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#;
+    let (port, stub) = spawn_one_shot_stub(body);
+    let bogus_proxy = "http://127.0.0.1:1";
+
+    let mut child = bin()
+        .env("BRAWLER_MCP_TOKEN", "x")
+        .env("BRAWLER_MCP_PORT", port.to_string())
+        .env("HTTP_PROXY", bogus_proxy)
+        .env("http_proxy", bogus_proxy)
+        .env("ALL_PROXY", bogus_proxy)
+        .env("all_proxy", bogus_proxy)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn brawler-mcp-stdio");
+    send_one_request_line(&mut child);
+
+    let output = child.wait_with_output().expect("wait for exit");
+    let result = stub.join().expect("stub thread joins");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(result.path, "/mcp");
+    assert_eq!(result.authorization.as_deref(), Some("Bearer x"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout,
+        format!("{body}\n"),
+        "the binary must print the stub's body verbatim, proving the POST reached \
+         the stub directly and not the bogus proxy"
+    );
+}
