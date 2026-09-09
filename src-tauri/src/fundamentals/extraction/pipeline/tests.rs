@@ -281,3 +281,56 @@ fn a_bare_instance_with_no_linkbase_still_projects_its_crosswalked_facts() {
         "a realistic count > 0 — every dimensionless, crosswalked fact projects"
     );
 }
+
+mod properties {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arbitrary_status() -> impl Strategy<Value = Status> {
+        prop_oneof![
+            Just(Status::Passed),
+            Just(Status::Failed),
+            Just(Status::Inconclusive),
+        ]
+    }
+
+    fn arbitrary_completeness() -> impl Strategy<Value = Option<Completeness>> {
+        prop_oneof![
+            Just(None),
+            (0usize..5, 0usize..5).prop_map(|(expected, present_raw)| {
+                let present = present_raw.min(expected);
+                Some(Completeness {
+                    expected,
+                    present,
+                    missing: Vec::new(),
+                })
+            }),
+        ]
+    }
+
+    proptest! {
+        /// Meaning check: the acceptance decision table stated in
+        /// `acceptance_for`'s doc comment — contradiction -> Flagged; clean
+        /// + covers primary KPIs (or nothing was expected) -> Accepted;
+        /// clean + covers none of the expected primary KPIs ->
+        /// AcceptedUnreviewed; uncontradicted-but-unproven -> AcceptedUnreviewed
+        /// — independently of the implementation's own branching. A mutant
+        /// that silently accepts a contradiction, or drops the hollow-set
+        /// downgrade, fails the corresponding arm.
+        #[test]
+        fn acceptance_for_matches_the_documented_decision_table(
+            status in arbitrary_status(),
+            completeness in arbitrary_completeness(),
+        ) {
+            let expected = match status {
+                Status::Failed => Acceptance::Flagged,
+                Status::Inconclusive => Acceptance::AcceptedUnreviewed,
+                Status::Passed => match &completeness {
+                    Some(c) if c.expected > 0 && c.present == 0 => Acceptance::AcceptedUnreviewed,
+                    _ => Acceptance::Accepted,
+                },
+            };
+            prop_assert_eq!(acceptance_for(status, completeness.as_ref()), expected);
+        }
+    }
+}

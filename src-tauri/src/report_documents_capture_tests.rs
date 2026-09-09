@@ -587,3 +587,85 @@ fn a_second_capture_waits_for_the_first_and_returns_its_published_row() {
         .count();
     assert_eq!(leftover_parts, 0, "no .part file must remain");
 }
+
+#[cfg(test)]
+mod properties {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// content_hash_hex: totality + shape (64 lowercase hex chars) +
+        /// determinism + collision sensitivity (a single flipped byte must
+        /// change the hash). A mutant that truncates the hex output, or
+        /// drops the update() call, fails the shape/collision checks.
+        #[test]
+        fn content_hash_hex_is_a_deterministic_64_char_lowercase_hex_digest(
+            bytes in prop::collection::vec(any::<u8>(), 0..256),
+            flip_idx in 0usize..256,
+        ) {
+            let hash = content_hash_hex(&bytes);
+            prop_assert_eq!(hash.len(), 64);
+            prop_assert!(hash.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+            prop_assert_eq!(content_hash_hex(&bytes), hash.clone());
+
+            if !bytes.is_empty() {
+                let mut flipped = bytes.clone();
+                let idx = flip_idx % flipped.len();
+                flipped[idx] ^= 0xFF;
+                prop_assert_ne!(content_hash_hex(&flipped), hash);
+            }
+        }
+
+        /// determine_extension: totality over arbitrary content-type/url
+        /// text, lowercase output, bounded length.
+        #[test]
+        fn determine_extension_never_panics_lowercase_and_bounded(
+            content_type in prop::option::of(".{0,40}"),
+            url in ".{0,60}",
+        ) {
+            let ext = determine_extension(&content_type, &url);
+            prop_assert!(ext.len() <= 9, "unexpectedly long extension: {ext:?}");
+            prop_assert_eq!(ext.to_lowercase(), ext);
+        }
+    }
+
+    /// Meaning check (table-driven, not random): every documented
+    /// content-type -> extension mapping, a case-varied URL filename
+    /// extension, and the "nothing matched" default. A mutant that always
+    /// returns "bin", or drops the URL-lowercasing, fails one of these.
+    #[test]
+    fn determine_extension_matches_the_documented_table() {
+        let cases: &[(&str, &str)] = &[
+            ("application/pdf", "pdf"),
+            ("text/html", "html"),
+            ("application/xhtml+xml", "xhtml"),
+            ("text/plain", "txt"),
+            ("application/msword", "doc"),
+            (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "docx",
+            ),
+            ("application/vnd.ms-excel", "xls"),
+            (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "xlsx",
+            ),
+        ];
+        for (content_type, expected) in cases {
+            assert_eq!(
+                determine_extension(&Some(content_type.to_string()), "http://example.com/x"),
+                *expected,
+                "content type {content_type} must map to {expected}"
+            );
+        }
+
+        // Uppercase URL filename extension, no content type: case-folded.
+        assert_eq!(
+            determine_extension(&None, "https://example.com/report.PDF"),
+            "pdf"
+        );
+
+        // No content type, no usable URL segment: the documented default.
+        assert_eq!(determine_extension(&None, "https://example.com/"), "bin");
+    }
+}

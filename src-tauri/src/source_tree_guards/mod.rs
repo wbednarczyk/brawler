@@ -15,7 +15,13 @@ mod storage_writes;
 /// ratchet threshold (ADR 0103) after wave 2 grew it.
 mod scan;
 
+/// G7 (transform-manifest guard, #194 S0): declared-test-module resolution
+/// and `proptest_in` cross-reference validation — kept out of `mod.rs` for
+/// the same file-size reason as `scan.rs`.
+mod transform_manifest;
+
 use scan::source_files;
+use transform_manifest::{declared_test_module_content, proptest_in_is_valid};
 
 /// Whether the current process is running inside the cargo-mutants scratch
 /// sandbox, which copies only `src-tauri/` — never the sibling
@@ -448,11 +454,23 @@ fn transform_modules_carry_their_property_and_golden_tests() {
         let claims_insta = module["insta"]
             .as_bool()
             .expect("each module entry has a boolean \"insta\"");
-        if claims_proptest && !(content.contains("proptest!") || content.contains("proptest::")) {
-            violations.push(format!(
+        let proptest_in = module.get("proptest_in").and_then(|v| v.as_str());
+        let own_has_proptest = content.contains("proptest!") || content.contains("proptest::");
+        match (claims_proptest, proptest_in) {
+            (false, Some(spec)) => violations.push(format!(
+                "{path}: proptest_in {spec:?} set on a proptest:false row — either it is \
+                 covered or it is not"
+            )),
+            (true, Some(spec)) => {
+                if let Err(reason) = proptest_in_is_valid(manifest_dir, path, spec) {
+                    violations.push(format!("{path}: proptest_in {spec:?} invalid — {reason}"));
+                }
+            }
+            (true, None) if !own_has_proptest => violations.push(format!(
                 "{path}: manifest claims proptest:true but no proptest!/proptest:: usage found \
                  (the ratchet flips false→true only, fix the claim or add the test)"
-            ));
+            )),
+            _ => {}
         }
         if claims_insta && !content.contains("insta::") {
             violations.push(format!(
@@ -466,29 +484,12 @@ fn transform_modules_carry_their_property_and_golden_tests() {
     // property/golden coverage. Counts may only rise, and a module may carry
     // `proptest: false` only if it was already an offender when the manifest
     // was frozen — a NEW transform must ship with proptest:true.
-    const PROPTEST_TRUE_FLOOR: usize = 11;
+    // #194 closed the frozen list: every listed transform carries a property
+    // test, so the floor equals the manifest size and a new transform can only
+    // enter with proptest:true.
+    const PROPTEST_TRUE_FLOOR: usize = 30;
     const INSTA_TRUE_FLOOR: usize = 13;
-    const FROZEN_NO_PROPTEST: &[&str] = &[
-        "src/fundamentals/extraction/esef.rs",
-        "src/fundamentals/extraction/esef_package.rs",
-        "src/fundamentals/extraction/html.rs",
-        "src/fundamentals/extraction/mod.rs",
-        "src/fundamentals/extraction/text_numbers.rs",
-        "src/fundamentals/extraction/pipeline",
-        "src/source_adapters/bankier_calendar.rs",
-        "src/source_adapters/bankier_company.rs",
-        "src/source_adapters/bankier_rss.rs",
-        "src/source_adapters/biznesradar_fundamentals.rs",
-        "src/source_adapters/biznesradar_ownership.rs",
-        "src/source_adapters/biznesradar_recommendations.rs",
-        "src/source_adapters/company_directory.rs",
-        "src/source_adapters/gpw_company_registry.rs",
-        "src/source_adapters/gpw_market_events.rs",
-        "src/source_adapters/knf_short_selling.rs",
-        "src/source_adapters/newconnect_company_directory.rs",
-        "src/storage/ingestion.rs",
-        "src/report_documents_capture.rs",
-    ];
+    const FROZEN_NO_PROPTEST: &[&str] = &[];
     const FROZEN_NO_INSTA: &[&str] = &[
         "src/fundamentals/expr",
         "src/fundamentals/extraction/esef.rs",
@@ -598,11 +599,15 @@ fn transform_modules_carry_their_property_and_golden_tests() {
     );
 }
 
-/// Concatenate every `.rs` file's content under `path` (or read it directly
-/// if `path` is itself a file), skipping `snapshots/` subdirectories.
+/// Concatenate every `.rs` file's content under `path` (or read it directly,
+/// plus its declared test module(s), if `path` is itself a file), skipping
+/// `snapshots/` subdirectories.
 fn read_rs_module_content(path: &Path) -> String {
     if path.is_file() {
-        return std::fs::read_to_string(path).unwrap_or_default();
+        let mut content = std::fs::read_to_string(path).unwrap_or_default();
+        let extra = declared_test_module_content(path, &content);
+        content.push_str(&extra);
+        return content;
     }
     let mut content = String::new();
     let mut stack = vec![path.to_path_buf()];

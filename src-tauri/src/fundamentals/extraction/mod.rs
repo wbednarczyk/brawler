@@ -435,4 +435,188 @@ mod tests {
             assert!(tier.matches_extraction_method("some_future_method"));
         }
     }
+
+    /// Tie-breaking (equal-tier conflicts) is out of scope by owner decision:
+    /// tie-breaking pinned as-is (#194, owner decision A) — first occurrence
+    /// in input order wins when two facts share a metric/period/tier.
+    #[test]
+    fn equal_tier_conflict_keeps_the_first_occurrence() {
+        let facts = vec![
+            fact("total_assets", 100, "2026-03-31", SourceTier::Esef),
+            fact("total_assets", 200, "2026-03-31", SourceTier::Esef),
+        ];
+        let set = fact_set_for_period(&facts, "2026-03-31");
+        assert_eq!(set.get("total_assets"), Some(&Decimal::from(100)));
+    }
+}
+
+#[cfg(test)]
+mod properties {
+    use super::*;
+    use crate::transform_invariants::assert_order_independent;
+    use proptest::prelude::*;
+
+    fn all_tiers() -> [SourceTier; 6] {
+        [
+            SourceTier::Esef,
+            SourceTier::StructuredXhtml,
+            SourceTier::EspiCoverNote,
+            SourceTier::Pdf,
+            SourceTier::Agent,
+            SourceTier::HtmlAggregator,
+        ]
+    }
+
+    fn tier_strategy() -> impl Strategy<Value = SourceTier> {
+        prop::sample::select(all_tiers().to_vec())
+    }
+
+    fn period_end_pool() -> Vec<&'static str> {
+        vec![
+            "2024-03-31",
+            "2024-06-30",
+            "2024-09-30",
+            "2024-12-31",
+            "2025-03-31",
+        ]
+    }
+
+    fn extracted_fact_strategy() -> impl Strategy<Value = ExtractedFact> {
+        (
+            prop_oneof![Just("m0"), Just("m1"), Just("m2")],
+            -1_000_000i64..=1_000_000i64,
+            prop::sample::select(period_end_pool()),
+            tier_strategy(),
+        )
+            .prop_map(|(metric, value, period_end, tier)| ExtractedFact {
+                metric_key: metric.to_string(),
+                value: Decimal::from(value),
+                period: FactPeriod::Instant(period_end.to_string()),
+                basis: Some(StatementBasis::Consolidated),
+                currency: Some("PLN".into()),
+                tier,
+                citation: metric.to_string(),
+            })
+    }
+
+    fn facts_vec_strategy() -> impl Strategy<Value = Vec<ExtractedFact>> {
+        prop::collection::vec(extracted_fact_strategy(), 0..12)
+    }
+
+    proptest! {
+        /// Meaning check: a mutant that accumulates values per metric instead
+        /// of picking a single best-tier winner (e.g. `slot.1 += f.value`)
+        /// doubles the result on the duplicated input, breaking this
+        /// property, while the real best-tier-wins reduction is a closed
+        /// selection and stays fixed under duplication.
+        #[test]
+        fn duplicating_input_does_not_change_result(
+            facts in facts_vec_strategy(),
+            period_end in prop::sample::select(period_end_pool()),
+        ) {
+            let mut doubled = facts.clone();
+            doubled.extend(facts.clone());
+            prop_assert_eq!(
+                fact_set_for_period(&doubled, period_end),
+                fact_set_for_period(&facts, period_end)
+            );
+        }
+
+        /// Facts whose period-end does not match the target are ignored,
+        /// regardless of how many of them there are or where they sit.
+        #[test]
+        fn non_matching_period_end_facts_are_ignored(
+            matching in prop::collection::vec(extracted_fact_strategy(), 0..6),
+            noise in prop::collection::vec(extracted_fact_strategy(), 0..6),
+            period_end in prop::sample::select(period_end_pool()),
+        ) {
+            let matching: Vec<ExtractedFact> = matching
+                .into_iter()
+                .map(|mut f| {
+                    f.period = FactPeriod::Instant(period_end.to_string());
+                    f
+                })
+                .collect();
+            let noise: Vec<ExtractedFact> = noise
+                .into_iter()
+                .filter(|f| f.period.end_date() != period_end)
+                .collect();
+
+            let mut combined = matching.clone();
+            combined.extend(noise);
+            prop_assert_eq!(
+                fact_set_for_period(&combined, period_end),
+                fact_set_for_period(&matching, period_end)
+            );
+        }
+
+        /// Meaning check: for metrics whose tiers are pairwise distinct (no
+        /// ties, so the winner is unambiguous), the result is order
+        /// independent AND equals the value carried by the lowest (most
+        /// trusted) tier per metric. A mutant that keeps the WORST tier, or
+        /// accumulates instead of selecting, fails the direct equality
+        /// check below.
+        #[test]
+        fn permutation_invariant_and_best_tier_wins_with_unique_winners(
+            // Each vector entry gets its OWN metric key (by position) so no two
+            // entries ever collide on the same metric — collisions would let two
+            // independently-computed "best" tiers for the same metric contradict
+            // each other (a test-construction hazard, not a production bug).
+            metric_tier_sets in prop::collection::vec(
+                prop::collection::hash_set(0usize..6, 1..=6),
+                1..=4,
+            ),
+        ) {
+            const PERIOD_END: &str = "2026-03-31";
+            let mut facts = Vec::new();
+            let mut expected: FactSet = BTreeMap::new();
+            for (m, tier_indices) in metric_tier_sets.into_iter().enumerate() {
+                let metric = format!("m{m}");
+                let mut best: Option<(SourceTier, Decimal)> = None;
+                for (i, tier) in tier_indices.into_iter().map(|idx| all_tiers()[idx]).enumerate() {
+                    let value = Decimal::from(1000 + i as i64);
+                    facts.push(ExtractedFact {
+                        metric_key: metric.to_string(),
+                        value,
+                        period: FactPeriod::Instant(PERIOD_END.to_string()),
+                        basis: Some(StatementBasis::Consolidated),
+                        currency: Some("PLN".into()),
+                        tier,
+                        citation: metric.to_string(),
+                    });
+                    best = Some(match best {
+                        None => (tier, value),
+                        Some((bt, bv)) => {
+                            if tier < bt {
+                                (tier, value)
+                            } else {
+                                (bt, bv)
+                            }
+                        }
+                    });
+                }
+                if let Some((_, value)) = best {
+                    expected.insert(metric.to_string(), value);
+                }
+            }
+
+            prop_assert_eq!(fact_set_for_period(&facts, PERIOD_END), expected.clone());
+            assert_order_independent(
+                |xs: Vec<ExtractedFact>| fact_set_for_period(&xs, PERIOD_END),
+                facts,
+            );
+        }
+
+        /// primary_period_end is deterministic and equals the documented
+        /// choice: the maximum (lexicographically, i.e. chronologically for
+        /// ISO dates) period-end date across all facts.
+        #[test]
+        fn primary_period_end_is_deterministic_and_is_the_max_end_date(
+            facts in facts_vec_strategy(),
+        ) {
+            let expected = facts.iter().map(|f| f.period.end_date().to_string()).max();
+            prop_assert_eq!(primary_period_end(&facts), expected.clone());
+            prop_assert_eq!(primary_period_end(&facts), expected);
+        }
+    }
 }

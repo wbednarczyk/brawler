@@ -444,9 +444,123 @@ fn malformed_xml_errors_without_panic() {
     ));
 }
 
+// ---------------------------------------------------------------------------
+// dedup_longest_duration / concept_to_metric_key test helpers, shared with
+// `mod properties` below (ADR 0049, epic #194 S1).
+// ---------------------------------------------------------------------------
+
+fn fact_instant(metric: &str, end: &str) -> ExtractedFact {
+    ExtractedFact {
+        metric_key: metric.to_string(),
+        value: Decimal::ZERO,
+        period: FactPeriod::Instant(end.to_string()),
+        basis: None,
+        currency: None,
+        tier: SourceTier::Esef,
+        citation: metric.to_string(),
+    }
+}
+
+fn fact_duration(metric: &str, start: &str, end: &str, value: i64) -> ExtractedFact {
+    ExtractedFact {
+        metric_key: metric.to_string(),
+        value: Decimal::from(value),
+        period: FactPeriod::Duration {
+            start: start.to_string(),
+            end: end.to_string(),
+        },
+        basis: None,
+        currency: None,
+        tier: SourceTier::Esef,
+        citation: metric.to_string(),
+    }
+}
+
+/// Tie-breaking (equal-tier/equal-start conflicts) is out of scope by owner
+/// decision: tie-breaking pinned as-is (#194, owner decision A) — the first
+/// occurrence in input order survives when two durations share metric, end
+/// AND start.
+#[test]
+fn duration_tie_with_equal_start_keeps_the_first_occurrence() {
+    // tie-breaking pinned as-is (#194, owner decision A)
+    let first = fact_duration("m", "2026-01-01", "2026-03-31", 10);
+    let second = fact_duration("m", "2026-01-01", "2026-03-31", 20);
+    let result = dedup_longest_duration(vec![first.clone(), second]);
+    assert_eq!(result, vec![first]);
+}
+
 mod properties {
     use super::*;
     use proptest::prelude::*;
+
+    // -- concept_to_metric_key -----------------------------------------------
+
+    fn known_concept_pairs() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("Assets", "total_assets"),
+            ("Liabilities", "total_liabilities"),
+            ("Equity", "total_equity"),
+            ("CashAndCashEquivalents", "cash"),
+            ("CurrentAssets", "current_assets"),
+            ("CurrentLiabilities", "current_liabilities"),
+            ("RetainedEarnings", "retained_earnings"),
+            ("LongtermBorrowings", "long_term_debt"),
+            ("Revenue", "revenue"),
+            ("RevenueFromContractsWithCustomers", "revenue"),
+            ("GrossProfit", "gross_profit"),
+            ("ProfitLossFromOperatingActivities", "operating_profit"),
+            ("ProfitLoss", "net_profit"),
+            ("BasicEarningsLossPerShare", "eps_basic"),
+            ("DilutedEarningsLossPerShare", "eps_diluted"),
+            (
+                "CashFlowsFromUsedInOperatingActivities",
+                "operating_cash_flow",
+            ),
+            (
+                "CashFlowsFromUsedInInvestingActivities",
+                "investing_cash_flow",
+            ),
+            (
+                "CashFlowsFromUsedInFinancingActivities",
+                "financing_cash_flow",
+            ),
+            ("InterestRevenueExpense", "net_interest_income"),
+            ("FeeAndCommissionIncomeExpense", "net_fee_commission_income"),
+            ("LoansAndAdvancesToCustomers", "total_loans"),
+            ("DepositsFromCustomers", "total_deposits"),
+            ("InsuranceRevenue", "gross_insurance_revenue"),
+        ]
+    }
+
+    fn seeded_metric_keys() -> Vec<&'static str> {
+        let mut v: Vec<&'static str> = known_concept_pairs().iter().map(|(_, k)| *k).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
+    // -- dedup_longest_duration ------------------------------------------------
+
+    fn arbitrary_fact() -> impl Strategy<Value = ExtractedFact> {
+        prop_oneof![
+            (
+                "[a-z]{1,3}",
+                prop::sample::select(vec!["2026-01-01", "2026-02-01", "2026-03-01"]),
+            )
+                .prop_map(|(m, e)| fact_instant(&m, e)),
+            (
+                "[a-z]{1,3}",
+                prop::sample::select(vec!["2026-01-01", "2026-01-15"]),
+                prop::sample::select(vec!["2026-03-01", "2026-03-31"]),
+                0i64..1000,
+            )
+                .prop_map(|(m, s, e, v)| fact_duration(&m, s, e, v)),
+        ]
+    }
+
+    fn arbitrary_facts() -> impl Strategy<Value = Vec<ExtractedFact>> {
+        prop::collection::vec(arbitrary_fact(), 0..10)
+    }
 
     proptest! {
         // The parser must never panic on arbitrary bytes — a hostile or
@@ -460,6 +574,105 @@ mod properties {
         #[test]
         fn number_parse_never_panics(s in ".{0,64}") {
             let _ = parse_ixbrl_number(&s, None);
+        }
+
+        /// Meaning check: every documented concept maps to its documented
+        /// metric key. A mutant that always returns `None` fails every arm.
+        #[test]
+        fn known_concept_maps_to_its_documented_metric_key(idx in 0usize..known_concept_pairs().len()) {
+            let (concept, expected) = known_concept_pairs()[idx];
+            prop_assert_eq!(concept_to_metric_key(concept), Some(expected));
+        }
+
+        /// Determinism + charset/seeded-set boundedness over arbitrary
+        /// local names (mostly untracked concepts, occasionally a real one).
+        /// A mutant that returns an unmapped/garbage key fails the
+        /// seeded-set or charset check.
+        #[test]
+        fn arbitrary_local_name_is_deterministic_and_bounded_when_mapped(
+            local_name in prop_oneof![
+                prop::sample::select(known_concept_pairs()).prop_map(|(c, _)| c.to_string()),
+                "[A-Za-z0-9_]{0,30}",
+            ],
+        ) {
+            let a = concept_to_metric_key(&local_name);
+            prop_assert_eq!(a, concept_to_metric_key(&local_name));
+            if let Some(v) = a {
+                prop_assert!(seeded_metric_keys().contains(&v), "unexpected metric key {v}");
+                prop_assert!(v.chars().all(|c| c.is_ascii_lowercase() || c == '_'));
+            }
+        }
+
+        /// Idempotence: re-running the dedup on its own (sorted, already
+        /// deduped) output is a no-op.
+        #[test]
+        fn dedup_longest_duration_is_idempotent(facts in arbitrary_facts()) {
+            crate::transform_invariants::assert_idempotent_vec(dedup_longest_duration, facts);
+        }
+
+        /// Instant facts are never touched by the duration-collapsing logic.
+        #[test]
+        fn instants_pass_through_unchanged(facts in prop::collection::vec(
+            ("[a-z]{1,4}", prop::sample::select(vec!["2026-01-01", "2026-02-01", "2026-03-01"])),
+            0..6,
+        )) {
+            let facts: Vec<ExtractedFact> = facts.into_iter().map(|(m, e)| fact_instant(&m, e)).collect();
+            let mut expected = facts.clone();
+            expected.sort_by(|a, b| {
+                a.metric_key.cmp(&b.metric_key).then(a.period.end_date().cmp(b.period.end_date()))
+            });
+            prop_assert_eq!(dedup_longest_duration(facts), expected);
+        }
+
+        /// Output is sorted by (metric_key, period end) as documented.
+        #[test]
+        fn output_is_sorted_by_metric_then_end_date(facts in arbitrary_facts()) {
+            let out = dedup_longest_duration(facts);
+            let mut sorted = out.clone();
+            sorted.sort_by(|a, b| {
+                a.metric_key.cmp(&b.metric_key).then(a.period.end_date().cmp(b.period.end_date()))
+            });
+            prop_assert_eq!(out, sorted);
+        }
+
+        /// Meaning check: for a group of durations sharing a metric/end with
+        /// pairwise-distinct starts (no ties), the kept duration is the one
+        /// with the earliest start (longest span), and the choice is
+        /// permutation invariant. A mutant that keeps the LATEST start (the
+        /// shortest span) fails the direct equality check.
+        #[test]
+        fn kept_duration_has_the_earliest_start_and_is_permutation_invariant(
+            start_indices in prop::collection::hash_set(0usize..6, 1..=6),
+        ) {
+            const STARTS: [&str; 6] = [
+                "2026-01-01", "2026-01-05", "2026-01-10",
+                "2026-01-15", "2026-01-20", "2026-01-25",
+            ];
+            const END: &str = "2026-03-31";
+            let mut facts: Vec<ExtractedFact> = Vec::new();
+            let mut expected_start: Option<&str> = None;
+            for (i, idx) in start_indices.into_iter().enumerate() {
+                let start = STARTS[idx];
+                facts.push(fact_duration("m", start, END, 100 + i as i64));
+                expected_start = Some(match expected_start {
+                    None => start,
+                    Some(s) if start < s => start,
+                    Some(s) => s,
+                });
+            }
+
+            let result = dedup_longest_duration(facts.clone());
+            prop_assert_eq!(result.len(), 1);
+            match &result[0].period {
+                FactPeriod::Duration { start, .. } => {
+                    prop_assert_eq!(start.as_str(), expected_start.unwrap());
+                }
+                FactPeriod::Instant(_) => prop_assert!(false, "expected a duration fact"),
+            }
+
+            let mut reversed = facts;
+            reversed.reverse();
+            prop_assert_eq!(dedup_longest_duration(reversed), result);
         }
     }
 }

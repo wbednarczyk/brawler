@@ -595,3 +595,216 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod properties {
+    use super::*;
+    use proptest::prelude::*;
+
+    // Generic filler words that never contain any scale-declaration or
+    // scale-caption substring the detector looks for ("tys", "mln", "pln",
+    // "in thousands"/"in millions", "thousand(s)", "million(s)", "zł"/"zl").
+    const SAFE_WORDS: &[&str] = &[
+        "raport",
+        "spółka",
+        "wynik",
+        "rok",
+        "giełda",
+        "inwestor",
+        "projekt",
+        "kwartał",
+        "zarząd",
+        "akcje",
+        "dane",
+        "zysk",
+        "przychód",
+        "koszt",
+        "rada",
+        "audyt",
+        "biznes",
+        "sektor",
+    ];
+
+    fn safe_words() -> impl Strategy<Value = String> {
+        prop::collection::vec(prop::sample::select(SAFE_WORDS), 0..6).prop_map(|w| w.join(" "))
+    }
+
+    // -----------------------------------------------------------------------
+    // detect_unit_scale — every documented declaration/caption token yields
+    // its documented scale; no token anywhere yields Ones.
+    // -----------------------------------------------------------------------
+
+    fn declaration_tokens() -> Vec<(&'static str, UnitScale)> {
+        vec![
+            ("w tys.", UnitScale::Thousands),
+            ("w tysiącach", UnitScale::Thousands),
+            ("w tysięcy", UnitScale::Thousands),
+            ("in thousands", UnitScale::Thousands),
+            ("thousands of", UnitScale::Thousands),
+            ("PLN '000", UnitScale::Thousands),
+            ("PLN thousand", UnitScale::Thousands),
+            ("w mln", UnitScale::Millions),
+            ("w milionach", UnitScale::Millions),
+            ("in millions", UnitScale::Millions),
+            ("millions of", UnitScale::Millions),
+            ("PLN million", UnitScale::Millions),
+            ("tys. zł", UnitScale::Thousands),
+            ("tys. zl", UnitScale::Thousands),
+            ("tys zł", UnitScale::Thousands),
+            ("tys zl", UnitScale::Thousands),
+            ("tys. pln", UnitScale::Thousands),
+            ("tys pln", UnitScale::Thousands),
+            ("mln zł", UnitScale::Millions),
+            ("mln zl", UnitScale::Millions),
+            ("mln pln", UnitScale::Millions),
+        ]
+    }
+
+    proptest! {
+        /// Meaning check: a mutant that always returns `Ones` (or otherwise
+        /// drops the declaration/caption counting) fails every arm of this
+        /// property except the no-token case.
+        #[test]
+        fn documented_declaration_or_caption_token_determines_scale(
+            idx in 0usize..declaration_tokens().len(),
+            prefix in safe_words(),
+            suffix in safe_words(),
+        ) {
+            let (token, expected) = declaration_tokens()[idx];
+            let text = format!("{prefix} {token} {suffix}");
+            prop_assert_eq!(detect_unit_scale(&text), expected);
+        }
+
+        /// The documented silent default: no declaration and no caption
+        /// anywhere in the text means Ones, never a guessed multiplier.
+        #[test]
+        fn no_declaration_and_no_caption_defaults_to_ones(words in safe_words()) {
+            prop_assert_eq!(detect_unit_scale(&words), UnitScale::Ones);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // normalize_label — idempotent, lowercased, no leading/trailing
+    // whitespace.
+    // -----------------------------------------------------------------------
+
+    proptest! {
+        /// Meaning check: a mutant that skips lowering (returns the trimmed
+        /// raw string) fails on any input carrying an uppercase letter.
+        #[test]
+        fn normalize_label_is_idempotent_lowercased_and_trimmed(raw in "\\PC{0,60}") {
+            crate::transform_invariants::assert_idempotent_str(normalize_label, &raw);
+            let out = normalize_label(&raw);
+            prop_assert_eq!(out.to_lowercase(), out.clone());
+            prop_assert_eq!(out.trim(), out.as_str());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // parse_amount — meaning preservation over the documented Polish number
+    // grammar, plus totality over arbitrary short text.
+    // -----------------------------------------------------------------------
+
+    #[derive(Debug, Clone, Copy)]
+    enum SignStyle {
+        None,
+        Minus,
+        Parens,
+    }
+
+    fn group_digits(n: u64, sep: char) -> String {
+        let digits = n.to_string();
+        let bytes = digits.as_bytes();
+        let mut groups: Vec<&str> = Vec::new();
+        let mut end = bytes.len();
+        while end > 3 {
+            groups.push(&digits[end - 3..end]);
+            end -= 3;
+        }
+        groups.push(&digits[0..end]);
+        groups.reverse();
+        groups.join(&sep.to_string())
+    }
+
+    /// A Decimal magnitude (1..=1e12, 0-2 decimal places) plus the rendering
+    /// choices the parser documents: thousands separator, decimal-comma
+    /// digits, sign style (plain / minus / accounting parens) and an
+    /// optional trailing currency word.
+    fn rendered_amount() -> impl Strategy<Value = (String, Decimal)> {
+        (
+            any::<bool>(),
+            1u64..=1_000_000_000_000u64,
+            0u8..=2u8,
+            prop_oneof![Just(' '), Just('.')],
+            prop_oneof![Just(""), Just(" zł"), Just(" zl"), Just(" PLN"), Just("zł")],
+        )
+            .prop_flat_map(|(negative, int_part, dec_len, sep, suffix)| {
+                let max_dec: u32 = match dec_len {
+                    0 => 0,
+                    1 => 9,
+                    _ => 99,
+                };
+                let sign_style = if negative {
+                    prop_oneof![Just(SignStyle::Minus), Just(SignStyle::Parens)].boxed()
+                } else {
+                    Just(SignStyle::None).boxed()
+                };
+                (
+                    Just(negative),
+                    Just(int_part),
+                    Just(dec_len),
+                    0u32..=max_dec,
+                    Just(sep),
+                    Just(suffix),
+                    sign_style,
+                )
+            })
+            .prop_map(
+                |(negative, int_part, dec_len, dec_val, sep, suffix, sign_style)| {
+                    let dec_str = format!("{:0width$}", dec_val, width = dec_len as usize);
+                    let int_str = group_digits(int_part, sep);
+                    let base = if dec_len == 0 {
+                        int_str
+                    } else {
+                        format!("{int_str},{dec_str}")
+                    };
+                    let signed = match sign_style {
+                        SignStyle::None => base,
+                        SignStyle::Minus => format!("-{base}"),
+                        SignStyle::Parens => format!("({base})"),
+                    };
+                    let rendered = format!("{signed}{suffix}");
+
+                    let expected_str = if dec_len == 0 {
+                        int_part.to_string()
+                    } else {
+                        format!("{int_part}.{dec_str}")
+                    };
+                    let mut expected = Decimal::from_str(&expected_str).unwrap();
+                    if negative {
+                        expected.set_sign_negative(true);
+                    }
+                    (rendered, expected)
+                },
+            )
+    }
+
+    proptest! {
+        /// Meaning check: rendering a Decimal in every documented Polish
+        /// numeric form (space/dot thousands grouping, comma decimal,
+        /// accounting-parens or minus negative, optional currency word) must
+        /// parse back to the same value. A mutant that e.g. drops the
+        /// negative-parens handling or truncates the fractional digits fails
+        /// this on the corresponding arm.
+        #[test]
+        fn parse_amount_round_trips_documented_polish_forms((rendered, expected) in rendered_amount()) {
+            prop_assert_eq!(parse_amount(&rendered), Some(expected));
+        }
+
+        /// Totality: parse_amount never panics on arbitrary short text.
+        #[test]
+        fn parse_amount_never_panics(s in "\\PC{0,40}") {
+            let _ = parse_amount(&s);
+        }
+    }
+}

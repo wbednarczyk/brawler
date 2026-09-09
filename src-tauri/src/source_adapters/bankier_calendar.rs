@@ -379,4 +379,99 @@ mod tests {
             "https://www.bankier.pl/gielda/kalendarium"
         );
     }
+
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn any_month() -> impl Strategy<Value = Month> {
+            prop_oneof![
+                Just(Month::January),
+                Just(Month::February),
+                Just(Month::March),
+                Just(Month::April),
+                Just(Month::May),
+                Just(Month::June),
+                Just(Month::July),
+                Just(Month::August),
+                Just(Month::September),
+                Just(Month::October),
+                Just(Month::November),
+                Just(Month::December),
+            ]
+        }
+
+        proptest! {
+            /// Meaning check: the returned day is a Sunday, inside the month,
+            /// and within the LAST week of the month (day + 7 pushes past
+            /// month end). A mutant that finds the FIRST Sunday in the
+            /// 22..=31 window (drops `.rev()`) fails the last-week check on
+            /// any month whose 22..=31 span holds two Sundays.
+            #[test]
+            fn last_sunday_of_month_is_a_sunday_in_the_final_week(
+                year in 1900i32..=2100,
+                month in any_month(),
+            ) {
+                let day = last_sunday_of_month(year, month);
+                let date = Date::from_calendar_date(year, month, day)
+                    .expect("last_sunday_of_month must return a valid day");
+                prop_assert_eq!(date.weekday(), time::Weekday::Sunday);
+                let days_in_month = month.length(year);
+                prop_assert!(day >= 1 && day <= days_in_month);
+                prop_assert!(
+                    day + 7 > days_in_month,
+                    "day {day} + 7 must be past month end {days_in_month}"
+                );
+            }
+        }
+
+        fn month_words() -> Vec<(u8, &'static str)> {
+            vec![
+                (1, "stycznia"),
+                (2, "lutego"),
+                (3, "marca"),
+                (4, "kwietnia"),
+                (5, "maja"),
+                (6, "czerwca"),
+                (7, "lipca"),
+                (8, "sierpnia"),
+                (9, "wrzesnia"),
+                (10, "pazdziernika"),
+                (11, "listopada"),
+                (12, "grudnia"),
+            ]
+        }
+
+        proptest! {
+            /// Meaning check: a generated valid date, rendered in the exact
+            /// "<day>. <Polish month word> <year>" form the function
+            /// documents (using its own month table), round-trips to ISO. A
+            /// mutant that swaps day/month, or drops the trailing-dot trim,
+            /// fails this.
+            #[test]
+            fn parse_polish_calendar_date_round_trips_a_rendered_valid_date(
+                year in 2000u16..=2100,
+                month_idx in 0usize..12,
+                day in 1u8..=28,
+            ) {
+                let (month_num, word) = month_words()[month_idx];
+                let rendered = format!("{day}. {word} {year}");
+                let expected = format!("{year:04}-{month_num:02}-{day:02}");
+                prop_assert_eq!(parse_polish_calendar_date(&rendered), Some(expected));
+            }
+
+            /// An invalid day token or an unrecognized month word (the
+            /// nominative "styczen" instead of the genitive "stycznia", or
+            /// pure junk) must yield `None`, never a guess.
+            #[test]
+            fn invalid_day_or_month_word_yields_none(
+                day_str in prop_oneof![Just("0"), Just("32"), Just("abc")],
+                word in prop_oneof![Just("styczen"), Just("foo")],
+                year in 2000u16..=2100,
+            ) {
+                let rendered = format!("{day_str}. {word} {year}");
+                prop_assert_eq!(parse_polish_calendar_date(&rendered), None);
+            }
+        }
+    }
 }
