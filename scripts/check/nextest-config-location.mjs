@@ -33,10 +33,67 @@ export function checkNextestConfigLocation(repoRoot) {
       "`src-tauri/.config/nextest.toml` not found — nextest reads its config relative to the Cargo\n" +
         "    workspace root, so the `loopback-sockets` test group must live there.",
     );
-  } else if (!nextestConfig.includes("loopback-sockets")) {
+    return errors;
+  }
+
+  // A plain `.includes("loopback-sockets")` string check passes on a
+  // commented-out group, or a group with no override actually assigning
+  // tests to it — either leaves the serialization guardrail inert while
+  // still "mentioning" the string. Strip whole-line `#` comments first (no
+  // TOML parser, just a line scan), then require BOTH halves for real:
+  //   (a) an uncommented `loopback-sockets = {...}` line inside [test-groups]
+  //   (b) an override block ([[profile.default.overrides]]) that assigns
+  //       `test-group = 'loopback-sockets'` AND has its own `filter =` line
+  //       — an override with a test-group but no filter matches nothing.
+  const lines = nextestConfig
+    .split("\n")
+    .map((line) => (line.trim().startsWith("#") ? "" : line));
+
+  let inTestGroups = false;
+  let groupDeclared = false;
+  let inOverrides = false;
+  let overrideHasTestGroup = false;
+  let overrideHasFilter = false;
+  let overrideQualifies = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[")) {
+      if (inOverrides && overrideHasTestGroup && overrideHasFilter) {
+        overrideQualifies = true;
+      }
+      inTestGroups = trimmed === "[test-groups]";
+      inOverrides = trimmed === "[[profile.default.overrides]]";
+      overrideHasTestGroup = false;
+      overrideHasFilter = false;
+      continue;
+    }
+    if (inTestGroups && /^\s*loopback-sockets\s*=\s*\{/.test(line)) {
+      groupDeclared = true;
+    }
+    if (inOverrides && /^\s*test-group\s*=\s*['"]loopback-sockets['"]/.test(line)) {
+      overrideHasTestGroup = true;
+    }
+    if (inOverrides && /^\s*filter\s*=/.test(line)) {
+      overrideHasFilter = true;
+    }
+  }
+  if (inOverrides && overrideHasTestGroup && overrideHasFilter) {
+    overrideQualifies = true;
+  }
+
+  if (!groupDeclared) {
     errors.push(
-      "`src-tauri/.config/nextest.toml` is missing the `loopback-sockets` test group (guardrail\n" +
-        "    2026-07-12) — the socket-binding tests it serializes would race each other again.",
+      "`src-tauri/.config/nextest.toml` has no uncommented `loopback-sockets = {...}` line inside\n" +
+        "    `[test-groups]` (guardrail 2026-07-12) — a commented-out group, or one under the wrong\n" +
+        "    section, leaves the socket-binding tests it should serialize free to race again.",
+    );
+  }
+  if (!overrideQualifies) {
+    errors.push(
+      "`src-tauri/.config/nextest.toml` has no `[[profile.default.overrides]]` block that both sets\n" +
+        "    `test-group = 'loopback-sockets'` AND has its own `filter =` line — the group exists but\n" +
+        "    nothing is actually assigned to it, so the socket-binding tests still run unserialized.",
     );
   }
 

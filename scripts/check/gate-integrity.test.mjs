@@ -23,10 +23,19 @@ function makeTree(files) {
   return root;
 }
 
+// Mirrors the real file's shape: a declared group AND an override block that
+// actually assigns tests to it.
+const VALID_CONFIG =
+  "[test-groups]\n" +
+  "loopback-sockets = { max-threads = 1 }\n\n" +
+  "[[profile.default.overrides]]\n" +
+  "filter = 'test(mcp::lifecycle) | binary(=brawler-mcp-stdio)'\n" +
+  "test-group = 'loopback-sockets'\n";
+
 test("flags a repo-root .config/nextest.toml — nextest never reads it there", () => {
   const root = makeTree({
-    ".config/nextest.toml": "[test-groups]\nloopback-sockets = { max-threads = 1 }\n",
-    "src-tauri/.config/nextest.toml": "[test-groups]\nloopback-sockets = { max-threads = 1 }\n",
+    ".config/nextest.toml": VALID_CONFIG,
+    "src-tauri/.config/nextest.toml": VALID_CONFIG,
   });
   try {
     const errors = checkNextestConfigLocation(root);
@@ -67,9 +76,62 @@ test("flags a missing src-tauri/.config/nextest.toml entirely", () => {
   }
 });
 
-test("passes when the config lives only at src-tauri/.config/nextest.toml with the group", () => {
+test("flags a commented-out loopback-sockets group", () => {
+  const root = makeTree({
+    "src-tauri/.config/nextest.toml":
+      "[test-groups]\n" +
+      "# loopback-sockets = { max-threads = 1 }\n\n" +
+      "[[profile.default.overrides]]\n" +
+      "filter = 'test(mcp::lifecycle)'\n" +
+      "test-group = 'loopback-sockets'\n",
+  });
+  try {
+    const errors = checkNextestConfigLocation(root);
+    assert.ok(
+      errors.some((e) => e.includes("loopback-sockets")),
+      errors.join("\n"),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("flags a group with no override actually assigning tests to it", () => {
   const root = makeTree({
     "src-tauri/.config/nextest.toml": "[test-groups]\nloopback-sockets = { max-threads = 1 }\n",
+  });
+  try {
+    const errors = checkNextestConfigLocation(root);
+    assert.ok(
+      errors.some((e) => e.includes("nothing is actually assigned")),
+      errors.join("\n"),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("flags an override assignment with no matching group declared", () => {
+  const root = makeTree({
+    "src-tauri/.config/nextest.toml":
+      "[[profile.default.overrides]]\n" +
+      "filter = 'test(mcp::lifecycle)'\n" +
+      "test-group = 'loopback-sockets'\n",
+  });
+  try {
+    const errors = checkNextestConfigLocation(root);
+    assert.ok(
+      errors.some((e) => e.includes("no uncommented")),
+      errors.join("\n"),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("passes when the config lives only at src-tauri/.config/nextest.toml with the group and a qualifying override", () => {
+  const root = makeTree({
+    "src-tauri/.config/nextest.toml": VALID_CONFIG,
   });
   try {
     assert.deepEqual(checkNextestConfigLocation(root), []);

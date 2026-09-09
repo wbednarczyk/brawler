@@ -523,9 +523,14 @@ mod tests {
         // cannot leak into a sibling test. Without `.no_proxy()` on
         // `test_client()`, reqwest's proxy discovery would try to route this
         // request through the bogus proxy below instead of hitting the stub
-        // directly, and the request would never arrive.
+        // directly, and the request would never arrive. `NO_PROXY`/`no_proxy`
+        // are cleared too — an inherited `NO_PROXY=*` (or one covering
+        // 127.0.0.1) would let the request bypass the proxy on its own,
+        // passing even with `.no_proxy()` deleted from `test_client()`.
         std::env::set_var("HTTP_PROXY", "http://127.0.0.1:1");
         std::env::set_var("http_proxy", "http://127.0.0.1:1");
+        std::env::remove_var("NO_PROXY");
+        std::env::remove_var("no_proxy");
 
         let body = r#"{"jsonrpc":"2.0","id":1,"result":"ok"}"#;
         let (port, recorded, handle) = spawn_stub_server(vec![(200, body)]);
