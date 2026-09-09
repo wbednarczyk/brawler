@@ -648,7 +648,14 @@ fn determine_extension(content_type: &Option<String>, url: &str) -> String {
             None
         };
         if let Some(ext) = candidate {
-            return ext.to_lowercase();
+            // An extension names a file on disk: only short ASCII alphanumerics
+            // qualify after lowercasing (the byte bound above is checked before
+            // `to_lowercase`, which can grow non-ASCII chars — found by the
+            // #194 property run; NUL or symbols would otherwise reach a path).
+            let ext = ext.to_lowercase();
+            if !ext.is_empty() && ext.len() < 10 && ext.bytes().all(|b| b.is_ascii_alphanumeric()) {
+                return ext;
+            }
         }
     }
 

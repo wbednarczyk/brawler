@@ -327,4 +327,102 @@ mod tests {
         );
         assert_eq!(items[1].event_type, "listing_change");
     }
+
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+        use time::format_description::well_known::Rfc2822;
+        use time::{Date, Month, OffsetDateTime, Time, UtcOffset};
+
+        proptest! {
+            /// Meaning check: a generated date, rendered as a real RFC 2822
+            /// timestamp (the documented `pubDate` input format), round-trips
+            /// to its ISO `YYYY-MM-DD`. A mutant that takes the last 10 chars
+            /// instead of the first 10, or skips the RFC2822->RFC3339
+            /// reformat, fails this.
+            #[test]
+            fn parse_event_date_round_trips_an_rfc2822_pub_date(
+                year in 2000i32..=2100,
+                month_num in 1u8..=12,
+                day in 1u8..=28,
+                hour in 0u8..24,
+            ) {
+                let month = Month::try_from(month_num).expect("valid month number");
+                let date = Date::from_calendar_date(year, month, day).expect("valid date");
+                let time = Time::from_hms(hour, 0, 0).expect("valid time");
+                let offset = UtcOffset::from_hms(2, 0, 0).expect("valid offset");
+                let dt = OffsetDateTime::new_in_offset(date, time, offset);
+                let rendered = dt.format(&Rfc2822).expect("format as RFC 2822");
+
+                let expected = format!("{year:04}-{month_num:02}-{day:02}");
+                prop_assert_eq!(parse_event_date(&rendered), Some(expected));
+            }
+
+            /// Totality + determinism over arbitrary text.
+            #[test]
+            fn parse_event_date_never_panics_and_is_deterministic(s in ".{0,80}") {
+                prop_assert_eq!(parse_event_date(&s), parse_event_date(&s));
+            }
+        }
+
+        const SAFE_WORDS: &[&str] = &[
+            "market",
+            "event",
+            "report",
+            "company",
+            "session",
+            "instrument",
+            "notice",
+            "update",
+        ];
+
+        fn safe_words() -> impl Strategy<Value = String> {
+            prop::collection::vec(prop::sample::select(SAFE_WORDS), 0..4).prop_map(|w| w.join(" "))
+        }
+
+        fn trigger_pairs() -> Vec<(&'static str, &'static str)> {
+            vec![
+                ("corporate actions", "corporate_action"),
+                ("change of volume", "corporate_action"),
+                ("market making", "market_making"),
+                ("issuer", "market_making"),
+                ("exclusion", "listing_change"),
+                ("admission", "listing_change"),
+            ]
+        }
+
+        proptest! {
+            /// Meaning check: every documented trigger phrase, embedded in
+            /// arbitrary surrounding text (any case), classifies to its
+            /// documented label. A mutant that always returns
+            /// "other_market_event" fails every arm.
+            #[test]
+            fn documented_trigger_phrase_determines_the_event_type(
+                idx in 0usize..trigger_pairs().len(),
+                prefix in safe_words(),
+                suffix in safe_words(),
+                upper in any::<bool>(),
+            ) {
+                let (trigger, expected) = trigger_pairs()[idx];
+                let trigger = if upper { trigger.to_uppercase() } else { trigger.to_string() };
+                let label = format!("{prefix} {trigger} {suffix}");
+                prop_assert_eq!(classify_event_type(&label), expected);
+            }
+
+            /// Totality, determinism and charset boundedness: the output is
+            /// always one of the four documented labels.
+            #[test]
+            fn classify_event_type_is_deterministic_and_bounded(label in ".{0,80}") {
+                let a = classify_event_type(&label);
+                prop_assert_eq!(classify_event_type(&label), a.clone());
+                prop_assert!(
+                    matches!(
+                        a.as_str(),
+                        "corporate_action" | "market_making" | "listing_change" | "other_market_event"
+                    ),
+                    "unexpected event type {a:?}"
+                );
+            }
+        }
+    }
 }

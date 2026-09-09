@@ -21,13 +21,13 @@
     {
       "path": "src/fundamentals/extraction/esef.rs",
       "why": "ESEF top-level detection/orchestration for a filing",
-      "proptest": false,
+      "proptest": true,
       "insta": false
     },
     {
       "path": "src/fundamentals/extraction/esef_package.rs",
       "why": "ESEF package (zip/XBRL) unpacking and parsing",
-      "proptest": false,
+      "proptest": true,
       "insta": false
     },
     {
@@ -45,25 +45,26 @@
     {
       "path": "src/fundamentals/extraction/html.rs",
       "why": "HTML table/statement extraction orchestration",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::html_all_financials_reads_every_generated_period_and_row",
       "insta": false
     },
     {
       "path": "src/fundamentals/extraction/mod.rs",
       "why": "extraction-tier dispatch/orchestration across esef/html/pipeline",
-      "proptest": false,
+      "proptest": true,
       "insta": false
     },
     {
       "path": "src/fundamentals/extraction/text_numbers.rs",
       "why": "PL-locale numeric text normalization (thousand/decimal separators)",
-      "proptest": false,
+      "proptest": true,
       "insta": false
     },
     {
       "path": "src/fundamentals/extraction/pipeline",
       "why": "structured-extraction pipeline orchestration tier (CLAUDE.md 'extraction pipeline tiers')",
-      "proptest": false,
+      "proptest": true,
       "insta": false
     },
     {
@@ -75,49 +76,57 @@
     {
       "path": "src/source_adapters/bankier_calendar.rs",
       "why": "bankier.pl earnings-calendar adapter parser",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::bankier_calendar_parser_is_total_and_bounded",
       "insta": true
     },
     {
       "path": "src/source_adapters/bankier_company.rs",
       "why": "bankier.pl company-page adapter — includes IR-document URL resolution",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::bankier_company_listing_parser_is_total",
       "insta": true
     },
     {
       "path": "src/source_adapters/bankier_rss.rs",
       "why": "bankier.pl RSS feed adapter parser",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::bankier_rss_parser_is_total_and_bounded",
       "insta": false
     },
     {
       "path": "src/source_adapters/biznesradar_fundamentals.rs",
       "why": "biznesradar.pl fundamentals adapter parser",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::biznesradar_fundamentals_structured_table_preserves_valid_rows",
       "insta": false
     },
     {
       "path": "src/source_adapters/biznesradar_ownership.rs",
       "why": "biznesradar.pl ownership adapter parser",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::biznesradar_ownership_structured_table_preserves_valid_rows",
       "insta": false
     },
     {
       "path": "src/source_adapters/biznesradar_recommendations.rs",
       "why": "biznesradar.pl analyst-recommendations adapter parser",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::biznesradar_recommendations_structured_rows_preserve_valid_entries",
       "insta": true
     },
     {
       "path": "src/source_adapters/company_directory.rs",
       "why": "GPW/NewConnect company-directory listing parser feeding company matching",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::company_directory_parser_is_total_and_bounded",
       "insta": false
     },
     {
       "path": "src/source_adapters/gpw_company_registry.rs",
       "why": "GPW company registry adapter parser",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::gpw_company_registry_parser_is_total_and_bounded",
       "insta": true
     },
     {
@@ -129,13 +138,15 @@
     {
       "path": "src/source_adapters/gpw_market_events.rs",
       "why": "GPW market-events adapter parser",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::gpw_market_events_parser_is_total_and_bounded",
       "insta": false
     },
     {
       "path": "src/source_adapters/knf_short_selling.rs",
       "why": "KNF short-position register adapter parser",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::knf_short_entries_parses_structured_records",
       "insta": true
     },
     {
@@ -147,7 +158,8 @@
     {
       "path": "src/source_adapters/newconnect_company_directory.rs",
       "why": "NewConnect company-directory listing parser",
-      "proptest": false,
+      "proptest": true,
+      "proptest_in": "tests/parser_fuzz.rs::newconnect_directory_parser_is_total_and_bounded",
       "insta": true
     },
     {
@@ -165,13 +177,14 @@
     {
       "path": "src/storage/ingestion.rs",
       "why": "unified ingestion spine — dedup on (source_adapter_id, dedupe_key), company matching, event derivation (testing.md 'End-to-end ingestion pipeline tests'); supersedes the doc-referenced src/entity_resolution.rs, which no longer exists in the tree (deleted in b4a06c2c, v0.52)",
-      "proptest": false,
-      "insta": false
+      "proptest": true,
+      "insta": false,
+      "proptest_in": "src/storage/tests/ingestion_properties.rs::re_upsert_is_idempotent"
     },
     {
       "path": "src/report_documents_capture.rs",
       "why": "report-document capture — resolves an IR page into a downloadable document URL",
-      "proptest": false,
+      "proptest": true,
       "insta": false
     },
     {

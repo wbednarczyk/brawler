@@ -678,8 +678,24 @@ every listed path must exist and a `true` claim must be backed by a real
 `proptest!`/`insta::` usage (the ratchet flips `false→true` only), and every
 module directory/file under `src/fundamentals/extraction/` or
 `src/source_adapters/` defining a `parse*`/`normalize*`/`resolve*`/`dedup*`/
-`match*` fn must be listed — a new transform declares itself in the manifest in
-the same change it lands in, even before its property/golden tests follow.
+`match*` fn must be listed. A new transform ships with `proptest: true` — the
+frozen no-proptest list only shrinks (floor `PROPTEST_TRUE_FLOOR`, currently
+30 — every listed transform carries a property test since #194).
+
+The guard reads a file module's own content plus, one level deep, every
+module it declares at top level with `mod x;` (any visibility) — resolving a
+`#[path = "P"]` attribute when present, else `<dir>/<stem>/x.rs` then
+`<dir>/<stem>/x/mod.rs` — so a file's declared test submodule (`esef.rs`'s
+`mod tests;` -> `esef/tests.rs`) counts toward its own `proptest!`/`insta::`
+search. A row whose property test lives in a different file entirely (e.g.
+the shared adversarial-markup fuzzer, `tests/parser_fuzz.rs`) instead names it
+via `"proptest_in": "<file relative to src-tauri>::<fn name>"`; the guard
+validates that the file exists, declares the fn, the fn sits inside a
+`proptest! { ... }` block, and the fn's own body references `<module's file
+stem or directory name>::` — a present-but-invalid `proptest_in` is always a
+violation, and one on a `proptest: false` row is a violation too ("either it
+is covered or it is not"). Helpers: `source_tree_guards::transform_manifest`.
+
 **Discovery limit**: the guard only lists direct children of those two
 directories (`std::fs::read_dir`, non-recursive) — a transform nested one
 level deeper, or one living outside both roots, is not auto-discovered and
@@ -698,7 +714,9 @@ property for "the same entity arrives from multiple sources"), **round-trip**
 input → same output and same canonical id; no wall-clock/random leakage), and
 **totality / no-panic** (a result or typed error for every input, never a
 panic). Property tests run in the normal stable test binary and are part of
-`make check` (bounded case counts).
+`make check` (bounded case counts). `tests/parser_fuzz.rs`'s adversarial-markup
+fuzzer uses a plain `ProptestConfig::with_cases(128)`; the `PROPTEST_CASES` env
+var raises that bounded default for a heavier on-demand run.
 
 **Associativity of merge** — ADR 0049's sixth invariant, "multi-source
 unification cannot depend on grouping" — is committed for
@@ -709,8 +727,18 @@ The DB-backed proptest
 `storage::tests::insider::attachment_merge_associativity_proptest` asserts that
 partitioned and single-batch attachment merges produce the same row multiset,
 and that re-merging the full batch is idempotent; directed regressions cover
-the released-claim and duplicate-tag corners. The remaining #194 scope is
-other transforms, not insider attachment provenance.
+the released-claim and duplicate-tag corners.
+
+**DB-level transforms** (no pure function to call — `storage/ingestion.rs`'s dedup is the
+`ON CONFLICT(source_adapter_id, dedupe_key)` clause itself) get the same invariants as
+DB-backed `proptest!` blocks over a fresh in-memory database per case, comparing a **semantic
+projection** (every column except the audit timestamps) rather than raw rows:
+`storage::tests::ingestion_properties` asserts re-upsert idempotence, batch-order
+independence, the `COALESCE` body-text contract, collision-keeps-identity (a delete-and-reinsert
+implementation fails it) and last-write-wins outcome recording. Equal-tier / equal-start
+conflicts in `fact_set_for_period` and `dedup_longest_duration` keep today's first-wins
+behavior, pinned by one directed test each (owner decision A, #194); permutation invariants run
+over inputs with unique winners.
 
 ### Golden snapshots (`insta`)
 

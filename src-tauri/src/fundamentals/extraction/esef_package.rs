@@ -699,4 +699,64 @@ mod tests {
         let pkg = build_package(&[("CBF-2025/reports/instance.xhtml", INSTANCE)]);
         assert!(extract_label_linkbase(&pkg).is_empty());
     }
+
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Totality: arbitrary bytes never panic any package reader,
+            /// zip or not, truncated or not.
+            #[test]
+            fn extract_all_instances_never_panics(bytes in prop::collection::vec(any::<u8>(), 0..4096)) {
+                let _ = extract_all_instances(&bytes);
+            }
+
+            #[test]
+            fn extract_presentation_roles_never_panics(bytes in prop::collection::vec(any::<u8>(), 0..4096)) {
+                let _ = extract_presentation_roles(&bytes);
+            }
+
+            #[test]
+            fn extract_label_linkbase_never_panics(bytes in prop::collection::vec(any::<u8>(), 0..4096)) {
+                let _ = extract_label_linkbase(&bytes);
+            }
+
+            #[test]
+            fn is_report_package_never_panics(
+                path in ".{0,40}",
+                bytes in prop::collection::vec(any::<u8>(), 0..4096),
+            ) {
+                let _ = is_report_package(&path, &bytes);
+            }
+
+            /// Meaning check: a real in-memory zip with two generated entries
+            /// under reports/ (real inline-XBRL content) must yield exactly
+            /// those two entries, in sorted-name order, regardless of
+            /// insertion order. A mutant that keeps only the first-seen entry
+            /// (drops the loop/collection), or drops the final `names.sort()`,
+            /// fails this.
+            #[test]
+            fn extract_all_instances_returns_both_generated_entries_in_sorted_order(
+                name_a in "[a-z]{3,8}",
+                name_b in "[a-z]{3,8}",
+                swap in any::<bool>(),
+            ) {
+                prop_assume!(name_a != name_b);
+                let path_a = format!("CBF/reports/{name_a}.xhtml");
+                let path_b = format!("CBF/reports/{name_b}.xhtml");
+                let entries: Vec<(&str, &[u8])> = if swap {
+                    vec![(path_b.as_str(), INSTANCE), (path_a.as_str(), INSTANCE)]
+                } else {
+                    vec![(path_a.as_str(), INSTANCE), (path_b.as_str(), INSTANCE)]
+                };
+                let pkg = build_package(&entries);
+                let instances = extract_all_instances(&pkg);
+                let mut expected = vec![path_a, path_b];
+                expected.sort();
+                let actual: Vec<String> = instances.into_iter().map(|(p, _)| p).collect();
+                prop_assert_eq!(actual, expected);
+            }
+        }
+    }
 }

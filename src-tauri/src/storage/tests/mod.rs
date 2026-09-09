@@ -22,6 +22,7 @@ mod feed_sources;
 mod financials;
 mod fundamentals_provenance;
 mod import_export;
+mod ingestion_properties;
 mod insider;
 mod job_queue;
 mod licensing;
