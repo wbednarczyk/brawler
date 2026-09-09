@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.83.2 - 2026-09-09
+
+
+### Bug Fixes
+
+- **hooks**: git-boundaries ignores heredoc bodies (false deny on text mentioning banned commands) (#489)
+
+- **coverage**: Rust ratchet measures production code only — lcov minus cfg(test) code, collector-bound measurement identity (#488) (#490)
+
 ## v0.83.1 - 2026-09-08
 
 
