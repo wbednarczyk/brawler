@@ -45,9 +45,23 @@ fn run() -> i32 {
 
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
-    let mut out = stdout.lock();
+    run_loop(stdin.lock(), stdout.lock(), |body| {
+        post_line(&client, &url, &config.token, config.port, body)
+    })
+}
 
-    for line in stdin.lock().lines() {
+/// The stdin→POST→stdout loop itself, extracted so tests can drive it over an
+/// in-memory reader/writer with a stubbed `post`, without a real HTTP server
+/// or the process's real stdio. Behavior is unchanged from the inline loop
+/// this replaced: blank lines are skipped, a stdin read error is fatal (exit
+/// 1), a write/flush error on `out` (the client went away) stops cleanly
+/// (exit 0), and reaching EOF stops cleanly (exit 0).
+fn run_loop(
+    input: impl BufRead,
+    mut out: impl Write,
+    post: impl Fn(&str) -> Result<PostOutcome, String>,
+) -> i32 {
+    for line in input.lines() {
         let line = match line {
             Ok(line) => line,
             Err(error) => {
@@ -58,8 +72,7 @@ fn run() -> i32 {
         if line.trim().is_empty() {
             continue;
         }
-        let post = |body: &str| post_line(&client, &url, &config.token, config.port, body);
-        if let Some(response_line) = frame_line(&line, post) {
+        if let Some(response_line) = frame_line(&line, &post) {
             if writeln!(out, "{response_line}").is_err() || out.flush().is_err() {
                 // stdout closed (client went away) — stop cleanly.
                 return 0;
@@ -300,14 +313,336 @@ mod tests {
         assert_eq!(config.token, "flagtoken");
     }
 
+    // `config_missing_token_is_fatal` moved to `tests/mcp_stdio_cli.rs` as a
+    // subprocess test: `Config::from_env_and_args` reads process env, so
+    // exercising the "missing token" path belongs with the other env-mutating
+    // coverage, out of this in-process unit-test module.
+
+    // --- run_loop: the stdin→POST→stdout loop, over a real loopback stub ---
+
+    use std::io::{BufReader, Read};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::{Arc, Mutex};
+    use std::thread::{self, JoinHandle};
+    use std::time::Duration;
+
+    /// One request the stub server observed.
+    struct RecordedRequest {
+        method: String,
+        path: String,
+        authorization: Option<String>,
+        content_type: Option<String>,
+        body: String,
+    }
+
+    /// A minimal loopback HTTP/1.1 stub: binds an ephemeral port, replies to
+    /// each request with the next scripted `(status, body)` pair in order,
+    /// then stops. Reads and drains the real `Content-Length` body (rather
+    /// than assuming none) so `post_line`'s blocking `send()` never hangs
+    /// waiting for a body the stub never wrote.
+    fn spawn_stub_server(
+        responses: Vec<(u16, &'static str)>,
+    ) -> (u16, Arc<Mutex<Vec<RecordedRequest>>>, JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub listener");
+        let port = listener.local_addr().expect("stub local addr").port();
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let recorded_in_thread = Arc::clone(&recorded);
+
+        let handle = thread::spawn(move || {
+            for (status, body) in responses {
+                let (mut stream, _) = listener.accept().expect("accept stub connection");
+                let request = read_request(&mut stream);
+                recorded_in_thread
+                    .lock()
+                    .expect("recorded lock")
+                    .push(request);
+
+                let reason = match status {
+                    200 => "OK",
+                    202 => "Accepted",
+                    401 => "Unauthorized",
+                    _ => "Status",
+                };
+                let response = format!(
+                    "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .expect("write stub response");
+            }
+        });
+
+        (port, recorded, handle)
+    }
+
+    /// Read one HTTP/1.1 request off `stream`: the request line, headers up
+    /// to the blank line, then exactly `Content-Length` body bytes.
+    fn read_request(stream: &mut TcpStream) -> RecordedRequest {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone stub stream"));
+
+        let mut request_line = String::new();
+        reader
+            .read_line(&mut request_line)
+            .expect("read stub request line");
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or_default().to_owned();
+        let path = parts.next().unwrap_or_default().to_owned();
+
+        let mut content_length = 0usize;
+        let mut authorization = None;
+        let mut content_type = None;
+        loop {
+            let mut header_line = String::new();
+            reader
+                .read_line(&mut header_line)
+                .expect("read stub header line");
+            let trimmed = header_line.trim_end_matches(['\r', '\n']);
+            if trimmed.is_empty() {
+                break;
+            }
+            if let Some((name, value)) = trimmed.split_once(':') {
+                let value = value.trim().to_owned();
+                match name.trim().to_ascii_lowercase().as_str() {
+                    "content-length" => content_length = value.parse().unwrap_or(0),
+                    "authorization" => authorization = Some(value),
+                    "content-type" => content_type = Some(value),
+                    _ => {}
+                }
+            }
+        }
+
+        let mut body_bytes = vec![0u8; content_length];
+        reader.read_exact(&mut body_bytes).expect("read stub body");
+        let body = String::from_utf8(body_bytes).expect("stub body is utf8");
+
+        RecordedRequest {
+            method,
+            path,
+            authorization,
+            content_type,
+            body,
+        }
+    }
+
+    /// A client with a short timeout, so a test that expects "connection
+    /// refused" against a closed port fails fast instead of hanging on the
+    /// default (unbounded) reqwest blocking client.
+    fn test_client() -> reqwest::blocking::Client {
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .expect("test client builds")
+    }
+
+    fn cursor(input: &str) -> std::io::Cursor<Vec<u8>> {
+        std::io::Cursor::new(input.as_bytes().to_vec())
+    }
+
     #[test]
-    fn config_missing_token_is_fatal() {
-        // No --token and (in this hermetic call) no env var provided.
-        let err = Config::from_env_and_args(["--port", "9000"].into_iter().map(String::from))
-            .expect_err("a missing token must be rejected");
-        assert!(
-            err.contains("token"),
-            "error explains the missing token: {err}"
+    fn run_loop_relays_a_200_body_as_one_line_and_posts_correctly() {
+        let body = r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#;
+        let (port, recorded, handle) = spawn_stub_server(vec![(200, body)]);
+        let client = test_client();
+        let url = format!("http://127.0.0.1:{port}/mcp");
+        let mut output = Vec::new();
+
+        let code = run_loop(cursor(REQUEST_WITH_ID), &mut output, |line| {
+            post_line(&client, &url, "tok", port, line)
+        });
+        handle.join().expect("stub thread joins");
+
+        assert_eq!(code, 0);
+        assert_eq!(String::from_utf8(output).unwrap(), format!("{body}\n"));
+
+        let requests = recorded.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, "POST");
+        assert_eq!(requests[0].path, "/mcp");
+        assert_eq!(requests[0].authorization.as_deref(), Some("Bearer tok"));
+        assert_eq!(
+            requests[0].content_type.as_deref(),
+            Some("application/json")
         );
+        assert_eq!(requests[0].body, REQUEST_WITH_ID);
+    }
+
+    #[test]
+    fn run_loop_emits_nothing_for_a_202_with_a_nonempty_body() {
+        // A non-empty body on 202 must still be swallowed — this is what kills
+        // a mutant that removes the dedicated 202 branch in `post_line` (a
+        // 202 is `is_success()`, so without the branch a non-empty body would
+        // fall through and be relayed).
+        let (port, _recorded, handle) =
+            spawn_stub_server(vec![(202, r#"{"jsonrpc":"2.0","id":1,"result":{}}"#)]);
+        let client = test_client();
+        let url = format!("http://127.0.0.1:{port}/mcp");
+        let mut output = Vec::new();
+
+        let code = run_loop(cursor(REQUEST_WITH_ID), &mut output, |line| {
+            post_line(&client, &url, "tok", port, line)
+        });
+        handle.join().expect("stub thread joins");
+
+        assert_eq!(code, 0);
+        assert!(output.is_empty(), "202 must yield no output line");
+    }
+
+    #[test]
+    fn run_loop_emits_nothing_for_a_200_with_an_empty_body() {
+        let (port, _recorded, handle) = spawn_stub_server(vec![(200, "")]);
+        let client = test_client();
+        let url = format!("http://127.0.0.1:{port}/mcp");
+        let mut output = Vec::new();
+
+        let code = run_loop(cursor(REQUEST_WITH_ID), &mut output, |line| {
+            post_line(&client, &url, "tok", port, line)
+        });
+        handle.join().expect("stub thread joins");
+
+        assert_eq!(code, 0);
+        assert!(output.is_empty(), "an empty 200 body must yield no line");
+    }
+
+    #[test]
+    fn run_loop_frames_a_401_as_an_internal_error_envelope() {
+        let (port, _recorded, handle) = spawn_stub_server(vec![(401, "")]);
+        let client = test_client();
+        let url = format!("http://127.0.0.1:{port}/mcp");
+        let mut output = Vec::new();
+
+        let code = run_loop(cursor(REQUEST_WITH_ID), &mut output, |line| {
+            post_line(&client, &url, "tok", port, line)
+        });
+        handle.join().expect("stub thread joins");
+
+        assert_eq!(code, 0);
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 1);
+        let value: Value = serde_json::from_str(lines[0]).expect("valid JSON envelope");
+        assert_eq!(value["id"], 1);
+        assert_eq!(value["error"]["code"], -32603);
+        let message = value["error"]["message"].as_str().unwrap();
+        assert!(
+            message.contains(&port.to_string()),
+            "message names the port: {message}"
+        );
+    }
+
+    #[test]
+    fn run_loop_emits_two_lines_in_order_for_two_requests() {
+        let first = r#"{"jsonrpc":"2.0","id":1,"result":"first"}"#;
+        let second = r#"{"jsonrpc":"2.0","id":2,"result":"second"}"#;
+        let (port, _recorded, handle) = spawn_stub_server(vec![(200, first), (200, second)]);
+        let client = test_client();
+        let url = format!("http://127.0.0.1:{port}/mcp");
+        let mut output = Vec::new();
+
+        let input = format!(
+            "{}\n{}\n",
+            r#"{"jsonrpc":"2.0","id":1,"method":"a"}"#, r#"{"jsonrpc":"2.0","id":2,"method":"b"}"#
+        );
+        let code = run_loop(cursor(&input), &mut output, |line| {
+            post_line(&client, &url, "tok", port, line)
+        });
+        handle.join().expect("stub thread joins");
+
+        assert_eq!(code, 0);
+        let text = String::from_utf8(output).unwrap();
+        assert_eq!(text, format!("{first}\n{second}\n"));
+    }
+
+    #[test]
+    fn run_loop_skips_blank_lines_without_touching_the_server() {
+        // No responses scripted: if a request were sent, `post_line` would
+        // either hang (nothing to accept it) or, with the short test client
+        // timeout, surface a connection error — either way `output` would be
+        // non-empty. It stays empty because blank/whitespace-only lines never
+        // reach `post`.
+        let (port, recorded, handle) = spawn_stub_server(vec![]);
+        let client = test_client();
+        let url = format!("http://127.0.0.1:{port}/mcp");
+        let mut output = Vec::new();
+
+        let code = run_loop(cursor("\n   \n\t\n"), &mut output, |line| {
+            post_line(&client, &url, "tok", port, line)
+        });
+        handle
+            .join()
+            .expect("stub thread joins (no accepts needed)");
+
+        assert_eq!(code, 0);
+        assert!(output.is_empty());
+        assert!(recorded.lock().unwrap().is_empty(), "stub saw no requests");
+    }
+
+    /// A `BufRead` whose `read_line` always errors, to exercise the fatal
+    /// stdin-read-error path without touching the real process stdin.
+    struct FailingReader;
+
+    impl Read for FailingReader {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("stub read failure"))
+        }
+    }
+
+    impl BufRead for FailingReader {
+        fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+            Err(std::io::Error::other("stub read failure"))
+        }
+        fn consume(&mut self, _amt: usize) {}
+    }
+
+    #[test]
+    fn run_loop_returns_1_on_a_reader_error_without_posting() {
+        let code = run_loop(FailingReader, Vec::new(), |_line| {
+            panic!("post must never be called: the read fails before any line is produced")
+        });
+        assert_eq!(code, 1);
+    }
+
+    /// A `Write` that can be told to fail on `write` or on `flush`, to
+    /// exercise the "client went away" early-return-0 path.
+    enum FailAt {
+        Write,
+        Flush,
+    }
+
+    struct FailingWriter(FailAt);
+
+    impl Write for FailingWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            match self.0 {
+                FailAt::Write => Err(std::io::Error::other("stub write failure")),
+                FailAt::Flush => Ok(buf.len()),
+            }
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            match self.0 {
+                FailAt::Write => Ok(()),
+                FailAt::Flush => Err(std::io::Error::other("stub flush failure")),
+            }
+        }
+    }
+
+    #[test]
+    fn run_loop_returns_0_on_a_sink_write_error() {
+        let code = run_loop(
+            cursor(REQUEST_WITH_ID),
+            FailingWriter(FailAt::Write),
+            |_| Ok(PostOutcome::Body("irrelevant".to_owned())),
+        );
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn run_loop_returns_0_on_a_sink_flush_error() {
+        let code = run_loop(
+            cursor(REQUEST_WITH_ID),
+            FailingWriter(FailAt::Flush),
+            |_| Ok(PostOutcome::Body("irrelevant".to_owned())),
+        );
+        assert_eq!(code, 0);
     }
 }

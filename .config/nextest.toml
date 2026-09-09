@@ -2,10 +2,12 @@
 # (MCP lifecycle/server + the live-toggle command test) race each other for
 # probed ports under nextest's default parallelism — the probe→bind window let
 # a parallel test steal the port and redden the gate intermittently. Serialize
-# them among themselves; everything else keeps full parallelism.
+# them among themselves; everything else keeps full parallelism. Widened
+# 2026-09 to the whole `brawler-mcp-stdio` bin: its unit tests spawn real
+# loopback stub HTTP servers to cover the stdin→POST→stdout loop.
 [test-groups]
 loopback-sockets = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'test(mcp::lifecycle) | test(mcp::server) | test(set_enabled_starts_and_stops_live)'
+filter = 'test(mcp::lifecycle) | test(mcp::server) | test(set_enabled_starts_and_stops_live) | binary(=brawler-mcp-stdio)'
 test-group = 'loopback-sockets'
