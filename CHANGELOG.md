@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.83.7 - 2026-09-10
+
+
+### Bug Fixes
+
+- **storage**: order documents and facts by the domain date, never created_at — disclosure key, one canonical fact preference, Rust-comparator guard, no-AI-attribution gate (#496) (#503)
+
 ## v0.83.5 - 2026-09-10
 
 
