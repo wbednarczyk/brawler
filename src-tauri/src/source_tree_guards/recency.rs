@@ -19,8 +19,10 @@
 //! is a text heuristic (no brace-depth tracking); a comparator built from a
 //! `created_at` value bound to a local first (`let t = x.created_at; …
 //! .cmp(&t)`) and a bare `a.created_at > b.created_at` are the scan's known
-//! blind spots; the window never crosses a `;`, so a `.cmp(` in the next
-//! statement cannot vouch for a plain read in this one.
+//! blind spots; the window never crosses a `;` at the read's own depth (a
+//! closure body's tail expression still belongs to the comparator that owns
+//! the closure), so a `.cmp(` in the next statement cannot vouch for a plain
+//! read in this one.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -563,6 +565,65 @@ fn comparator_marker() -> &'static regex::Regex {
     })
 }
 
+/// Whether the read at `pos` is a block's TAIL expression — a closure body
+/// `{ let _ = …; d.created_at.clone() }` ends in an unmatched `}` before any
+/// `;` at the read's own depth.
+fn in_tail_expression(code: &str, pos: usize) -> bool {
+    let mut depth = 0i32;
+    for &byte in &code.as_bytes()[pos..] {
+        match byte {
+            b'{' => depth += 1,
+            b'}' if depth > 0 => depth -= 1,
+            b'}' => return true,
+            b';' if depth == 0 => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Start of the statement that owns the read at `pos`: the byte after the
+/// previous `;` at the read's own brace depth. A read that is a block's tail
+/// expression belongs to the ENCLOSING statement (the `sort_by_key(|d| {` that
+/// owns the closure), so the walk leaves that block first and stops at the
+/// parent's previous `;`.
+fn statement_lo(code: &str, pos: usize) -> usize {
+    let bytes = code.as_bytes();
+    let mut leave_block = in_tail_expression(code, pos);
+    let mut depth = 0i32;
+    let mut i = pos;
+    while i > 0 {
+        i -= 1;
+        match bytes[i] {
+            b'}' => depth += 1,
+            b'{' if depth > 0 => depth -= 1,
+            b'{' if leave_block => leave_block = false,
+            b'{' => return i + 1,
+            b';' if depth == 0 && !leave_block => return i + 1,
+            _ => {}
+        }
+    }
+    0
+}
+
+/// End of the statement that owns the read ending at `from`: the next `;` at
+/// the read's own depth, leaving any block the read closes as a tail
+/// expression (`d.created_at.clone() });`).
+fn statement_hi(code: &str, from: usize) -> usize {
+    let bytes = code.as_bytes();
+    let mut depth = 0i32;
+    for (offset, &byte) in bytes[from..].iter().enumerate() {
+        match byte {
+            b'{' => depth += 1,
+            b'}' if depth > 0 => depth -= 1,
+            b'}' => {}
+            b';' if depth == 0 => return from + offset,
+            _ => {}
+        }
+    }
+    code.len()
+}
+
 /// Byte offsets of every `.created_at` field read in code (comments and
 /// string literals excluded — SQL text is the other scan's job) that has a
 /// comparator marker within [`COMPARATOR_WINDOW`] bytes on either side.
@@ -582,19 +643,13 @@ fn created_at_comparator_offsets(content: &str) -> Vec<usize> {
     }
     let code = String::from_utf8(code).expect("blanking keeps ASCII/UTF-8 boundaries intact");
 
-    // A statement boundary (`;`) bounds both the marker window and the fold:
-    // two adjacent one-line comparators are two sites, and a `.cmp(` in the
-    // NEXT statement never vouches for a plain read in this one.
-    let statement_start = |from: usize| code[..from].rfind(';').map_or(0, |i| i + 1);
-    let statement_end = |from: usize| code[from..].find(';').map_or(code.len(), |i| from + i);
-
     let mut offsets: Vec<usize> = Vec::new();
     for m in created_at_read_marker().find_iter(&code) {
         let pos = m.start();
         let lo = pos
             .saturating_sub(COMPARATOR_WINDOW)
-            .max(statement_start(pos));
-        let hi = (m.end() + COMPARATOR_WINDOW).min(statement_end(m.end()));
+            .max(statement_lo(&code, pos));
+        let hi = (m.end() + COMPARATOR_WINDOW).min(statement_hi(&code, m.end()));
         // Clamp to char boundaries (the window is a byte count).
         let lo = (lo..=pos)
             .find(|&i| code.is_char_boundary(i))
@@ -606,10 +661,9 @@ fn created_at_comparator_offsets(content: &str) -> Vec<usize> {
         if !comparator_marker().is_match(&code[lo..hi]) {
             continue;
         }
-        if offsets
-            .last()
-            .is_some_and(|&prev| pos - prev <= COMPARATOR_WINDOW && statement_start(pos) <= prev)
-        {
+        if offsets.last().is_some_and(|&prev| {
+            pos - prev <= COMPARATOR_WINDOW && statement_lo(&code, pos) <= prev
+        }) {
             continue; // the same comparison expression reading the field again
         }
         offsets.push(pos);
@@ -741,6 +795,24 @@ mod comparator_scanner_tests {
         assert_eq!(
             comparator_sites_in_file("x.rs", source),
             vec![("x.rs".to_string(), "pick".to_string(), 2)]
+        );
+    }
+
+    #[test]
+    fn a_closure_body_with_its_own_statements_is_still_one_site() {
+        // astra r3: an internal `;` must not cut the tail-expression read
+        // off from the `sort_by_key(` that owns the closure.
+        let source = concat!(
+            "fn pick(docs: &mut Vec<Doc>) {\n",
+            "    docs.sort_by_key(|d| {\n",
+            "        let _ = d.id.len();\n",
+            "        d.created_at.clone()\n",
+            "    });\n",
+            "}\n",
+        );
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "pick".to_string(), 1)]
         );
     }
 
