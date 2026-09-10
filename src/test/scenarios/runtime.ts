@@ -669,6 +669,83 @@ function ensureOwnershipOverview(
 }
 
 // ---------------------------------------------------------------------------
+// Domain-date ordering (#496, data-model.md § Model principles: "newest/
+// latest orders by the domain date, never created_at"). Module-level (not
+// object-literal properties) so both the report-document and financial-fact
+// handlers below can share one implementation instead of drifting.
+// ---------------------------------------------------------------------------
+
+// bankier.pl/bonnier.pl attachment URLs encode the filing month in the path
+// (`/emitent/YYYY-MM/`) — that beats fetchedAt/createdAt because it survives
+// a late re-fetch. Falls back to when we actually saw it (fetchedAt), then to
+// when the row was inserted (createdAt).
+function disclosureKey(doc: ScenarioData["reportDocuments"][number]): string {
+  const emitentMonth = doc.url.match(/\/emitent\/(\d{4})-(0[1-9]|1[0-2])\//);
+  if (emitentMonth) return `${emitentMonth[1]}-${emitentMonth[2]}-01`;
+  if (doc.fetchedAt) return doc.fetchedAt.slice(0, 10);
+  return doc.createdAt.slice(0, 10);
+}
+
+function byDisclosureThenId(
+  a: ScenarioData["reportDocuments"][number],
+  b: ScenarioData["reportDocuments"][number],
+): number {
+  return disclosureKey(b).localeCompare(disclosureKey(a)) || a.id.localeCompare(b.id);
+}
+
+// The period's OWN domain date (periodEndDate, falling back to fiscalYear's
+// implied FY-end) — never the fact's created_at. A fact whose period was
+// deleted/missing sorts last (empty key).
+function factPeriodKey(d: ScenarioData, fact: ScenarioData["financialFacts"][number]): string {
+  const period = d.financialPeriods.find((p) => p.id === fact.periodId);
+  return period ? (period.periodEndDate ?? `${period.fiscalYear}-12-31`) : "";
+}
+
+// fiscalYear DESC tiebreak (two periods can share an explicit periodEndDate
+// while differing in fiscalYear) — a fact whose period is missing sorts last.
+function factPeriodFiscalYear(d: ScenarioData, fact: ScenarioData["financialFacts"][number]): number {
+  return d.financialPeriods.find((p) => p.id === fact.periodId)?.fiscalYear ?? -Infinity;
+}
+
+// Same final/reported/consolidated/total canonical-rank tuple factMatrix.ts
+// uses for cell selection (ADR 0093 dec. 2), reused here as the fact-list
+// tie-break so both read models agree on "the" fact for a slot.
+function factCanonicalRank(fact: ScenarioData["financialFacts"][number]): number[] {
+  return [
+    fact.dataQuality === "final" ? 0 : 1,
+    fact.variant === "reported" ? 0 : 1,
+    fact.statementBasis === "consolidated" ? 0 : 1,
+    fact.attribution === "total" ? 0 : fact.attribution === "owners_of_parent" ? 1 : 2,
+  ];
+}
+
+function compareRank(a: number[], b: number[]): number {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
+// period key DESC, fiscalYear DESC, canonical rank ASC, metricKey ASC, id ASC.
+function byFactCanonicalOrder(
+  d: ScenarioData,
+): (a: ScenarioData["financialFacts"][number], b: ScenarioData["financialFacts"][number]) => number {
+  return (a, b) =>
+    factPeriodKey(d, b).localeCompare(factPeriodKey(d, a)) ||
+    factPeriodFiscalYear(d, b) - factPeriodFiscalYear(d, a) ||
+    compareRank(factCanonicalRank(a), factCanonicalRank(b)) ||
+    a.metricKey.localeCompare(b.metricKey) ||
+    a.id.localeCompare(b.id);
+}
+
+/** First occurrence per metricKey wins — `facts` must already be in the
+ * desired display order. */
+function dedupeByMetricKey<T extends { metricKey: string }>(facts: T[]): T[] {
+  const seen = new Set<string>();
+  return facts.filter((f) => (seen.has(f.metricKey) ? false : (seen.add(f.metricKey), true)));
+}
+
+// ---------------------------------------------------------------------------
 // Handler table
 // ---------------------------------------------------------------------------
 
@@ -1040,15 +1117,15 @@ function buildHandlers(): Record<string, Handler> {
       const latestPeriodFacts = latestPeriod
         ? {
             periodLabel: `${latestPeriod.periodType} ${latestPeriod.fiscalYear}`,
-            facts: d.financialFacts
-              .filter((f) => f.periodId === latestPeriod.id)
-              // Mirrors the Rust read model's `created_at DESC, id` ordering
-              // (financials.rs) — the corpus only pins primitives, so keep
-              // this in sync by hand (sol F1 finding 4).
-              .sort(
-                (x, y) =>
-                  y.createdAt.localeCompare(x.createdAt) || x.id.localeCompare(y.id),
-              )
+            // Mirrors the Rust read model's period → canonical → metricKey →
+            // id ordering, one fact per metric key, bounded sample — the
+            // corpus only pins primitives, so keep this in sync by hand (sol
+            // F1 finding 4).
+            facts: dedupeByMetricKey(
+              d.financialFacts
+                .filter((f) => f.periodId === latestPeriod.id)
+                .sort(byFactCanonicalOrder(d)),
+            )
               .slice(0, 6)
               .map((f) => ({
                 metricKey: f.metricKey,
@@ -2713,11 +2790,13 @@ function buildHandlers(): Record<string, Handler> {
       const input = unwrap(a);
       const companyId = str(input.companyId);
       const periodId = str(input.periodId);
-      return d.financialFacts.filter(
-        (f) =>
-          (!companyId || f.companyId === companyId) &&
-          (!periodId || f.periodId === periodId),
-      );
+      return d.financialFacts
+        .filter(
+          (f) =>
+            (!companyId || f.companyId === companyId) &&
+            (!periodId || f.periodId === periodId),
+        )
+        .sort(byFactCanonicalOrder(d));
     },
     create_financial_fact: (d, a, ctx) => {
       const base = { ...d.financialFacts[0] };
@@ -2940,9 +3019,10 @@ function buildHandlers(): Record<string, Handler> {
     }),
     list_report_documents: (d, a) => {
       const companyId = str(unwrap(a).companyId);
-      return companyId
+      const docs = companyId
         ? d.reportDocuments.filter((r) => r.companyId === companyId)
-        : d.reportDocuments;
+        : [...d.reportDocuments];
+      return docs.sort(byDisclosureThenId);
     },
     // Classification is deterministic Rust code (classify_doc_kind); the mock does
     // NOT re-derive kinds (a TS port would drift and the dual-execution corpus
@@ -3102,7 +3182,9 @@ function buildHandlers(): Record<string, Handler> {
     get_report_documents_view: (d, a) => {
       const companyId = str(unwrap(a).companyId) ?? "";
       const periodById = new Map(d.financialPeriods.map((p) => [p.id, p]));
-      const docs = d.reportDocuments.filter((r) => r.companyId === companyId);
+      const docs = d.reportDocuments
+        .filter((r) => r.companyId === companyId)
+        .sort(byDisclosureThenId);
       const periodOf = (doc: (typeof docs)[number]) => {
         const p = doc.periodId ? periodById.get(doc.periodId) : undefined;
         return p

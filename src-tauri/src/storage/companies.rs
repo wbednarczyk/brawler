@@ -1,4 +1,5 @@
 use super::database::Database;
+use super::financials::CANONICAL_FACT_PREFERENCE_ORDER;
 use super::sources::set_source_adapter_state;
 use super::*;
 use crate::source_adapters::gpw_company_registry::{
@@ -759,21 +760,24 @@ pub(super) fn list_companies_with_sector(
 
 /// Latest non-superseded `shares_outstanding` fact for a company: the value
 /// string plus a human period label, most recent period first (fiscal year,
-/// then period end date, then recency of the row itself).
+/// then period end date, then the canonical fact preference within the
+/// slot — never `created_at`).
 pub(super) fn latest_shares_outstanding(
     connection: &Connection,
     company_id: &str,
 ) -> StorageResult<Option<(String, String)>> {
-    let mut statement = connection.prepare(
+    let sql = format!(
         "SELECT f.value_numeric, p.fiscal_year, p.period_type
          FROM financial_facts f
          JOIN financial_periods p ON p.id = f.period_id
          WHERE f.company_id = ?1
            AND f.definition_id = 'kpidef_shares_outstanding'
            AND NOT EXISTS (SELECT 1 FROM financial_facts s WHERE s.supersedes_id = f.id)
-         ORDER BY p.fiscal_year DESC, IFNULL(p.period_end_date, '') DESC, f.created_at DESC
-         LIMIT 1",
-    )?;
+         ORDER BY p.fiscal_year DESC, IFNULL(p.period_end_date, '') DESC,
+                  {CANONICAL_FACT_PREFERENCE_ORDER}, f.id
+         LIMIT 1"
+    );
+    let mut statement = connection.prepare(&sql)?;
     let row = statement
         .query_row([company_id], |row| {
             let value: String = row.get(0)?;

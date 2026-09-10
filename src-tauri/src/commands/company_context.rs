@@ -143,6 +143,12 @@ pub fn compute_company_context(
 
     let latest_period_facts = match latest_period {
         Some(period) => {
+            // `list_financial_facts` already orders each metric's own facts
+            // canonical-first (CANONICAL_FACT_PREFERENCE_ORDER), so
+            // the FIRST occurrence of a metric_key in this single-period read
+            // IS its canonical fact — dedup keeps that one and drops later
+            // (non-canonical) siblings, never a `created_at`-latest one.
+            let mut seen_metrics = std::collections::HashSet::new();
             let facts = state
                 .financials()
                 .list_financial_facts(ListFinancialFactsInput {
@@ -152,6 +158,12 @@ pub fn compute_company_context(
                 })
                 .map_err(|error| error.to_string())?
                 .into_iter()
+                .filter(|fact| seen_metrics.insert(fact.metric_key.clone()))
+                // A bounded sample of the period's distinct metrics (owner
+                // decision A): at most MAX_LATEST_PERIOD_FACTS keys. Ties in
+                // canonical rank collapse to metric_key order, so this reads
+                // as alphabetical by metric key in the common case where every
+                // fact in the period shares the same rank.
                 .take(MAX_LATEST_PERIOD_FACTS)
                 .map(|fact| CompanyContextFact {
                     metric_key: fact.metric_key,
@@ -601,5 +613,130 @@ mod tests {
         let context = compute_company_context(&state, &company_id).expect("context");
         assert_eq!(context.latest_period_facts.expect("latest").facts.len(), 6);
         assert_eq!(context.upcoming_events.len(), 3);
+    }
+
+    /// #496: MAX_LATEST_PERIOD_FACTS caps at 6 DISTINCT metric keys
+    /// — same-metric siblings (final vs preliminary; total vs
+    /// owners_of_parent) must collapse to their canonical fact BEFORE the cap
+    /// runs, never leak a non-canonical value or waste a slot on a metric
+    /// already taken.
+    #[test]
+    fn caps_at_six_distinct_metrics_each_the_canonical_fact_among_siblings() {
+        let state = state();
+        let company_id = company(&state);
+        let period_id = period(&state, &company_id, 2025, "FY", "2025-12-31");
+
+        fn seed(
+            state: &AppState,
+            company_id: &str,
+            period_id: &str,
+            definition_id: &str,
+            value: &str,
+            attribution: Option<&str>,
+            data_quality: Option<&str>,
+        ) {
+            state
+                .financials()
+                .create_financial_fact(NewFinancialFact {
+                    company_id: company_id.to_owned(),
+                    period_id: period_id.to_owned(),
+                    definition_id: definition_id.to_owned(),
+                    value_numeric: value.to_owned(),
+                    currency: Some("PLN".to_owned()),
+                    statement_basis: None,
+                    attribution: attribution.map(str::to_owned),
+                    variant: None,
+                    measure_window: None,
+                    data_quality: data_quality.map(str::to_owned),
+                    as_reported_value: None,
+                    as_reported_scale: None,
+                    reporting_standard: None,
+                    extraction_method: None,
+                    confidence: None,
+                    confirmation_state: Some("confirmed".to_owned()),
+                    supersedes_id: None,
+                    source_document_ref: None,
+                    annotation: None,
+                })
+                .expect("fact");
+        }
+
+        // m0: preliminary (wrong) filed, then final (canonical) filed.
+        let m0 = definition(&state, &company_id, "metric_0");
+        seed(
+            &state,
+            &company_id,
+            &period_id,
+            &m0,
+            "991",
+            None,
+            Some("preliminary"),
+        );
+        seed(
+            &state,
+            &company_id,
+            &period_id,
+            &m0,
+            "100",
+            None,
+            Some("final"),
+        );
+
+        // m1: owners_of_parent (wrong) filed, then total (canonical) filed.
+        let m1 = definition(&state, &company_id, "metric_1");
+        seed(
+            &state,
+            &company_id,
+            &period_id,
+            &m1,
+            "992",
+            Some("owners_of_parent"),
+            None,
+        );
+        seed(
+            &state,
+            &company_id,
+            &period_id,
+            &m1,
+            "101",
+            Some("total"),
+            None,
+        );
+
+        // 5 more distinct metrics, one fact each — 7 distinct metric keys total.
+        for i in 2..7 {
+            let def = definition(&state, &company_id, &format!("metric_{i}"));
+            seed(
+                &state,
+                &company_id,
+                &period_id,
+                &def,
+                &(100 + i).to_string(),
+                None,
+                None,
+            );
+        }
+
+        let context = compute_company_context(&state, &company_id).expect("context");
+        let facts = context.latest_period_facts.expect("latest").facts;
+        assert_eq!(
+            facts.len(),
+            6,
+            "capped at MAX_LATEST_PERIOD_FACTS: {facts:?}"
+        );
+
+        let metric_keys: std::collections::HashSet<_> =
+            facts.iter().map(|f| f.metric_key.clone()).collect();
+        assert_eq!(
+            metric_keys.len(),
+            6,
+            "every metric key in the sample must be unique: {facts:?}"
+        );
+        for wrong_value in ["991", "992"] {
+            assert!(
+                facts.iter().all(|f| f.value_numeric != wrong_value),
+                "a non-canonical sibling value must never appear: {facts:?}"
+            );
+        }
     }
 }

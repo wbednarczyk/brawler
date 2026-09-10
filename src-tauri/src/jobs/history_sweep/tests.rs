@@ -1,3 +1,5 @@
+use rusqlite::params;
+
 use super::*;
 use crate::storage::{
     open_in_memory_database, AppState, CaptureReportDocumentInput, ListAutopilotRunsInput,
@@ -573,6 +575,65 @@ fn non_ixbrl_xhtml_only_period_still_emits_the_xhtml() {
     assert_eq!(
         candidates[0].document_id, xhtml,
         "with no extractable sibling the gap is still enqueued, never silently dropped"
+    );
+}
+
+/// (g) T-A2 disclosure tie-break (#496; data-model.md § Model principles,
+/// guardrail `d60305c`): the fallback's sibling ranking must use the DOMAIN
+/// disclosure date, never `created_at`. The canonical is unextractable; of its
+/// two extractable siblings, the OLDER-disclosed one carries the NEWER
+/// `created_at` (an on-track backfill shape) — the sweep must still pick the
+/// more recently DISCLOSED sibling.
+#[test]
+fn sibling_fallback_ranks_by_disclosure_date_not_created_at() {
+    let s = state();
+    let c = company(&s);
+
+    let canonical = report(
+        &s,
+        &c,
+        "Skonsolidowany raport roczny 2025 SSF",
+        "https://example.com/emitent/2026-08/canonical.pdf",
+        true,
+    );
+    s.set_report_document_detected_container(&canonical, "unknown")
+        .expect("stamp unknown container");
+
+    let old_disclosed = report(
+        &s,
+        &c,
+        "Skonsolidowany raport roczny 2025 SSF",
+        "https://example.com/emitent/2020-01/old.pdf",
+        true,
+    );
+    let new_disclosed = report(
+        &s,
+        &c,
+        "Skonsolidowany raport roczny 2025 SSF",
+        "https://example.com/emitent/2025-06/new.pdf",
+        true,
+    );
+
+    // The older-disclosed sibling carries the NEWER created_at — a
+    // created_at-ranked fallback would pick it; disclosure-ranked must not.
+    let raw = s.checkout_for_tests().expect("raw connection");
+    raw.execute(
+        "UPDATE report_documents SET created_at = ?1 WHERE id = ?2",
+        params!["2026-09-01T00:00:00Z", old_disclosed],
+    )
+    .expect("stamp old_disclosed created_at");
+    raw.execute(
+        "UPDATE report_documents SET created_at = ?1 WHERE id = ?2",
+        params!["2020-01-01T00:00:00Z", new_disclosed],
+    )
+    .expect("stamp new_disclosed created_at");
+    drop(raw);
+
+    let candidates = history_sweep_candidates(&s, &c).expect("candidates");
+    assert_eq!(candidates.len(), 1, "one FY 2025 period");
+    assert_eq!(
+        candidates[0].document_id, new_disclosed,
+        "the more recently DISCLOSED sibling must win, not the more recently INGESTED one"
     );
 }
 

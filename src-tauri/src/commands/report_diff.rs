@@ -280,8 +280,10 @@ pub(crate) fn build_candidates(
 
     // Order by type, then chronology, with a representative preference within a
     // period: prefer the Polish filing over an English duplicate, then PDF over
-    // xhtml, then created_at — so dedup below keeps one document per (type, period)
-    // and pairs are consecutive *distinct* periods (no PL-vs-ENG same-period diffs).
+    // xhtml, then the newest DISCLOSURE date (never `created_at` — data-model.md
+    // § Model principles, guardrail d60305c), tie-broken by id — so dedup below
+    // keeps one document per (type, period) and pairs are consecutive *distinct*
+    // periods (no PL-vs-ENG same-period diffs).
     let eng = |d: &ReportDocument| {
         let t = format!("{} {}", d.title.clone().unwrap_or_default(), d.url).to_lowercase();
         i32::from(t.contains("_eng") || t.contains("eng.") || t.contains("english"))
@@ -293,7 +295,8 @@ pub(crate) fn build_candidates(
             .then(a.1.cmp(&b.1))
             .then(eng(&a.2).cmp(&eng(&b.2)))
             .then(xhtml(&a.2).cmp(&xhtml(&b.2)))
-            .then(a.2.created_at.cmp(&b.2.created_at))
+            .then_with(|| b.2.disclosure_key().cmp(&a.2.disclosure_key()))
+            .then_with(|| a.2.id.cmp(&b.2.id))
     });
     // Keep one representative document per (type, period).
     let mut seen = std::collections::HashSet::new();
@@ -503,5 +506,92 @@ mod tests {
             candidates.is_empty(),
             "a package has no statement body to diff, whatever its filename claims"
         );
+    }
+
+    /// #496 (data-model.md § Model principles, guardrail `d60305c`): the
+    /// representative document per (type, period) must prefer the newest
+    /// **disclosure** date, never the oldest `created_at`. Two Q2 2024 SSF
+    /// documents tie on type/period/eng/xhtml; the older-DISCLOSED one carries
+    /// the NEWER `created_at` (a backfill shape) — the older `created_at`-first
+    /// tie-break would (wrongly) keep it as the representative.
+    #[test]
+    fn representative_document_prefers_newest_disclosure_over_oldest_created_at() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "RCY".to_owned(),
+                display_name: "Recency S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+
+        let seed = |title: &str, url: &str, created_at: &str| -> ReportDocument {
+            let document = state
+                .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                    company_id: company.id.clone(),
+                    source_type: "espi_attachment".to_owned(),
+                    url: url.to_owned(),
+                    period_id: None,
+                    origin_ref: None,
+                    title: Some(title.to_owned()),
+                    attribution: None,
+                })
+                .expect("document");
+            state
+                .mark_report_document_fetched(
+                    &document.id,
+                    Some("doc.pdf"),
+                    Some("application/pdf"),
+                    None,
+                    Some(1024),
+                )
+                .expect("mark fetched");
+            let raw = state.checkout_for_tests().expect("raw connection");
+            raw.execute(
+                "UPDATE report_documents SET created_at = ?1 WHERE id = ?2",
+                rusqlite::params![created_at, document.id],
+            )
+            .expect("stamp created_at");
+            drop(raw);
+            state.get_report_document(&document.id).expect("reload")
+        };
+
+        // Q2 2024: newer-disclosed, but ingested LAST (newer created_at).
+        let newer_disclosed = seed(
+            "Skonsolidowany raport okresowy Q2 2024 SSF",
+            "https://example.com/emitent/2024-06/a.pdf",
+            "2026-09-05T00:00:00Z",
+        );
+        // Q2 2024: older-disclosed, but ingested FIRST (older created_at) — the
+        // on-track-backfill shape that must NOT win.
+        let older_disclosed = seed(
+            "Skonsolidowany raport okresowy Q2 2024 SSF",
+            "https://example.com/emitent/2024-01/b.pdf",
+            "2020-01-01T00:00:00Z",
+        );
+        // Q3 2024: a distinct later period, same type, so the two Q2 documents'
+        // representative appears as the pair's `older` side.
+        let q3 = seed(
+            "Skonsolidowany raport okresowy Q3 2024 SSF",
+            "https://example.com/emitent/2024-09/c.pdf",
+            "2024-09-01T00:00:00Z",
+        );
+
+        let candidates = build_candidates(
+            &state,
+            vec![newer_disclosed.clone(), older_disclosed, q3.clone()],
+        )
+        .expect("candidates");
+
+        assert_eq!(candidates.len(), 1, "one consecutive same-type pair");
+        assert_eq!(
+            candidates[0].older.report_document_id, newer_disclosed.id,
+            "the more recently DISCLOSED Q2 document must be the representative, \
+             not the one with the oldest created_at"
+        );
+        assert_eq!(candidates[0].newer.report_document_id, q3.id);
     }
 }

@@ -8,8 +8,17 @@
 //! excluded) whose leading key is `created_at`, checked against the frozen,
 //! ratchet-only allowlist ([`ALLOWED`]: `(file, fn, ordinal, Reason)`).
 //!
+//! Second scan (#496): every Rust comparator that ranks on `created_at`
+//! (`sort_by`/`sort_by_key`/`max_by`/`min_by`/`Reverse(`/`.cmp(`/
+//! `partial_cmp(` within one statement-sized window of a `.created_at`
+//! field read), checked against [`ALLOWED_COMPARATORS`] — the SQL scan
+//! could not see `history_sweep`'s sibling rank, the KPI-table cell pick or
+//! the report-diff representative, all of which ranked on insert time.
+//!
 //! Ceilings: literal-split fragments are invisible; the enclosing-fn lookup
-//! is a text heuristic (no brace-depth tracking).
+//! is a text heuristic (no brace-depth tracking); a comparator built from a
+//! `created_at` value bound to a local first (`let t = x.created_at; …
+//! .cmp(&t)`) is invisible to the window scan.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -39,7 +48,14 @@ pub(super) enum Reason {
     /// artifacts of the SAME event, not competing "latest" candidates.
     SharedPublicationEvent,
     /// A genuine offender, not fixed yet — tracked by the named issue.
+    /// Unused since #496 paid the three pinned debts; kept so the next
+    /// offender must still carry its issue (never a bare allow).
+    #[allow(dead_code)]
     Debt(&'static str),
+    /// Comparator scan only: the statement-sized window matched a comparator
+    /// that ranks on ANOTHER key while `created_at` is merely read nearby
+    /// (heuristic ceiling, reviewed by hand).
+    NotRankedOnCreatedAt,
 }
 
 /// Every leading-`created_at` `ORDER BY` site this guard finds today,
@@ -224,25 +240,6 @@ const ALLOWED: &[(&str, &str, u8, Reason)] = &[
         "list_by_origin",
         1,
         Reason::SharedPublicationEvent,
-    ),
-    // Debt — genuine offenders, not fixed yet; tracked by #496, do not fix here.
-    (
-        "storage/report_documents.rs",
-        "list_by_company",
-        1,
-        Reason::Debt("#496"),
-    ),
-    (
-        "storage/financials.rs",
-        "list_financial_facts",
-        1,
-        Reason::Debt("#496"),
-    ),
-    (
-        "storage/report_expectations.rs",
-        "actual_confirmed_value",
-        1,
-        Reason::Debt("#496"),
     ),
 ];
 
@@ -523,5 +520,207 @@ mod scanner_tests {
             fn_names_for(&stripped).is_empty(),
             "a #[cfg(test)] mod's content must be excluded from the production scan"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rust-comparator scan (#496): `created_at` ranked in Rust, not SQL.
+// ---------------------------------------------------------------------------
+
+/// Every Rust site that ranks on `created_at` today, reviewed and pinned
+/// `(file, fn, Reason)` — same ratchet idiom as [`ALLOWED`]: a listed site
+/// that vanishes must be deleted; a new one fails loud.
+const ALLOWED_COMPARATORS: &[(&str, &str, Reason)] = &[
+    // The attachments of ONE filing, newest registered first — artifacts of
+    // the same publication event, not competing "latest" candidates.
+    (
+        "jobs/insider_attachment.rs",
+        "process_filing",
+        Reason::SharedPublicationEvent,
+    ),
+    // `entries.sort_by_key(Reverse(modified))` ranks backup files by mtime;
+    // `entry.created_at` is only READ two lines later (window false positive).
+    (
+        "storage/backup.rs",
+        "collect_status",
+        Reason::NotRankedOnCreatedAt,
+    ),
+];
+
+/// How far (bytes) around a `.created_at` read a comparator marker still
+/// counts as ranking on it — one statement-sized window, so a multi-line
+/// `right\n.created_at\n.cmp(&left.created_at)` is one site and a
+/// `format!("{}", x.created_at)` two statements away is not.
+const COMPARATOR_WINDOW: usize = 160;
+
+fn created_at_read_marker() -> &'static regex::Regex {
+    static MARKER: OnceLock<regex::Regex> = OnceLock::new();
+    MARKER.get_or_init(|| regex::Regex::new(r"\.created_at\b").expect("valid regex"))
+}
+
+fn comparator_marker() -> &'static regex::Regex {
+    static MARKER: OnceLock<regex::Regex> = OnceLock::new();
+    MARKER.get_or_init(|| {
+        regex::Regex::new(
+            r"sort_by\(|sort_by_key\(|sort_unstable_by\(|sort_unstable_by_key\(|max_by\(|max_by_key\(|min_by\(|min_by_key\(|Reverse\(|\.cmp\(|partial_cmp\(",
+        )
+        .expect("valid regex")
+    })
+}
+
+/// Byte offsets of every `.created_at` field read in code (comments and
+/// string literals excluded — SQL text is the other scan's job) that has a
+/// comparator marker within [`COMPARATOR_WINDOW`] bytes on either side.
+/// Reads closer than the window to the previous hit are folded into it (one
+/// comparison expression reads the field twice).
+fn created_at_comparator_offsets(content: &str) -> Vec<usize> {
+    // Blank every comment and string literal to spaces (same byte length, so
+    // offsets stay valid): neither a `// sort_by(created_at)` remark nor a SQL
+    // literal's text may count as a marker or as a field read.
+    let mut code = content.as_bytes().to_vec();
+    for (start, end, _kind) in classified_non_code_spans(content) {
+        for byte in &mut code[start..end] {
+            if !byte.is_ascii_whitespace() {
+                *byte = b' ';
+            }
+        }
+    }
+    let code = String::from_utf8(code).expect("blanking keeps ASCII/UTF-8 boundaries intact");
+
+    let mut offsets: Vec<usize> = Vec::new();
+    for m in created_at_read_marker().find_iter(&code) {
+        let pos = m.start();
+        let lo = pos.saturating_sub(COMPARATOR_WINDOW);
+        let hi = (m.end() + COMPARATOR_WINDOW).min(code.len());
+        // Clamp to char boundaries (the window is a byte count).
+        let lo = (lo..=pos)
+            .find(|&i| code.is_char_boundary(i))
+            .unwrap_or(pos);
+        let hi = (m.end()..=hi)
+            .rev()
+            .find(|&i| code.is_char_boundary(i))
+            .unwrap_or(m.end());
+        if !comparator_marker().is_match(&code[lo..hi]) {
+            continue;
+        }
+        if offsets
+            .last()
+            .is_some_and(|&prev| pos - prev <= COMPARATOR_WINDOW)
+        {
+            continue; // the same comparison reading the field again
+        }
+        offsets.push(pos);
+    }
+    offsets
+}
+
+/// `(file, fn)` of every Rust `created_at` comparator in one file's
+/// (test-span-stripped) content, one entry per fn.
+fn comparator_sites_in_file(rel: &str, content: &str) -> Vec<(String, String)> {
+    let mut sites: Vec<(String, String)> = Vec::new();
+    for offset in created_at_comparator_offsets(content) {
+        let Some(function) = enclosing_fn_name(content, offset) else {
+            continue;
+        };
+        if sites.iter().any(|(_, f)| *f == function) {
+            continue;
+        }
+        sites.push((rel.to_string(), function));
+    }
+    sites
+}
+
+fn find_comparator_sites() -> Vec<(String, String)> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src_dir = manifest_dir.join("src");
+    let mut sites = Vec::new();
+    for path in source_files(&src_dir) {
+        let rel = path
+            .strip_prefix(&src_dir)
+            .expect("under src")
+            .to_string_lossy()
+            .replace('\\', "/");
+        if is_test_file(&rel) || rel.starts_with("source_tree_guards/") {
+            continue;
+        }
+        let raw = std::fs::read_to_string(&path).expect("readable source file");
+        let content = strip_test_spans(&raw);
+        sites.extend(comparator_sites_in_file(&rel, &content));
+    }
+    sites
+}
+
+/// Guard (#496): the SQL rule applies to Rust ranking too — see
+/// [`ALLOWED_COMPARATORS`] and the module docs.
+#[test]
+fn recency_selection_never_ranks_on_created_at_in_rust() {
+    let sites = find_comparator_sites();
+    let mut violations = Vec::new();
+
+    for (file, function) in &sites {
+        let allowed = ALLOWED_COMPARATORS
+            .iter()
+            .any(|(f, func, _reason)| f == file && func == function);
+        if !allowed {
+            violations.push(format!(
+                "{file}:{function}: a Rust comparator ranks on created_at — domain \
+                 recency must order by the DOMAIN date (a document's \
+                 disclosure_key(), a fact's canonical_fact_rank(), a period's \
+                 end date), never created_at (data-model.md § Model principles, \
+                 guardrail d60305c, #496). Fix the comparator, or add a reviewed \
+                 entry to ALLOWED_COMPARATORS with a Reason"
+            ));
+        }
+    }
+    for (file, function, reason) in ALLOWED_COMPARATORS {
+        let still_matches = sites.iter().any(|(f, func)| f == file && func == function);
+        if !still_matches {
+            violations.push(format!(
+                "{file}:{function} ({reason:?}): no longer a created_at comparator \
+                 site — delete this entry from ALLOWED_COMPARATORS (per-site ratchet)"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "recency source-tree guard (#496, Rust comparators):\n{}",
+        violations.join("\n")
+    );
+}
+
+#[cfg(test)]
+mod comparator_scanner_tests {
+    use super::{comparator_sites_in_file, created_at_comparator_offsets};
+
+    #[test]
+    fn a_reverse_on_created_at_inside_a_rank_fn_is_one_site() {
+        let source = "fn rank(d: &Doc) -> (u8, std::cmp::Reverse<String>) {\n    (0, std::cmp::Reverse(d.created_at.clone()))\n}\n";
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "rank".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_multi_line_cmp_reading_the_field_twice_is_one_site() {
+        let source = "fn pick(c: &mut Vec<Doc>) {\n    c.sort_by(|left, right| {\n        right\n            .created_at\n            .cmp(&left.created_at)\n    });\n}\n";
+        assert_eq!(created_at_comparator_offsets(source).len(), 1);
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "pick".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_plain_read_a_comment_and_a_sql_literal_are_not_sites() {
+        let source = concat!(
+            "fn label(d: &Doc) -> String {\n",
+            "    // sort_by(created_at) would be wrong here\n",
+            "    let sql = \"SELECT 1 ORDER BY created_at\"; let _ = sql;\n",
+            "    format!(\"{}\", d.created_at)\n",
+            "}\n",
+        );
+        assert!(comparator_sites_in_file("x.rs", source).is_empty());
     }
 }

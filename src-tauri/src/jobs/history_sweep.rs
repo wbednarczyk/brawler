@@ -250,15 +250,23 @@ fn select_sweep_document(
 }
 
 /// Sweep sibling ordering (smaller is better): ssf before jsf, then the newest
-/// `created_at` first — mirroring the canonical selection's kind-then-recency
-/// preference.
-fn sweep_candidate_rank(entry: &(DocKind, ReportDocument)) -> (u8, std::cmp::Reverse<String>) {
+/// **disclosure date** first ([`ReportDocument::disclosure_key`], never
+/// `created_at` — data-model.md § Model principles, guardrail `d60305c`) —
+/// mirroring the canonical selection's kind-then-recency preference, with the
+/// document id as a final deterministic tie-break.
+fn sweep_candidate_rank(
+    entry: &(DocKind, ReportDocument),
+) -> (u8, std::cmp::Reverse<String>, String) {
     let (kind, document) = entry;
     let kind_rank = match kind {
         DocKind::PeriodicSsf => 0,
         _ => 1,
     };
-    (kind_rank, std::cmp::Reverse(document.created_at.clone()))
+    (
+        kind_rank,
+        std::cmp::Reverse(document.disclosure_key()),
+        document.id.clone(),
+    )
 }
 
 /// Create a queued sweep row and enqueue its durable job, keyed by the sweep id,
