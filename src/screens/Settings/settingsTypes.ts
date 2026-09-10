@@ -3,7 +3,6 @@ import type {
   AccentPalette,
   AppLocale,
   CredentialStatus,
-  LicenseStatus,
   ShortcutBindingSetting,
   Theme,
   UserSettings,
@@ -16,10 +15,6 @@ export type SettingsScreenProps = {
   locale: AppLocale;
   settings: UserSettings | null;
   settingsError: string | null;
-  licenseStatus: LicenseStatus | null;
-  licenseError: string | null;
-  licenseInFlight: boolean;
-  licenseKeyDraft: string;
   geminiCredentialStatus: CredentialStatus | null;
   geminiCredentialError: string | null;
   geminiCredentialInFlight: boolean;
@@ -49,9 +44,6 @@ export type SettingsScreenProps = {
   onSourcesWorkersChange: (workers: number) => void;
   onAutopilotWorkersChange: (workers: number) => void;
   onResetQueueSettings: () => void;
-  onClearLicenseKey: () => void;
-  onLicenseKeyDraftChange: (licenseKey: string) => void;
-  onSubmitLicenseKey: (event: FormEvent<HTMLFormElement>) => void;
   onGeminiApiKeyDraftChange: (apiKey: string) => void;
   onSaveGeminiApiKey: (event: FormEvent<HTMLFormElement>) => void;
   onClearGeminiApiKey: () => void;

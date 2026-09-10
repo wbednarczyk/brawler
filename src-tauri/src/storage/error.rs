@@ -24,8 +24,6 @@ pub enum StorageError {
     InvalidAiAnalysisValue { key: &'static str, value: String },
     #[error("invalid diagnostic value for {key}: {value}")]
     InvalidDiagnosticValue { key: &'static str, value: String },
-    #[error("invalid license value for {key}: {value}")]
-    InvalidLicenseValue { key: &'static str, value: String },
     #[error("invalid source value for {key}: {value}")]
     InvalidSourceValue { key: &'static str, value: String },
     #[error("invalid research value for {key}: {value}")]

@@ -44,8 +44,7 @@ pub const REGISTRY_REFRESH_KIND: &str = "scheduled_registry_refresh";
 /// `source_refresh`/`registry_refresh` job on the durable queue for every adapter
 /// whose interval has elapsed (the worker executes it; detection rides refresh
 /// completion). Runs only while the app is open. The next-due snapshot is published
-/// to `AppState` for the UI to render. A poisoned settings/license read just skips
-/// the tick.
+/// to `AppState` for the UI to render. A poisoned settings read just skips the tick.
 pub fn spawn(state: AppState) {
     // Run on a dedicated blocking thread (like the queue worker). A tick is light
     // DB work — it only re-arms queue rows and publishes the next-due snapshot; the
@@ -62,39 +61,37 @@ pub fn spawn(state: AppState) {
             source_due = next_source;
             registry_due = next_registry;
 
-            // Daily morning-briefing auto-trigger (ADR 0068 §T5). App-open only,
-            // license-gated like the refresh cadence; the handler stays idempotent
-            // per day so an app restart (which resets `briefing_due`) re-composes at
-            // most once per day.
-            if crate::commands::licensing::current_license_can_use_app(&state) {
-                // Each app-open daily job goes through the ONE helper — the due
-                // state is reassigned inside it, so a new daily job cannot forget
-                // the reassignment and fire on every 60s tick (review 2026-07-22).
-                fire_daily(&mut briefing_due, || {
-                    crate::jobs::morning_briefing::enqueue_daily_briefing(&state)
-                });
-                // Daily BiznesRadar-primary fundamentals pull (ADR 0086 dec. 2).
-                // The per-(company, page_kind) cadence cache inside the pull makes
-                // an app-restart re-fire a cheap no-op — no page is fetched twice
-                // inside its 24h window.
-                fire_daily(&mut aggregator_pull_due, || {
-                    crate::jobs::aggregator_fundamentals_pull::enqueue_daily_pull(&state)
-                });
-                // Daily NBP FX pull (ADR 0089 dec. 2). One recurring row keeps the
-                // needed currencies' mids current; the job self-heals a missing
-                // currency into a full-history backfill. App-open only, idempotent
-                // per day under its singleton job id.
-                fire_daily(&mut fx_pull_due, || {
-                    crate::jobs::fx_daily_pull::enqueue_fx_daily_pull(&state)
-                });
-            }
+            // Daily morning-briefing auto-trigger (ADR 0068 §T5). App-open only; the
+            // handler stays idempotent per day so an app restart (which resets
+            // `briefing_due`) re-composes at most once per day.
+            //
+            // Each app-open daily job goes through the ONE helper — the due
+            // state is reassigned inside it, so a new daily job cannot forget
+            // the reassignment and fire on every 60s tick (review 2026-07-22).
+            fire_daily(&mut briefing_due, || {
+                crate::jobs::morning_briefing::enqueue_daily_briefing(&state)
+            });
+            // Daily BiznesRadar-primary fundamentals pull (ADR 0086 dec. 2).
+            // The per-(company, page_kind) cadence cache inside the pull makes
+            // an app-restart re-fire a cheap no-op — no page is fetched twice
+            // inside its 24h window.
+            fire_daily(&mut aggregator_pull_due, || {
+                crate::jobs::aggregator_fundamentals_pull::enqueue_daily_pull(&state)
+            });
+            // Daily NBP FX pull (ADR 0089 dec. 2). One recurring row keeps the
+            // needed currencies' mids current; the job self-heals a missing
+            // currency into a full-history backfill. App-open only, idempotent
+            // per day under its singleton job id.
+            fire_daily(&mut fx_pull_due, || {
+                crate::jobs::fx_daily_pull::enqueue_fx_daily_pull(&state)
+            });
         }
     });
 }
 
 /// Minimal view of a source adapter the schedule math needs. Decouples the pure
-/// due-time computation from the full `SourceAdapter` row (and from the keychain /
-/// `AppState` reads in [`run_tick`]) so the cadence logic is unit-testable offline.
+/// due-time computation from the full `SourceAdapter` row (and from the `AppState`
+/// reads in [`run_tick`]) so the cadence logic is unit-testable offline.
 struct TickAdapter {
     id: String,
     enabled: bool,
@@ -118,8 +115,7 @@ struct ScheduleDecision {
 
 /// Pure scheduler math: given `now`, the global poll interval, the enabled
 /// adapters, and the prior schedule, decide what is due and the next schedule.
-/// No keychain, no `AppState`, no side effects — this is the seam the tick tests
-/// drive. Gating that needs the OS keychain (license) stays in [`run_tick`].
+/// No `AppState`, no side effects — this is the seam the tick tests drive.
 fn compute_schedule(
     now: i64,
     poll_seconds: i64,
@@ -170,28 +166,13 @@ fn compute_schedule(
     decision
 }
 
-/// One scheduler evaluation. The keychain-gated shell: it applies the license gate
-/// (which reads the OS keychain, so this entry point is not offline-testable), then
-/// delegates everything else to [`apply_tick`]. Gating mirrors the UI (license
-/// `canUseApp` + poll interval + enabled adapters), so moving the timer to Rust
-/// changes *where* the cadence lives, not *whether* it runs.
+/// One scheduler evaluation — `AppState`-bound, keychain-free, and exercisable
+/// offline. Loads settings and adapters, delegates the cadence math to the pure
+/// [`compute_schedule`] seam, then applies the decision: re-arms the due refresh
+/// jobs on the durable queue and publishes the next-due snapshot. Gating mirrors
+/// the UI (poll interval + enabled adapters) and never touches the OS keychain
+/// (ADR 0110).
 fn run_tick(
-    state: &AppState,
-    source_due: HashMap<String, i64>,
-    registry_due: Option<i64>,
-) -> (HashMap<String, i64>, Option<i64>) {
-    if !crate::commands::licensing::current_license_can_use_app(state) {
-        state.set_scheduler_status(SchedulerStatus::default());
-        return (HashMap::new(), None);
-    }
-    apply_tick(state, source_due, registry_due)
-}
-
-/// The post-license-gate body of one tick — `AppState`-bound but keychain-free, so
-/// it is exercisable offline. Loads settings and adapters, delegates the cadence
-/// math to the pure [`compute_schedule`] seam, then applies the decision: re-arms
-/// the due refresh jobs on the durable queue and publishes the next-due snapshot.
-fn apply_tick(
     state: &AppState,
     source_due: HashMap<String, i64>,
     registry_due: Option<i64>,
@@ -425,14 +406,13 @@ mod tests {
         assert_eq!(pending.next_registry, Some(NOW + 10_000));
     }
 
-    /// Closes the integration gap above the pure seam: `apply_tick` is the
-    /// keychain-free body of the tick, so this drives it against a real in-memory
-    /// `AppState` (seeded adapters, settings, durable queue) and asserts the wiring
-    /// — adapter mapping → `compute_schedule` → re-arm on the queue → published
-    /// snapshot — not just the math. The license-gated `run_tick` shell stays
-    /// uncoverable offline by design (it reads the OS keychain).
+    /// Closes the integration gap above the pure seam: `run_tick` is
+    /// `AppState`-bound and keychain-free (ADR 0110), so this drives it directly
+    /// against a real in-memory `AppState` (seeded adapters, settings, durable
+    /// queue) and asserts the wiring — adapter mapping → `compute_schedule` →
+    /// re-arm on the queue → published snapshot — not just the math.
     #[test]
-    fn apply_tick_arms_due_source_adapters_and_enqueues_refresh_jobs() {
+    fn tick_runs_without_any_keychain_access() {
         use crate::storage::{open_in_memory_database, SettingsUpdate};
 
         let state = AppState::new(open_in_memory_database().expect("db"));
@@ -458,7 +438,10 @@ mod tests {
         // Force every enabled source adapter due now (prior due in the distant past).
         let forced_due: HashMap<String, i64> =
             enabled_sources.iter().map(|id| (id.clone(), 0)).collect();
-        let (next_source, _next_registry) = apply_tick(&state, forced_due, None);
+        // No keychain/keyring in this call chain at all — this in-memory
+        // `AppState` never touches the OS keychain, and `run_tick` no longer
+        // gates on one, so reaching this line at all is part of the proof.
+        let (next_source, _next_registry) = run_tick(&state, forced_due, None);
 
         // Each due adapter is re-armed with a future next-due time (now + interval),
         // and that snapshot is what gets published to `AppState`.
@@ -469,6 +452,14 @@ mod tests {
                 "adapter {id} should be re-armed into the future"
             );
         }
+
+        // The published `SchedulerStatus` is non-default: a tick with no
+        // keychain path always reaches the cadence math (ADR 0110).
+        let status = state.get_scheduler_status();
+        assert!(
+            !status.source_next_due_ms.is_empty(),
+            "run_tick must publish a non-default scheduler status"
+        );
 
         // Side effect: a real `scheduled_source_refresh` job landed on the queue,
         // payload-tagged with a real adapter id.

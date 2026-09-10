@@ -25,7 +25,6 @@ mod import_export;
 mod ingestion_properties;
 mod insider;
 mod job_queue;
-mod licensing;
 mod management_claims;
 mod management_holdings;
 mod migration_safety;

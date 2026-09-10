@@ -40,7 +40,6 @@ type AppLifecycleEffectsInput = {
   effectiveTheme: string;
   eventWeekFetchAttemptedRef: MutableRefObject<Set<string>>;
   filteredFeedItems: FeedItem[];
-  licenseCanUseApp: boolean;
   refreshBankierCalendarWeek: (date: string, trigger?: "manual") => void;
   refreshCompanies: () => void;
   refreshCompanyEvents: (mode?: CompanyEventMode) => void;
@@ -59,7 +58,7 @@ type AppLifecycleEffectsInput = {
    * source-due transition is NOT a proxy for "an event landed" (the queue can
    * finish long after the refresh that enqueued it). The controller skips the
    * state update when data is unchanged, so the steady state is render-free.
-   * Startup load is the controller's own license-gated effect.
+   * Startup load is the controller's own mount effect.
    */
   refreshAttention: () => void;
   /**
@@ -70,7 +69,6 @@ type AppLifecycleEffectsInput = {
   refreshActivitySummary: () => void;
   refreshGeminiCredentialStatus: () => void;
   refreshHealth: () => void;
-  refreshLicenseStatus: () => void;
   refreshSettings: () => void;
   refreshSourceAdapters: () => void;
   refreshTranscriptJobs: () => void;
@@ -104,7 +102,6 @@ export function useAppLifecycleEffects({
   effectiveTheme,
   eventWeekFetchAttemptedRef,
   filteredFeedItems,
-  licenseCanUseApp,
   refreshBankierCalendarWeek,
   refreshCompanies,
   refreshCompanyEvents,
@@ -117,7 +114,6 @@ export function useAppLifecycleEffects({
   refreshActivitySummary,
   refreshGeminiCredentialStatus,
   refreshHealth,
-  refreshLicenseStatus,
   refreshSettings,
   refreshSourceAdapters,
   refreshTranscriptJobs,
@@ -212,12 +208,6 @@ export function useAppLifecycleEffects({
     refreshHealth();
     refreshDatabaseStatus();
     refreshSettings();
-    refreshLicenseStatus();
-
-    if (!licenseCanUseApp) {
-      return;
-    }
-
     refreshCompanies();
     refreshWatchlists();
     refreshWatchlistMemberships();
@@ -227,18 +217,13 @@ export function useAppLifecycleEffects({
     refreshTranscriptJobs();
     refreshSourceAdapters();
     refreshGeminiCredentialStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial data load: runs when the license gate flips; the non-memoized refresh callbacks from AppStateRoot are intentionally excluded so startup does not re-fetch every render
-  }, [licenseCanUseApp]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial data load, runs once on mount; the non-memoized refresh callbacks from AppStateRoot are intentionally excluded so startup does not re-fetch every render
+  }, []);
 
   useEffect(() => {
-    if (!licenseCanUseApp) {
-      return;
-    }
-
     void refreshCompanyEvents(companyEventMode);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch when the event filters change; the non-memoized refreshCompanyEvents identity is intentionally excluded
   }, [
-    licenseCanUseApp,
     companyEventCompanyFilter,
     companyEventDateFrom,
     companyEventDateTo,
@@ -252,11 +237,7 @@ export function useAppLifecycleEffects({
   ]);
 
   useEffect(() => {
-    if (
-      !licenseCanUseApp ||
-      activeSection !== "Events" ||
-      companyEventViewMode !== "week"
-    ) {
+    if (activeSection !== "Events" || companyEventViewMode !== "week") {
       return;
     }
 
@@ -268,7 +249,7 @@ export function useAppLifecycleEffects({
     eventWeekFetchAttemptedRef.current.add(weekStart);
     void refreshBankierCalendarWeek(weekStart, "manual");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch each week once (guarded by eventWeekFetchAttemptedRef); the non-memoized refreshBankierCalendarWeek identity is intentionally excluded
-  }, [licenseCanUseApp, activeSection, companyEventViewMode, companyEventWeekRange.start]);
+  }, [activeSection, companyEventViewMode, companyEventWeekRange.start]);
 
   // Source/registry refresh cadence is owned by the Rust-side scheduler (ADR 0055
   // / AV5) — a webview timer is throttled when the window is hidden/suspended, so
@@ -278,13 +259,6 @@ export function useAppLifecycleEffects({
   // next-due jumping forward), preserving the post-refresh view update without a
   // frontend-owned schedule.
   useEffect(() => {
-    if (!licenseCanUseApp) {
-      setNextSourceRefreshAtByAdapterId({});
-      setNextRegistryRefreshAt(null);
-      previousSourceDueRef.current = {};
-      return undefined;
-    }
-
     let cancelled = false;
     const syncScheduler = () => {
       // Sibling of getSchedulerStatus() below, NOT inside its `.then` — the
@@ -329,13 +303,13 @@ export function useAppLifecycleEffects({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- view-sync poll keyed on the license gate; the Rust scheduler owns refresh cadence (ADR 0055), this only mirrors its next-due snapshot; the non-memoized refresh callbacks are intentionally excluded
-  }, [licenseCanUseApp]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- view-sync poll, runs once on mount; the Rust scheduler owns refresh cadence (ADR 0055), this only mirrors its next-due snapshot; the non-memoized refresh callbacks are intentionally excluded
+  }, []);
 
   useEffect(() => {
-    if (licenseCanUseApp && activeSection === "Companies") {
+    if (activeSection === "Companies") {
       refreshCompanyRegistryEntries();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh registry entries when Companies opens; the non-memoized refreshCompanyRegistryEntries identity is intentionally excluded
-  }, [licenseCanUseApp, activeSection, companies.length]);
+  }, [activeSection, companies.length]);
 }

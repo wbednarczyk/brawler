@@ -134,7 +134,7 @@ export function ImportExportSettings({ onImportApplied }: ImportExportSettingsPr
         <WorkflowPanel
           applyLabel={text("Apply import")}
           acceptedFileTypes=".yaml,.yml"
-          description={text("Safe preferences only. Keys and licenses are excluded.")}
+          description={text("Safe preferences only. Keys are excluded.")}
           exportLabel={text("Export")}
           fileInputAriaLabel={text("Choose settings file")}
           importLabel={text("Import")}

@@ -29,7 +29,6 @@ Rust owns domain behavior:
 - video/transcript processing orchestration
 - transcript-to-note selection workflows
 - local settings and secrets
-- local license entitlement validation
 - SQLite persistence
 - Tauri command handlers and event streams
 
@@ -84,7 +83,7 @@ The queue itself is a **durable SQLite-backed job queue** (`job_queue` table, mi
 
 **Activity ledger** ([ADR 0109](adr/0109-activity-center-occurrence-ledger.md), v0.81.0). Both kinds of work — durable queue jobs and awaited commands — leave one **occurrence** per attempt in `job_runs` (data-model § Job runs) with a task identity (`activity_key`), family, company, raw subject, typed navigation target and real start/finish times. The queue writes it at its single dispatch seam: `begin_attempt` after the source lock (insert failure ⇒ the handler does not run, the claim is deferred), the handler under `catch_unwind` (a panic takes the ordinary retry/terminal path), and the queue row + that occurrence settled in ONE `IMMEDIATE` transaction with retention GC. Awaited work registers through an in-memory RAII **direct-activity registry** on `AppState` instrumented at the shared cores (per-adapter refresh inside the sweep, aggregator pull, direct history backfill, direct registry refresh, transcript runner) so Tauri and MCP callers are covered alike and queue handlers (which call the unwrapped cores) never double-count; `sources_in_flight` stays a serialization lock and is never read as activity. **Startup reconciliation** runs in a pinned order — KPI-run reclaim → generic queue reclaim → KPI queue reconciliation → activity reconcile — before any worker lane starts: open occurrences and `running` transcripts become `interrupted`, a report-reading run is terminalized only when no stage job of it is pending/running and its reachable stage is failed/absent/succeeded-without-successor, a sweep/batch without a live parent job fails, KPI runs are never touched here. The read model (`storage/activity_reads.rs`, one pool checkout, SQL-bound candidates, 7-day window / 40 tasks after the per-key collapse) backs `list_activity` / `get_activity_summary` for the topbar Activity control and panel.
 
-Gating mirrors the UI exactly (license `canUseApp` + poll interval + enabled adapters). The scheduler publishes a per-adapter next-due snapshot (`SchedulerStatus`, epoch-ms) to `AppState`, read by the `get_scheduler_status` command; the frontend only mirrors this snapshot for the "next refresh at …" display and reloads views when a background refresh has fired — it does not decide *when* to refresh (a webview timer throttles/suspends when the window is hidden, which is why this lives server-side, [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md)). Local-first holds: the scheduler runs only while the app is open; no background/closed execution (managed-AI frontier, see [roadmap.md](roadmap.md)). Feed-prune remains a small frontend maintenance timer, not source scheduling.
+Gating mirrors the UI exactly (poll interval + enabled adapters). The scheduler publishes a per-adapter next-due snapshot (`SchedulerStatus`, epoch-ms) to `AppState`, read by the `get_scheduler_status` command; the frontend only mirrors this snapshot for the "next refresh at …" display and reloads views when a background refresh has fired — it does not decide *when* to refresh (a webview timer throttles/suspends when the window is hidden, which is why this lives server-side, [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md)). Local-first holds: the scheduler runs only while the app is open; no background/closed execution (managed-AI frontier, see [roadmap.md](roadmap.md)). Feed-prune remains a small frontend maintenance timer, not source scheduling.
 
 ## Extensibility Boundaries
 
@@ -116,7 +115,7 @@ Global search is a typed-command domain governed by [ADR 0032](adr/0032-search-a
 
 Import/export is a local typed-command domain governed by [ADR 0018](adr/0018-import-export-boundaries.md). M20 separates format adapters, validation, preview/planning, domain apply, storage operations, commands, and UI workflow. The first section adapters cover research data JSON for companies, watchlists, memberships, and notebooks, plus settings YAML for allowlisted non-secret settings. Future full backup, restore, cloud sync, or alternate file-format adapters should plug into those boundaries instead of reading arbitrary files or dumping runtime tables directly.
 
-Licensing is a local entitlement module governed by [ADR 0017](adr/0017-license-gate.md). Public-opening work keeps the open desktop core usable without a license token while preserving parser, verifier, entitlement-policy, secret-store, storage, command, and presentation boundaries so future paid-feature, subscription, or hosted-activation policies can be added as adapters after later ADR approval.
+There is no licensing/entitlement module ([ADR 0110](adr/0110-retire-local-entitlement-module.md)); a future gated feature starts from a new ADR.
 
 Provider model choice and request timeout are configurable. Gemini YouTube transcription defaults to the cheapest configured model that passed M10 live smoke validation with direct YouTube/video input. The runtime timeout defaults to 300 seconds, can be changed in Settings, and may be overridden by `BRAWLER_GEMINI_REQUEST_TIMEOUT_SECONDS` for development/live-smoke runs.
 
@@ -137,7 +136,7 @@ Testing should be lean and behavior-focused:
 
 ## Security And Observability Posture
 
-The React frontend must call typed Tauri commands only. It must not receive API keys, full license tokens, private signing material, execute arbitrary shell commands, or receive broad filesystem access. Source and provider requests happen in Rust.
+The React frontend must call typed Tauri commands only. It must not receive API keys, private signing material, execute arbitrary shell commands, or receive broad filesystem access. Source and provider requests happen in Rust.
 
 V1 uses local-only observability. Telemetry, remote error reporting, remote log shipping, hosted metrics, and hosted tracing require a future ADR. Source and job errors surface in the Sources screen. Developer mode and local observability are governed by [ADR 0015](adr/0015-developer-mode-local-observability.md).
 

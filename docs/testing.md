@@ -1152,7 +1152,7 @@ The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the R
 - **Interpretation vector index (Architecture v2):** a `VectorIndex` implementation is tested for **top-k parity with `BruteForceVectorIndex`** on separable vectors (plus empty/zero-k), so an ANN swap cannot regress ranking; the T4 behavioral scale gate still guards the persisted linear-scan contract (ADR 0050 / ADR 0049).
 - **Frontend per-screen view-model context (Architecture v2):** screens read their view-model from a context (`screenViewModels`/`SettingsContext`/`SourcesContext`), not a prop bundle. They are covered by the full-app workflow tests (which render through `AppStateRoot`'s providers) and the Playwright smoke-walk; a direct component test must wrap the screen in its `Provider`. New cross-cutting settings flags get a `SettingsContext` selector rather than re-drilling.
 - **Transcript provider** (`VideoTranscriptProvider` — the only AI provider left, [ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 3): provider contract mapping + transcript-result shape tested with samples, no live calls; normal CI requires no API keys; live checks manual/local-only (`make smoke-gemini-transcript`).
-- **Packaging:** app starts; Rust command boundary works; local SQLite opens; primary screen renders; packaged builds keep open-core navigation and preserve optional entitlement workflows.
+- **Packaging:** app starts; Rust command boundary works; local SQLite opens; primary screen renders; packaged builds keep open-core navigation.
 - **Command / IPC layer (`#[tauri::command]`):** a `#[tauri::command]` fn takes `tauri::State<'_, AppState>`, which Tauri's DI constructs at runtime and which is **not** meaningfully constructible in a unit test — so do **not** write tests that build a `State` to call a command wrapper. Most wrappers are thin pass-throughs (`state.x().map_err(to_string)`) whose behavior is already covered at the **storage/jobs layer** (the `AppState` method and the `jobs::*` function it delegates to, tested with `open_in_memory_database`). When a wrapper carries **non-trivial logic** (input defaulting/parsing, branching, mapping), extract that logic into a pure helper or a function taking `&AppState` and test **that** — the established pattern (e.g. `commands::settings::developer_unlock_code_matches_value`). Adding `State`-construction tests for thin pass-throughs is redundant coverage and is rejected (see Strategy). Policy: [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
 
 ## Browser UI regression smoke (Playwright)
@@ -1347,7 +1347,7 @@ Representative manual sweep:
 - **Companies:** create a watchlist, toggle membership on/off, verify feedback/selected states, clear form fields.
 - **Global search:** top-toolbar search → ranked results grouped by content type with snippets → select navigates → field clear returns focus.
 - **Backups/restore:** in Settings › Data storage (moved out of Developer Diagnostics 2026-09-08, #451), verify status + list, create a backup, exercise restore (warns + applies on relaunch).
-- **Polish locale:** switch to Polish and check labels in Settings, Sources, Companies, licensing.
+- **Polish locale:** switch to Polish and check labels in Settings, Sources, Companies.
 
 ## Live smoke tests
 

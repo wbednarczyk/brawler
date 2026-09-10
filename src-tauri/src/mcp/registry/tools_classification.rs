@@ -31,8 +31,7 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         read("list_log_entries"),           // app log lines (ops)
         read("get_local_metrics_snapshot"), // local perf metrics (ops)
         // Settings / config / credentials — sensitive or UI-only config:
-        read("get_settings"),       // app settings surface (UI/config)
-        read("get_license_status"), // licensing state (config)
+        read("get_settings"), // app settings surface (UI/config)
         read("get_provider_credential_status"), // credential presence (sensitive)
         read("list_source_adapters"), // source-adapter enable/config catalog
         read("list_company_autopilot_modes"), // autopilot-mode picker presets (UI)
@@ -197,9 +196,7 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         excluded("set_source_adapter_enabled"),
         excluded("set_company_autopilot"),
         excluded("set_companies_autopilot"),
-        // ---- Excluded: credentials / licensing -----------------------------
-        excluded("submit_license_key"),
-        excluded("clear_license_key"),
+        // ---- Excluded: credentials -------------------------------------
         excluded("set_provider_api_key"),
         excluded("clear_provider_api_key"),
         // ---- Excluded: MCP self-management (reads included — sensitive) -----

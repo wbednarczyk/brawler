@@ -407,6 +407,45 @@
         "docs/ui-information-architecture.md",
         "docs/data-model.md"
       ]
+    },
+    {
+      "token": "get_license_status",
+      "adr": "ADR 0110"
+    },
+    {
+      "token": "submit_license_key",
+      "adr": "ADR 0110"
+    },
+    {
+      "token": "clear_license_key",
+      "adr": "ADR 0110"
+    },
+    {
+      "token": "LicenseSettings",
+      "adr": "ADR 0110"
+    },
+    {
+      "token": "canUseApp",
+      "adr": "ADR 0110"
+    },
+    {
+      "token": "license_metadata",
+      "adr": "ADR 0110",
+      "allow": [
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "license-keygen-author",
+      "adr": "ADR 0110"
+    },
+    {
+      "token": "license-author",
+      "adr": "ADR 0110"
+    },
+    {
+      "token": "license-friend",
+      "adr": "ADR 0110"
     }
   ]
 }

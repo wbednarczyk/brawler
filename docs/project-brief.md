@@ -40,6 +40,6 @@ Brawler uses an open-core posture. The desktop core is open source under the Moz
 
 Detailed owner-only strategy and publication operations belong in the private sibling repository `../brawler-private` when it is available locally. Public docs should avoid personal infrastructure details and speculative monetization experiments.
 
-The local entitlement module remains useful for future gated features and official entitlements, but the open desktop core does not depend on a license token for normal use.
+The app carries no entitlement module ([ADR 0110](adr/0110-retire-local-entitlement-module.md)); open-core optionality is a product decision recorded here, and a future gated feature starts from a new ADR.
 
 Current dependency-license posture for public-opening work: [dependency-licenses.md](dependency-licenses.md) (release/legal reference — not agent reading). Public-vs-owner-only documentation split: [ADR 0023](adr/0023-public-private-documentation-split.md).

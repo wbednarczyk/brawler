@@ -16,7 +16,7 @@ import {
  * all consume this one state — per-screen copies drifted (a screen's optimistic
  * seen/dismiss left the others stale), and the badge would have been a third.
  *
- * Freshness: refresh runs on startup (behind the license gate), on the shared
+ * Freshness: refresh runs on startup, on the shared
  * post-source-refresh view update (manual all-source, single-source), and on
  * EVERY scheduler-mirror poll tick — background work (autopilot completions,
  * terminal job failures) raises events with no frontend-visible trigger of its
@@ -90,7 +90,7 @@ function sameCollection<T>(a: T[], b: T[]): boolean {
   return a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
 }
 
-export function useAttentionController(licenseCanUseApp: boolean): AttentionController {
+export function useAttentionController(): AttentionController {
   const [events, setEvents] = useState<AttentionEvent[]>([]);
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [loading, setLoading] = useState(false);
@@ -121,9 +121,6 @@ export function useAttentionController(licenseCanUseApp: boolean): AttentionCont
   const refresh = useCallback(() => setRefreshNonce((nonce) => nonce + 1), []);
 
   useEffect(() => {
-    if (!licenseCanUseApp) {
-      return;
-    }
     if (inFlightRef.current) {
       pendingRef.current = true;
       return;
@@ -197,7 +194,7 @@ export function useAttentionController(licenseCanUseApp: boolean): AttentionCont
         setError(String(cause));
         setLoading(false);
       });
-  }, [licenseCanUseApp, refreshNonce]);
+  }, [refreshNonce]);
 
   // A mutation failure re-syncs from the backend (the optimistic flip may be a
   // lie) and rethrows so the calling screen can surface it. Every persistence

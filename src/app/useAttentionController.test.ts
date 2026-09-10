@@ -67,7 +67,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
       event("b", { severity: "routine" }),
       event("c", { seen: true }),
     ]);
-    const { result } = renderHook(() => useAttentionController(true));
+    const { result } = renderHook(() => useAttentionController());
     await waitFor(() => expect(result.current.hydrated).toBe(true));
     expect(result.current.unseenCount).toBe(1);
     expect(result.current.loading).toBe(false);
@@ -79,7 +79,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
   it("exposes the fetched rules as an array, in sync with rulesById", async () => {
     const rule = makeAlertRule("rule_a", "signal_category", "company_1");
     vi.mocked(listAlertRules).mockResolvedValue([rule]);
-    const { result } = renderHook(() => useAttentionController(true));
+    const { result } = renderHook(() => useAttentionController());
     await waitFor(() => expect(result.current.hydrated).toBe(true));
 
     expect(result.current.rules).toEqual([rule]);
@@ -92,7 +92,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
       .mockReturnValueOnce(first.promise) // in-flight when the mutation lands
       .mockResolvedValue([]); // the convergence re-fetch returns the post-dismiss truth
 
-    const { result } = renderHook(() => useAttentionController(true));
+    const { result } = renderHook(() => useAttentionController());
     // The fetch starts asynchronously (behind the mutation-chain gate) — wait
     // until it is genuinely in flight before racing the mutation against it.
     await waitFor(() => expect(listAttentionEvents).toHaveBeenCalledTimes(1));
@@ -115,7 +115,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
 
   it("a failed fetch keeps the last-known-good events and surfaces error — never a false quiet", async () => {
     vi.mocked(listAttentionEvents).mockResolvedValueOnce([event("keep")]);
-    const { result } = renderHook(() => useAttentionController(true));
+    const { result } = renderHook(() => useAttentionController());
     await waitFor(() => expect(result.current.events).toHaveLength(1));
 
     vi.mocked(listAttentionEvents).mockRejectedValueOnce(new Error("db locked"));
@@ -129,7 +129,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
 
   it("a startup failure does NOT hydrate — the recovered backlog stays an un-announced hydration", async () => {
     vi.mocked(listAttentionEvents).mockRejectedValueOnce(new Error("boot race"));
-    const { result } = renderHook(() => useAttentionController(true));
+    const { result } = renderHook(() => useAttentionController());
     await waitFor(() => expect(result.current.error).toContain("boot race"));
     expect(result.current.hydrated).toBe(false);
 
@@ -142,7 +142,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
 
   it("a failed mutation re-syncs from the backend and rejects so screens can surface it", async () => {
     vi.mocked(listAttentionEvents).mockResolvedValue([event("a")]);
-    const { result } = renderHook(() => useAttentionController(true));
+    const { result } = renderHook(() => useAttentionController());
     await waitFor(() => expect(result.current.events).toHaveLength(1));
 
     vi.mocked(dismissAttentionEvent).mockRejectedValueOnce(new Error("write failed"));
@@ -159,7 +159,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
 
   it("an unchanged poll preserves state identity AND stays silent (no loading flip after hydration)", async () => {
     vi.mocked(listAttentionEvents).mockResolvedValue([event("a")]);
-    const { result } = renderHook(() => useAttentionController(true));
+    const { result } = renderHook(() => useAttentionController());
     await waitFor(() => expect(result.current.hydrated).toBe(true));
     const before = result.current.events;
 
@@ -177,7 +177,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
     vi.mocked(listAttentionEvents)
       .mockResolvedValueOnce([event("a", { witnessUrl: null })])
       .mockResolvedValueOnce([event("a", { witnessUrl: "https://gpw.pl/k?id=1" })]);
-    const { result } = renderHook(() => useAttentionController(true));
+    const { result } = renderHook(() => useAttentionController());
     await waitFor(() => expect(result.current.events).toHaveLength(1));
 
     act(() => result.current.refresh());
@@ -196,7 +196,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
     const persist = deferred<void>();
     vi.mocked(dismissAttentionEvent).mockReturnValueOnce(persist.promise);
 
-    const { result } = renderHook(() => useAttentionController(true));
+    const { result } = renderHook(() => useAttentionController());
     await waitFor(() => expect(listAttentionEvents).toHaveBeenCalledTimes(1));
     // While the initial fetch is in flight: an optimistic dismiss (persist
     // pending) AND a refresh that coalesces behind the in-flight fetch.
@@ -231,7 +231,7 @@ describe("useAttentionController — request/mutation sequencing (ADR 0097 dec. 
     const persist = deferred<void>();
     vi.mocked(dismissAttentionEvent).mockReturnValueOnce(persist.promise);
 
-    const { result } = renderHook(() => useAttentionController(true));
+    const { result } = renderHook(() => useAttentionController());
     await waitFor(() => expect(listAttentionEvents).toHaveBeenCalledTimes(1));
     await act(async () => {
       void result.current.dismiss("a").catch(() => {});

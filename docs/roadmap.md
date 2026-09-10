@@ -18,7 +18,6 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Eng
 - Prefer lean, behavior-focused tests over broad brittle suites.
 - Keep secrets in the OS keychain and non-secret settings in SQLite.
 - Use SemVer-style `0.x.y` versions from the first scaffold.
-- The local entitlement module supports optional and future gated entitlements, but normal open-core desktop use does not require a license key.
 
 ## Delivered
 
@@ -155,7 +154,7 @@ Not scheduled.
 
 Goal: full local backup/restore beyond the scoped M20 import/export feature.
 
-Candidate scope: full app-data backup format; restore safety while the app is running; exclusions for secrets, license tokens, logs, diagnostics, metrics, private signing material; cross-version compatibility strategy; manual recovery docs.
+Candidate scope: full app-data backup format; restore safety while the app is running; exclusions for secrets, logs, diagnostics, metrics, private signing material; cross-version compatibility strategy; manual recovery docs.
 
 Not scheduled.
 
@@ -171,7 +170,7 @@ Goal: make unread Inbox activity visible from the Windows taskbar without openin
 
 Candidate scope: dot-style taskbar indicator when unread feed items exist, cleared at zero; unread state routed through a small desktop taskbar indicator boundary; Windows adapter for the real integration; no-op adapter elsewhere; native Windows packaged-app smoke test for appearance/clearing.
 
-Deferred: numeric unread badges; source-failure/license/background-job indicators; non-Windows taskbar behavior.
+Deferred: numeric unread badges; source-failure/background-job indicators; non-Windows taskbar behavior.
 
 Architecture: Inbox publishes unread activity state, not Windows taskbar API calls directly. The desktop boundary must allow later platform adapters/richer attention states without changing Inbox behavior. If Tauri lacks a suitable Windows taskbar overlay/badge API, isolate a Windows-specific native adapter behind the same boundary.
 

@@ -6,7 +6,6 @@ import type {
   CompanySignal,
   CredentialStatus,
   FeedItem,
-  LicenseStatus,
   LocalMetricsSnapshot,
   NotebookEntry,
   SourceAdapter,
@@ -596,24 +595,6 @@ const settings: UserSettings = {
   pinnedCompanyIds: [],
   todayReviewedDays: [],
   mcp: { enabled: false, port: 8317, writesEnabled: false, kpiAcquisitionEnabled: false },
-};
-
-const licenseStatus: LicenseStatus = {
-  status: "valid",
-  canUseApp: true,
-  reason: null,
-  license: {
-    licenseId: "browser_smoke",
-    holder: "Browser Smoke",
-    channel: "author",
-    edition: "author",
-    features: ["core"],
-    issuedAt: "2026-06-01T00:00:00Z",
-    expiresAt: "2027-01-01T00:00:00Z",
-    appVersionRange: "*",
-    keyId: "browser_smoke",
-  },
-  checkedAt: "2026-06-05T09:00:00Z",
 };
 
 const credentialStatus: CredentialStatus = {
@@ -1306,7 +1287,6 @@ function seedBrowserStore(data: ScenarioData) {
   data.notebookEntries = structuredClone(notebookEntries);
   data.events = structuredClone(companyEvents);
   data.settings = structuredClone(settings);
-  data.licenseStatus = structuredClone(licenseStatus);
   data.credentialStatuses = [structuredClone(credentialStatus)];
   data.metricsSnapshot = structuredClone(localMetricsSnapshot);
   data.kpiDefinitions = structuredClone(kpiDefinitions);

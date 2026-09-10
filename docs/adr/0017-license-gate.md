@@ -1,6 +1,6 @@
 # ADR 0017: Local Entitlement Module
 
-Status: Accepted
+Status: **Superseded (2026-09-10) by [ADR 0110](0110-retire-local-entitlement-module.md)** — the entitlement module is removed (#462)
 
 ## Context
 

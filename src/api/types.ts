@@ -88,10 +88,6 @@ export type { MetricLabel } from "./generated/MetricLabel";
 export type { MetricSample } from "./generated/MetricSample";
 export type { LocalMetricsSnapshot } from "./generated/LocalMetricsSnapshot";
 
-export type { LicenseStatusKind } from "./generated/LicenseStatusKind";
-export type { LicenseDisplayMetadata } from "./generated/LicenseDisplayMetadata";
-export type { LicenseStatus } from "./generated/LicenseStatus";
-
 export type { SourceIngestionResult } from "./generated/SourceIngestionResult";
 export type { UnmatchedSourceItem } from "./generated/UnmatchedSourceItem";
 export type { SourceAdapter } from "./generated/SourceAdapter";

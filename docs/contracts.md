@@ -1639,13 +1639,13 @@ Field reference:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `module` | enum | `ai_analysis`\|`external_ai`\|`sources`\|`scheduler`\|`credentials`\|`storage`\|`transcripts`\|`shortcuts`\|`locale`\|`licensing`\|`packaging` |
+| `module` | enum | `ai_analysis`\|`external_ai`\|`sources`\|`scheduler`\|`credentials`\|`storage`\|`transcripts`\|`shortcuts`\|`locale`\|`packaging` |
 | `scope.type` | string | entity category, e.g. `ai_analysis_job`, `feed_item`, `source_adapter`, `transcript_job`, `setting`, `shortcut_action` |
 | `scope.id` | string\|null | stable local id (never a title/URL/prompt/source text/provider snippet); null only when the event is truly global to the module |
 | `stage` | string | stable snake_case, never encoding dynamic values; past-tense for completed steps (`context_loaded`, `provider_resolved`, `credential_checked`, `request_sent`, `response_received`, `result_stored`, `failed`) or job-lifecycle for async work (`queued`, `running`, `succeeded`, `cancelled`, `failed`); reused across modules when the meaning matches |
 | `severity` | enum | `debug`\|`info`\|`warning`\|`error` |
 | `message` | string | human-readable summary |
-| `metadata` | JSON object | structured, small enough for a timeline row/detail panel; may hold stable IDs, provider IDs, model names, adapter IDs, status values, durations, counts, timeouts, retry counts, error classes, booleans; must never hold API keys, full prompts, full source bodies, full transcript text, raw provider responses, or license secrets — redacted before persistence, with a `[redacted]` marker where omission would confuse |
+| `metadata` | JSON object | structured, small enough for a timeline row/detail panel; may hold stable IDs, provider IDs, model names, adapter IDs, status values, durations, counts, timeouts, retry counts, error classes, booleans; must never hold API keys, full prompts, full source bodies, full transcript text, raw provider responses, or private signing material — redacted before persistence, with a `[redacted]` marker where omission would confuse |
 
 The event shape stays cheap to map to future OpenTelemetry-style event/span fields, but M14 does not implement OpenTelemetry exporters or remote reporting.
 
@@ -1774,7 +1774,7 @@ Rules:
 - Log level is configurable in Settings and may be overridden by local environment for development.
 - Rotation limits are configurable in Settings and default to five files of five MiB each.
 - Logs use the shared observability redaction policy before writing fields.
-- Logs must not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default.
+- Logs must not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, or private signing material by default.
 - Diagnostics may expose a full in-app log viewer, copy-redacted-log action, log status, and open-logs-folder action only while Developer mode is active.
 - React may call typed commands for log status, redacted log reads, and opening the app-owned logs directory. It must not receive arbitrary filesystem browsing capability.
 
@@ -1786,58 +1786,7 @@ Commands:
 
 ## Entitlements
 
-Brawler keeps a local entitlement module for optional or future gated capabilities. Public-opening work makes the open desktop core usable without a license token. The module does not add hosted activation, billing, telemetry, or cloud accounts.
-
-License status read model:
-
-```json
-{
-  "status": "valid",
-  "canUseApp": true,
-  "reason": null,
-  "license": {
-    "licenseId": "lic_example_001",
-    "holder": "Example User",
-    "channel": "example",
-    "edition": "example",
-    "features": ["example_feature"],
-    "issuedAt": "2026-06-01T00:00:00Z",
-    "expiresAt": "2099-01-01T00:00:00Z",
-    "appVersionRange": "*",
-    "keyId": "example_key"
-  },
-  "checkedAt": "2026-06-04T10:00:00Z"
-}
-```
-
-Allowed `status` values:
-
-- `valid`
-- `missing`
-- `invalid`
-- `expired`
-- `wrong_version`
-- `unsupported_version`
-- `storage_error`
-
-Typed commands:
-
-- `get_license_status() -> LicenseStatus`
-- `submit_license_key({ licenseKey }) -> LicenseStatus`
-- `clear_license_key() -> LicenseStatus`
-
-Rules (keychain/`license_metadata` split and the never-overwrite/never-store-secrets storage rules are canonical in [Data Model § Entitlements](data-model.md#entitlements)):
-
-- Normal app navigation requires `canUseApp = true`; public-opening policy sets `canUseApp = true` for missing, invalid, expired, wrong-version, unsupported-version, and storage-error entitlement states so the open core remains usable.
-- Missing, malformed, tampered, expired, unsupported-version, unsupported-channel, and storage-error states must remain recoverable through Settings.
-- Supported channels are build-policy specific; unsupported channels are invalid for that build.
-- Public-opening entitlement tokens are optional for normal open-core use.
-- `appVersionRange` remains compatibility metadata and may be `*` for channels that are not app-version bounded.
-- Future entitlement channels may opt into app-version limits through the existing `appVersionRange` policy path.
-- `submit_license_key` validates the token offline before saving it.
-- React receives only `LicenseStatus`; it never receives private signing material.
-- Logs, diagnostics, metrics, settings export, tests, and UI state must not include full license tokens, private signing material, or raw private key material.
-- Future paid feature, subscription, or hosted activation policies must be added as entitlement-policy or verifier/storage adapters and require a later ADR when they introduce hosted services or billing.
+Retired ([ADR 0110](adr/0110-retire-local-entitlement-module.md), #462): the local entitlement module, its three commands and the Settings › License tab are gone; the open desktop core never depended on a license token. A future gated feature starts from a new ADR.
 
 ## Global Search
 
@@ -2000,7 +1949,6 @@ Other rules:
 - Settings must let the user switch the app locale between English and Polish; locale handling is an extensible app-locale boundary so future locales are added through resources/configuration, not per-screen rewrites. Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies retain their original or user-entered language.
 - Settings must show that `provider_gemini` is selected only for YouTube transcription; must show whether transcription credentials are configured; must let the user save/replace/clear the Gemini API key used only for transcription; must disclose before use that starting a transcript job sends the YouTube URL and video content to Gemini.
 - Settings must let the user configure, disable, and reset every defined shortcut action through stable shortcut action IDs. Shortcut binding overrides are stored as a JSON object keyed by action ID (missing entries use the current default). Shortcut conflicts must be visible before an enabled binding can silently shadow another enabled action.
-- Settings/About must show local license status and allow valid users to inspect safe metadata, replace the token, and clear the token.
 - SQLite is the runtime source of truth for settings. YAML is allowed for settings import/export/bootstrap (allowlisted non-secret settings only) but must never contain secrets; API keys and provider secrets live in the OS keychain. `.env`/environment-variable API key fallback is allowed for local development and tests only.
 
 ## Provider Credential Status
@@ -2796,7 +2744,7 @@ Rules:
 - Membership companies must resolve from existing companies, companies included in the import, or an explicit future repair result. Placeholder companies are not created.
 - Notebook entries import for existing or included companies. Duplicate notebook entry IDs are skipped with preview warnings.
 - Notebook origins preserve source URL and label metadata even when referenced feed/transcript records are not part of M20 export.
-- Provider secrets, API keys, license tokens, private signing material, logs, diagnostics, metrics, feed items, transcripts, and full backup data are excluded.
+- Provider secrets, API keys, private signing material, logs, diagnostics, metrics, feed items, transcripts, and full backup data are excluded.
 - Review checkpoints are excluded from research import/export because they are local review-progress state. Research questions and evidence links are included because they are user-owned research content.
 
 Initial `refresh_gpw_company_registry` behavior:

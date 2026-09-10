@@ -110,7 +110,7 @@ per feature.
 - **[Settings](settings.md)** — app-wide preferences: appearance, source
   polling and history depth, transcription, credentials, import/export,
   keyboard shortcuts, logs, data storage and background work, the MCP
-  server, and your license.
+  server.
 
 ## A note on what Brawler is — and isn't
 

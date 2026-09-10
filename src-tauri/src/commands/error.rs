@@ -124,7 +124,6 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::InvalidTranscriptValue { .. } => InvalidInput,
         StorageError::InvalidAiAnalysisValue { .. } => InvalidInput,
         StorageError::InvalidDiagnosticValue { .. } => InvalidInput,
-        StorageError::InvalidLicenseValue { .. } => InvalidInput,
         StorageError::InvalidSourceValue { .. } => InvalidInput,
         StorageError::InvalidResearchValue { .. } => InvalidInput,
         StorageError::InvalidFinancialsValue { .. } => InvalidInput,

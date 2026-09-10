@@ -19,8 +19,6 @@ import type {
   DiagnosticSummary,
   FeedItem,
   PresentationKind,
-  LicenseStatus,
-  LicenseStatusKind,
   LocalMetricsSnapshot,
   LogEntry,
   LogStatus,
@@ -1823,29 +1821,6 @@ export function makeUserSettings(): UserSettings {
     pinnedCompanyIds: [],
     todayReviewedDays: [],
     mcp: { enabled: false, port: 8317, writesEnabled: false, kpiAcquisitionEnabled: false },
-  };
-}
-
-export function makeLicenseStatus(kind: LicenseStatusKind): LicenseStatus {
-  const valid = kind === "valid";
-  return {
-    status: kind,
-    canUseApp: valid,
-    reason: valid ? null : `License is ${kind}`,
-    license: valid
-      ? {
-          licenseId: "lic_sample_0001",
-          holder: "Sample Holder",
-          channel: "direct",
-          edition: "standard",
-          features: ["research", "transcripts"],
-          issuedAt: SAMPLE_NOW,
-          expiresAt: "2027-06-08T10:00:00Z",
-          appVersionRange: ">=0.40.0 <1.0.0",
-          keyId: "key_sample_01",
-        }
-      : null,
-    checkedAt: SAMPLE_NOW,
   };
 }
 

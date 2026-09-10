@@ -22,7 +22,6 @@ pub mod health;
 pub mod history_sweep;
 pub mod import_export;
 pub mod insider;
-pub mod licensing;
 pub mod logs;
 pub mod management_claims;
 pub mod market_data;
