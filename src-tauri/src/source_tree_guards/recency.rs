@@ -18,7 +18,9 @@
 //! Ceilings: literal-split fragments are invisible; the enclosing-fn lookup
 //! is a text heuristic (no brace-depth tracking); a comparator built from a
 //! `created_at` value bound to a local first (`let t = x.created_at; …
-//! .cmp(&t)`) is invisible to the window scan.
+//! .cmp(&t)`), a bare `a.created_at > b.created_at`, or a `created_at`
+//! merely read near an unrelated `.cmp(` (pinned as
+//! `NotRankedOnCreatedAt`) are the window scan's known blind spots.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -528,14 +530,18 @@ mod scanner_tests {
 // ---------------------------------------------------------------------------
 
 /// Every Rust site that ranks on `created_at` today, reviewed and pinned
-/// `(file, fn, Reason)` — same ratchet idiom as [`ALLOWED`]: a listed site
-/// that vanishes must be deleted; a new one fails loud.
-const ALLOWED_COMPARATORS: &[(&str, &str, Reason)] = &[
+/// `(file, fn, sites, Reason)` — `sites` is how many distinct comparison
+/// expressions in that fn read `created_at`; same ratchet idiom as
+/// [`ALLOWED`]: a listed fn that vanishes must be deleted, a fn with MORE
+/// sites than pinned fails loud (an unreviewed comparator inside an exempted
+/// fn), a new fn fails loud.
+const ALLOWED_COMPARATORS: &[(&str, &str, u8, Reason)] = &[
     // The attachments of ONE filing, newest registered first — artifacts of
     // the same publication event, not competing "latest" candidates.
     (
         "jobs/insider_attachment.rs",
         "process_filing",
+        1,
         Reason::SharedPublicationEvent,
     ),
     // `entries.sort_by_key(Reverse(modified))` ranks backup files by mtime;
@@ -543,6 +549,7 @@ const ALLOWED_COMPARATORS: &[(&str, &str, Reason)] = &[
     (
         "storage/backup.rs",
         "collect_status",
+        1,
         Reason::NotRankedOnCreatedAt,
     ),
 ];
@@ -562,7 +569,7 @@ fn comparator_marker() -> &'static regex::Regex {
     static MARKER: OnceLock<regex::Regex> = OnceLock::new();
     MARKER.get_or_init(|| {
         regex::Regex::new(
-            r"sort_by\(|sort_by_key\(|sort_unstable_by\(|sort_unstable_by_key\(|max_by\(|max_by_key\(|min_by\(|min_by_key\(|Reverse\(|\.cmp\(|partial_cmp\(",
+            r"sort_by\(|sort_by_key\(|sort_by_cached_key\(|sort_unstable_by\(|sort_unstable_by_key\(|max_by\(|max_by_key\(|min_by\(|min_by_key\(|Reverse\(|\.cmp\(|partial_cmp\(",
         )
         .expect("valid regex")
     })
@@ -614,23 +621,25 @@ fn created_at_comparator_offsets(content: &str) -> Vec<usize> {
     offsets
 }
 
-/// `(file, fn)` of every Rust `created_at` comparator in one file's
-/// (test-span-stripped) content, one entry per fn.
-fn comparator_sites_in_file(rel: &str, content: &str) -> Vec<(String, String)> {
-    let mut sites: Vec<(String, String)> = Vec::new();
+/// `(file, fn, sites)` for every fn in one file's (test-span-stripped)
+/// content that ranks on `created_at` — `sites` counts distinct comparison
+/// expressions (window-folded), so a second comparator added to an exempted
+/// fn is visible to the ratchet.
+fn comparator_sites_in_file(rel: &str, content: &str) -> Vec<(String, String, u8)> {
+    let mut sites: Vec<(String, String, u8)> = Vec::new();
     for offset in created_at_comparator_offsets(content) {
         let Some(function) = enclosing_fn_name(content, offset) else {
             continue;
         };
-        if sites.iter().any(|(_, f)| *f == function) {
-            continue;
+        match sites.iter_mut().find(|(_, f, _)| *f == function) {
+            Some(entry) => entry.2 += 1,
+            None => sites.push((rel.to_string(), function, 1)),
         }
-        sites.push((rel.to_string(), function));
     }
     sites
 }
 
-fn find_comparator_sites() -> Vec<(String, String)> {
+fn find_comparator_sites() -> Vec<(String, String, u8)> {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let src_dir = manifest_dir.join("src");
     let mut sites = Vec::new();
@@ -657,28 +666,40 @@ fn recency_selection_never_ranks_on_created_at_in_rust() {
     let sites = find_comparator_sites();
     let mut violations = Vec::new();
 
-    for (file, function) in &sites {
-        let allowed = ALLOWED_COMPARATORS
+    for (file, function, count) in &sites {
+        let pinned = ALLOWED_COMPARATORS
             .iter()
-            .any(|(f, func, _reason)| f == file && func == function);
-        if !allowed {
-            violations.push(format!(
-                "{file}:{function}: a Rust comparator ranks on created_at — domain \
-                 recency must order by the DOMAIN date (a document's \
-                 disclosure_key(), a fact's canonical_fact_rank(), a period's \
-                 end date), never created_at (data-model.md § Model principles, \
-                 guardrail d60305c, #496). Fix the comparator, or add a reviewed \
-                 entry to ALLOWED_COMPARATORS with a Reason"
-            ));
+            .find(|(f, func, _sites, _reason)| f == file && func == function)
+            .map(|(_, _, sites, _)| *sites);
+        match pinned {
+            Some(pinned) if pinned >= *count => {}
+            _ => violations.push(format!(
+                "{file}:{function} ({count} comparison site(s), pinned {}): a Rust \
+                 comparator ranks on created_at — domain recency must order by the \
+                 DOMAIN date (a document's disclosure_key(), a fact's \
+                 canonical_fact_rank(), a period's end date), never created_at \
+                 (data-model.md § Model principles, guardrail d60305c, #496). Fix \
+                 the comparator, or add a reviewed entry to ALLOWED_COMPARATORS \
+                 with a Reason",
+                pinned.map_or("none".to_owned(), |p| p.to_string())
+            )),
         }
     }
-    for (file, function, reason) in ALLOWED_COMPARATORS {
-        let still_matches = sites.iter().any(|(f, func)| f == file && func == function);
-        if !still_matches {
-            violations.push(format!(
+    for (file, function, pinned, reason) in ALLOWED_COMPARATORS {
+        let found = sites
+            .iter()
+            .find(|(f, func, _)| f == file && func == function)
+            .map(|(_, _, count)| *count);
+        match found {
+            Some(count) if count == *pinned => {}
+            Some(count) => violations.push(format!(
+                "{file}:{function} ({reason:?}): {count} comparison site(s) but {pinned} \
+                 pinned — ratchet the pin down to {count} (per-site ratchet)"
+            )),
+            None => violations.push(format!(
                 "{file}:{function} ({reason:?}): no longer a created_at comparator \
                  site — delete this entry from ALLOWED_COMPARATORS (per-site ratchet)"
-            ));
+            )),
         }
     }
 
@@ -698,7 +719,7 @@ mod comparator_scanner_tests {
         let source = "fn rank(d: &Doc) -> (u8, std::cmp::Reverse<String>) {\n    (0, std::cmp::Reverse(d.created_at.clone()))\n}\n";
         assert_eq!(
             comparator_sites_in_file("x.rs", source),
-            vec![("x.rs".to_string(), "rank".to_string())]
+            vec![("x.rs".to_string(), "rank".to_string(), 1)]
         );
     }
 
@@ -708,7 +729,24 @@ mod comparator_scanner_tests {
         assert_eq!(created_at_comparator_offsets(source).len(), 1);
         assert_eq!(
             comparator_sites_in_file("x.rs", source),
-            vec![("x.rs".to_string(), "pick".to_string())]
+            vec![("x.rs".to_string(), "pick".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn two_separate_comparisons_in_one_fn_count_as_two_sites() {
+        let source = concat!(
+            "fn pick(c: &mut Vec<Doc>, d: &mut Vec<Doc>) {\n",
+            "    c.sort_by_cached_key(|x| x.created_at.clone());\n",
+            "    let _ = c.len(); let _ = c.len(); let _ = c.len(); let _ = c.len();\n",
+            "    let _ = c.len(); let _ = c.len(); let _ = c.len(); let _ = c.len();\n",
+            "    let _ = c.len(); let _ = c.len(); let _ = c.len(); let _ = c.len();\n",
+            "    d.sort_by_key(|x| std::cmp::Reverse(x.created_at.clone()));\n",
+            "}\n",
+        );
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "pick".to_string(), 2)]
         );
     }
 

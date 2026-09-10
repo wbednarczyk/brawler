@@ -680,31 +680,48 @@ function ensureOwnershipOverview(
 // a late re-fetch. Falls back to when we actually saw it (fetchedAt), then to
 // when the row was inserted (createdAt).
 function disclosureKey(doc: ScenarioData["reportDocuments"][number]): string {
-  const emitentMonth = doc.url.match(/\/emitent\/(\d{4})-(0[1-9]|1[0-2])\//);
-  if (emitentMonth) return `${emitentMonth[1]}-${emitentMonth[2]}-01`;
-  if (doc.fetchedAt) return doc.fetchedAt.slice(0, 10);
-  return doc.createdAt.slice(0, 10);
+  // Rust `disclosure_month_from_url`: only the FIRST `/emitent/` segment is
+  // examined; it must read exactly `YYYY-MM/` with MM in 01..12.
+  const marker = doc.url.indexOf("/emitent/");
+  if (marker >= 0) {
+    const month = doc.url.slice(marker + "/emitent/".length).match(/^(\d{4})-(0[1-9]|1[0-2])\//);
+    if (month) return `${month[1]}-${month[2]}-01`;
+  }
+  if (doc.fetchedAt && doc.fetchedAt.length >= 10) return doc.fetchedAt.slice(0, 10);
+  return doc.createdAt.length >= 10 ? doc.createdAt.slice(0, 10) : doc.createdAt;
+}
+
+/** Byte-wise string order — what SQLite `ORDER BY` and Rust `str::cmp` do;
+ * `localeCompare` would put `a_1` before `a1`, the backend does the reverse. */
+function cmpStr(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function byDisclosureThenId(
   a: ScenarioData["reportDocuments"][number],
   b: ScenarioData["reportDocuments"][number],
 ): number {
-  return disclosureKey(b).localeCompare(disclosureKey(a)) || a.id.localeCompare(b.id);
+  return cmpStr(disclosureKey(b), disclosureKey(a)) || cmpStr(a.id, b.id);
 }
 
 // The period's OWN domain date (periodEndDate, falling back to fiscalYear's
-// implied FY-end) — never the fact's created_at. A fact whose period was
-// deleted/missing sorts last (empty key).
+// implied FY-end) — never the fact's created_at. Callers drop facts whose
+// period is missing first (`hasPeriod`: the Rust read is an INNER JOIN).
 function factPeriodKey(d: ScenarioData, fact: ScenarioData["financialFacts"][number]): string {
   const period = d.financialPeriods.find((p) => p.id === fact.periodId);
   return period ? (period.periodEndDate ?? `${period.fiscalYear}-12-31`) : "";
 }
 
 // fiscalYear DESC tiebreak (two periods can share an explicit periodEndDate
-// while differing in fiscalYear) — a fact whose period is missing sorts last.
+// while differing in fiscalYear).
 function factPeriodFiscalYear(d: ScenarioData, fact: ScenarioData["financialFacts"][number]): number {
   return d.financialPeriods.find((p) => p.id === fact.periodId)?.fiscalYear ?? -Infinity;
+}
+
+/** Mirrors `list_financial_facts`' `JOIN financial_periods`: a fact whose
+ * period row is gone is not returned at all. */
+function hasPeriod(d: ScenarioData, fact: ScenarioData["financialFacts"][number]): boolean {
+  return d.financialPeriods.some((p) => p.id === fact.periodId);
 }
 
 // Same final/reported/consolidated/total canonical-rank tuple factMatrix.ts
@@ -731,11 +748,11 @@ function byFactCanonicalOrder(
   d: ScenarioData,
 ): (a: ScenarioData["financialFacts"][number], b: ScenarioData["financialFacts"][number]) => number {
   return (a, b) =>
-    factPeriodKey(d, b).localeCompare(factPeriodKey(d, a)) ||
+    cmpStr(factPeriodKey(d, b), factPeriodKey(d, a)) ||
     factPeriodFiscalYear(d, b) - factPeriodFiscalYear(d, a) ||
     compareRank(factCanonicalRank(a), factCanonicalRank(b)) ||
-    a.metricKey.localeCompare(b.metricKey) ||
-    a.id.localeCompare(b.id);
+    cmpStr(a.metricKey, b.metricKey) ||
+    cmpStr(a.id, b.id);
 }
 
 /** First occurrence per metricKey wins — `facts` must already be in the
@@ -1117,15 +1134,16 @@ function buildHandlers(): Record<string, Handler> {
       const latestPeriodFacts = latestPeriod
         ? {
             periodLabel: `${latestPeriod.periodType} ${latestPeriod.fiscalYear}`,
-            // Mirrors the Rust read model's period → canonical → metricKey →
-            // id ordering, one fact per metric key, bounded sample — the
-            // corpus only pins primitives, so keep this in sync by hand (sol
-            // F1 finding 4).
+            // Mirrors the Rust read model (owner decision A, #496): the
+            // canonical fact per metric key, then ALPHABETICAL by key, capped
+            // at 6 — a bounded sample, not a rank; keep in sync by hand (the
+            // corpus only pins primitives; sol F1 finding 4).
             facts: dedupeByMetricKey(
               d.financialFacts
                 .filter((f) => f.periodId === latestPeriod.id)
                 .sort(byFactCanonicalOrder(d)),
             )
+              .sort((x, y) => cmpStr(x.metricKey, y.metricKey))
               .slice(0, 6)
               .map((f) => ({
                 metricKey: f.metricKey,
@@ -2793,6 +2811,7 @@ function buildHandlers(): Record<string, Handler> {
       return d.financialFacts
         .filter(
           (f) =>
+            hasPeriod(d, f) &&
             (!companyId || f.companyId === companyId) &&
             (!periodId || f.periodId === periodId),
         )

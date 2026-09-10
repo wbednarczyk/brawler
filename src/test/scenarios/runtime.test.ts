@@ -681,6 +681,22 @@ describe("financial/report ordering — domain date, not created_at (#496 slice 
         fetchedAt: null,
         createdAt: "2022-01-01T00:00:00Z",
       },
+      {
+        ...base,
+        id: "doc_short_fetched",
+        url: "https://example.test/ir/deck.pdf",
+        fetchedAt: "2025", // shorter than a date — Rust falls through to createdAt
+        createdAt: "2019-05-05T00:00:00Z",
+      },
+      {
+        ...base,
+        id: "doc_repeated_marker",
+        // Only the FIRST /emitent/ segment is examined (Rust parity): it is not
+        // a month, so the later valid one does not count.
+        url: "https://bankier.pl/emitent/archive/emitent/2026-01/late.pdf",
+        fetchedAt: null,
+        createdAt: "2018-02-02T00:00:00Z",
+      },
     ];
     runtime.data = {
       ...runtime.data,
@@ -688,7 +704,14 @@ describe("financial/report ordering — domain date, not created_at (#496 slice 
     } as typeof runtime.data;
 
     // disclosure key DESC: 2025-09 (id ASC tiebreak) > 2025-08-10 (fetchedAt) > 2024-03 — ignores createdAt entirely.
-    const expectedOrder = ["doc_same_month_a", "doc_same_month_b", "doc_fetched", "doc_old_month_new_created"];
+    const expectedOrder = [
+      "doc_same_month_a",
+      "doc_same_month_b",
+      "doc_fetched",
+      "doc_old_month_new_created",
+      "doc_short_fetched",
+      "doc_repeated_marker",
+    ];
 
     const list = (await runtime.invoke("list_report_documents", { companyId: cid })) as { id: string }[];
     expect(list.map((d) => d.id)).toEqual(expectedOrder);
@@ -751,7 +774,25 @@ describe("financial/report ordering — domain date, not created_at (#496 slice 
         id: "fact_missing",
         periodId: "period_does_not_exist_496",
         metricKey: "zzz",
-        createdAt: "2026-06-01T00:00:00Z", // newest createdAt of all — must still sort LAST
+        createdAt: "2026-06-01T00:00:00Z", // no period row — the Rust INNER JOIN drops it
+      },
+      // Byte-wise metricKey order (SQLite/Rust): "a1" < "a_1" — localeCompare
+      // would reverse them.
+      {
+        ...baseFact,
+        ...goodRank,
+        id: "fact_a_underscore",
+        periodId: periodNew.id,
+        metricKey: "a_1",
+        createdAt: "2020-01-01T00:00:00Z",
+      },
+      {
+        ...baseFact,
+        ...goodRank,
+        id: "fact_a1",
+        periodId: periodNew.id,
+        metricKey: "a1",
+        createdAt: "2021-01-01T00:00:00Z",
       },
     ];
     runtime.data = {
@@ -762,11 +803,12 @@ describe("financial/report ordering — domain date, not created_at (#496 slice 
 
     const result = (await runtime.invoke("list_financial_facts", { companyId: cid })) as { id: string }[];
     expect(result.map((f) => f.id)).toEqual([
+      "fact_a1",
+      "fact_a_underscore",
       "fact_c_total",
       "fact_new_period_old_created",
       "fact_d_owners",
       "fact_old_period_new_created",
-      "fact_missing",
     ]);
   });
 
@@ -800,21 +842,32 @@ describe("financial/report ordering — domain date, not created_at (#496 slice 
       valueNumeric: "999",
       createdAt: "2026-06-01T00:00:00Z", // newest createdAt — must NOT shadow the canonical sibling
     };
+    // A key whose ONLY fact is preliminary still gets its slot, and sorting
+    // first alphabetically it is not pushed out by final-but-later keys
+    // (owner decision A: alphabetical bounded sample, not a rank).
+    const preliminaryOnly = {
+      ...baseFact,
+      periodId: period.id,
+      metricKey: "a_prelim_only",
+      id: "fact_ctx_a_prelim_only",
+      dataQuality: "preliminary",
+      valueNumeric: "50",
+      createdAt: "2024-01-01T00:00:00Z",
+    };
     runtime.data = {
       ...runtime.data,
       financialPeriods: [...runtime.data.financialPeriods, period],
-      financialFacts: [...runtime.data.financialFacts, ...good, staleSibling],
+      financialFacts: [...runtime.data.financialFacts, ...good, staleSibling, preliminaryOnly],
     } as typeof runtime.data;
 
     const context = (await runtime.invoke("get_company_context", { companyId: cid })) as CompanyContext;
-    expect(context.latestPeriodFacts?.facts.map((f) => f.metricKey)).toEqual([
-      "metric_1",
-      "metric_2",
-      "metric_3",
-      "metric_4",
-      "metric_5",
-      "metric_6",
+    expect(context.latestPeriodFacts?.facts.map((f) => [f.metricKey, f.valueNumeric])).toEqual([
+      ["a_prelim_only", "50"],
+      ["metric_1", "100"],
+      ["metric_2", "101"],
+      ["metric_3", "102"],
+      ["metric_4", "103"],
+      ["metric_5", "104"],
     ]);
-    expect(context.latestPeriodFacts?.facts.find((f) => f.metricKey === "metric_1")?.valueNumeric).toBe("100");
   });
 });

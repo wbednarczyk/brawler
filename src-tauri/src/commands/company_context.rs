@@ -149,7 +149,7 @@ pub fn compute_company_context(
             // IS its canonical fact — dedup keeps that one and drops later
             // (non-canonical) siblings, never a `created_at`-latest one.
             let mut seen_metrics = std::collections::HashSet::new();
-            let facts = state
+            let mut representatives: Vec<_> = state
                 .financials()
                 .list_financial_facts(ListFinancialFactsInput {
                     company_id: Some(company_id.to_owned()),
@@ -158,13 +158,17 @@ pub fn compute_company_context(
                 })
                 .map_err(|error| error.to_string())?
                 .into_iter()
+                // The list is canonical-first per metric, so the first fact per
+                // key IS that key's canonical representative.
                 .filter(|fact| seen_metrics.insert(fact.metric_key.clone()))
-                // A bounded sample of the period's distinct metrics (owner
-                // decision A): at most MAX_LATEST_PERIOD_FACTS keys. Ties in
-                // canonical rank collapse to metric_key order, so this reads
-                // as alphabetical by metric key in the common case where every
-                // fact in the period shares the same rank.
-                .take(MAX_LATEST_PERIOD_FACTS)
+                .collect();
+            // Owner decision A: a bounded sample of the period's distinct
+            // metrics, alphabetical by key — never a relevance ranking, and a
+            // key whose only fact is preliminary still gets its slot.
+            representatives.sort_by(|a, b| a.metric_key.cmp(&b.metric_key));
+            representatives.truncate(MAX_LATEST_PERIOD_FACTS);
+            let facts = representatives
+                .into_iter()
                 .map(|fact| CompanyContextFact {
                     metric_key: fact.metric_key,
                     value_numeric: fact.value_numeric,
@@ -703,7 +707,21 @@ mod tests {
             None,
         );
 
-        // 5 more distinct metrics, one fact each — 7 distinct metric keys total.
+        // A metric whose ONLY fact is preliminary still earns its slot (it is
+        // that key's canonical representative) and, sorting first, must not be
+        // pushed out by lower-ranked-but-final siblings (astra r1 finding 1).
+        let a_prelim = definition(&state, &company_id, "a_prelim_only");
+        seed(
+            &state,
+            &company_id,
+            &period_id,
+            &a_prelim,
+            "50",
+            None,
+            Some("preliminary"),
+        );
+
+        // 5 more distinct metrics, one fact each — 8 distinct metric keys total.
         for i in 2..7 {
             let def = definition(&state, &company_id, &format!("metric_{i}"));
             seed(
@@ -725,12 +743,21 @@ mod tests {
             "capped at MAX_LATEST_PERIOD_FACTS: {facts:?}"
         );
 
-        let metric_keys: std::collections::HashSet<_> =
-            facts.iter().map(|f| f.metric_key.clone()).collect();
+        let sample: Vec<(&str, &str)> = facts
+            .iter()
+            .map(|f| (f.metric_key.as_str(), f.value_numeric.as_str()))
+            .collect();
         assert_eq!(
-            metric_keys.len(),
-            6,
-            "every metric key in the sample must be unique: {facts:?}"
+            sample,
+            vec![
+                ("a_prelim_only", "50"),
+                ("metric_0", "100"),
+                ("metric_1", "101"),
+                ("metric_2", "102"),
+                ("metric_3", "103"),
+                ("metric_4", "104"),
+            ],
+            "alphabetical by metric key, one canonical fact per key: {facts:?}"
         );
         for wrong_value in ["991", "992"] {
             assert!(

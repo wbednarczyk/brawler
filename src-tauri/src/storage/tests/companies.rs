@@ -539,6 +539,19 @@ fn latest_shares_outstanding_prefers_total_attribution_over_a_later_owners_of_pa
             .expect("fact should create");
     }
 
+    // Make the insert order unmistakable: `owners_of_parent` written a day
+    // AFTER `total` (the owner-DB shape) — a `created_at DESC` pick reddens.
+    {
+        let raw = state.checkout_for_tests().expect("raw connection");
+        raw.execute(
+            "UPDATE financial_facts SET created_at = CASE attribution
+                 WHEN 'total' THEN '2026-09-02T10:00:00Z' ELSE '2026-09-03T10:00:00Z' END
+             WHERE company_id = ?1",
+            [&company.id],
+        )
+        .expect("stamp created_at");
+    }
+
     let (value, label) = state
         .companies()
         .latest_shares_outstanding(&company.id)
