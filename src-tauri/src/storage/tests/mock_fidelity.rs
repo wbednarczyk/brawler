@@ -1054,6 +1054,10 @@ fn rust_backend_satisfies_the_fidelity_corpus() {
             }
             if let Some(field) = step.get("expectField") {
                 assert!(
+                    field.as_object().is_some_and(|map| !map.is_empty()),
+                    "[{name}] {command}: an empty expectField asserts nothing — name the fields (or use expectKeys)"
+                );
+                assert!(
                     is_superset(&result, field),
                     "[{name}] {command}: result {result} is missing {field}"
                 );
@@ -1062,6 +1066,10 @@ fn rust_backend_satisfies_the_fidelity_corpus() {
             // object — the same step field the TS replayer reads, for read
             // models whose values legitimately differ between the two sides.
             if let Some(keys) = step.get("expectKeys").and_then(Value::as_array) {
+                assert!(
+                    !keys.is_empty(),
+                    "[{name}] {command}: an empty expectKeys asserts nothing"
+                );
                 for key in keys {
                     let key = key.as_str().expect("expectKeys entries are strings");
                     assert!(

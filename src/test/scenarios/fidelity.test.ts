@@ -122,12 +122,22 @@ describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
 
         if (step.capture) caps[step.capture] = (result as { id: unknown }).id;
         if (step.expectField) {
+          // An empty expectation is membership theatre, never coverage
+          // (#463 review) — both replayers refuse it.
+          expect(
+            Object.keys(step.expectField).length,
+            `${step.command} expectField is empty`,
+          ).toBeGreaterThan(0);
           expect(
             isSuperset(result, step.expectField),
             `${step.command} expectField`,
           ).toBe(true);
         }
         if (step.expectKeys) {
+          expect(
+            step.expectKeys.length,
+            `${step.command} expectKeys is empty`,
+          ).toBeGreaterThan(0);
           const object = result as Record<string, unknown>;
           for (const key of step.expectKeys) {
             expect(
