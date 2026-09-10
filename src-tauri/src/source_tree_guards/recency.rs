@@ -20,9 +20,11 @@
 //! `created_at` value bound to a local first (`let t = x.created_at; …
 //! .cmp(&t)`) and a bare `a.created_at > b.created_at` are the scan's known
 //! blind spots; the window never crosses a `;` at the read's own depth (a
-//! closure body's tail expression still belongs to the comparator that owns
-//! the closure), so a `.cmp(` in the next statement cannot vouch for a plain
-//! read in this one.
+//! closure body's tail expression — `|d| {` or `|d| -> T {` — still belongs
+//! to the comparator that owns the closure; a block opened any other way is
+//! a statement boundary), so a `.cmp(` in the next statement cannot vouch
+//! for a plain read in this one. Punctuation-level, not syntax-aware: it is
+//! a ratchet for the shapes the codebase actually writes, reviewed per pin.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -597,17 +599,29 @@ fn owning_closure_open(code: &str, pos: usize) -> Option<usize> {
         match bytes[i] {
             b'}' => depth += 1,
             b'{' if depth > 0 => depth -= 1,
-            b'{' => {
-                let mut j = i;
-                while j > 0 && bytes[j - 1].is_ascii_whitespace() {
-                    j -= 1;
-                }
-                return (j > 0 && bytes[j - 1] == b'|').then_some(i);
-            }
+            b'{' => return opens_a_closure_body(code, i).then_some(i),
             _ => {}
         }
     }
     None
+}
+
+/// Whether the `{` at `open` starts a closure body: it follows a parameter
+/// list `|…|`, either directly (`|d| {`) or through an explicit return type
+/// (`|d| -> String {`). Looks back within the same statement only.
+fn opens_a_closure_body(code: &str, open: usize) -> bool {
+    let head = code[..open].trim_end();
+    if head.ends_with('|') {
+        return true;
+    }
+    let Some(arrow) = head.rfind("->") else {
+        return false;
+    };
+    let return_type = &head[arrow + 2..];
+    if return_type.contains([';', '{', '}']) {
+        return false;
+    }
+    head[..arrow].trim_end().ends_with('|')
 }
 
 /// Start of the statement that owns the read at `pos`: the byte after the
@@ -835,6 +849,23 @@ mod comparator_scanner_tests {
         let source = concat!(
             "fn pick(docs: &mut Vec<Doc>) {\n",
             "    docs.sort_by_key(|d| {\n",
+            "        let _ = d.id.len();\n",
+            "        d.created_at.clone()\n",
+            "    });\n",
+            "}\n",
+        );
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "pick".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_closure_with_an_explicit_return_type_is_still_one_site() {
+        // astra r5: `|d| -> String {` is a closure body too.
+        let source = concat!(
+            "fn pick(docs: &mut Vec<Doc>) {\n",
+            "    docs.sort_by_key(|d| -> String {\n",
             "        let _ = d.id.len();\n",
             "        d.created_at.clone()\n",
             "    });\n",
