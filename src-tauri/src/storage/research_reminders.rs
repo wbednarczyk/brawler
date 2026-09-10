@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{slug_part, StorageError, StorageResult};
 
-const REMINDER_KINDS: &[&str] = &[
+pub(in crate::storage) const REMINDER_KINDS: &[&str] = &[
     "claim_follow_up",
     "event_review",
     "question_review",
@@ -276,6 +276,8 @@ fn sync_derived_reminders(
     Ok(())
 }
 
+/// Derived reminders come from open claims and open research questions only —
+/// events and signals are never auto-generated (ADR 0025 amendment, #465).
 fn sync_company_derived_reminders(connection: &Connection, company_id: &str) -> StorageResult<()> {
     connection.execute(
         "
@@ -298,29 +300,6 @@ fn sync_company_derived_reminders(connection: &Connection, company_id: &str) -> 
         WHERE company_id = ?1
             AND (kind = 'claim' OR claim_status IS NOT NULL)
             AND COALESCE(claim_status, 'open') != 'closed'
-        ",
-        [company_id],
-    )?;
-    connection.execute(
-        "
-        INSERT OR IGNORE INTO research_reminders (
-            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
-            title, body, due_at
-        )
-        SELECT
-            'reminder_event_' || id,
-            'company',
-            company_id,
-            company_id,
-            'event_review',
-            'company_event',
-            id,
-            title,
-            COALESCE(event_type, ''),
-            event_date
-        FROM company_events
-        WHERE company_id = ?1
-            AND COALESCE(status, 'scheduled') != 'cancelled'
         ",
         [company_id],
     )?;

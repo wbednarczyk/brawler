@@ -1,7 +1,16 @@
 import { Check, Clock3, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { useState } from "react";
 import type { ResearchReminder } from "../../api/researchTypes";
 import { useFocusAfterRemove } from "../../shared/focus/focusAfterRemove";
-import { ActionButton, ActionRow, EmptyState, Figure, SectionHeader } from "../../ui";
+import {
+  ActionButton,
+  ActionRow,
+  EmptyState,
+  Figure,
+  SectionHeader,
+  SegmentedControl,
+  SegmentedControlOption,
+} from "../../ui";
 import { formatReminderKind, formatReminderStatus } from "./researchFormatters";
 
 type ResearchRemindersPanelProps = {
@@ -27,7 +36,23 @@ export function ResearchRemindersPanel({
   deleteReminder,
   text,
 }: ResearchRemindersPanelProps) {
-  const visibleReminders = reminders.slice(0, 6);
+  // The queue is the investor's OPEN follow-ups (ADR 0025 amendment, #465);
+  // completed/dismissed rows live behind a History segment (the Today
+  // Active | Archive pattern) so Reopen stays reachable without cluttering
+  // the six visible slots. History lists newest-first by last change.
+  const [selectedView, setSelectedView] = useState<"open" | "history">("open");
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const openReminders = reminders.filter((reminder) => reminder.status === "open");
+  const historyReminders = reminders
+    .filter((reminder) => reminder.status !== "open")
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
+  // History exists only while a closed row exists: reopening or removing the
+  // last one falls back to the open queue instead of stranding the panel on
+  // an empty view with no way back.
+  const view = historyReminders.length > 0 ? selectedView : "open";
+  const visibleReminders =
+    view === "open" ? openReminders.slice(0, 6) : showAllHistory ? historyReminders : historyReminders.slice(0, 6);
+  const hiddenHistoryCount = view === "history" ? historyReminders.length - visibleReminders.length : 0;
   // After deleting a reminder, keep focus in the queue by landing on the next
   // row's leading action button (ADR 0076 D9); the row article is not focusable.
   const { listRef } = useFocusAfterRemove<HTMLDivElement>(
@@ -41,13 +66,40 @@ export function ResearchRemindersPanel({
     </ActionButton>
   );
 
+  const viewToggle =
+    historyReminders.length > 0 ? (
+      <SegmentedControl ariaLabel={text("Reminder view")} className="research-reminder-view">
+        <SegmentedControlOption
+          active={view === "open"}
+          data-action-kind="control"
+          onClick={() => setSelectedView("open")}
+        >
+          {text("Open items")}
+        </SegmentedControlOption>
+        <SegmentedControlOption
+          active={view === "history"}
+          data-action-kind="control"
+          onClick={() => setSelectedView("history")}
+        >
+          {text("History")}
+        </SegmentedControlOption>
+      </SegmentedControl>
+    ) : null;
+
   return (
     <div role="group" className="research-reminders" aria-label={text("Research reminders")}>
       <SectionHeader
-        actions={reminders.length > 0 ? addReminderButton : undefined}
+        actions={
+          reminders.length > 0 ? (
+            <>
+              {viewToggle}
+              {addReminderButton}
+            </>
+          ) : undefined
+        }
         className="research-section-review"
         description={text("Items that need a concrete follow-up action.")}
-        meta={<Figure value={reminders.length} />}
+        meta={<Figure value={openReminders.length} />}
         title={text("Review queue")}
         variant="accent"
       />
@@ -120,6 +172,14 @@ export function ResearchRemindersPanel({
             source={text("Reminders track follow-ups on claims, questions, and reviews.")}
             action={addReminderButton}
           />
+        ) : null}
+        {reminders.length > 0 && visibleReminders.length === 0 ? (
+          <EmptyState kind="quiet" reason={text("No open reminders.")} />
+        ) : null}
+        {hiddenHistoryCount > 0 ? (
+          <ActionButton kind="control" variant="ghost" onClick={() => setShowAllHistory(true)}>
+            {text("Show older")} ({hiddenHistoryCount})
+          </ActionButton>
         ) : null}
       </div>
     </div>

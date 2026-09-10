@@ -20,7 +20,7 @@
     "src-tauri/src/report_diff/classify.rs": 1141,
     "src-tauri/src/storage/attention.rs": 1243,
     "src-tauri/src/storage/financials.rs": 3441,
-    "src-tauri/src/storage/import_export/research_import.rs": 1190,
+    "src-tauri/src/storage/import_export/research_import.rs": 1184,
     "src-tauri/src/storage/kpi_extraction.rs": 3273,
     "src-tauri/src/storage/kpi_ingest_drafts.rs": 1149,
     "src-tauri/src/storage/kpi_ingest_runs.rs": 6017,
@@ -30,7 +30,6 @@
     "src-tauri/src/storage/red_flags.rs": 1002,
     "src-tauri/src/storage/report_tagged_facts.rs": 1481,
     "src-tauri/src/storage/research.rs": 1098,
-    "src-tauri/src/storage/signals.rs": 1049,
     "src-tauri/src/storage/sources.rs": 1541,
     "src/app/AppStateRoot.tsx": 1836
   }

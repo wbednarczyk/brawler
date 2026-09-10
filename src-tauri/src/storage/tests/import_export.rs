@@ -711,3 +711,107 @@ fn research_data_round_trips_ownership_stakes() {
         .expect("history");
     assert_eq!(history.len(), 3, "full history round-trips");
 }
+
+#[test]
+fn research_reminders_round_trip_dismissed_signal_review_and_reject_unsupported_kind() {
+    // #465: event/signal review reminders are no longer auto-generated, but a
+    // deliberately-created (or pre-existing, pre-#465) `signal_review` reminder
+    // must still round-trip through export/import, including its dismissed state.
+    let source = AppState::new(open_in_memory_database().expect("database should open"));
+    let cdr = source
+        .create_company(tracked_company("CDR", "CD PROJEKT S.A."))
+        .expect("company should create");
+
+    let created_signal = source
+        .create_research_reminder(NewResearchReminder {
+            scope_type: "company".to_owned(),
+            scope_id: cdr.id.clone(),
+            company_id: Some(cdr.id.clone()),
+            reminder_kind: "signal_review".to_owned(),
+            source_type: None,
+            source_id: None,
+            title: "Own high-signal note".to_owned(),
+            body: None,
+            due_at: None,
+        })
+        .expect("signal_review reminder should create");
+    let dismissed_signal = source
+        .update_research_reminder(ResearchReminderUpdate {
+            id: created_signal.id,
+            status: Some("dismissed".to_owned()),
+            due_at: None,
+            snoozed_until: None,
+        })
+        .expect("reminder should dismiss");
+    assert!(dismissed_signal.dismissed_at.is_some());
+
+    let manual = source
+        .create_research_reminder(NewResearchReminder {
+            scope_type: "company".to_owned(),
+            scope_id: cdr.id.clone(),
+            company_id: Some(cdr.id.clone()),
+            reminder_kind: "manual_research".to_owned(),
+            source_type: None,
+            source_id: None,
+            title: "Read the transcript".to_owned(),
+            body: None,
+            due_at: None,
+        })
+        .expect("manual_research reminder should create");
+
+    let export = source
+        .export_research_data()
+        .expect("research data should export");
+    assert_eq!(export.summary.research_reminders, 2);
+
+    let target = AppState::new(open_in_memory_database().expect("database should open"));
+    let preview = target
+        .preview_research_import(&export.contents)
+        .expect("preview should parse");
+    assert!(preview.valid, "{:?}", preview.errors);
+    assert_eq!(preview.summary.research_reminders_created, 2);
+
+    target
+        .apply_research_import(&export.contents)
+        .expect("import should apply");
+
+    let imported = target
+        .list_research_reminders(ResearchReminderListInput {
+            scope_type: "company".to_owned(),
+            scope_id: cdr.id.clone(),
+            status: None,
+        })
+        .expect("reminders should list");
+
+    let imported_signal = imported
+        .iter()
+        .find(|reminder| reminder.id == dismissed_signal.id)
+        .expect("signal_review reminder should import");
+    assert_eq!(imported_signal.reminder_kind, "signal_review");
+    assert_eq!(imported_signal.status, "dismissed");
+    assert_eq!(imported_signal.dismissed_at, dismissed_signal.dismissed_at);
+
+    let imported_manual = imported
+        .iter()
+        .find(|reminder| reminder.id == manual.id)
+        .expect("manual_research reminder should import");
+    assert_eq!(imported_manual.reminder_kind, "manual_research");
+    assert_eq!(imported_manual.status, "open");
+
+    // A reminder of an unknown kind is still rejected on import.
+    let mut document: serde_json::Value =
+        serde_json::from_str(&export.contents).expect("export should parse as JSON");
+    document["researchReminders"][0]["reminderKind"] =
+        serde_json::Value::String("bogus_kind".to_owned());
+    let mutated = serde_json::to_string(&document).expect("mutated document should serialize");
+
+    let other_target = AppState::new(open_in_memory_database().expect("database should open"));
+    let bogus_preview = other_target
+        .preview_research_import(&mutated)
+        .expect("preview should still parse");
+    assert!(!bogus_preview.valid);
+    assert!(bogus_preview
+        .errors
+        .iter()
+        .any(|error| error.contains("unsupported kind")));
+}

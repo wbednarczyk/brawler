@@ -782,4 +782,9 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         name: "retire_license_metadata",
         sql: include_str!("../../migrations/0154_retire_license_metadata.sql"),
     },
+    Migration {
+        version: 155,
+        name: "dismiss_auto_generated_reminders",
+        sql: include_str!("../../migrations/0155_dismiss_auto_generated_reminders.sql"),
+    },
 ];

@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn derives_and_completes_research_reminders_from_claims_events_and_questions() {
+fn derives_reminders_from_claims_and_questions_never_from_events() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
     let company = tracked_company(&state);
@@ -46,20 +46,54 @@ fn derives_and_completes_research_reminders_from_claims_events_and_questions() {
         })
         .expect("question should create");
 
-    let reminders = state
-        .list_research_reminders(ResearchReminderListInput {
-            scope_type: "company".to_owned(),
-            scope_id: company.id,
-            status: Some("open".to_owned()),
+    let watchlist = state
+        .create_watchlist(NewWatchlist {
+            name: "Reminder scope".to_owned(),
+            description: None,
         })
-        .expect("reminders should list");
+        .expect("watchlist should create");
+    state
+        .add_company_to_watchlist(WatchlistCompanyInput {
+            watchlist_id: watchlist.id.clone(),
+            company_id: company.id.clone(),
+        })
+        .expect("company should join watchlist");
+
+    // list twice per scope: sync_company_derived_reminders runs on every
+    // call, so a second call must not conjure an event_review reminder either.
+    let mut reminders = Vec::new();
+    for _ in 0..2 {
+        reminders = state
+            .list_research_reminders(ResearchReminderListInput {
+                scope_type: "company".to_owned(),
+                scope_id: company.id.clone(),
+                status: None,
+            })
+            .expect("reminders should list");
+    }
+    let mut watchlist_reminders = Vec::new();
+    for _ in 0..2 {
+        watchlist_reminders = state
+            .list_research_reminders(ResearchReminderListInput {
+                scope_type: "watchlist".to_owned(),
+                scope_id: watchlist.id.clone(),
+                status: None,
+            })
+            .expect("reminders should list");
+    }
+
+    for scoped in [&reminders, &watchlist_reminders] {
+        assert!(!scoped
+            .iter()
+            .any(|reminder| reminder.source_type.as_deref() == Some("company_event")));
+        assert!(!scoped
+            .iter()
+            .any(|reminder| reminder.reminder_kind == "event_review"));
+    }
 
     assert!(reminders
         .iter()
         .any(|reminder| reminder.reminder_kind == "claim_follow_up"));
-    assert!(reminders
-        .iter()
-        .any(|reminder| reminder.reminder_kind == "event_review"));
     assert!(reminders
         .iter()
         .any(|reminder| reminder.reminder_kind == "question_review"));

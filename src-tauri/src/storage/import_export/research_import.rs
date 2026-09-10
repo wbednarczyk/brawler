@@ -406,14 +406,8 @@ fn plan_research_import(
             errors.push("Research reminder id and title are required".to_owned());
             continue;
         }
-        if ![
-            "claim_follow_up",
-            "event_review",
-            "question_review",
-            "manual_research",
-            "digest_review",
-        ]
-        .contains(&reminder.reminder_kind.as_str())
+        if !crate::storage::research_reminders::REMINDER_KINDS
+            .contains(&reminder.reminder_kind.as_str())
         {
             errors.push(format!(
                 "Research reminder {} has unsupported kind {}",

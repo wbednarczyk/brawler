@@ -318,7 +318,8 @@ export function ResearchScreen() {
   // reviewed — "Mark as reviewed" is the screen's filled action whenever
   // there is something in that queue, and goes quiet once it is empty
   // (contract § Research, plan dec. 4).
-  const markReviewedPrimary = reminders.length > 0;
+  const openReminderCount = reminders.filter((reminder) => reminder.status === "open").length;
+  const markReviewedPrimary = openReminderCount > 0;
   const hasActiveEvidenceFilters = selectedEvidenceTypes.length > 0;
 
   const Root: "div" | "section" = hosted ? "div" : "section";
@@ -392,7 +393,7 @@ export function ResearchScreen() {
           <div className={mode === "watchlist" ? "research-main-stack watchlist" : "research-main-stack company"}>
             <ResearchFoldSection
               bodyId="research-fold-reminders"
-              count={reminders.length}
+              count={openReminderCount}
               expanded={openFolds.reminders}
               foldTier="m"
               label={text("Review queue")}

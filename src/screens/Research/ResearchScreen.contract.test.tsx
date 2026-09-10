@@ -1,5 +1,13 @@
 import { describe, it } from "vitest";
-import { appTestState, expect, renderApp, screen, userEvent, within } from "../../test/appWorkflowHarness";
+import {
+  appTestState,
+  expect,
+  renderApp,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from "../../test/appWorkflowHarness";
 import {
   collectActionInventory,
   collectEmptyStates,
@@ -14,7 +22,12 @@ import {
   makeResearchEvidenceItem,
   makeWatchlist,
 } from "../../test/scenarios/entities";
-import type { EvidenceLink, ResearchEvidenceItem, ResearchQuestion, ResearchReminder } from "../../api/researchTypes";
+import type {
+  EvidenceLink,
+  ResearchEvidenceItem,
+  ResearchQuestion,
+  ResearchReminder,
+} from "../../api/researchTypes";
 
 // F4c S1 (docs/plans/f4c-contracts/s1-guardrails.md item 4, plan §
 // Decisions 4): contract for the Research language pass — S3 makes every
@@ -61,15 +74,24 @@ const evidenceFixture: ResearchEvidenceItem = makeResearchEvidenceItem(cdr);
 const pkn = COMPANY_SPECS.find((spec) => spec.key === "pkn")!;
 const kgh = COMPANY_SPECS.find((spec) => spec.key === "kgh")!;
 // Non-open, so its row exercises the "Reopen" action the four states above
-// never reach (the skeleton's one documented gap).
-const reminderFixtureClosed: ResearchReminder = { ...makeResearchReminder(pkn), status: "completed" };
+// never reach (the skeleton's one documented gap). Scoped to the SELECTED
+// company (`cdr`): the mock `list_research_reminders` filters by scope, so a
+// `pkn` reminder never rendered here and Reopen was never exercised (#465
+// harvest) — a distinct title keeps the accessible names apart.
+const reminderFixtureClosed: ResearchReminder = {
+  ...makeResearchReminder(cdr),
+  id: "reminder_sample_cdr_closed",
+  title: `Closed follow-up on ${cdr.name} guidance`,
+  status: "completed",
+};
 const questionFixture2: ResearchQuestion = makeResearchQuestion(pkn);
 const evidenceFixture2: ResearchEvidenceItem = makeResearchEvidenceItem(pkn);
 const evidenceFixture3: ResearchEvidenceItem = makeResearchEvidenceItem(kgh);
 
 function sorted(entries: ActionInventoryEntry[]): ActionInventoryEntry[] {
   return [...entries].sort(
-    (a, b) => a.name.localeCompare(b.name, "en") || a.kind.localeCompare(b.kind, "en"),
+    (a, b) =>
+      a.name.localeCompare(b.name, "en") || a.kind.localeCompare(b.kind, "en"),
   );
 }
 
@@ -195,7 +217,10 @@ function scopeBarInventory(locale: Locale): ActionInventoryEntry[] {
 // `reminderFixture.title`/`questionFixture.title`/`evidenceFixture.title` so
 // every existing call site keeps working unchanged; the `dense` state below
 // passes the other fixtures' titles explicitly.
-function reminderRowInventory(locale: Locale, title = reminderFixture.title): ActionInventoryEntry[] {
+function reminderRowInventory(
+  locale: Locale,
+  title = reminderFixture.title,
+): ActionInventoryEntry[] {
   const t = LABELS[locale];
   return [
     { name: `${t.markAsDone}: ${title}`, kind: "markAs" },
@@ -204,7 +229,10 @@ function reminderRowInventory(locale: Locale, title = reminderFixture.title): Ac
   ];
 }
 
-function questionRowInventory(locale: Locale, title = questionFixture.title): ActionInventoryEntry[] {
+function questionRowInventory(
+  locale: Locale,
+  title = questionFixture.title,
+): ActionInventoryEntry[] {
   const t = LABELS[locale];
   return [
     { name: questionRowName(locale), kind: "control" },
@@ -223,7 +251,9 @@ function evidenceRowInventory(
 ): ActionInventoryEntry[] {
   const t = LABELS[locale];
   return [
-    ...(withLink ? [{ name: `${t.linkToQuestion}: ${title}`, kind: "link" }] : []),
+    ...(withLink
+      ? [{ name: `${t.linkToQuestion}: ${title}`, kind: "link" }]
+      : []),
     { name: `${t.open}: ${title}`, kind: "open" },
     { name: `${t.openSource}: ${title}`, kind: "open" },
   ];
@@ -239,9 +269,15 @@ async function openResearch(
   } = {},
 ) {
   appTestState.settingsResponse = { ...appTestState.settingsResponse, locale };
-  appTestState.researchRemindersResponse = overrides.reminders ?? [reminderFixture];
-  appTestState.researchQuestionsResponse = overrides.questions ?? [questionFixture];
-  appTestState.researchEvidenceItemsResponse = overrides.evidence ?? [evidenceFixture];
+  appTestState.researchRemindersResponse = overrides.reminders ?? [
+    reminderFixture,
+  ];
+  appTestState.researchQuestionsResponse = overrides.questions ?? [
+    questionFixture,
+  ];
+  appTestState.researchEvidenceItemsResponse = overrides.evidence ?? [
+    evidenceFixture,
+  ];
   // No pre-seeded evidence link matches this question (filtered by
   // endpointId already), but clearing it keeps the state deterministic
   // rather than relying on that incidental non-match — unless a state
@@ -257,18 +293,27 @@ async function openResearch(
   return region;
 }
 
-async function openWatchlistModeEmpty(locale: Locale, user: ReturnType<typeof userEvent.setup>) {
+async function openWatchlistModeEmpty(
+  locale: Locale,
+  user: ReturnType<typeof userEvent.setup>,
+) {
   appTestState.settingsResponse = { ...appTestState.settingsResponse, locale };
-  appTestState.watchlistsResponse = [makeWatchlist("watchlist_empty_contract", "Empty Watch", 0)];
+  appTestState.watchlistsResponse = [
+    makeWatchlist("watchlist_empty_contract", "Empty Watch", 0),
+  ];
   appTestState.watchlistMembershipsResponse = [];
   appTestState.researchRemindersResponse = [];
   appTestState.researchQuestionsResponse = [];
   appTestState.researchEvidenceItemsResponse = [];
   renderApp({ section: "Research" });
   const region = await screen.findByRole("region", { name: REGION_NAME });
-  await user.click(within(region).getByRole("button", { name: LABELS[locale].watchlist }));
+  await user.click(
+    within(region).getByRole("button", { name: LABELS[locale].watchlist }),
+  );
   await within(region).findByText(
-    locale === "pl" ? "Wybrana lista obserwowana nie ma spółek." : "Selected watchlist has no companies.",
+    locale === "pl"
+      ? "Wybrana lista obserwowana nie ma spółek."
+      : "Selected watchlist has no companies.",
   );
   return region;
 }
@@ -282,7 +327,10 @@ describe("Research action inventory (F4c contract § Research, plan dec. 4)", ()
         sorted([
           ...headerInventory(locale),
           ...scopeBarInventory(locale),
-          { name: foldName(LABELS[locale].reviewQueueFold, 1), kind: "control" },
+          {
+            name: foldName(LABELS[locale].reviewQueueFold, 1),
+            kind: "control",
+          },
           { name: foldName(LABELS[locale].questionsFold, 1), kind: "control" },
           { name: LABELS[locale].addReminder, kind: "add" },
           ...reminderRowInventory(locale),
@@ -307,7 +355,10 @@ describe("Research action inventory (F4c contract § Research, plan dec. 4)", ()
         sorted([
           ...headerInventory(locale),
           ...scopeBarInventory(locale),
-          { name: foldName(LABELS[locale].reviewQueueFold, 0), kind: "control" },
+          {
+            name: foldName(LABELS[locale].reviewQueueFold, 0),
+            kind: "control",
+          },
           { name: foldName(LABELS[locale].questionsFold, 1), kind: "control" },
           { name: LABELS[locale].addReminder, kind: "add" },
           { name: LABELS[locale].addQuestion, kind: "add" },
@@ -330,7 +381,10 @@ describe("Research action inventory (F4c contract § Research, plan dec. 4)", ()
         sorted([
           ...headerInventory(locale),
           ...scopeBarInventory(locale),
-          { name: foldName(LABELS[locale].reviewQueueFold, 1), kind: "control" },
+          {
+            name: foldName(LABELS[locale].reviewQueueFold, 1),
+            kind: "control",
+          },
           { name: foldName(LABELS[locale].questionsFold, 0), kind: "control" },
           { name: LABELS[locale].addReminder, kind: "add" },
           ...reminderRowInventory(locale),
@@ -355,7 +409,10 @@ describe("Research action inventory (F4c contract § Research, plan dec. 4)", ()
         sorted([
           ...headerInventory(locale),
           ...scopeBarInventory(locale),
-          { name: foldName(LABELS[locale].reviewQueueFold, 0), kind: "control" },
+          {
+            name: foldName(LABELS[locale].reviewQueueFold, 0),
+            kind: "control",
+          },
           { name: LABELS[locale].addReminder, kind: "add" },
         ]),
       );
@@ -423,26 +480,166 @@ const questionEvidenceLinks: EvidenceLink[] = [
 ];
 
 describe("Research action inventory — dense state, accessible-name uniqueness (sol R2 amendment)", () => {
-  it.each(LOCALES)("no two buttons share an accessible name (%s)", async (locale) => {
-    const region = await openResearch(locale, {
-      reminders: [reminderFixture, reminderFixtureClosed],
-      questions: [questionFixture, questionFixture2],
-      evidence: [evidenceFixture, evidenceFixtureCdr2, evidenceFixture2, evidenceFixture3],
-      evidenceLinks: questionEvidenceLinks,
-    });
+  it.each(LOCALES)(
+    "no two buttons share an accessible name (%s)",
+    async (locale) => {
+      const region = await openResearch(locale, {
+        reminders: [reminderFixture, reminderFixtureClosed],
+        questions: [questionFixture, questionFixture2],
+        evidence: [
+          evidenceFixture,
+          evidenceFixtureCdr2,
+          evidenceFixture2,
+          evidenceFixture3,
+        ],
+        evidenceLinks: questionEvidenceLinks,
+      });
 
-    const t = LABELS[locale];
-    // The links effect fetches asynchronously once the question auto-selects
-    // (useResearchController.ts, keyed on `selectedResearchQuestionId`) — the
-    // chips land a tick after `openResearch` resolves.
-    expect(
-      await within(region).findByRole("button", { name: `${t.removeLinkedEvidence}: ${evidenceFixture.title}` }),
-    ).toBeInTheDocument();
-    expect(
-      within(region).getByRole("button", { name: `${t.removeLinkedEvidence}: ${evidenceFixtureCdr2.title}` }),
-    ).toBeInTheDocument();
+      const t = LABELS[locale];
+      // The links effect fetches asynchronously once the question auto-selects
+      // (useResearchController.ts, keyed on `selectedResearchQuestionId`) — the
+      // chips land a tick after `openResearch` resolves.
+      expect(
+        await within(region).findByRole("button", {
+          name: `${t.removeLinkedEvidence}: ${evidenceFixture.title}`,
+        }),
+      ).toBeInTheDocument();
+      expect(
+        within(region).getByRole("button", {
+          name: `${t.removeLinkedEvidence}: ${evidenceFixtureCdr2.title}`,
+        }),
+      ).toBeInTheDocument();
 
-    const names = collectActionInventory(region, locale).map((entry) => entry.name);
-    expect(new Set(names).size).toBe(names.length);
-  });
+      const names = collectActionInventory(region, locale).map(
+        (entry) => entry.name,
+      );
+      expect(new Set(names).size).toBe(names.length);
+
+      // #465 (ADR 0025 amendment): the queue shows OPEN follow-ups only — the
+      // fold chip and the header count read 1 (not 2), "Mark as reviewed" stays
+      // primary on that one open row, and the completed row is reachable
+      // through the History segment (its Reopen action absent by default,
+      // present after the switch; the open row's actions hidden in History).
+      expect(
+        within(region).getByRole("button", {
+          name: foldName(t.reviewQueueFold, 1),
+        }),
+      ).toBeInTheDocument();
+      expect(
+        within(region).queryByRole("button", {
+          name: `${t.reopenQuestion}: ${reminderFixtureClosed.title}`,
+        }),
+      ).toBeNull();
+      const historyLabel = locale === "pl" ? "Historia" : "History";
+      const openLabel = locale === "pl" ? "Otwarte" : "Open items";
+      await userEvent
+        .setup()
+        .click(within(region).getByRole("button", { name: historyLabel }));
+      expect(
+        within(region).getByRole("button", {
+          name: `${t.reopenQuestion}: ${reminderFixtureClosed.title}`,
+        }),
+      ).toBeInTheDocument();
+      expect(
+        within(region).queryByRole("button", {
+          name: `${t.markAsDone}: ${reminderFixture.title}`,
+        }),
+      ).toBeNull();
+      const historyNames = collectActionInventory(region, locale).map(
+        (entry) => entry.name,
+      );
+      expect(new Set(historyNames).size).toBe(historyNames.length);
+      await userEvent
+        .setup()
+        .click(within(region).getByRole("button", { name: openLabel }));
+      expect(
+        within(region).getByRole("button", {
+          name: `${t.markAsDone}: ${reminderFixture.title}`,
+        }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  // #465: a scope whose only reminders are closed — the queue is empty and
+  // quiet (count 0, no primary "Mark as reviewed"), History still reaches them.
+  it.each(LOCALES)(
+    "history-only scope: quiet open queue, reachable History (%s)",
+    async (locale) => {
+      const region = await openResearch(locale, {
+        reminders: [reminderFixtureClosed],
+      });
+      const t = LABELS[locale];
+      expect(
+        within(region).getByRole("button", {
+          name: foldName(t.reviewQueueFold, 0),
+        }),
+      ).toBeInTheDocument();
+      expect(collectEmptyStates(region)).toContain("quiet");
+      expectSinglePrimary(region, 0);
+      await userEvent
+        .setup()
+        .click(
+          within(region).getByRole("button", {
+            name: locale === "pl" ? "Historia" : "History",
+          }),
+        );
+      expect(
+        within(region).getByRole("button", {
+          name: `${t.reopenQuestion}: ${reminderFixtureClosed.title}`,
+        }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  // #465: History caps at six rows behind "Show older" (the Alerts dense-cap
+  // pattern) — the seventh closed reminder is reachable, never stranded.
+  it.each(LOCALES)(
+    "history beyond six rows is reachable through Show older (%s)",
+    async (locale) => {
+      const closed: ResearchReminder[] = Array.from(
+        { length: 7 },
+        (_, index) => ({
+          ...reminderFixtureClosed,
+          id: `reminder_sample_cdr_closed_${index}`,
+          title: `Closed follow-up ${index + 1} on ${cdr.name}`,
+          status: "dismissed",
+          updatedAt: `2026-01-0${index + 1}T00:00:00Z`,
+        }),
+      );
+      const region = await openResearch(locale, {
+        reminders: [reminderFixture, ...closed],
+      });
+      const t = LABELS[locale];
+      const user = userEvent.setup();
+      await user.click(
+        within(region).getByRole("button", {
+          name: locale === "pl" ? "Historia" : "History",
+        }),
+      );
+      // Newest-first: the oldest (index 0) is the seventh row, hidden behind the cap.
+      expect(
+        within(region).queryByRole("button", {
+          name: `${t.reopenQuestion}: ${closed[0].title}`,
+        }),
+      ).toBeNull();
+      await user.click(
+        within(region).getByRole("button", {
+          name: locale === "pl" ? "Pokaż starsze (1)" : "Show older (1)",
+        }),
+      );
+      await user.click(
+        within(region).getByRole("button", {
+          name: `${t.reopenQuestion}: ${closed[0].title}`,
+        }),
+      );
+      // Reopened → it leaves History (the mock flips its status to open).
+      await waitFor(() =>
+        expect(
+          within(region).queryByRole("button", {
+            name: `${t.reopenQuestion}: ${closed[0].title}`,
+          }),
+        ).toBeNull(),
+      );
+    },
+  );
 });
