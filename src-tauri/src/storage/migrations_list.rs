@@ -787,4 +787,9 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         name: "dismiss_auto_generated_reminders",
         sql: include_str!("../../migrations/0155_dismiss_auto_generated_reminders.sql"),
     },
+    Migration {
+        version: 156,
+        name: "retire_transcription_settings",
+        sql: include_str!("../../migrations/0156_retire_transcription_settings.sql"),
+    },
 ];

@@ -118,8 +118,8 @@ pub fn run() {
                 }
             }
 
-            // One-key-per-provider migration (ADR 0028): best-effort cleanup of
-            // legacy purpose-scoped keychain entries, no fallback.
+            // Best-effort keychain cleanup: the legacy purpose-scoped Gemini entry
+            // (ADR 0028) and the retired Gemini API key (ADR 0111), no fallback.
             providers::credentials::clear_legacy_credentials();
 
             // Repair report documents mis-associated onto the wrong company by
@@ -391,7 +391,6 @@ pub fn run() {
             commands::backups::restore_backup,
             commands::notebooks::list_notebook_entries,
             commands::notebooks::create_notebook_entry,
-            commands::notebooks::create_note_from_transcript_selection,
             commands::notebooks::update_notebook_entry,
             commands::notebooks::delete_notebook_entry,
             commands::management_claims::list_management_claims,
@@ -496,13 +495,6 @@ pub fn run() {
             commands::tagged_fact_promotion::get_report_tagged_fact_coverage,
             commands::tagged_fact_promotion::list_uncrosswalked_concepts,
             commands::tagged_fact_promotion::promote_uncrosswalked_concept,
-            commands::transcripts::list_video_transcript_jobs,
-            commands::transcripts::delete_video_transcript_job,
-            commands::transcripts::create_video_transcript_job,
-            commands::transcripts::update_video_transcript_job,
-            commands::transcripts::list_transcript_segments,
-            commands::transcripts::resolve_transcript_job_company,
-            commands::transcripts::run_video_transcript_job,
             commands::sources::list_source_adapters,
             commands::sources::list_company_registry_entries,
             commands::sources::set_source_adapter_enabled,
@@ -536,9 +528,6 @@ pub fn run() {
             commands::settings::update_settings,
             commands::settings::disable_developer_mode,
             commands::settings::unlock_developer_mode,
-            commands::credentials::get_provider_credential_status,
-            commands::credentials::set_provider_api_key,
-            commands::credentials::clear_provider_api_key,
             commands::mcp::regenerate_mcp_token,
             commands::mcp::revoke_mcp_token,
             commands::mcp::mcp_token_status,

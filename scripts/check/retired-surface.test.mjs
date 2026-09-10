@@ -112,9 +112,11 @@ test("isPointerLine recognizes retirement wording and rejects live prose", () =>
   assert.equal(isPointerLine("call `old_cmd` to refresh the panel"), false);
 });
 
-test("isScanned covers only live markdown under docs/ and wiki/", () => {
+test("isScanned covers only live markdown under docs/, wiki/ and .claude/skills/", () => {
   assert.equal(isScanned("docs/contracts.md"), true);
   assert.equal(isScanned("wiki/x.md"), true);
+  assert.equal(isScanned(".claude/skills/brawler-mcp/SKILL.md"), true);
+  assert.equal(isScanned(".claude/hooks/x.md"), false);
   assert.equal(isScanned("docs/adr/0001-x.md"), false);
   assert.equal(isScanned("docs/plans/old-plan.md"), false);
   assert.equal(isScanned("docs/plans/README.md"), true);

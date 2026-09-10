@@ -119,9 +119,6 @@ test("activity panel on the real app: open, read, land on a declared destination
       case "today":
         await expect(page.getByRole("region", { name: /^(Dziś|Today)$/ })).toBeVisible({ timeout: 15_000 });
         break;
-      case "transcripts":
-        await expect(page.getByRole("region", { name: /^(Transkrypcje|Transcripts)$/ })).toBeVisible({ timeout: 15_000 });
-        break;
       default:
         throw new Error(`row ${index} declared an unknown target kind: ${targetKind}`);
     }

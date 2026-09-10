@@ -109,11 +109,7 @@ export type { AiSignalClassificationSummary } from "./generated/AiSignalClassifi
 export type { AiEventDerivationSummary } from "./generated/AiEventDerivationSummary";
 export type { BackfillProgress } from "./generated/BackfillProgress";
 
-export type { TranscriptJob } from "./generated/TranscriptJob";
-export type { TranscriptSegment } from "./generated/TranscriptSegment";
-
 export type { UserSettings } from "./generated/UserSettings";
-export type { AiProviderSettings } from "./generated/AiProviderSettings";
 export type { LogSettings } from "./generated/LogSettings";
 export type { DatabaseSettings } from "./generated/DatabaseSettings";
 export type { ShortcutBindingSetting } from "./generated/ShortcutBindingSetting";

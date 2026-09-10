@@ -93,7 +93,6 @@ mod short_positions;
 mod signals;
 mod sources;
 mod today;
-mod transcripts;
 mod types;
 mod valuation_runs;
 mod watchlists;
@@ -247,9 +246,7 @@ pub use research_reminders::{
 pub use search::SearchMatch;
 pub use settings::SettingsStore;
 pub(crate) use settings::MCP_PORT_DEFAULT;
-pub use settings::{
-    AiProviderSettings, LogSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings,
-};
+pub use settings::{LogSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings};
 pub use short_positions::{
     ShortPositionEventRow, ShortPositionExit, ShortPositionRow, ShortPositionsInput,
     ShortPositionsView,
@@ -259,12 +256,6 @@ pub use signals::SignalNeedingDate;
 pub use signals::SignalStore;
 pub use sources::{BackfillMarketStatus, SourcesStore, TrackedIssuerIndex};
 pub use today::{NonArrivalCandidate, TodayFeedRow, TodayStore};
-pub use transcripts::TranscriptStore;
-pub use transcripts::{
-    CreateNoteFromTranscriptSelectionInput, NewTranscriptJob, NewTranscriptSegment,
-    ResolveTranscriptJobCompanyInput, TranscriptJob, TranscriptJobListInput, TranscriptNoteDraft,
-    TranscriptSegment, UpdateTranscriptJobInput,
-};
 pub use types::*;
 pub use watchlists::WatchlistStore;
 
@@ -706,11 +697,6 @@ impl AppState {
         sources::SourcesStore::new(self.db.clone())
     }
 
-    /// transcripts domain store (Architecture v2 / ADR 0050).
-    pub fn transcripts(&self) -> transcripts::TranscriptStore {
-        transcripts::TranscriptStore::new(self.db.clone())
-    }
-
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
     }
@@ -1149,14 +1135,6 @@ impl AppState {
         self.notebooks().create_notebook_entry(input)
     }
 
-    pub fn create_note_from_transcript_selection(
-        &self,
-        input: CreateNoteFromTranscriptSelectionInput,
-    ) -> StorageResult<NotebookEntry> {
-        self.transcripts()
-            .create_note_from_transcript_selection(input)
-    }
-
     pub fn update_notebook_entry(
         &self,
         input: NotebookEntryUpdate,
@@ -1417,72 +1395,6 @@ impl AppState {
         category: &str,
     ) -> StorageResult<ClassifyFilingOutcome> {
         self.signals().classify_filing(feed_item_id, category)
-    }
-
-    pub fn list_transcript_jobs(
-        &self,
-        input: TranscriptJobListInput,
-    ) -> StorageResult<Vec<TranscriptJob>> {
-        self.transcripts().list_transcript_jobs(input)
-    }
-
-    pub fn delete_transcript_job(&self, job_id: &str) -> StorageResult<()> {
-        self.transcripts().delete_transcript_job(job_id)
-    }
-
-    pub fn create_transcript_job(&self, input: NewTranscriptJob) -> StorageResult<TranscriptJob> {
-        self.transcripts().create_transcript_job(input)
-    }
-
-    pub fn update_transcript_job(
-        &self,
-        input: UpdateTranscriptJobInput,
-    ) -> StorageResult<TranscriptJob> {
-        self.transcripts().update_transcript_job(input)
-    }
-
-    pub fn list_transcript_segments(
-        &self,
-        transcript_job_id: &str,
-    ) -> StorageResult<Vec<TranscriptSegment>> {
-        self.transcripts()
-            .list_transcript_segments(transcript_job_id)
-    }
-
-    pub fn create_transcript_segment(
-        &self,
-        input: NewTranscriptSegment,
-    ) -> StorageResult<TranscriptSegment> {
-        self.transcripts().create_transcript_segment(input)
-    }
-
-    pub fn resolve_transcript_job_company(
-        &self,
-        input: ResolveTranscriptJobCompanyInput,
-    ) -> StorageResult<TranscriptJob> {
-        self.transcripts().resolve_transcript_job_company(input)
-    }
-
-    pub fn get_transcript_job(&self, job_id: &str) -> StorageResult<TranscriptJob> {
-        self.transcripts().get_transcript_job(job_id)
-    }
-
-    pub fn mark_transcript_job_running(&self, job_id: &str) -> StorageResult<TranscriptJob> {
-        self.transcripts().mark_transcript_job_running(job_id)
-    }
-
-    pub fn mark_transcript_job_completed(&self, job_id: &str) -> StorageResult<TranscriptJob> {
-        self.transcripts().mark_transcript_job_completed(job_id)
-    }
-
-    pub fn mark_transcript_job_failed(
-        &self,
-        job_id: &str,
-        error_code: &str,
-        error: &str,
-    ) -> StorageResult<TranscriptJob> {
-        self.transcripts()
-            .mark_transcript_job_failed(job_id, error_code, error)
     }
 
     pub fn list_source_adapters(&self) -> StorageResult<Vec<SourceAdapter>> {

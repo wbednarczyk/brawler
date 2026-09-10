@@ -2,7 +2,7 @@
 //! MCP tool per domain read, so a connected agent can READ every domain the user
 //! sees in the UI — companies/watchlists, feed, signals, facts (with
 //! provenance), periods, quotes, ownership, insiders, analyst recommendations,
-//! health/red flags, report documents + diffs, transcripts, notes, claims,
+//! health/red flags, report documents + diffs, notes, claims,
 //! expectations, journal, research questions, report season, calendar events,
 //! attention, briefing, autopilot runs, and quality frameworks.
 //!
@@ -34,7 +34,6 @@ use crate::storage::{
     AttentionEventListInput, CompanyEventListInput, CompanySignalListInput, DecisionEntryListInput,
     FinancialFact, ListAutopilotRunsInput, ListFinancialFactsInput, ListFinancialPeriodsInput,
     ListKpiDefinitionsInput, ListReportExpectationsInput, ReportSeasonInput,
-    TranscriptJobListInput,
 };
 
 // ============================================================================
@@ -506,41 +505,6 @@ pub fn get_report_diff_handler(
             },
         )
         .map_err(internal)
-    })
-}
-
-// ============================================================================
-// Transcripts
-// ============================================================================
-
-pub fn list_video_transcript_jobs_handler(
-    state: &AppState,
-    arguments: &Value,
-) -> Result<ToolOutcome, ToolCallError> {
-    run(arguments, |input: OptionalCompanyRef| {
-        let company_id = optional_company_id(state, &input.company)?;
-        state
-            .list_transcript_jobs(TranscriptJobListInput { company_id })
-            .map_err(CommandError::from)
-    })
-}
-
-/// One transcript job's ordered segments.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct TranscriptSegmentsRef {
-    /// The transcript job id (from `list_video_transcript_jobs`).
-    pub transcript_job_id: String,
-}
-
-pub fn list_transcript_segments_handler(
-    state: &AppState,
-    arguments: &Value,
-) -> Result<ToolOutcome, ToolCallError> {
-    run(arguments, |input: TranscriptSegmentsRef| {
-        state
-            .list_transcript_segments(&input.transcript_job_id)
-            .map_err(CommandError::from)
     })
 }
 

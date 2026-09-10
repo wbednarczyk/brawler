@@ -5,7 +5,9 @@ import { ResearchScopeBar } from "./ResearchScopeBar";
 
 // The `ai_analysis` evidence producer was removed with the in-app AI layer
 // (ADR 0084). Its scope-bar filter chip now filters to a forever-empty list, so
-// it must not be offered. This pins the option set against a silent re-add.
+// it must not be offered. Same reasoning retires the Transcripts chip with
+// video transcription (ADR 0111). This pins the option set against a silent
+// re-add.
 function renderScopeBar() {
   return render(
     <ResearchScopeBar
@@ -36,10 +38,16 @@ describe("ResearchScopeBar evidence-type options", () => {
     expect(within(filters).queryByRole("button", { name: "AI analysis" })).toBeNull();
   });
 
+  it("does not offer the retired Transcripts filter (ADR 0111)", () => {
+    const { getByLabelText } = renderScopeBar();
+    const filters = getByLabelText("Evidence type filters");
+    expect(within(filters).queryByRole("button", { name: "Transcripts" })).toBeNull();
+  });
+
   it("still offers the live evidence-type filters", () => {
     const { getByLabelText } = renderScopeBar();
     const filters = getByLabelText("Evidence type filters");
-    for (const label of ["Feed items", "Notes", "Claims", "Events", "Transcripts", "Signals"]) {
+    for (const label of ["Feed items", "Notes", "Claims", "Events", "Signals"]) {
       expect(within(filters).getByRole("button", { name: label })).toBeTruthy();
     }
   });

@@ -195,11 +195,9 @@ pub(crate) fn collect_local_metrics_snapshot(
     })
 }
 
-fn collectors() -> [&'static dyn MetricCollector; 7] {
+fn collectors() -> [&'static dyn MetricCollector; 5] {
     [
         &SourceMetricsCollector,
-        &TranscriptMetricsCollector,
-        &CredentialMetricsCollector,
         &DiagnosticMetricsCollector,
         &LogMetricsCollector,
         &SqliteMetricsCollector,
@@ -355,86 +353,6 @@ impl MetricCollector for SourceMetricsCollector {
     }
 }
 
-struct TranscriptMetricsCollector;
-
-impl MetricCollector for TranscriptMetricsCollector {
-    fn collect(
-        &self,
-        connection: &Connection,
-        _runtime_metrics: &RuntimeMetricCounters,
-        _app_data_dir: &Path,
-        collected_at: &str,
-    ) -> StorageResult<Vec<MetricSample>> {
-        let mut samples = collect_job_status_metrics(
-            connection,
-            "transcript_jobs",
-            "brawler_transcript_jobs_total",
-            "Transcript jobs by provider and status.",
-            &[("provider_id", "provider_id"), ("status", "status")],
-            collected_at,
-        )?;
-        push_sample(
-            &mut samples,
-            "brawler_transcript_segments_total",
-            "Current transcript segment records.",
-            MetricKind::Gauge,
-            MetricUnit::Count,
-            count_rows(connection, "transcript_segments")?,
-            &[("collector", "transcripts")],
-            collected_at,
-        )?;
-
-        Ok(samples)
-    }
-}
-
-struct CredentialMetricsCollector;
-
-impl MetricCollector for CredentialMetricsCollector {
-    fn collect(
-        &self,
-        connection: &Connection,
-        _runtime_metrics: &RuntimeMetricCounters,
-        _app_data_dir: &Path,
-        collected_at: &str,
-    ) -> StorageResult<Vec<MetricSample>> {
-        let settings = settings::get_settings(connection)?;
-        let providers = [(
-            "provider_gemini",
-            "youtube_transcription",
-            settings
-                .ai_providers
-                .youtube_transcription_provider
-                .as_str(),
-        )];
-        let mut samples = Vec::new();
-
-        for (provider_id, purpose, configured_provider) in providers {
-            let status = if configured_provider == provider_id {
-                "configured"
-            } else {
-                "not_configured"
-            };
-            push_sample(
-                &mut samples,
-                "brawler_credential_configuration_state",
-                "Whether a credential-backed provider is selected in settings.",
-                MetricKind::Gauge,
-                MetricUnit::Count,
-                if status == "configured" { 1.0 } else { 0.0 },
-                &[
-                    ("provider_id", provider_id),
-                    ("module", purpose),
-                    ("status", status),
-                ],
-                collected_at,
-            )?;
-        }
-
-        Ok(samples)
-    }
-}
-
 struct DiagnosticMetricsCollector;
 
 impl MetricCollector for DiagnosticMetricsCollector {
@@ -568,8 +486,6 @@ impl MetricCollector for SqliteMetricsCollector {
         for table in [
             "feed_items",
             "diagnostic_events",
-            "transcript_jobs",
-            "transcript_segments",
             "notebook_entries",
             "company_events",
         ] {
@@ -624,55 +540,6 @@ impl MetricCollector for RuntimeMetricsCollector {
     }
 }
 
-fn collect_job_status_metrics(
-    connection: &Connection,
-    table: &str,
-    metric_name: &'static str,
-    description: &'static str,
-    label_columns: &[(&'static str, &'static str)],
-    collected_at: &str,
-) -> StorageResult<Vec<MetricSample>> {
-    let select_columns = label_columns
-        .iter()
-        .map(|(_, column)| *column)
-        .collect::<Vec<_>>()
-        .join(", ");
-    let group_columns = select_columns.clone();
-    let sql = format!(
-        "SELECT {select_columns}, COUNT(*) FROM {table} GROUP BY {group_columns} ORDER BY {group_columns}"
-    );
-    let mut statement = connection.prepare(&sql)?;
-    let rows = statement.query_map([], |row| {
-        let mut values = Vec::new();
-        for index in 0..label_columns.len() {
-            values.push(row.get::<_, String>(index)?);
-        }
-        Ok((values, row.get::<_, i64>(label_columns.len())?))
-    })?;
-    let mut samples = Vec::new();
-
-    for row in rows {
-        let (values, count) = row?;
-        let label_refs = label_columns
-            .iter()
-            .zip(values.iter())
-            .map(|((label, _), value)| (*label, value.as_str()))
-            .collect::<Vec<_>>();
-        push_sample(
-            &mut samples,
-            metric_name,
-            description,
-            MetricKind::Gauge,
-            MetricUnit::Count,
-            count as f64,
-            &label_refs,
-            collected_at,
-        )?;
-    }
-
-    Ok(samples)
-}
-
 fn runtime_metric_contract(name: &str) -> (&'static str, MetricKind, MetricUnit) {
     match name {
         "brawler_source_refresh_total" => (
@@ -687,26 +554,6 @@ fn runtime_metric_contract(name: &str) -> (&'static str, MetricKind, MetricUnit)
         ),
         "brawler_scheduler_skips_total" => (
             "Process-lifetime scheduled task skips.",
-            MetricKind::Counter,
-            MetricUnit::Count,
-        ),
-        "brawler_transcript_runs_total" => (
-            "Process-lifetime transcript executions by provider and status.",
-            MetricKind::Counter,
-            MetricUnit::Count,
-        ),
-        "brawler_transcript_duration_seconds" => (
-            "Process-lifetime cumulative transcript execution duration by provider and status.",
-            MetricKind::Counter,
-            MetricUnit::Seconds,
-        ),
-        "brawler_credential_checks_total" => (
-            "Process-lifetime credential check outcomes by provider and purpose.",
-            MetricKind::Counter,
-            MetricUnit::Count,
-        ),
-        "brawler_credential_operations_total" => (
-            "Process-lifetime credential operations by provider and purpose.",
             MetricKind::Counter,
             MetricUnit::Count,
         ),
@@ -818,12 +665,7 @@ fn count_rows(connection: &Connection, table: &str) -> StorageResult<f64> {
 fn is_allowed_table_name(table: &str) -> bool {
     matches!(
         table,
-        "feed_items"
-            | "diagnostic_events"
-            | "transcript_jobs"
-            | "transcript_segments"
-            | "notebook_entries"
-            | "company_events"
+        "feed_items" | "diagnostic_events" | "notebook_entries" | "company_events"
     )
 }
 

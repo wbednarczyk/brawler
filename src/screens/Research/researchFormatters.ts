@@ -5,7 +5,7 @@ import type {
   ResearchReminder,
   ResearchTrustCategory,
 } from "../../api/researchTypes";
-import { formatAiProvider, formatCompanyEventType } from "../../shared/formatting/labels";
+import { formatCompanyEventType } from "../../shared/formatting/labels";
 
 export function formatQuestionStatus(status: ResearchQuestionStatus) {
   switch (status) {
@@ -67,15 +67,7 @@ export function formatEvidenceSummary(item: ResearchEvidenceItem) {
 }
 
 export function formatEvidenceAttribution(item: ResearchEvidenceItem) {
-  if (!item.attribution) {
-    return null;
-  }
-
-  if (item.attribution === "provider_gemini") {
-    return formatAiProvider(item.attribution);
-  }
-
-  return item.attribution;
+  return item.attribution || null;
 }
 
 export function formatEvidenceType(evidenceType: ResearchEvidenceType) {
@@ -86,8 +78,6 @@ export function formatEvidenceType(evidenceType: ResearchEvidenceType) {
       return "Note";
     case "claim":
       return "Claim";
-    case "transcript_segment":
-      return "Transcript";
     case "company_event":
       return "Event";
     case "ai_analysis":
@@ -117,8 +107,6 @@ export function formatTrustCategory(trustCategory: ResearchTrustCategory) {
       return "Market news";
     case "market_calendar":
       return "Calendar";
-    case "transcript":
-      return "Transcript";
     case "user_note":
       return "Personal note";
     case "ai_generated":

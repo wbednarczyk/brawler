@@ -450,40 +450,6 @@ fn document(state: &AppState, company_id: &str, title: &str) -> String {
 }
 
 #[test]
-fn queued_transcript_job_is_queued() {
-    // A freshly created transcript job (`create_video_transcript_job`) has no
-    // `job_runs`/registry entry yet — the direct-activity registry is only
-    // opened once `run_video_transcript_job` actually starts it (ADR 0109
-    // dec. 3). It must still surface as `queued`, never be invisible.
-    let state = state();
-    state
-        .create_transcript_job(crate::storage::NewTranscriptJob {
-            company_id: None,
-            provider_id: None,
-            source_url: "https://youtube.test/watch?v=mock".to_owned(),
-            source_label: Some("Earnings call Q2 2026".to_owned()),
-            recognized_company_candidates: None,
-        })
-        .expect("create transcript job");
-
-    let view = compute_activity(&state).expect("view");
-    let transcripts: Vec<_> = view
-        .queued
-        .iter()
-        .filter(|item| item.family == ActivityFamily::Transcript)
-        .collect();
-    assert_eq!(transcripts.len(), 1);
-    assert_eq!(transcripts[0].subject, "Earnings call Q2 2026");
-    assert_eq!(transcripts[0].target, ActivityTarget::Transcripts);
-    assert!(
-        view.active
-            .iter()
-            .all(|item| item.family != ActivityFamily::Transcript),
-        "a not-yet-started transcript job must never appear in active"
-    );
-}
-
-#[test]
 fn kpi_run_without_live_lease_is_waiting() {
     // ADR 0109 dec. 4: KPI ingest never writes `job_runs` — its live lease IS
     // the activity signal. An unleased (never-claimed) non-terminal run is

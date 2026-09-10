@@ -35,7 +35,7 @@ pub(super) fn list_notebook_entries(
 /// (#461): before this fn a partial write (e.g. the entry row with none of
 /// its origins) was silent data loss the caller had no way to detect. This fn
 /// owns its transaction — every caller today (`NotebookStore::create_notebook_entry`,
-/// `create_note_from_transcript_selection`, MCP acts, Tauri commands) passes a
+/// MCP acts, Tauri commands) passes a
 /// bare pooled connection and none holds a transaction of its own, so there is
 /// no nested-transaction hazard; a future composed caller should get a
 /// `_in_tx` inner writer taking `&Transaction` instead of nesting a new
@@ -93,7 +93,6 @@ pub(super) fn create_notebook_entry(
             origins.source_type.trim(),
             &[
                 "feed_item",
-                "transcript_segment",
                 "ai_analysis",
                 "manual",
                 "external_url",

@@ -102,43 +102,6 @@ fn running_row_without_open_occurrence_is_stalled() {
 }
 
 #[test]
-fn running_transcript_row_without_open_occurrence_is_stalled() {
-    // sol diff R1 #6: the live read model used to project only `queued`
-    // transcript rows — a `running` transcript row with no backing
-    // occurrence (the finalizer's own best-effort ceiling, or crash residue
-    // before a restart's reconcile runs) was simply invisible, not honestly
-    // `stalled` like the analogous `job_queue` case above.
-    let state = state();
-    state
-        .create_transcript_job(crate::storage::NewTranscriptJob {
-            company_id: None,
-            provider_id: None,
-            source_url: "https://youtube.test/watch?v=mock".to_owned(),
-            source_label: Some("Earnings call Q2 2026".to_owned()),
-            recognized_company_candidates: None,
-        })
-        .expect("create transcript job");
-    let connection = state.checkout_for_tests().expect("checkout");
-    connection
-        .execute(
-            "UPDATE transcript_jobs SET status = 'running', started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-             WHERE source_label = 'Earnings call Q2 2026'",
-            [],
-        )
-        .expect("force running, no occurrence");
-    drop(connection);
-
-    let view = compute_activity(&state).expect("view");
-    let stalled: Vec<_> = view
-        .active
-        .iter()
-        .filter(|item| item.family == ActivityFamily::Transcript && item.status == "stalled")
-        .collect();
-    assert_eq!(stalled.len(), 1);
-    assert_eq!(stalled[0].subject, "Earnings call Q2 2026");
-}
-
-#[test]
 fn sweep_is_one_parent_with_progress_and_children_suppressed() {
     // ADR 0109 dec. 1: a sweep is ONE item with member progress; its child
     // `autopilot_stage` jobs (pending/running) resolve to the SAME

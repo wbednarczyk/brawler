@@ -613,9 +613,9 @@ describe("Inbox screen workflows", () => {
     const feedList = screen.getByLabelText("Feed items");
     await within(feedList).findByText("Current report placeholder for watchlist company");
 
-    await user.type(screen.getByLabelText("Search feed"), "transcript");
+    await user.type(screen.getByLabelText("Search feed"), "commentary");
 
-    expect(within(feedList).getByText("Transcript-derived note candidate waits for future provider work")).toBeInTheDocument();
+    expect(within(feedList).getByText("Analyst commentary note candidate waits for future provider work")).toBeInTheDocument();
     expect(within(feedList).queryByText("Current report placeholder for watchlist company")).not.toBeInTheDocument();
   });
 
@@ -627,16 +627,16 @@ describe("Inbox screen workflows", () => {
     const feedList = screen.getByLabelText("Feed items");
     await within(feedList).findByText("Current report placeholder for watchlist company");
 
-    await user.selectOptions(screen.getByLabelText("Inbox type"), "Transcript");
+    await user.selectOptions(screen.getByLabelText("Inbox type"), "Analyst commentary");
 
-    expect(within(feedList).getByText("Transcript-derived note candidate waits for future provider work")).toBeInTheDocument();
+    expect(within(feedList).getByText("Analyst commentary note candidate waits for future provider work")).toBeInTheDocument();
     expect(within(feedList).queryByText("Current report placeholder for watchlist company")).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("Inbox type"), "all");
     await user.selectOptions(screen.getByLabelText("Inbox source"), "GPW ESPI/EBI");
 
     expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
-    expect(within(feedList).queryByText("Transcript-derived note candidate waits for future provider work")).not.toBeInTheDocument();
+    expect(within(feedList).queryByText("Analyst commentary note candidate waits for future provider work")).not.toBeInTheDocument();
   });
 
   it("clears active inbox filters", async () => {

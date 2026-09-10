@@ -79,13 +79,6 @@ pub(super) fn export_settings_data(connection: &Connection) -> StorageResult<Exp
             accent_palette: Some(settings.accent_palette),
             locale: Some(settings.locale),
             poll_interval_seconds: Some(settings.poll_interval_seconds),
-            youtube_transcription_provider: Some(
-                settings.ai_providers.youtube_transcription_provider,
-            ),
-            youtube_transcription_model: Some(settings.ai_providers.youtube_transcription_model),
-            youtube_transcription_timeout_seconds: Some(
-                settings.ai_providers.youtube_transcription_timeout_seconds,
-            ),
             log_level: Some(settings.logs.level),
             log_max_files: Some(settings.logs.max_files),
             log_max_file_bytes: Some(settings.logs.max_file_bytes),

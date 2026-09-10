@@ -1,6 +1,6 @@
 //! Direct-activity registry for awaited (non-queue) work (ADR 0109 dec. 3):
 //! per-adapter source refresh, the aggregator pull, direct history backfill,
-//! the direct/stale-checked registry refresh, the transcript runner. An
+//! the direct/stale-checked registry refresh. An
 //! in-memory RAII guard writes the `job_runs` start/finish rows for the ONE
 //! writer the queue itself is not — Drop-on-unwind settles `interrupted` so a
 //! panic in awaited work can never leave an open occurrence.

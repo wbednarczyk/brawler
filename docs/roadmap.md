@@ -196,7 +196,7 @@ Goal: explore mobile clients and cross-device sync after local-first desktop wor
 
 Intent:
 
-- provide access to watchlists, inbox, notes, claims, and transcripts on mobile devices
+- provide access to watchlists, inbox, notes, and claims on mobile devices
 - preserve offline-first behavior where practical
 - design sync ownership/hosting, encryption, conflict resolution, account model, and privacy guarantees before implementation — plus the product/distribution implications (stores, updates, platform policies)
 

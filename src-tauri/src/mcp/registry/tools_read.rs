@@ -185,26 +185,11 @@ pub(super) fn read_wave_tools() -> Vec<RegistryEntry> {
             tools::tool_schema::<reads::ReportDiffRef>,
             reads::get_report_diff_handler,
         ),
-        // ---- Transcripts ---------------------------------------------------
-        exposed_read(
-            "list_video_transcript_jobs",
-            "list_video_transcript_jobs",
-            "Video-transcript jobs (optionally scoped to one company): their source, status, and resolved company.",
-            tools::tool_schema::<reads::OptionalCompanyRef>,
-            reads::list_video_transcript_jobs_handler,
-        ),
-        exposed_read(
-            "list_transcript_segments",
-            "list_transcript_segments",
-            "One transcript job's ordered segments (timestamped text) — the transcript body itself.",
-            tools::tool_schema::<reads::TranscriptSegmentsRef>,
-            reads::list_transcript_segments_handler,
-        ),
         // ---- Notes / claims ------------------------------------------------
         exposed_read(
             "list_notebook_entries",
             "list_notebook_entries",
-            "One company's research notes, each preserving the origin (report/article/transcript) it traces back to.",
+            "One company's research notes, each preserving the origin (report/article) it traces back to.",
             tools::tool_schema::<reads::CompanyRef>,
             reads::list_notebook_entries_handler,
         ),

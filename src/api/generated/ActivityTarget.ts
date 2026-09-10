@@ -4,4 +4,4 @@ import type { ActivityTool } from "./ActivityTool";
 /**
  * The typed navigation target an Activity item lands on.
  */
-export type ActivityTarget = { "kind": "company", companyId: string, tool: ActivityTool | null, } | { "kind": "sources" } | { "kind": "today" } | { "kind": "transcripts" };
+export type ActivityTarget = { "kind": "company", companyId: string, tool: ActivityTool | null, } | { "kind": "sources" } | { "kind": "today" };

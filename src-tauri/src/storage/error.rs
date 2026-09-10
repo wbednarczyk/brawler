@@ -18,8 +18,6 @@ pub enum StorageError {
     InvalidNotebookValue { key: &'static str, value: String },
     #[error("invalid company event value for {key}: {value}")]
     InvalidCompanyEventValue { key: &'static str, value: String },
-    #[error("invalid transcript value for {key}: {value}")]
-    InvalidTranscriptValue { key: &'static str, value: String },
     #[error("invalid AI analysis value for {key}: {value}")]
     InvalidAiAnalysisValue { key: &'static str, value: String },
     #[error("invalid diagnostic value for {key}: {value}")]

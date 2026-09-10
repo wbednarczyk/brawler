@@ -91,7 +91,7 @@ describe("Polish translation completeness", () => {
 // known allowlist, not a way for a NEW identical entry to go green — the
 // only way out of the test below is a translation. This ceiling may only be
 // LOWERED as entries are translated away, never raised to fit a new one.
-const IDENTICAL_ENTRIES_CEILING = 34;
+const IDENTICAL_ENTRIES_CEILING = 33;
 
 // B1 fix (owner-approved hard gate 2026-09-07, Astra re-verification of PR
 // #477 finding (a)): the ceiling alone permits regrowth-by-replacement — drop
@@ -112,7 +112,6 @@ const FROZEN_IDENTICAL_KEYS = new Set([
   "EV/EBITDA",
   "Free float",
   "GPW",
-  "Gemini",
   "ISIN",
   "Import",
   "KPI",

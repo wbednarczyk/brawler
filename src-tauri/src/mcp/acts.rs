@@ -62,14 +62,6 @@ act_handler!(
 );
 
 act_handler!(
-    create_note_from_transcript_selection_handler,
-    storage::CreateNoteFromTranscriptSelectionInput,
-    |state, input| state
-        .create_note_from_transcript_selection(input)
-        .map_err(CommandError::from)
-);
-
-act_handler!(
     update_notebook_entry_handler,
     storage::NotebookEntryUpdate,
     |state, input| state

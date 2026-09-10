@@ -18,11 +18,8 @@ pub fn validate_provenance(
     input: &Value,
 ) -> Result<(), CommandError> {
     let satisfied = match requirement {
-        // A non-empty `origins` array (notebook create) OR a non-empty
-        // `transcriptSegmentIds` selection (the transcript-note origin).
-        ProvenanceRequirement::Origins => {
-            nonempty_array(input, "origins") || nonempty_array(input, "transcriptSegmentIds")
-        }
+        // A non-empty `origins` array (notebook create).
+        ProvenanceRequirement::Origins => nonempty_array(input, "origins"),
         ProvenanceRequirement::SourceEvidence => nonempty_str(input, "sourceEvidenceId"),
         // A top-level `citationsJson` (single-verdict shape) OR a non-empty
         // `results` array where every entry carries its own non-empty

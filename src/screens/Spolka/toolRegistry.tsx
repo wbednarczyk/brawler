@@ -165,7 +165,7 @@ function renderToolBody(tool: Tool, ctx: ToolRenderContext): ReactElement {
     case "notatnik":
       // Deep-link navigation (F4c S2, ADR 0108 amendment): highlight an
       // existing entry or prefill the composer from an origin-attributed
-      // draft (Inbox/research/search/transcript callers).
+      // draft (Inbox/research/search callers).
       return <CompanyNotebookPanel company={ctx.company} highlightEntryId={tool.entryId} initialDraft={tool.draft} />;
     case "dziennik":
       return <DecisionJournalPanel company={ctx.company} />;

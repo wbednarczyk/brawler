@@ -36,7 +36,6 @@ pub enum ActivityFamily {
     ManagementReading,
     PriceHistory,
     KpiIngest,
-    Transcript,
     Corrupted,
 }
 
@@ -75,7 +74,6 @@ pub enum ActivityTarget {
     },
     Sources,
     Today,
-    Transcripts,
 }
 
 /// The resolved identity of one background task (ADR 0109 dec. 1): the task
@@ -492,23 +490,6 @@ pub fn identity_for_job(
         }
         _ => return None,
     })
-}
-
-/// The identity of a video transcript job (awaited work, direct-activity
-/// registry — never a `job_queue` row). Subject is the video title, falling
-/// back to its source URL when untitled.
-pub fn identity_for_transcript(job: &crate::storage::TranscriptJob) -> ActivityIdentity {
-    ActivityIdentity {
-        activity_key: format!("transcript:{}", job.id),
-        family: ActivityFamily::Transcript,
-        company_id: job.company_id.clone(),
-        subject: job
-            .source_label
-            .clone()
-            .filter(|label| !label.trim().is_empty())
-            .unwrap_or_else(|| job.source_url.clone()),
-        target: ActivityTarget::Transcripts,
-    }
 }
 
 #[cfg(test)]

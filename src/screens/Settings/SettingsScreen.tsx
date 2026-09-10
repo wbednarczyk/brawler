@@ -1,9 +1,7 @@
 import { useState } from "react";
 import {
-  Captions,
   Database,
   Download,
-  KeyRound,
   Keyboard,
   Logs,
   Palette,
@@ -12,7 +10,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AppearanceSettings } from "./AppearanceSettings";
-import { CredentialSettings } from "./CredentialSettings";
 import { DatabaseSettings } from "./DatabaseSettings";
 import { QueueSettings } from "./QueueSettings";
 import { ImportExportSettings } from "./ImportExportSettings";
@@ -20,7 +17,6 @@ import { LogSettings } from "./LogSettings";
 import { McpSettings } from "./McpSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
-import { TranscriptSettings } from "./TranscriptSettings";
 import {
   makeTextTranslator,
   makeTranslator,
@@ -32,8 +28,6 @@ import { ErrorText, Panel, PanelHeader, SelectField, Subnav } from "../../ui";
 type SettingsTab =
   | "appearance"
   | "sources"
-  | "transcripts"
-  | "credentials"
   | "importExport"
   | "shortcuts"
   | "logs"
@@ -43,8 +37,6 @@ type SettingsTab =
 const settingsTabs = [
   { id: "appearance", icon: Palette, labelKey: "settings.appearance.title" },
   { id: "sources", icon: RadioTower, labelKey: "settings.sources.title" },
-  { id: "transcripts", icon: Captions, labelText: "Transcripts" },
-  { id: "credentials", icon: KeyRound, labelKey: "settings.credentials.title" },
   {
     id: "importExport",
     icon: Download,
@@ -68,10 +60,6 @@ export function SettingsScreen() {
     locale,
     settings,
     settingsError,
-    geminiCredentialStatus,
-    geminiCredentialError,
-    geminiCredentialInFlight,
-    geminiApiKeyDraft,
     shortcutBindings,
     shortcutReferences,
     onThemeChange,
@@ -83,8 +71,6 @@ export function SettingsScreen() {
     onMcpWritesEnabledChange,
   onKpiAcquisitionEnabledChange,
     onShortcutBindingsChange,
-    onYoutubeTranscriptionModelChange,
-    onYoutubeTranscriptionTimeoutChange,
     onLogLevelChange,
     onLogMaxFilesChange,
     onLogMaxFileBytesChange,
@@ -95,14 +81,8 @@ export function SettingsScreen() {
     onSourcesWorkersChange,
     onAutopilotWorkersChange,
     onResetQueueSettings,
-    onGeminiApiKeyDraftChange,
-    onSaveGeminiApiKey,
-    onClearGeminiApiKey,
-    onOpenGeminiApiKeyPage,
     onImportApplied,
     formatPollInterval,
-    formatCredentialConfigured,
-    formatCredentialKind,
   } = useSettingsScreenViewModel();
   const t = makeTranslator(locale);
   const text = makeTextTranslator(locale);
@@ -174,31 +154,6 @@ export function SettingsScreen() {
               onPollIntervalChange={onPollIntervalChange}
               onBackfillYearsChange={onBackfillYearsChange}
               formatPollInterval={formatPollInterval}
-            />
-          ) : null}
-          {activeSettingsTab === "transcripts" ? (
-            <TranscriptSettings
-              settings={settings}
-              onYoutubeTranscriptionModelChange={
-                onYoutubeTranscriptionModelChange
-              }
-              onYoutubeTranscriptionTimeoutChange={
-                onYoutubeTranscriptionTimeoutChange
-              }
-            />
-          ) : null}
-          {activeSettingsTab === "credentials" ? (
-            <CredentialSettings
-              formatCredentialConfigured={formatCredentialConfigured}
-              formatCredentialKind={formatCredentialKind}
-              geminiApiKeyDraft={geminiApiKeyDraft}
-              geminiCredentialError={geminiCredentialError}
-              geminiCredentialInFlight={geminiCredentialInFlight}
-              geminiCredentialStatus={geminiCredentialStatus}
-              onClearGeminiApiKey={onClearGeminiApiKey}
-              onGeminiApiKeyDraftChange={onGeminiApiKeyDraftChange}
-              onOpenGeminiApiKeyPage={onOpenGeminiApiKeyPage}
-              onSaveGeminiApiKey={onSaveGeminiApiKey}
             />
           ) : null}
           {activeSettingsTab === "importExport" ? (

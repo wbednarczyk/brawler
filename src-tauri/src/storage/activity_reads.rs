@@ -165,42 +165,6 @@ pub(crate) fn pending_jobs(connection: &Connection) -> StorageResult<Vec<Pending
     Ok(out)
 }
 
-/// A `transcript_jobs` row still `queued` (not yet awaited/started — no
-/// `job_runs`/registry entry exists for it yet, ADR 0109 dec. 3): the raw
-/// material for `queued`'s transcript family.
-pub(crate) struct QueuedTranscriptRow {
-    pub id: String,
-    pub company_id: Option<String>,
-    pub source_label: Option<String>,
-    pub source_url: String,
-    pub created_at: String,
-}
-
-pub(crate) fn queued_transcript_jobs(
-    connection: &Connection,
-) -> StorageResult<Vec<QueuedTranscriptRow>> {
-    let mut statement = connection.prepare(
-        "SELECT id, company_id, source_label, source_url, created_at
-         FROM transcript_jobs
-         WHERE status = 'queued'
-         ORDER BY created_at",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok(QueuedTranscriptRow {
-            id: row.get(0)?,
-            company_id: row.get(1)?,
-            source_label: row.get(2)?,
-            source_url: row.get(3)?,
-            created_at: row.get(4)?,
-        })
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(out)
-}
-
 /// The intended access path for `recent_candidates_sql()` (sol diff R1
 /// #16) — a `finished_at DESC` range scan that early-terminates once past
 /// the window, never `idx_job_runs_status`: `status IN (…)` alone is not
@@ -396,47 +360,6 @@ pub(crate) fn stalled_queue_rows(connection: &Connection) -> StorageResult<Vec<P
             last_error: row.get(3)?,
             created_at: row.get(4)?,
             attempts: row.get(5)?,
-        })
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(out)
-}
-
-/// A `transcript_jobs` row literally `running` with no matching open
-/// `job_runs` occurrence (`run_key = 'direct:' || activity_key`) — the
-/// transcript-runner finalizer (sol diff R1 #6) means this should not exist
-/// while the app is alive, but the read model surfaces it honestly as
-/// `stalled` rather than hiding it, mirroring [`stalled_queue_rows`].
-pub(crate) struct StalledTranscriptRow {
-    pub id: String,
-    pub company_id: Option<String>,
-    pub source_label: Option<String>,
-    pub source_url: String,
-    pub started_at: String,
-}
-
-pub(crate) fn stalled_transcript_rows(
-    connection: &Connection,
-) -> StorageResult<Vec<StalledTranscriptRow>> {
-    let mut statement = connection.prepare(
-        "SELECT transcript_jobs.id, transcript_jobs.company_id, transcript_jobs.source_label,
-                transcript_jobs.source_url, transcript_jobs.started_at
-         FROM transcript_jobs
-         LEFT JOIN job_runs
-             ON job_runs.run_key = 'direct:transcript:' || transcript_jobs.id
-             AND job_runs.status = 'running'
-         WHERE transcript_jobs.status = 'running' AND job_runs.id IS NULL",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok(StalledTranscriptRow {
-            id: row.get(0)?,
-            company_id: row.get(1)?,
-            source_label: row.get(2)?,
-            source_url: row.get(3)?,
-            started_at: row.get(4)?,
         })
     })?;
     let mut out = Vec::new();

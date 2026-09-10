@@ -16,8 +16,8 @@ pub struct SearchMatch {
     pub content_type: String,
     pub source_id: String,
     pub company_id: Option<String>,
-    /// Navigational container when the item's own id is not the navigation target
-    /// (e.g. the transcript job for a transcript segment). `None` otherwise.
+    /// Navigational container when the item's own id is not the navigation
+    /// target. `None` otherwise.
     pub parent_id: Option<String>,
     pub title: String,
     pub snippet: String,

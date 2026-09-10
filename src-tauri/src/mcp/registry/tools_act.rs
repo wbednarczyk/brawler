@@ -19,16 +19,9 @@ pub(super) fn act_wave_tools() -> Vec<RegistryEntry> {
         exposed_act(
             "create_notebook_entry",
             Some(Origins),
-            "Create a research note for a company. Every note must carry a non-empty `origins` array tracing it to a report/article/transcript (provenance). References the company by its internal id (from list_companies).",
+            "Create a research note for a company. Every note must carry a non-empty `origins` array tracing it to a report/article (provenance). References the company by its internal id (from list_companies).",
             tools::tool_schema::<storage::NewNotebookEntry>,
             acts::create_notebook_entry_handler,
-        ),
-        exposed_act(
-            "create_note_from_transcript_selection",
-            Some(Origins),
-            "Create a research note anchored to selected transcript segments (the selection is the note's origin/provenance).",
-            tools::tool_schema::<storage::CreateNoteFromTranscriptSelectionInput>,
-            acts::create_note_from_transcript_selection_handler,
         ),
         // No provenance carrier: a note's origins are immutable from creation
         // (ADR 0088 dec. 3 is satisfied at create) and the update input carries
@@ -44,7 +37,7 @@ pub(super) fn act_wave_tools() -> Vec<RegistryEntry> {
         exposed_act(
             "create_management_claim",
             Some(SourceEvidence),
-            "Record a tracked management claim (guidance/promise). Must anchor to a `sourceEvidenceId` (the report/transcript it was made in).",
+            "Record a tracked management claim (guidance/promise). Must anchor to a `sourceEvidenceId` (the report it was made in).",
             tools::tool_schema::<storage::NewManagementClaim>,
             acts::create_management_claim_handler,
         ),
@@ -110,7 +103,7 @@ pub(super) fn act_wave_tools() -> Vec<RegistryEntry> {
         exposed_act(
             "set_qualitative_verdicts",
             Some(CitationsJson),
-            "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry `citationsJson`: a serialized non-empty array of typed evidence refs `[{\"evidenceType\":\"notebook_entry\",\"evidenceId\":\"<id>\"}]` (types: feed_item | notebook_entry | claim | transcript_segment | company_event | research_question | company_signal | decision_entry); every ref must resolve to an existing row or the whole batch is refused. Decision support only — never an investment recommendation.",
+            "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry `citationsJson`: a serialized non-empty array of typed evidence refs `[{\"evidenceType\":\"notebook_entry\",\"evidenceId\":\"<id>\"}]` (types: feed_item | notebook_entry | claim | company_event | research_question | company_signal | decision_entry); every ref must resolve to an existing row or the whole batch is refused. Decision support only — never an investment recommendation.",
             tools::tool_schema::<crate::commands::quality_frameworks::SetQualitativeVerdictsInput>,
             acts::set_qualitative_verdicts_handler,
         ),

@@ -90,7 +90,7 @@ Locale work follows the existing settings and shared-helper boundaries:
 - App-level locale state wiring belongs in the app controllers that already own settings state.
 - Locale resources and typed lookup helpers belong under `src/shared/locale/` or an equivalently focused shared module.
 - Screen components should receive localized strings or a narrow locale helper; they should not import Tauri settings APIs directly.
-- Source-provided text, company names, ticker symbols, URLs, attribution, transcript text, notebook titles/bodies, and fetched article/report bodies must remain source/user-provided and should not pass through app-locale translation.
+- Source-provided text, company names, ticker symbols, URLs, attribution, notebook titles/bodies, and fetched article/report bodies must remain source/user-provided and should not pass through app-locale translation.
 
 Shortcut work stays separate from row-navigation helpers: `src/shared/hooks/useKeyboardListNavigation.ts` remains for local arrow-key list movement; app-wide shortcut registration and the discoverability shell belong in `src/app/` and Settings/Help UI; screen-specific shortcut actions belong in the owning screen/controller, with tests near the owner.
 
@@ -108,7 +108,7 @@ Live layout: `repoctx modules` (domains: `src-tauri/src/{commands,storage,provid
 - New typed Tauri commands should be registered through `commands/mod.rs` and implemented in the matching command module.
 - Command modules should not accumulate storage SQL, provider HTTP details, or source parsing logic.
 - New storage behavior should live in the domain storage module and be exposed through the storage facade only when other domains or commands need it.
-- The single `AppState` storage facade (grown to ~207 methods) is being split into **concrete domain-grouped facade structs** (`WatchlistStore`, `FeedStore`, `CompanyStore`, `ResearchStore`, …), each owning a [`Database`](../src-tauri/src/storage/database.rs) connection-source handle and exposing only its domain; commands depend on the store for their domain, and `AppState` is the thin composition root that wires them. These are concrete SQLite-coupled structs (a structural split), **not** a repository port — the storage non-port stance of [ADR 0039](adr/0039-ports-and-adapters-posture.md) stands. Realized under [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md) (Architecture v2). **Done:** the connection source (the `Db`/`DbGuard`/`checkout` primitive) is extracted from `AppState` into the cheap-clone `Database` handle in `storage/database.rs`, and **every storage domain now has a domain store** (`CompanyStore`, `WatchlistStore`, `FeedStore`, `JobQueueStore`, `ResearchStore`, `FinancialsStore`, `TranscriptStore`, `SignalStore`, `QualityFrameworkStore`, `SourcesStore`, `EventStore`, `SettingsStore`, … — one per `storage/*` module) owning a `Database` and exposing only its domain's operations, reached via the matching `AppState::<domain>()` accessor. `AppState` is now a **composition root**: it holds the `Database` + cross-cutting infra (pool/seed, `checkout`, db status, backup, metrics, backfill progress) and otherwise only constructs the stores; its former per-domain methods are thin one-line delegations to the stores (kept so existing call sites stay green — behavior-preserving). **New storage methods go on the relevant domain store, never as fresh methods on `AppState`.** Call sites may move from `state.foo()` to `state.<domain>().foo()` incrementally with zero behavior change.
+- The single `AppState` storage facade (grown to ~207 methods) is being split into **concrete domain-grouped facade structs** (`WatchlistStore`, `FeedStore`, `CompanyStore`, `ResearchStore`, …), each owning a [`Database`](../src-tauri/src/storage/database.rs) connection-source handle and exposing only its domain; commands depend on the store for their domain, and `AppState` is the thin composition root that wires them. These are concrete SQLite-coupled structs (a structural split), **not** a repository port — the storage non-port stance of [ADR 0039](adr/0039-ports-and-adapters-posture.md) stands. Realized under [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md) (Architecture v2). **Done:** the connection source (the `Db`/`DbGuard`/`checkout` primitive) is extracted from `AppState` into the cheap-clone `Database` handle in `storage/database.rs`, and **every storage domain now has a domain store** (`CompanyStore`, `WatchlistStore`, `FeedStore`, `JobQueueStore`, `ResearchStore`, `FinancialsStore`, `SignalStore`, `QualityFrameworkStore`, `SourcesStore`, `EventStore`, `SettingsStore`, … — one per `storage/*` module) owning a `Database` and exposing only its domain's operations, reached via the matching `AppState::<domain>()` accessor. `AppState` is now a **composition root**: it holds the `Database` + cross-cutting infra (pool/seed, `checkout`, db status, backup, metrics, backfill progress) and otherwise only constructs the stores; its former per-domain methods are thin one-line delegations to the stores (kept so existing call sites stay green — behavior-preserving). **New storage methods go on the relevant domain store, never as fresh methods on `AppState`.** Call sites may move from `state.foo()` to `state.<domain>().foo()` incrementally with zero behavior change.
 - New source/provider orchestration should go through `jobs/*` when it combines storage with adapters/providers.
 - Secret handling stays under the provider credential boundary; runtime frontend code must never receive secrets.
 
@@ -172,7 +172,7 @@ Every non-trivial code change should consider modularity before implementation:
 
 This document is a standing architecture checklist, not a backlog of remaining extraction tasks (completion narrative: [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02)). Further extraction is expected during normal feature work when a module gains a new reason to change. Good future extraction triggers:
 
-- A cross-domain research workspace needs to aggregate feed items, notes, claims, transcripts, events, AI outputs, sources, review state, and evidence links without coupling screens directly to storage tables or unrelated app controllers.
+- A cross-domain research workspace needs to aggregate feed items, notes, claims, events, AI outputs, sources, review state, and evidence links without coupling screens directly to storage tables or unrelated app controllers.
 - A new app workflow adds state that can be isolated into a controller or view-model helper.
 - A screen adds a second complex panel, editor, or row/detail pattern.
 - A storage domain adds enough independent behavior to justify a focused helper/test module.
@@ -184,7 +184,7 @@ Known acceptable large files:
 
 - `src/app/AppStateRoot.tsx`, because it is the state/composition root.
 - Cohesive screen/domain components such as `CompanyWorkspace.tsx` and `SourceAdapterRow.tsx`.
-- Storage domain modules such as `storage/sources.rs` and `storage/transcripts.rs` while they remain domain-focused.
+- Storage domain modules such as `storage/sources.rs` and `storage/notebooks.rs` while they remain domain-focused.
 
 If any of these start mixing layers or unrelated domains, split the new responsibility during the feature slice that introduces the pressure.
 
@@ -203,7 +203,7 @@ Frontend ownership:
 Rust ownership:
 
 - Research/evidence commands should be thin wrappers around a dedicated research/evidence domain boundary.
-- Existing domain storage modules remain the canonical owners of feed items, notebook entries, transcript segments, events, companies, watchlists, and source state.
+- Existing domain storage modules remain the canonical owners of feed items, notebook entries, events, companies, watchlists, and source state.
 - The research/evidence boundary owns cross-domain read models, review checkpoints, and evidence links.
 
 Storage posture:

@@ -12,7 +12,7 @@ Brawler should feel like a personal investor research desk:
 - dense enough for repeated professional use
 - calm enough to avoid dashboard noise
 - source-first and origin-aware
-- easy to turn a report, article, or transcript excerpt into a durable note
+- easy to turn a report or article excerpt into a durable note
 
 The default screen is the investor inbox. The second most important surface is the company notebook.
 
@@ -127,7 +127,7 @@ Acceptance criteria:
 
 - Company notebook is reachable from both company navigation and feed item context.
 - Open claims and due follow-up periods are visible.
-- Notes can be traced back to feed items, reports, or transcript segments.
+- Notes can be traced back to feed items or reports.
 
 ## Journey: Track Company Fundamentals From A Report
 
@@ -199,9 +199,9 @@ Intent: capture a management promise, then resolve whether it was delivered when
 
 Flow:
 
-1. Reading a report document or a transcript, the user adds a claim manually from the company workspace **Claims** tab: the statement, a due period, an optional quantitative target, and the source reference. (The in-app AI claim-extraction launcher is retired — [ADR 0084](adr/0084-retire-in-app-ai-layer.md); agent-assisted claim proposals return later through the MCP write path with mandatory provenance.)
+1. Reading a report document, the user adds a claim manually from the company workspace **Claims** tab: the statement, a due period, an optional quantitative target, and the source reference. (The in-app AI claim-extraction launcher is retired — [ADR 0084](adr/0084-retire-in-app-ai-layer.md); agent-assisted claim proposals return later through the MCP write path with mandatory provenance.)
 2. The claim is the user's own record — nothing is created automatically.
-3. The confirmed claim appears in the company workspace **Claims** tab with verdict `pending` and its due period, source-linked back to the report/transcript.
+3. The confirmed claim appears in the company workspace **Claims** tab with verdict `pending` and its due period, source-linked back to the report.
 4. Later, when the due period's report arrives, the claim resurfaces in the **claims to verify** review queue (bucketed due / overdue / upcoming). For a quantitative claim, the matching confirmed financial fact is shown beside the claim.
 5. The user sets the verdict (delivered / partially delivered / missed / revised), optionally linking the verifying fact as supporting or contradicting evidence.
 
@@ -258,34 +258,7 @@ Acceptance criteria:
 
 ## Journey: YouTube Conference To Notes
 
-Intent: capture relevant management statements from a press conference.
-
-Flow:
-
-1. User opens Transcripts or a company workspace.
-2. User enters a YouTube video link in a field labeled `Recording link`.
-3. User may optionally provide the target company/ticker before transcription.
-4. App starts a Gemini-backed transcription.
-5. If no company was provided, app attempts to recognize the company from the video/transcript result.
-6. If recognition fails, the transcript remains available as an unlinked transcript.
-7. User can optionally link the transcript to a company through the same local lookup used by Companies.
-8. User sees the transcript's status while processing.
-9. Transcript segments appear with timestamps when available.
-10. User reviews transcript segments.
-11. User selects one or more whole transcript segments.
-12. If the transcript is linked to a company, user edits the note draft and saves it to that company notebook.
-
-Acceptance criteria:
-
-- Gemini is used only as the preferred provider for YouTube transcription.
-- M10 completion requires real Gemini transcript generation for a supported public YouTube URL; sample transcript output is only for development and automated tests.
-- URL is the primary required input; company is optional upfront and optional after transcription.
-- Unlinked transcripts remain valid and viewable.
-- Company selection uses the same cached company lookup/autocomplete behavior as Companies when the user wants a company notebook note.
-- User confirms note content before saving.
-- Saved notes link to transcript segment IDs, original YouTube URL, provider context, and timestamp ranges when available.
-- Provider limits and privacy implications are visible before sending video data to the provider.
-- Transcript segments are immutable source output and are not edited directly; only note drafts created from them are editable ([ADR 0064](adr/0064-resolved-v1-ux-decisions.md)).
+Retired ([ADR 0111](adr/0111-retire-video-transcription.md), #463): video transcription is gone; a press-conference transcript the investor wants enters as a document or a URL-backed note captured by their agent over MCP, then flows into notes and claims like any other source.
 
 ## Journey: Appearance And Locale Settings
 
@@ -308,11 +281,11 @@ Acceptance criteria:
 - Light theme preserves the same accent identity.
 - Polish locale is available from Settings.
 - Locale handling is extensible so future supported languages can be added through locale resources/configuration instead of per-screen rewrites.
-- Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies keep their original or user-entered language.
+- Source-provided text, company names, ticker symbols, URLs, source attribution, and notebook bodies keep their original or user-entered language.
 
 ## Journey: AI Capability Routing — retired
 
-Per-capability AI provider routing is retired with the in-app AI analysis layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); the only AI setting left is the transcript provider (Settings → AI, Gemini key for YouTube transcription). Intelligence arrives through the user's own agent over the MCP port (BYOA).
+Per-capability AI provider routing is retired with the in-app AI analysis layer ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)), and the last provider setting went with video transcription ([ADR 0111](adr/0111-retire-video-transcription.md)) — Settings has no AI or credential tab. Intelligence arrives through the user's own agent over the MCP port (BYOA).
 
 ## Journey: Connect An AI Assistant (MCP Server)
 
@@ -342,13 +315,13 @@ Flow:
 
 1. User opens global search from the top-toolbar search box (or its keyboard shortcut).
 2. User types a query.
-3. App shows ranked results grouped by content type (companies, feed items, notes, transcript segments, events), each with a snippet.
+3. App shows ranked results grouped by content type (companies, feed items, notes, events), each with a snippet.
 4. User selects a result.
 5. App navigates to the owning screen/item.
 
 Acceptance criteria:
 
-- Searching a known phrase from feed, note, and transcript content returns it and navigates correctly.
+- Searching a known phrase from feed and note content returns it and navigates correctly.
 - Results are ranked and grouped by content type with a snippet.
 - The per-workspace search/filter inputs (Inbox, Companies) still work independently.
 - Search copy is available in English and Polish.
@@ -377,7 +350,6 @@ Destinations (exact):
 | Report reading · shareholder / management reading | Spółka › Documents, the document row selected (`aria-current`) and scrolled into view — action label `Otwórz w dokumentach` |
 | Price history | Spółka Overview |
 | Morning briefing | Today |
-| Transcript | Transcripts screen |
 
 Acceptance criteria:
 
@@ -411,4 +383,4 @@ Acceptance criteria:
 
 See [UI Information Architecture](ui-information-architecture.md) for the canonical V1 screen list and deferred-UI pointer.
 
-Resolved V1 UX decisions (company workspace structure, report backfill, report-over-report diff, claim follow-up periods, transcript editability, source status placement) are recorded in [ADR 0064](adr/0064-resolved-v1-ux-decisions.md); current behavior for each is stated in the journeys above.
+Resolved V1 UX decisions (company workspace structure, report backfill, report-over-report diff, claim follow-up periods, source status placement; transcript editability is retired with [ADR 0111](adr/0111-retire-video-transcription.md)) are recorded in [ADR 0064](adr/0064-resolved-v1-ux-decisions.md); current behavior for each is stated in the journeys above.

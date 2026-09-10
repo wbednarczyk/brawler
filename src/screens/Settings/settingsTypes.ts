@@ -1,8 +1,6 @@
-import type { FormEvent } from "react";
 import type {
   AccentPalette,
   AppLocale,
-  CredentialStatus,
   ShortcutBindingSetting,
   Theme,
   UserSettings,
@@ -15,10 +13,6 @@ export type SettingsScreenProps = {
   locale: AppLocale;
   settings: UserSettings | null;
   settingsError: string | null;
-  geminiCredentialStatus: CredentialStatus | null;
-  geminiCredentialError: string | null;
-  geminiCredentialInFlight: boolean;
-  geminiApiKeyDraft: string;
   shortcutBindings: Record<string, ShortcutBindingSetting>;
   shortcutReferences: AppShortcutReferenceItem[];
   onThemeChange: (theme: Theme) => void;
@@ -32,8 +26,6 @@ export type SettingsScreenProps = {
   onShortcutBindingsChange: (
     shortcutBindings: Record<string, ShortcutBindingSetting>,
   ) => void;
-  onYoutubeTranscriptionModelChange: (model: string) => void;
-  onYoutubeTranscriptionTimeoutChange: (timeoutSeconds: number) => void;
   onLogLevelChange: (level: string) => void;
   onLogMaxFilesChange: (maxFiles: number) => void;
   onLogMaxFileBytesChange: (maxFileBytes: number) => void;
@@ -44,13 +36,6 @@ export type SettingsScreenProps = {
   onSourcesWorkersChange: (workers: number) => void;
   onAutopilotWorkersChange: (workers: number) => void;
   onResetQueueSettings: () => void;
-  onGeminiApiKeyDraftChange: (apiKey: string) => void;
-  onSaveGeminiApiKey: (event: FormEvent<HTMLFormElement>) => void;
-  onClearGeminiApiKey: () => void;
-  onOpenGeminiApiKeyPage: () => void;
   onImportApplied: () => void;
   formatPollInterval: (seconds: number) => string;
-  formatGeminiModel: (value: string | null | undefined) => string;
-  formatCredentialConfigured: (status: CredentialStatus | null) => string;
-  formatCredentialKind: (value: string | null | undefined) => string;
 };

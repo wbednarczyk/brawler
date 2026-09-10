@@ -1,5 +1,6 @@
 ---
-source: src/mcp/registry.rs
+source: src/mcp/registry/tests.rs
+assertion_line: 197
 expression: "serde_json::to_string_pretty(&manifest).expect(\"serializable\")"
 ---
 {
@@ -147,16 +148,6 @@ expression: "serde_json::to_string_pretty(&manifest).expect(\"serializable\")"
     },
     {
       "acquisition": false,
-      "name": "list_video_transcript_jobs",
-      "tier": "read"
-    },
-    {
-      "acquisition": false,
-      "name": "list_transcript_segments",
-      "tier": "read"
-    },
-    {
-      "acquisition": false,
       "name": "list_notebook_entries",
       "tier": "read"
     },
@@ -238,11 +229,6 @@ expression: "serde_json::to_string_pretty(&manifest).expect(\"serializable\")"
     {
       "acquisition": false,
       "name": "create_notebook_entry",
-      "tier": "act"
-    },
-    {
-      "acquisition": false,
-      "name": "create_note_from_transcript_selection",
       "tier": "act"
     },
     {

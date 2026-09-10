@@ -432,5 +432,9 @@ fn act_gate(
 ///
 /// #399 S4 (ADR 0101, +1, MCP-only): 65 act, adding `propose_kpi_definition`
 /// — the ten-tool acquisition surface.
+///
+/// #463 (ADR 0111, -3): video transcription retired — 48 read (removing
+/// `list_video_transcript_jobs` and `list_transcript_segments`); 64 act
+/// (removing `create_note_from_transcript_selection`).
 #[cfg(test)]
-pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 115;
+pub(crate) const FROZEN_EXPOSED_TOOL_COUNT: usize = 112;

@@ -86,9 +86,6 @@ pub(super) fn evidence_reference_exists_for_import(
         "feed_item" => table_reference_exists(connection, "feed_items", evidence_id),
         "notebook_entry" => table_reference_exists(connection, "notebook_entries", evidence_id),
         "claim" => table_reference_exists(connection, "management_claims", evidence_id),
-        "transcript_segment" => {
-            table_reference_exists(connection, "transcript_segments", evidence_id)
-        }
         "company_event" => table_reference_exists(connection, "company_events", evidence_id),
         "research_question" => {
             table_reference_exists(connection, "research_questions", evidence_id)

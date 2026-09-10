@@ -32,6 +32,14 @@ interface Step {
    * is a dual-execution assertion like `expectField`.
    */
   expectDeep?: Record<string, unknown>;
+  /**
+   * Shape pin: every named key must be present (not `undefined`) on the
+   * result object, on BOTH sides. For read models whose VALUES legitimately
+   * differ between the mock and the backend (the mock synthesizes activity
+   * from its sample companies — #463 review) the DTO shape is still a
+   * dual-execution contract; an empty `expectField` is not.
+   */
+  expectKeys?: string[];
 }
 interface Journey {
   name: string;
@@ -40,8 +48,10 @@ interface Journey {
 
 /** Replace any `"$name"` leaf with the captured value of `name`. */
 function substitute(value: unknown, caps: Record<string, unknown>): unknown {
-  if (typeof value === "string" && value.startsWith("$")) return caps[value.slice(1)];
-  if (Array.isArray(value)) return value.map((entry) => substitute(entry, caps));
+  if (typeof value === "string" && value.startsWith("$"))
+    return caps[value.slice(1)];
+  if (Array.isArray(value))
+    return value.map((entry) => substitute(entry, caps));
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
@@ -89,7 +99,9 @@ function deepEqual(a: unknown, b: unknown): boolean {
 function isSuperset(actual: unknown, subset: Record<string, unknown>): boolean {
   if (!actual || typeof actual !== "object") return false;
   const object = actual as Record<string, unknown>;
-  return Object.entries(subset).every(([key, value]) => deepEqual(object[key], value));
+  return Object.entries(subset).every(([key, value]) =>
+    deepEqual(object[key], value),
+  );
 }
 
 describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
@@ -102,19 +114,46 @@ describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
       const caps: Record<string, unknown> = {};
 
       for (const step of journey.steps) {
-        const input = substitute(step.input ?? {}, caps) as Record<string, unknown>;
+        const input = substitute(step.input ?? {}, caps) as Record<
+          string,
+          unknown
+        >;
         const result = await runtime.invoke(step.command, input);
 
         if (step.capture) caps[step.capture] = (result as { id: unknown }).id;
         if (step.expectField) {
-          expect(isSuperset(result, step.expectField), `${step.command} expectField`).toBe(true);
+          // An empty expectation is membership theatre, never coverage
+          // (#463 review) — both replayers refuse it.
+          expect(
+            Object.keys(step.expectField).length,
+            `${step.command} expectField is empty`,
+          ).toBeGreaterThan(0);
+          expect(
+            isSuperset(result, step.expectField),
+            `${step.command} expectField`,
+          ).toBe(true);
+        }
+        if (step.expectKeys) {
+          expect(
+            step.expectKeys.length,
+            `${step.command} expectKeys is empty`,
+          ).toBeGreaterThan(0);
+          const object = result as Record<string, unknown>;
+          for (const key of step.expectKeys) {
+            expect(
+              object[key],
+              `${step.command} expectKeys ${key}`,
+            ).not.toBeUndefined();
+          }
         }
         if (step.expectContains) {
           const subset = step.expectContains;
           const array = step.expectContainsField
             ? (result as Record<string, unknown>)[step.expectContainsField]
             : result;
-          expect(Array.isArray(array), `${step.command} returns array`).toBe(true);
+          expect(Array.isArray(array), `${step.command} returns array`).toBe(
+            true,
+          );
           expect(
             (array as unknown[]).some((item) => isSuperset(item, subset)),
             `${step.command} expectContains`,
@@ -125,7 +164,9 @@ describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
           const array = step.expectContainsField
             ? (result as Record<string, unknown>)[step.expectContainsField]
             : result;
-          expect(Array.isArray(array), `${step.command} returns array`).toBe(true);
+          expect(Array.isArray(array), `${step.command} returns array`).toBe(
+            true,
+          );
           expect(
             (array as unknown[]).every((item) => !isSuperset(item, subset)),
             `${step.command} expectAbsent`,
@@ -133,7 +174,10 @@ describe("mock-fidelity corpus — TS mock runtime side (ADR 0049 T6)", () => {
         }
         if (step.expectDeep) {
           for (const [path, expected] of Object.entries(step.expectDeep)) {
-            expect(getByPath(result, path), `${step.command} expectDeep ${path}`).toEqual(expected);
+            expect(
+              getByPath(result, path),
+              `${step.command} expectDeep ${path}`,
+            ).toEqual(expected);
           }
         }
       }

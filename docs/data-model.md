@@ -10,7 +10,6 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Con
 - IDs are stable application IDs, not user-visible labels.
 - Tickers are user-facing, but `qualified_ticker` is the uniqueness boundary.
 - Fetched content and notes must preserve origin links.
-- Transcript source output is immutable in v1.
 - Settings are local and must not require cloud identity.
 - Secrets live in the OS keychain, not in SQLite.
 - YAML config is import/export/bootstrap, not runtime truth.
@@ -23,7 +22,7 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Con
 
 ### Companies
 
-Supports Companies screen, company workspace, feed matching, notebooks, and transcript ownership.
+Supports Companies screen, company workspace, feed matching, and notebooks.
 
 Fields:
 
@@ -191,7 +190,7 @@ Rules:
 
 ### Notebook Entries
 
-Supports company notebooks (the Spółka `notatnik` tool; the cross-company Notebooks screen was retired 2026-09-02, ADR 0108 amendment), claims follow-up, and notes from feed/transcripts.
+Supports company notebooks (the Spółka `notatnik` tool; the cross-company Notebooks screen was retired 2026-09-02, ADR 0108 amendment), claims follow-up, and notes from feed items and report documents.
 
 Fields:
 
@@ -217,7 +216,7 @@ Rules:
 
 - `body_format` is `markdown` in v1.
 - Notes belong to exactly one company.
-- Origin links are required for notes created from feed items, AI outputs, or transcript segments.
+- Origin links are required for notes created from feed items or report documents.
 - `claim_status`, `event_date`, `follow_up_after`, and `follow_up_date` are **legacy** claim columns. As of `v0.42.0` ([ADR 0040](adr/0040-management-claims-tracker.md)) management claims are a first-class entity (see [Management Claims](#management-claims)); the `0045` forward migration moves existing `kind = 'claim'` rows into `management_claims`. The columns remain for backward-compatible reads of any non-claim note that set them; new claims are not written here.
 
 ### Company Events
@@ -552,62 +551,7 @@ New `kpi_definitions` seed rows: reported `current_assets`, `current_liabilities
 
 ### Transcript Jobs
 
-Supports Transcripts screen and company Transcripts tab.
-
-Fields:
-
-- `id`
-- `company_id`
-- `provider_id`
-- `source_type`
-- `source_url`
-- `source_label`
-- `company_resolution_status`
-- `recognized_company_candidates_json`
-- `status`
-- `error_code`
-- `created_at`
-- `started_at`
-- `finished_at`
-- `error`
-
-Rules:
-
-- Gemini is preferred only for YouTube transcription jobs.
-- Source URL is required.
-- `company_id` is nullable at job creation time.
-- When a company/ticker is supplied before transcription, `company_id` is set and `company_resolution_status = provided`.
-- When no company/ticker is supplied, the app may transcribe first, then attempt company recognition from transcript/provider output.
-- If recognition fails, `company_resolution_status = needs_user_selection` and the UI must require company lookup/selection before transcript segments can become notebook notes.
-- Allowed `company_resolution_status` values: `provided`, `recognized`, `unresolved`, `needs_user_selection`.
-- Allowed `status` values: `queued`, `running`, `completed`, `failed`.
-- Allowed `error_code` values: `provider_not_configured`, `provider_limit`, `provider_unavailable`, `provider_error`, `network_error`, `invalid_source_url`, `parse_error`, `unknown`.
-- `error` stores user-readable diagnostic text and must not store provider secrets.
-- Jobs emit status changes to the UI.
-
-### Transcript Segments
-
-Supports transcript review and note creation from selected conference excerpts.
-
-Fields:
-
-- `id`
-- `transcript_job_id`
-- `company_id`
-- `start_seconds`
-- `end_seconds`
-- `speaker`
-- `text`
-- `language`
-- `created_at`
-
-Rules:
-
-- `company_id` is nullable until the parent transcript job is resolved to a company.
-- Segment text is immutable source output in v1.
-- Timestamps are optional because providers may return different precision.
-- Notes created from transcript segments reference them through origin links.
-- Transcript-derived notes are normal notebook entries; each selected segment creates a `transcript_segment` origin containing the segment ID, original video URL, and job/provider/timestamp context in the label.
+Retired ([ADR 0111](adr/0111-retire-video-transcription.md), #463): `transcript_jobs` and `transcript_segments` stay in the schema as empty legacy tables (append-only migrations; the `0017`/`0039` triggers and the `jobs.transcript_job_id` column stay inert) with no reader; migration `0156` removed the `youtube_transcription_*` settings rows and any transcript search-index rows.
 
 ### AI Analysis Results — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
@@ -663,7 +607,7 @@ Rules:
 
 - Evidence links relate existing domain entities without moving their canonical data.
 - Existing notebook origin rows remain provenance records and are not replaced by `evidence_links`.
-- Evidence links may connect source items, notebook entries, claims, events, transcript segments, research questions, and reminders.
+- Evidence links may connect source items, notebook entries, claims, events, research questions, and reminders.
 - Initial relation types include `originates_from`, `cites`, `supports`, `contradicts`, `updates`, `follows_up`, `answers`, and `related`.
 - Link validation should reject unknown entity types and dangling references when practical.
 
@@ -686,7 +630,7 @@ Rules:
 - Initial `status` values are `open`, `answered`, and `closed`.
 - `closed_at` is set when status becomes `closed` and cleared when a closed question is reopened.
 - Research questions are research-owned records, not notebook entries.
-- Questions may be linked to feed items, notebook entries, claims, events, transcript segments, AI analysis, and other accepted evidence through `evidence_links`.
+- Questions may be linked to feed items, notebook entries, claims, events, and other accepted evidence through `evidence_links`.
 - Company-scoped questions appear in the backend research timeline as `research_question` evidence items.
 
 AI research briefs are retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5): `ai_research_brief_jobs`/`ai_research_briefs`/`ai_research_brief_citations` were dropped by migration `0102` (no readable history survives).
@@ -939,7 +883,7 @@ A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-br
 
 ### Management Claims
 
-First-class management claims ([ADR 0040](adr/0040-management-claims-tracker.md), `v0.42.0`): a tracked management promise from a report or transcript, with a normalized due period and a user-set verdict. Replaces the legacy `notebook_entries(kind='claim')` model. Migration `0045_management_claims.sql`.
+First-class management claims ([ADR 0040](adr/0040-management-claims-tracker.md), `v0.42.0`): a tracked management promise from a report, with a normalized due period and a user-set verdict. Replaces the legacy `notebook_entries(kind='claim')` model. Migration `0045_management_claims.sql`.
 
 `management_claims`:
 
@@ -948,7 +892,7 @@ First-class management claims ([ADR 0040](adr/0040-management-claims-tracker.md)
 - `made_at`: date the statement was made (`YYYY-MM-DD`, optional); `source_period_id` → `financial_periods(id)` optional (the period it was stated in/about).
 - Due period (the resurfacing match key): `due_fiscal_year` (integer, optional) + `due_period_type` (reuses the `financial_periods` vocabulary: `FY`/`H1`/`H2`/`Q1`–`Q4`/`9M`/`M01`–`M12`, optional). A claim with no due period never resurfaces and stays user-managed.
 - `status` (verdict): `pending` (default) | `delivered` | `partially_delivered` | `missed` | `revised`. User-set; never auto-assigned.
-- Provenance: `source_evidence_type` (`report_document` | `transcript_segment` | `transcript` | `manual` | `feed_item`) + `source_evidence_id` (soft reference; a transcript-extracted claim is attributed to its transcript job, a report-extracted claim to its report document); `extraction_proposal_id` is a legacy column — its referent table was dropped by migration `0102` ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)), so it is always NULL on new rows.
+- Provenance: `source_evidence_type` (`report_document` | `manual` | `feed_item`; the transcript types retired — [ADR 0111](adr/0111-retire-video-transcription.md)) + `source_evidence_id` (soft reference; a report-extracted claim is attributed to its report document); `extraction_proposal_id` is a legacy column — its referent table was dropped by migration `0102` ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)), so it is always NULL on new rows.
 - Quantitative target (optional, drives fact lookup): `target_metric_key`, `target_comparator` (`gte`/`lte`/`gt`/`lt`/`approx`/`eq`), `target_value_numeric` (decimal-exact text), `target_unit`.
 - Verification: `verifying_fact_id` → `financial_facts(id)` soft reference (set when a fact is linked from the review queue); `revises_claim_id` → `management_claims(id)` (set on a `revised` supersession, history kept).
 - `created_at`, `updated_at`.
@@ -1121,7 +1065,7 @@ Rules:
 Fields:
 
 - `id` — autoincrement; the settle handle (never the reusable queue id).
-- `activity_key` — the **task** identity the UI collapses on (`report-reading:<autopilot_run_id>`, `report-sweep:<sweep_id>`, `kpi-ingest:<run_id>`, `source-refresh:<adapter_id>`, `company-refresh:<company_id>`, `history-fetch:<company_id>`, `reextraction:<batch_id>`, `ownership-reading:<document_id>`, `management-reading:<document_id>`, `price-history:<company_id>`, `transcript:<job_id>`, singletons for registry/FX/aggregator/briefing).
+- `activity_key` — the **task** identity the UI collapses on (`report-reading:<autopilot_run_id>`, `report-sweep:<sweep_id>`, `kpi-ingest:<run_id>`, `source-refresh:<adapter_id>`, `company-refresh:<company_id>`, `history-fetch:<company_id>`, `reextraction:<batch_id>`, `ownership-reading:<document_id>`, `management-reading:<document_id>`, `price-history:<company_id>`, singletons for registry/FX/aggregator/briefing).
 - `run_key` — the queue `job_queue.id` or `direct:<activity_key>` for awaited work.
 - `kind`, `family` (the `ActivityFamily` token), `company_id` (nullable, `REFERENCES companies(id) ON DELETE CASCADE`), `subject` (raw: document title / adapter display name / video title), `target_json` (the typed navigation target).
 - `status` — `running | succeeded | failed | retry_scheduled | interrupted`; `attempt`; `started_at`; `finished_at` (NULL while running); `error`.
@@ -1132,7 +1076,7 @@ Rules:
 - **Two writers only.** The queue worker's single dispatch seam (`begin_attempt` after the source lock; settle of the queue row and this exact occurrence in ONE `IMMEDIATE` transaction; a deferred job writes nothing) and the direct-activity registry's RAII guard (Drop on unwind = `interrupted`). A handler panic is contained (`catch_unwind`) and settles through the ordinary retry/terminal path.
 - **Identity is never reused**; one legal update (`running` → terminal). This is an occurrence history with explicit GC, not an append-only table in the migration sense.
 - **Retention at settlement and after startup reconciliation, never on insert**: keep the newest 500 finished rows by `(finished_at DESC, id DESC)`, drop `finished_at` older than 30 days.
-- **Startup reconciliation** (order pinned in `lib.rs`: KPI-run reclaim → generic queue reclaim → KPI queue reconciliation → activity reconcile, before any worker lane starts): open occurrences → `interrupted`; `transcript_jobs.status='running'` → `failed` + `error_code='interrupted'`; an `autopilot_run` with any stage job pending/running is left alone, otherwise recovered like the queue's own crash contract ([ADR 0109](adr/0109-activity-center-occurrence-ledger.md) amendment, #458): a non-terminal run whose reachable stage job is **dead-lettered** (terminally `failed`, attempts exhausted) → `failed` with that job's error; **missing**, or a **stale terminal `succeeded`** row from a previous run generation, → the run's last-started stage (`autopilot_run.stage`) is **rescheduled once**, resuming exactly like `reclaim_stale_running` resumes a crashed `running` job; a `history_sweeps` / `pipeline_reextraction_batches` row that is non-terminal while its parent job is absent or terminal → `failed`; `kpi_ingest_runs` are never terminalized here (their own reclaim owns `committing`; an expired/NULL lease reads as waiting). Idempotent.
+- **Startup reconciliation** (order pinned in `lib.rs`: KPI-run reclaim → generic queue reclaim → KPI queue reconciliation → activity reconcile, before any worker lane starts): open occurrences → `interrupted`; an `autopilot_run` with any stage job pending/running is left alone, otherwise recovered like the queue's own crash contract ([ADR 0109](adr/0109-activity-center-occurrence-ledger.md) amendment, #458): a non-terminal run whose reachable stage job is **dead-lettered** (terminally `failed`, attempts exhausted) → `failed` with that job's error; **missing**, or a **stale terminal `succeeded`** row from a previous run generation, → the run's last-started stage (`autopilot_run.stage`) is **rescheduled once**, resuming exactly like `reclaim_stale_running` resumes a crashed `running` job; a `history_sweeps` / `pipeline_reextraction_batches` row that is non-terminal while its parent job is absent or terminal → `failed`; `kpi_ingest_runs` are never terminalized here (their own reclaim owns `committing`; an expired/NULL lease reads as waiting). Idempotent.
 - The read model (`storage/activity_reads.rs`) reads the bounded candidate set in SQL — terminal occurrences ordered by `(finished_at DESC, id DESC)` over the index, capped at the retention size (500) — then collapses to the newest occurrence per `activity_key` in Rust and applies the 40-task cap AFTER the collapse; keys that are live elsewhere (running/stalled/queued) are excluded from `recent`. A run/sweep/batch/KPI run takes its final status from the domain row(s): a parent from ALL its members (mixed → `partial`).
 
 ### Autopilot Settings and Runs
@@ -1261,9 +1205,9 @@ Rules:
 - Retention trims diagnostic events to the latest 1,000 events or 7 days, whichever trims first.
 - `module`, `stage`, and `severity` use stable contract values so modules can adopt the framework without schema changes.
 - `metadata_json` stores small structured JSON after redaction.
-- Diagnostic storage must not store API keys, full prompts, full source bodies, full transcript text, raw provider responses, or private signing material by default.
+- Diagnostic storage must not store API keys, full prompts, full source bodies, raw provider responses, or private signing material by default.
 - Diagnostic events are not runtime logs, metrics, traces, or user-facing status records.
-- Clearing diagnostics deletes diagnostic events but must not change user data, settings, source state, jobs, AI analysis results, notes, or transcripts.
+- Clearing diagnostics deletes diagnostic events but must not change user data, settings, source state, jobs, AI analysis results, or notes.
 
 ### Retired AI Artifacts (ADR 0084 clean cut)
 
@@ -1286,9 +1230,6 @@ Initial keys:
 - `developer_mode`
 - `poll_interval_seconds`
 - `backfill_years`
-- `youtube_transcription_provider`
-- `youtube_transcription_model`
-- `youtube_transcription_timeout_seconds`
 - `settings_import_export_format`
 - `shortcut_bindings`
 - `pinned_company_ids`
@@ -1302,7 +1243,7 @@ Initial keys:
 - `log_max_files`
 - `log_max_file_bytes`
 
-Field defaults and allowed enum values (theme, accent palette, AI analysis mode, transcription model/timeout) are canonical in [Contracts § User Settings](contracts.md#user-settings).
+Field defaults and allowed enum values (theme, accent palette) are canonical in [Contracts § User Settings](contracts.md#user-settings).
 
 Rules:
 
@@ -1311,9 +1252,8 @@ Rules:
 - `mcp_enabled` / `mcp_port` (ADR 0078 decision 4): the MCP server toggle (default `false`) and port (default `8317`, clamped `[1024, 65535]` on read and write). No seed rows: tolerant reads fall back to the defaults; the bearer token itself lives in the OS keychain, never in settings.
 - `mcp_writes_enabled` ([ADR 0088](adr/0088-mcp-surface-v2-ui-parity.md) M3): the MCP `act` (write) tier gate. Default `false` (stored as a `"true"`/`"false"` string row, like `mcp_enabled`); no seed row, tolerant read. It is the ONLY toggle for agent writes, and `update_settings` is itself excluded from the MCP registry — so a connected agent can never enable its own writes.
 - `kpi_acquisition_enabled` ([ADR 0099](adr/0099-acquisition-mcp-surface-mechanics.md) dec. 2): the `kpi_acquisition` MCP scope gate. Default `false`, same storage/tolerant-read/excluded-from-MCP posture as `mcp_writes_enabled`; off means the acquisition bearer is rejected at auth (401, reads included). The MCP server reads it per request through a dedicated single-key read (`SettingsStore::kpi_acquisition_gate`), never the full settings model.
-- **Retired settings keys** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)): the in-app AI analysis layer's settings keys are no longer read or written; only the Gemini transcription provider/model/timeout keys remain.
+- **Retired settings keys** ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)): the in-app AI analysis layer's settings keys are no longer read or written; the Gemini transcription keys followed with [ADR 0111](adr/0111-retire-video-transcription.md) (deleted by migration `0156`).
 - `similarity_strategy`: legacy key from the retired embedding-model similarity strategy ([ADR 0080](adr/0080-retire-embedding-model.md)); an old database may still hold the value `embedding` — reads map it to `static`, and there is no setter for it anymore.
-- Default YouTube transcription provider is `provider_gemini` — the only remaining AI provider setting (transcription is data acquisition, not analysis; ADR 0084 decision 3).
 - Default shortcut bindings are defined in code. `shortcut_bindings` stores only user overrides, disabled states, and resettable action-ID keyed changes as JSON.
 - `pinned_company_ids` (ADR 0054) stores the companies the user has pinned to the sidebar IA spine as a JSON array of company IDs, in pin order. It is a simple local UI preference: default `[]` when the row is absent (tolerant read, no seed migration), de-duplicated and overwritten wholesale on update. Unknown IDs (deleted companies) are ignored at read time by the frontend.
 - YAML import/export excludes secrets; implemented via the settings export/preview/apply commands (see [Contracts § User Settings](contracts.md)).
@@ -1340,7 +1280,6 @@ Fields for `notebook_entry_origins`:
 Allowed source types:
 
 - `feed_item`
-- `transcript_segment`
 - `ai_analysis`
 - `manual`
 - `external_url`
@@ -1349,8 +1288,6 @@ Allowed source types:
 Rules:
 
 - Feed-created notes link to `feed_items`.
-- Transcript-created notes link to selected `transcript_segments` and retain original YouTube URL through origin rows.
-- Transcript-created notes require a resolved transcript job company before save.
 - Manual notes may use a `manual` origin link or no external source.
 - Normal note editing preserves existing origin links. Adding or detaching origins requires a future explicit source-link workflow.
 - No `source_type` carries an FK-checked `source_id` (soft reference throughout, `report_document` included) — a rename/deletion never blocks note creation.
@@ -1380,7 +1317,7 @@ Fields for `company_events`:
 
 Likely related tables:
 
-- future `company_event_origins` if event dates are discovered through feed items, notebook entries, or transcript segments
+- future `company_event_origins` if event dates are discovered through feed items or notebook entries
 
 Rules:
 
@@ -1730,12 +1667,12 @@ CREATE VIRTUAL TABLE search_index USING fts5(
   title,
   body,
   content_type UNINDEXED,   -- 'company' | 'watchlist' | 'feed_item' | 'notebook_entry'
-                            -- | 'transcript_segment' | 'event' (the retired 'research_brief'/'digest'
-                            -- rows were purged by 0136 — DROP TABLE fires no delete triggers)
+                            -- | 'event' (the retired 'research_brief'/'digest' rows were purged by
+                            -- 0136, the retired 'transcript_segment' rows by 0156 — ADR 0111)
   source_id    UNINDEXED,   -- primary key of the owning source row
   company_id   UNINDEXED,   -- canonical company for scoping/grouping (nullable)
   parent_id    UNINDEXED,   -- navigational container when source_id is not the
-                            -- nav target (transcript_segment -> transcript job); nullable
+                            -- nav target; nullable (no live type uses it after ADR 0111)
   tokenize = 'unicode61 remove_diacritics 2'
 );
 ```
@@ -1746,7 +1683,6 @@ Indexed content:
 - watchlist name and description (`content_type = 'watchlist'`)
 - feed item title and body text
 - notebook title and Markdown body
-- transcript segment text (`parent_id` = owning transcript job)
 - company event title and type (`content_type = 'event'`)
 
 Rules:
@@ -1755,7 +1691,7 @@ Rules:
 - The tokenizer is `unicode61 remove_diacritics 2` (language-neutral, diacritic- and case-folding) for the Polish-primary, English-mixed corpus.
 - Existing rows are backfilled when the index migration first applies.
 - User query text is sanitized before reaching `MATCH`; it is never interpolated as FTS5 syntax. Ranking uses `bm25()`; results carry `snippet()`, `content_type`, `company_id`, and `parent_id`.
-- `parent_id` carries the navigational container when an item's own id is not the navigation target — currently the owning transcript job for a transcript segment — so a result opens the specific item. It is `NULL` for content navigated by `source_id` directly.
+- `parent_id` carries the navigational container when an item's own id is not the navigation target (no live content type uses it since [ADR 0111](adr/0111-retire-video-transcription.md)); it is `NULL` for content navigated by `source_id` directly.
 
 ## Database Safety: WAL, Snapshots, And Backups
 
@@ -1794,8 +1730,8 @@ Migration `0001_initial.sql` created (historical scope — the `ai_analysis_*` r
 - notebook_entries
 - notebook_entry_tags
 - notebook_entry_origins
-- transcript_jobs
-- transcript_segments
+- transcript_jobs (retired — ADR 0111; empty legacy table)
+- transcript_segments (retired — ADR 0111; empty legacy table)
 - ai_analysis_jobs (dropped by `0102`)
 - ai_analysis_results (dropped by `0102`)
 - ai_analysis_tags (dropped by `0102`)

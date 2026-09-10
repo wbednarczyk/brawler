@@ -6,7 +6,7 @@ export type UpdateSettingsInput = { theme?: "dark" | "light" | "system", accentP
  * Requested backfill depth in years (ADR 0077 §3); clamped to `[1, 10]` on
  * write rather than rejected.
  */
-backfillYears?: number, youtubeTranscriptionProvider?: string, youtubeTranscriptionModel?: string, youtubeTranscriptionTimeoutSeconds?: number, logLevel?: string, logMaxFiles?: number, logMaxFileBytes?: number, shortcutBindings?: { [key in string]: ShortcutBindingSetting }, dbMaxConnections?: number, dbBusyTimeoutMs?: number, dbAcquireTimeoutMs?: number, sourcesWorkers?: number, autopilotWorkers?: number, 
+backfillYears?: number, logLevel?: string, logMaxFiles?: number, logMaxFileBytes?: number, shortcutBindings?: { [key in string]: ShortcutBindingSetting }, dbMaxConnections?: number, dbBusyTimeoutMs?: number, dbAcquireTimeoutMs?: number, sourcesWorkers?: number, autopilotWorkers?: number, 
 /**
  * Replace the full pinned-company list (ADR 0054). The frontend sends the
  * complete desired order, so this overwrites rather than merges.

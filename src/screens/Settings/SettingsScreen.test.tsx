@@ -4,7 +4,6 @@ import {
   expect,
   invoke,
   join,
-  openUrl,
   renderApp,
   save,
   screen,
@@ -55,20 +54,6 @@ describe("Settings screen workflows", () => {
     expect(
       within(settingsRegion).queryByRole("button", { name: "Clean up feed now" }),
     ).not.toBeInTheDocument();
-
-    await user.click(within(settingsRegion).getByRole("button", { name: "Transcripts" }));
-
-    expect(within(settingsRegion).getByRole("heading", { name: "Transcripts" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Transcription quality")).toHaveValue("gemini-2.5-flash");
-    expect(screen.getByLabelText("Give up after")).toHaveValue("300");
-    expect(within(settingsRegion).queryByText("provider_gemini")).not.toBeInTheDocument();
-    expect(within(settingsRegion).queryByText("Cheapest supported")).not.toBeInTheDocument();
-    expect(within(settingsRegion).queryByText("YouTube transcription provider ID")).not.toBeInTheDocument();
-
-    await user.click(within(settingsRegion).getByRole("button", { name: "Credentials" }));
-
-    expect(within(settingsRegion).getByText("API key")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Stored in")).toBeInTheDocument();
 
     await user.click(within(settingsRegion).getByRole("button", { name: "Keyboard shortcuts" }));
 
@@ -157,69 +142,11 @@ describe("Settings screen workflows", () => {
     });
     expect(screen.getByLabelText("Sprawdzanie źródeł w ustawieniach")).toHaveValue("1800");
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Transkrypcje" }));
-
-    await user.selectOptions(screen.getByLabelText("Jakość transkrypcji"), "gemini-2.5-flash");
-
-    expect(invoke).toHaveBeenCalledWith("update_settings", {
-      input: {
-        youtubeTranscriptionModel: "gemini-2.5-flash",
-      },
-    });
-    expect(screen.getByLabelText("Jakość transkrypcji")).toHaveValue("gemini-2.5-flash");
-
-    await user.selectOptions(screen.getByLabelText("Poddaj się po"), "600");
-
-    expect(invoke).toHaveBeenCalledWith("update_settings", {
-      input: {
-        youtubeTranscriptionTimeoutSeconds: 600,
-      },
-    });
-    expect(screen.getByLabelText("Poddaj się po")).toHaveValue("600");
-
-    await user.click(within(settingsRegion).getByRole("button", { name: "Poświadczenia" }));
-
-    await user.type(screen.getByLabelText("Klucz API Gemini"), "test-gemini-key");
-    await user.click(screen.getByRole("button", { name: "Zapisz" }));
-
-    expect(invoke).toHaveBeenCalledWith("set_provider_api_key", {
-      input: {
-        providerId: "provider_gemini",
-        apiKey: "test-gemini-key",
-      },
-    });
-    expect(await within(settingsRegion).findByText("Skonfigurowane")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Przechowywany w")).toBeInTheDocument();
-    expect(screen.getByLabelText("Klucz API Gemini")).toHaveValue("");
-
-    await user.click(screen.getByRole("button", { name: "Wyczyść" }));
-
-    expect(invoke).toHaveBeenCalledWith("clear_provider_api_key", {
-      input: {
-        providerId: "provider_gemini",
-      },
-    });
-    await waitFor(() => {
-      expect(within(settingsRegion).queryByText("Skonfigurowane")).not.toBeInTheDocument();
-    });
-    expect(within(settingsRegion).getAllByText("Nieskonfigurowane").length).toBeGreaterThanOrEqual(1);
-
-    await user.click(screen.getByRole("button", { name: "Pobierz klucz API Gemini" }));
-
-    expect(openUrl).toHaveBeenCalledWith("https://aistudio.google.com/app/apikey");
-
     const primaryNavigation = screen.getByLabelText("Nawigacja główna");
 
     await user.click(within(primaryNavigation).getByRole("button", { name: "Źródła" }));
     expect(await screen.findByRole("heading", { name: "Źródła" })).toBeInTheDocument();
     expect(screen.getByText("Odśwież źródła")).toBeInTheDocument();
-
-    await user.click(within(primaryNavigation).getByRole("button", { name: "Transkrypcje" }));
-    expect(await screen.findByRole("heading", { name: "Transkrypcje" })).toBeInTheDocument();
-    // The seeded transcript keeps the list reachable even with the Gemini key
-    // just cleared above (F4b S2: the key-missing invitation only replaces
-    // the whole screen when there is nothing to show yet).
-    expect(screen.getByRole("button", { name: "Odśwież transkrypcje" })).toBeInTheDocument();
   }, 20_000);
 
   it("previews and applies import/export workflows", async () => {
@@ -478,37 +405,100 @@ describe("Settings screen workflows", () => {
     const sectionSelect = await screen.findByLabelText("Settings section");
     expect(sectionSelect).toHaveValue("appearance");
     expect(within(sectionSelect).getByRole("option", { name: "Sources" })).toBeInTheDocument();
-    expect(within(sectionSelect).getByRole("option", { name: "Transcripts" })).toBeInTheDocument();
 
     // Selecting a section through the collapsed control switches the panel, the
     // same effect as clicking the Subnav tab.
-    await user.selectOptions(sectionSelect, "transcripts");
+    await user.selectOptions(sectionSelect, "sources");
     const settingsRegion = screen.getByLabelText("Application settings");
-    expect(within(settingsRegion).getByRole("heading", { name: "Transcripts" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByRole("heading", { name: "Sources" })).toBeInTheDocument();
   });
-  // ADR 0084 (retire the in-app AI analysis layer): Settings must expose the
-  // transcript provider — the only surviving model-backed capability, because
-  // transcription is data acquisition, not interpretation — and must expose NO
-  // AI-analysis routing surface. The routed layer (general analysis provider /
-  // model / timeout, the OpenAI-compatible base URL, the per-capability routing
-  // pools, the ESPI AI fallback toggle, the tier-4 sweep budget, and the
-  // Claude/OpenAI/Mistral key forms) is gone; intelligence arrives over MCP.
-  it("exposes the transcript provider and no AI-analysis routing surface (ADR 0084)", async () => {
+  // ADR 0084 (retire the in-app AI analysis layer) + ADR 0111 (retire video
+  // transcription): Settings must expose NO model-backed capability at all —
+  // the routed AI-analysis layer (general provider/model/timeout, the
+  // OpenAI-compatible base URL, the per-capability routing pools, the ESPI AI
+  // fallback toggle, the tier-4 sweep budget, and the Claude/OpenAI/Mistral
+  // key forms) and the transcript provider/Credentials tabs are both gone;
+  // intelligence arrives over MCP only.
+  it("toggles, remodifies, blanks and resets a shortcut binding (controls beyond the key field)", async () => {
     const user = userEvent.setup();
 
+    renderApp({ section: "Settings" });
+    const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(
+      within(settingsRegion).getByRole("button", {
+        name: "Keyboard shortcuts",
+      }),
+    );
+    const controls = within(settingsRegion).getByLabelText(
+      "Configure shortcut Open Inbox",
+    );
+
+    // Enabled off → the binding persists with `disabled: true`.
+    await user.click(within(controls).getByLabelText("Enabled"));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_settings", {
+        input: {
+          shortcutBindings: expect.objectContaining({
+            "app.openInbox": expect.objectContaining({ disabled: true }),
+          }),
+        },
+      });
+    });
+    await user.click(within(controls).getByLabelText("Enabled"));
+
+    // A modifier checkbox writes its own flag.
+    await user.click(within(controls).getByLabelText("shiftKey"));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_settings", {
+        input: {
+          shortcutBindings: expect.objectContaining({
+            "app.openInbox": expect.objectContaining({
+              shiftKey: true,
+              ctrlKey: true,
+            }),
+          }),
+        },
+      });
+    });
+
+    // A blanked key field falls back to the default key, never an empty binding.
+    fireEvent.change(screen.getByLabelText("Shortcut key Open Inbox"), {
+      target: { value: "" },
+    });
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_settings", {
+        input: {
+          shortcutBindings: expect.objectContaining({
+            "app.openInbox": expect.objectContaining({ key: "1" }),
+          }),
+        },
+      });
+    });
+
+    // Reset drops the custom binding entirely (the key is gone from the map).
+    const reset = within(controls).getByRole("button", { name: "Reset" });
+    await waitFor(() => expect(reset).toBeEnabled());
+    await user.click(reset);
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_settings", {
+        input: {
+          shortcutBindings: expect.not.objectContaining({
+            "app.openInbox": expect.anything(),
+          }),
+        },
+      });
+    });
+  });
+
+  it("exposes no AI-analysis or transcript routing surface (ADR 0084, ADR 0111)", async () => {
     renderApp({ section: "Settings" });
 
     const settingsRegion = await screen.findByLabelText("Application settings");
 
-    // No AI tab at all — the section is Transcripts now.
+    // No AI tab, no Transcripts tab, no Credentials tab.
     expect(within(settingsRegion).queryByRole("button", { name: "AI" })).not.toBeInTheDocument();
-
-    await user.click(within(settingsRegion).getByRole("button", { name: "Transcripts" }));
-
-    // The transcript-provider section survives, with both of its controls.
-    expect(within(settingsRegion).getByRole("heading", { name: "Transcripts" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Transcription quality")).toBeInTheDocument();
-    expect(screen.getByLabelText("Give up after")).toBeInTheDocument();
+    expect(within(settingsRegion).queryByRole("button", { name: "Transcripts" })).not.toBeInTheDocument();
+    expect(within(settingsRegion).queryByRole("button", { name: "Credentials" })).not.toBeInTheDocument();
 
     // Every analysis-routing control is gone.
     for (const label of [
@@ -518,6 +508,8 @@ describe("Settings screen workflows", () => {
       "OpenAI-compatible base URL",
       "ESPI AI classification fallback",
       "History sweep AI budget in calls",
+      "Transcription quality",
+      "Give up after",
     ]) {
       expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
     }
@@ -527,15 +519,13 @@ describe("Settings screen workflows", () => {
     expect(within(settingsRegion).queryByText("Claim extraction")).not.toBeInTheDocument();
     expect(within(settingsRegion).queryByText("Vision extraction")).not.toBeInTheDocument();
 
-    // No analysis-provider catalog is fetched any more.
-    expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).not.toContain(
-      "list_ai_provider_catalog",
-    );
+    // No analysis-provider or credential catalog is fetched any more.
+    const invokedCommands = vi.mocked(invoke).mock.calls.map(([command]) => command);
+    expect(invokedCommands).not.toContain("list_ai_provider_catalog");
+    expect(invokedCommands).not.toContain("get_provider_credential_status");
 
-    // Credentials keeps the Gemini transcript key and drops the analysis keys.
-    await user.click(within(settingsRegion).getByRole("button", { name: "Credentials" }));
-    expect(screen.getByLabelText("Gemini API key")).toBeInTheDocument();
     for (const label of [
+      "Gemini API key",
       "Claude (Anthropic) API key",
       "OpenAI (ChatGPT) API key",
       "OpenAI-compatible (custom) API key",

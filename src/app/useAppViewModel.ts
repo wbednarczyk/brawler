@@ -1,7 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type { SourceStatusSummary } from "./AppShell";
 import type { InboxEmptyState, InboxStatusFilter } from "../screens/Inbox/inboxTypes";
-import type { TranscriptJobForm } from "../screens/Transcripts/transcriptTypes";
 import type { CompanyEventViewMode } from "../shared/types/events";
 import {
   addLocalDays,
@@ -51,7 +50,6 @@ type AppViewModelInput = {
   sourceAdapters: SourceAdapter[];
   sourceAdaptersError: string | null;
   theme: Theme;
-  transcriptJobForm: TranscriptJobForm;
   watchlistMemberships: WatchlistMembership[];
 };
 
@@ -81,7 +79,6 @@ export function useAppViewModel({
   sourceAdapters,
   sourceAdaptersError,
   theme,
-  transcriptJobForm,
   watchlistMemberships,
 }: AppViewModelInput) {
   const effectiveTheme = useMemo(() => resolveTheme(theme), [theme]);
@@ -113,26 +110,6 @@ export function useAppViewModel({
       watchlistId === "all" || Boolean(companyIdsByWatchlist[watchlistId]?.has(company.id)),
     [companyIdsByWatchlist],
   );
-  const transcriptCompanySuggestions = useMemo(() => {
-    const query = transcriptJobForm.companyQuery.trim().toLowerCase();
-
-    if (!query) {
-      return companies.slice(0, 5);
-    }
-
-    return companies
-      .filter((company) => {
-        const values = [
-          company.ticker,
-          company.qualifiedTicker,
-          company.displayName,
-          company.isin ?? "",
-        ].map((value) => value.toLowerCase());
-
-        return values.some((value) => value.includes(query));
-      })
-      .slice(0, 5);
-  }, [companies, transcriptJobForm.companyQuery]);
   const totalUnreadFeedItems = useMemo(
     () => feedState.filter((item) => item.unread).length,
     [feedState],
@@ -455,6 +432,5 @@ export function useAppViewModel({
     signalsByFeedItemId,
     sourceStatusSummary,
     totalUnreadFeedItems,
-    transcriptCompanySuggestions,
   };
 }

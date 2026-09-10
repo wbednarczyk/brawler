@@ -1,6 +1,6 @@
 # ADR 0028: Multi-Provider AI Boundary (Async, Ports-and-Adapters)
 
-Status: Accepted — **amended 2026-07-20 by [ADR 0084](0084-retire-in-app-ai-layer.md)**: the multi-provider *analysis* boundary is dissolved with the in-app AI layer (`v0.59.0`); this ADR survives only as the provider-neutrality pattern for the **transcript** provider (`VideoTranscriptProvider`), which stays as data acquisition.
+Status: Accepted — **amended 2026-07-20 by [ADR 0084](0084-retire-in-app-ai-layer.md)**: the multi-provider *analysis* boundary is dissolved with the in-app AI layer (`v0.59.0`); this ADR survives only as the provider-neutrality pattern for the **transcript** provider (`VideoTranscriptProvider`), which stays as data acquisition. **Amended 2026-09-10 by [ADR 0111](0111-retire-video-transcription.md)**: the transcript provider is retired as well; the keychain boundary survives only for the MCP tokens.
 
 ## Context
 

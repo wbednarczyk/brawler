@@ -40,7 +40,6 @@ const ALL_FAMILIES = {
   managementReading: true,
   priceHistory: true,
   kpiIngest: true,
-  transcript: true,
   corrupted: true,
 } satisfies Record<ActivityFamily, true>;
 const ALL_FAMILY_VALUES = Object.keys(ALL_FAMILIES) as ActivityFamily[];

@@ -2,7 +2,7 @@
 
 Brawler works in the background all day — refreshing sources, fetching a
 company's report history, reading a new report into numbers, reading
-shareholder tables, pulling prices, fetching a transcript. **Activity** is the
+shareholder tables, pulling prices. **Activity** is the
 one place that answers "what is the app doing right now, and what just
 finished?" — and takes you to the result.
 
@@ -35,7 +35,7 @@ Open it by clicking the icon or with `Ctrl+K → Open activity`.
 - **Expand a row** for the raw error, the attempt count, or a parent task's
   members.
 - **One action per row** — `Otwórz w dokumentach`, `Otwórz spółkę`, `Otwórz źródła`,
-  `Otwórz Dziś`, `Otwórz transkrypcje` — lands on the item itself (a failed report
+  `Otwórz Dziś` — lands on the item itself (a failed report
   reading opens the company's Documents tool with that document selected and
   scrolled into view) and closes the panel. `Escape` closes it and puts focus back where you were.
 

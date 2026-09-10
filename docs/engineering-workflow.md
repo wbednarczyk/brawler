@@ -21,7 +21,7 @@ Do not assume a Linux GUI inside WSL — a WSL Tauri build is a Linux applicatio
 Recommended workflow:
 
 - `make check-local` before handover (the full `make check` runs only as the PR's required checks — see What runs where); `make build` to validate frontend production output; `make frontend-preview` for a quick browser layout check from Windows (no Tauri APIs).
-- `make smoke-gemini-transcript`/`smoke-keyring`: opt-in live smoke tests needing local credentials/OS state.
+- `make smoke-keyring`: opt-in live smoke test needing OS keychain state.
 - Runtime logs: local JSON Lines under the app-data logs dir, level/rotation via Settings or `BRAWLER_LOG_*` env vars. Local metrics: Developer-mode-only Diagnostics snapshots, not telemetry.
 - Work lands via PRs (`gh pr create`); `make install-git-hooks` wires the local `commit-msg` hook. Release model + guardrails: [Release Workflow](release-workflow.md).
 - Native Windows checkout/worktree for hands-on testing; `scripts/windows/dev.ps1` starts Tauri dev mode there. Packaging paths: the `packaging` skill.

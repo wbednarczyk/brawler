@@ -105,7 +105,6 @@ const LABELS = {
     notes: "Notes",
     claims: "Claims",
     events: "Events",
-    transcripts: "Transcripts",
     signals: "Signals",
     reviewQueueFold: "Review queue",
     questionsFold: "Research questions",
@@ -137,7 +136,6 @@ const LABELS = {
     notes: "Notatki",
     claims: "Tezy",
     events: "Wydarzenia",
-    transcripts: "Transkrypcje",
     signals: "Sygnały",
     reviewQueueFold: "Do przeglądu",
     questionsFold: "Pytania badawcze",
@@ -207,7 +205,6 @@ function scopeBarInventory(locale: Locale): ActionInventoryEntry[] {
     { name: t.notes, kind: "control" },
     { name: t.claims, kind: "control" },
     { name: t.events, kind: "control" },
-    { name: t.transcripts, kind: "control" },
     { name: t.signals, kind: "control" },
   ];
 }

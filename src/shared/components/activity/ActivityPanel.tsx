@@ -60,8 +60,6 @@ function destinationLabel(target: ActivityTarget, text: (value: string) => strin
       return text("Open sources");
     case "today":
       return text("Open Today");
-    case "transcripts":
-      return text("Open transcripts");
   }
 }
 

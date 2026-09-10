@@ -466,7 +466,7 @@ Management claims are first-class tracked promises with a due period and a user-
   "dueFiscalYear": 2026,
   "duePeriodType": "Q4",
   "status": "pending",
-  "sourceEvidenceType": "transcript_segment",
+  "sourceEvidenceType": "report_document",
   "sourceEvidenceId": "seg_42",
   "extractionProposalId": "claim_prop_07",
   "targetMetricKey": null,
@@ -482,7 +482,7 @@ Management claims are first-class tracked promises with a due period and a user-
 
 Allowed verdict statuses: `pending`, `delivered`, `partially_delivered`, `missed`, `revised`.
 
-Allowed `sourceEvidenceType`: `report_document`, `transcript_segment`, `transcript`, `feed_item`, `manual`.
+Allowed `sourceEvidenceType`: `report_document`, `feed_item`, `manual` (`transcript_segment`/`transcript` retired — [ADR 0111](adr/0111-retire-video-transcription.md)).
 
 Allowed `targetComparator` (quantitative claims): `gte`, `lte`, `gt`, `lt`, `approx`, `eq`.
 
@@ -1359,168 +1359,7 @@ Retired — intelligence over feed items arrives via the MCP port (BYOA) instead
 
 ## Video Transcript Job
 
-```json
-{
-  "jobId": "job_video_01",
-  "companyId": null,
-  "providerId": "provider_gemini",
-  "sourceType": "youtube_url",
-  "sourceUrl": "https://www.youtube.com/watch?v=example",
-  "sourceLabel": null,
-  "companyResolutionStatus": "unresolved",
-  "recognizedCompanyCandidates": [],
-  "status": "queued",
-  "errorCode": null,
-  "createdAt": "2026-05-28T13:30:00Z",
-  "startedAt": null,
-  "finishedAt": null,
-  "error": null
-}
-```
-
-Rules (`companyId` nullability and resolution-status transitions are canonical in [Data Model § Transcript Jobs](data-model.md#transcript-jobs)):
-
-- The UI input label for `sourceUrl` is `URL`.
-- If the user does not provide a ticker/company, the transcript may remain unlinked and visible. The contract reserves `recognizedCompanyCandidates` for future provider-assisted recognition, but M10 does not require automatic company recognition before the transcript can be reviewed.
-- Allowed `companyResolutionStatus` values: `provided`, `recognized`, `unresolved`, `needs_user_selection`.
-- `recognizedCompanyCandidates` uses the same canonical company identity shape as company lookup results when recognition produces candidates.
-- A completed transcript may remain unlinked to any company and must still be viewable on demand.
-- Transcript segments can exist while `companyId` is unresolved.
-- Company selection is required only when the user wants to save selected segments into a company notebook.
-- Allowed `status` values: `queued`, `running`, `completed`, `failed`.
-- Allowed `errorCode` values when `status = failed`: `provider_not_configured`, `provider_limit`, `provider_unavailable`, `provider_error`, `network_error`, `invalid_source_url`, `parse_error`, `unknown`.
-- `error` is user-readable local diagnostic text and must not store provider secrets.
-
-## Create Video Transcript Job Input
-
-```json
-{
-  "sourceUrl": "https://www.youtube.com/watch?v=example",
-  "sourceLabel": "Q2 investor conference",
-  "companyId": null,
-  "companyQuery": "CDR",
-  "providerId": "provider_gemini"
-}
-```
-
-Rules:
-
-- `sourceUrl` is required and is shown in the UI as `URL`.
-- `sourceLabel` is optional and is shown in the UI as the transcript row title/description when present.
-- `sourceLabel` is user-editable after job creation because it is local metadata, not provider transcript source text.
-- The UI must not expose generated transcript job IDs as normal row titles.
-- `companyId` is optional. If present, it must reference an existing local company.
-- `companyQuery` is optional and represents a user-provided ticker/company/ISIN search value. If present without `companyId`, the app should resolve it through the same local lookup used by Companies before creating the job.
-- If neither `companyId` nor `companyQuery` resolves a company, the job is created with `companyId = null` and `companyResolutionStatus = unresolved`.
-- `providerId` defaults to `provider_gemini` for M10 and must not change the general AI analysis provider preference.
-- Duplicate create requests for the same normalized `sourceUrl` and the same company scope must return the existing transcript job instead of creating another row.
-- Unlinked jobs and company-linked jobs are separate duplicate scopes for the same `sourceUrl`.
-- `delete_video_transcript_job(jobId)` removes the transcript job and its stored transcript segments.
-- Deleting a transcript job must not delete notebook entries that were already created from it; saved notebook origins remain historical references.
-
-## Update Video Transcript Job Input
-
-```json
-{
-  "jobId": "job_video_01",
-  "sourceLabel": "Renamed investor conference"
-}
-```
-
-Rules:
-
-- `update_video_transcript_job(input)` updates editable local transcript job metadata.
-- M10 supports `sourceLabel` updates only.
-- Blank `sourceLabel` clears the description and returns the UI title fallback to `Untitled transcript`.
-- Updating transcript job metadata must not mutate transcript segment text, provider output, source URL, status, or notebook origins.
-
-## Resolve Transcript Job Company Input
-
-```json
-{
-  "jobId": "job_video_01",
-  "companyId": "company_gpw_cdr"
-}
-```
-
-Rules:
-
-- Resolving a job company sets the job `companyId`.
-- Existing transcript segments for the job inherit the resolved company for UI/read-model purposes.
-- Resolution is optional for transcript visibility.
-- Resolution is required only before `create_note_from_transcript_selection` can save a company notebook entry.
-
-## Run Video Transcript Job Input
-
-```json
-{
-  "jobId": "job_video_01",
-  "providerMode": "provider_gemini"
-}
-```
-
-Rules:
-
-- Creating a job may auto-start live transcription when Gemini credentials are configured. Failed or queued jobs can be run again through the visible `Retry` action.
-- Allowed `providerMode` values: `provider_gemini`, `test_sample`.
-- `provider_gemini` is the required M10 live provider path and must require configured credentials.
-- `test_sample` uses offline sample transcript output for automated tests and local development only; it cannot satisfy M10 completion.
-- Provider runner success stores immutable transcript segments and marks the job `completed`.
-- Provider runner failure stores `status = failed`, `errorCode`, and user-readable `error`.
-- Live provider calls must happen in Rust-side code, never directly from React.
-- Live provider calls must not log API keys or full transcript text.
-- Default automated tests must mock Gemini responses or use test samples; they must not require a real Gemini API key.
-- M10 uses direct YouTube URL input to Gemini. If Gemini rejects the URL or request, the job fails with a provider error containing the provider cause when available; M10 does not implement hidden audio download/extraction fallback.
-
-## Transcript Segment
-
-```json
-{
-  "id": "segment_01",
-  "transcriptJobId": "job_video_01",
-  "companyId": null,
-  "startSeconds": 120,
-  "endSeconds": 168,
-  "speaker": null,
-  "text": "Management statement extracted from the conference.",
-  "language": "pl",
-  "createdAt": "2026-05-28T13:35:00Z"
-}
-```
-
-Rules:
-
-- Segment timestamps should be stored when the provider returns enough information.
-- `companyId` follows the parent transcript job and may be null until company resolution is complete.
-- The original YouTube URL must be retained.
-- Transcript segment text is immutable source output in v1.
-- Notes created from transcript segments are editable before saving.
-
-## Transcript-To-Note Selection
-
-```json
-{
-  "transcriptJobId": "job_video_01",
-  "transcriptSegmentIds": ["segment_01"],
-  "noteDraft": {
-    "title": "Claim from Q2 conference",
-    "body": "Management expects the release milestone within two quarters.",
-    "tags": ["conference", "management-guidance"],
-    "kind": "claim",
-    "claimStatus": "open",
-    "followUpAfter": "2026-Q4"
-  }
-}
-```
-
-Rules:
-
-- The user chooses which transcript segments become notes.
-- V1 uses whole-segment selection.
-- `create_note_from_transcript_selection(input)` creates a company notebook entry, so it must reject unlinked transcript jobs and non-completed jobs.
-- AI may suggest note drafts, but the user confirms before saving.
-- Saved notes are normal notebook entries with `transcript_segment` origins.
-- Saved note origins must retain selected segment IDs, the original video URL, provider/job context, and timestamp ranges when available.
+Retired ([ADR 0111](adr/0111-retire-video-transcription.md), #463): the video-transcript commands (the eight `*_transcript_*` commands), the Gemini provider and the transcript MCP tools are gone; a transcript reaches the workspace as an ordinary document or a URL-backed note captured by the user's agent (BYOA).
 
 ## Scheduler Job Status
 
@@ -1561,7 +1400,7 @@ Allowed statuses:
 
 ## Activity
 
-The activity read model ([ADR 0109](adr/0109-activity-center-occurrence-ledger.md), #133): one composed view over the durable queue, the `job_runs` occurrence history (data-model § Job runs), the direct-activity registry (awaited refresh/backfill/aggregator/registry/transcript work), and the domain run tables (report-reading runs, history sweeps, re-extraction batches, KPI ingest runs, transcript jobs). Identity is the domain task, never a company bucket; the frontend groups items per company for display only. UI-only reads (`read` classification, not exposed as MCP tools). Both commands run off the UI thread on one pool checkout.
+The activity read model ([ADR 0109](adr/0109-activity-center-occurrence-ledger.md), #133): one composed view over the durable queue, the `job_runs` occurrence history (data-model § Job runs), the direct-activity registry (awaited refresh/backfill/aggregator/registry work), and the domain run tables (report-reading runs, history sweeps, re-extraction batches, KPI ingest runs). Identity is the domain task, never a company bucket; the frontend groups items per company for display only. UI-only reads (`read` classification, not exposed as MCP tools). Both commands run off the UI thread on one pool checkout.
 
 `list_activity()` → `ActivityView`:
 
@@ -1598,10 +1437,10 @@ The activity read model ([ADR 0109](adr/0109-activity-center-occurrence-ledger.m
 }
 ```
 
-- `family` ∈ `sourceRefresh | companyRefresh | registryRefresh | fxPull | fundamentalsPull | briefing | historyFetch | reportSweep | reextraction | reportReading | ownershipReading | managementReading | priceHistory | kpiIngest | transcript | corrupted` — exhaustive; every registered queue kind and every instrumented awaited path maps to exactly one family (gate-enforced), a registered kind with an unparseable payload yields `corrupted` (subject = the job id), rows of unregistered kinds are excluded.
+- `family` ∈ `sourceRefresh | companyRefresh | registryRefresh | fxPull | fundamentalsPull | briefing | historyFetch | reportSweep | reextraction | reportReading | ownershipReading | managementReading | priceHistory | kpiIngest | corrupted` — exhaustive; every registered queue kind and every instrumented awaited path maps to exactly one family (gate-enforced), a registered kind with an unparseable payload yields `corrupted` (subject = the job id), rows of unregistered kinds are excluded.
 - `status` ∈ `queued | running | stalled | succeeded | failed | partial | interrupted`. `partial` only when the domain task says so (a run finalized `partial`, a sweep/batch with mixed member outcomes).
 - `subject` is raw source data (document title, adapter display name, video title/URL) — never composed prose; system tasks (briefing, registry refresh) ship `""` and the family label carries the name. `progress` only for parents (sweep, batch, backfill) with real counters; `inFlight` = non-terminal members of a running parent; `members` = a bounded (≤ 10) list of a parent's raw member subjects, `[]` otherwise. A parent's terminal status is derived from ALL its members (mixed → `partial`, all failed → `failed`, all succeeded → `succeeded`), never from the parent row alone.
-- `target` ∈ `{ kind: "company", companyId, tool }` (`tool` = a Spółka `Tool` value — `{t:"feed"}`, `{t:"pokrycie"}`, `{t:"dokumenty", documentId}` — or `null` for the core Overview) · `{ kind: "sources" }` · `{ kind: "today" }` · `{ kind: "transcripts" }`.
+- `target` ∈ `{ kind: "company", companyId, tool }` (`tool` = a Spółka `Tool` value — `{t:"feed"}`, `{t:"pokrycie"}`, `{t:"dokumenty", documentId}` — or `null` for the core Overview) · `{ kind: "sources" }` · `{ kind: "today" }`.
 
 `get_activity_summary()` → `ActivitySummary` (two indexed counts + one max, polled every 15 s by the shell):
 
@@ -1628,7 +1467,7 @@ Diagnostic events are local developer-mode records that explain what a module di
   "severity": "info",
   "message": "Gemini analysis request sent.",
   "metadata": {
-    "providerId": "provider_gemini",
+    "providerId": "bankier-espi",
     "model": "gemini-2.5-flash",
     "timeoutSeconds": 90
   }
@@ -1639,13 +1478,13 @@ Field reference:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `module` | enum | `ai_analysis`\|`external_ai`\|`sources`\|`scheduler`\|`credentials`\|`storage`\|`transcripts`\|`shortcuts`\|`locale`\|`packaging` |
-| `scope.type` | string | entity category, e.g. `ai_analysis_job`, `feed_item`, `source_adapter`, `transcript_job`, `setting`, `shortcut_action` |
+| `module` | enum | `ai_analysis`\|`external_ai`\|`sources`\|`scheduler`\|`credentials`\|`storage`\|`shortcuts`\|`locale`\|`packaging` |
+| `scope.type` | string | entity category, e.g. `ai_analysis_job`, `feed_item`, `source_adapter`, `setting`, `shortcut_action` |
 | `scope.id` | string\|null | stable local id (never a title/URL/prompt/source text/provider snippet); null only when the event is truly global to the module |
 | `stage` | string | stable snake_case, never encoding dynamic values; past-tense for completed steps (`context_loaded`, `provider_resolved`, `credential_checked`, `request_sent`, `response_received`, `result_stored`, `failed`) or job-lifecycle for async work (`queued`, `running`, `succeeded`, `cancelled`, `failed`); reused across modules when the meaning matches |
 | `severity` | enum | `debug`\|`info`\|`warning`\|`error` |
 | `message` | string | human-readable summary |
-| `metadata` | JSON object | structured, small enough for a timeline row/detail panel; may hold stable IDs, provider IDs, model names, adapter IDs, status values, durations, counts, timeouts, retry counts, error classes, booleans; must never hold API keys, full prompts, full source bodies, full transcript text, raw provider responses, or private signing material — redacted before persistence, with a `[redacted]` marker where omission would confuse |
+| `metadata` | JSON object | structured, small enough for a timeline row/detail panel; may hold stable IDs, provider IDs, model names, adapter IDs, status values, durations, counts, timeouts, retry counts, error classes, booleans; must never hold API keys, full prompts, full source bodies, raw provider responses, or private signing material — redacted before persistence, with a `[redacted]` marker where omission would confuse |
 
 The event shape stays cheap to map to future OpenTelemetry-style event/span fields, but M14 does not implement OpenTelemetry exporters or remote reporting.
 
@@ -1742,7 +1581,7 @@ Rules:
 - Metric names use Prometheus-friendly snake case where practical.
 - Metric labels must stay low-cardinality and privacy-safe.
 - Allowed label keys include `module`, `collector`, `adapter_id`, `provider_id`, `model`, `status`, `severity`, `table`, and `unit`.
-- Metric names and labels must not include full URLs, titles, prompts, source bodies, note text, transcript text, company names, ticker symbols, user-entered strings, secrets, or high-cardinality values.
+- Metric names and labels must not include full URLs, titles, prompts, source bodies, note text, company names, ticker symbols, user-entered strings, secrets, or high-cardinality values.
 - The in-app Diagnostics Metrics section is the first presentation adapter. Prometheus, OpenTelemetry, file, or other local integrations must be added later as separate adapters over the same internal samples.
 - M16 does not expose a Prometheus endpoint, scrape surface, remote export, hosted observability, or metrics settings.
 
@@ -1774,7 +1613,7 @@ Rules:
 - Log level is configurable in Settings and may be overridden by local environment for development.
 - Rotation limits are configurable in Settings and default to five files of five MiB each.
 - Logs use the shared observability redaction policy before writing fields.
-- Logs must not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, or private signing material by default.
+- Logs must not include API keys, full prompts, full source bodies, raw provider responses, or private signing material by default.
 - Diagnostics may expose a full in-app log viewer, copy-redacted-log action, log status, and open-logs-folder action only while Developer mode is active.
 - React may call typed commands for log status, redacted log reads, and opening the app-owned logs directory. It must not receive arbitrary filesystem browsing capability.
 
@@ -1793,7 +1632,7 @@ Retired ([ADR 0110](adr/0110-retire-local-entitlement-module.md), #462): the loc
 ```json
 {
   "query": "profit warning",
-  "contentTypes": ["company", "watchlist", "feed_item", "notebook_entry", "transcript_segment", "event"],
+  "contentTypes": ["company", "watchlist", "feed_item", "notebook_entry", "event"],
   "companyId": null,
   "limit": 50
 }
@@ -1827,7 +1666,7 @@ Rules ([ADR 0032](adr/0032-search-and-backup-boundaries.md); FTS5 schema, saniti
 - An empty/blank `query` returns no groups.
 - `contentTypes` and `companyId` are optional scoping filters. Omitting `contentTypes` searches all types.
 - Matches are returned grouped by `contentType`, each carrying `sourceId`, `companyId`, `parentId`, `title`, `snippet`, and `score` — enough context to render and navigate to the specific item. Snippet highlight markers are control characters (STX/ETX), not HTML, so callers render snippets as plain text.
-- Coverage is companies, watchlists, feed items, notebook entries, transcript segments, and company events.
+- Coverage is companies, watchlists, feed items, notebook entries, and company events (transcript segments retired — [ADR 0111](adr/0111-retire-video-transcription.md)).
 
 ## Database Backups
 
@@ -1874,11 +1713,6 @@ Commands:
   "settingsSource": "sqlite",
   "settingsImportExportFormat": "yaml",
   "yamlImportExportStatus": "accepted_deferred",
-  "aiProviders": {
-    "youtubeTranscriptionProvider": "provider_gemini",
-    "youtubeTranscriptionModel": "gemini-2.5-flash",
-    "youtubeTranscriptionTimeoutSeconds": 300
-  },
   "logs": { "level": "info", "maxFiles": 5, "maxFileBytes": 5242880 },
   "shortcutBindings": {},
   "database": {
@@ -1895,7 +1729,7 @@ Commands:
 }
 ```
 
-The `aiProviders` block carries ONLY the YouTube-transcription provider fields — the sole in-app AI dependency ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); the former analysis-provider fields, `aiAnalysisMode`, `capabilityProviders`, `historySweepAiCallLimit`, and the `queue.aiWorkers`/`aiProviderConcurrency` knobs no longer exist in the settings shape (stored legacy rows are ignored on read).
+There is no `aiProviders` block ([ADR 0111](adr/0111-retire-video-transcription.md) removed the YouTube-transcription fields; migration `0156` deletes the stored rows); the former analysis-provider fields, `aiAnalysisMode`, `capabilityProviders`, `historySweepAiCallLimit`, and the `queue.aiWorkers`/`aiProviderConcurrency` knobs no longer exist in the settings shape (stored legacy rows are ignored on read).
 
 `update_settings` is atomic: a validation failure on any field rolls back the whole request, leaving every setting (including fields earlier in the same request) untouched.
 
@@ -1932,8 +1766,6 @@ Field defaults and validation ranges:
 | `developerMode` | `false` | enabled only via `BRAWLER_DEVELOPER_MODE` env or runtime unlock passphrase, never a plain toggle |
 | runtime log level | `info` | |
 | runtime log rotation | 5 files × 5 MiB | |
-| `aiProviders.youtubeTranscriptionModel` | `gemini-2.5-flash` | cheapest M10-validated model; options: gemini-2.5-flash-lite\|gemini-2.5-flash\|gemini-3.1-flash-lite\|gemini-3.5-flash |
-| `aiProviders.youtubeTranscriptionTimeoutSeconds` | `300` | options: 45\|90\|180\|300\|600 |
 | `database.maxConnections` | `4` | clamped 1–16 |
 | `database.busyTimeoutMs` | `5000` | clamped 0–60000 |
 | `database.acquireTimeoutMs` | `10000` | clamped 1000–60000; database pool ADR 0032; applied at pool build (next launch) |
@@ -1946,42 +1778,18 @@ Other rules:
 
 - `theme` controls brightness mode only; `accentPalette` controls the semantic color palette. Accent palettes must be added through the settings validation and theme-token registry, not as component-local color overrides.
 - Developer mode may be enabled only through intentional local developer mechanisms, not a normal always-visible Settings toggle. Startup activation uses `BRAWLER_DEVELOPER_MODE=1`, `true`, `yes`, or `on`. Runtime author unlock (`unlock_developer_mode({ passphrase })`) may enable Developer mode after the app is already running only when `BRAWLER_DEVELOPER_UNLOCK_CODE` is present in the app process environment and the submitted passphrase matches it; the entry point is hidden from normal UI and must not be registered as a configurable shortcut. Once active, Diagnostics may show status and a disable action (`disable_developer_mode()`).
-- Settings must let the user switch the app locale between English and Polish; locale handling is an extensible app-locale boundary so future locales are added through resources/configuration, not per-screen rewrites. Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies retain their original or user-entered language.
-- Settings must show that `provider_gemini` is selected only for YouTube transcription; must show whether transcription credentials are configured; must let the user save/replace/clear the Gemini API key used only for transcription; must disclose before use that starting a transcript job sends the YouTube URL and video content to Gemini.
+- Settings must let the user switch the app locale between English and Polish; locale handling is an extensible app-locale boundary so future locales are added through resources/configuration, not per-screen rewrites. Source-provided text, company names, ticker symbols, URLs, source attribution, and notebook bodies retain their original or user-entered language.
+- Settings asks for no provider API key ([ADR 0111](adr/0111-retire-video-transcription.md)); the only secrets are the MCP tokens on the MCP tab.
 - Settings must let the user configure, disable, and reset every defined shortcut action through stable shortcut action IDs. Shortcut binding overrides are stored as a JSON object keyed by action ID (missing entries use the current default). Shortcut conflicts must be visible before an enabled binding can silently shadow another enabled action.
 - SQLite is the runtime source of truth for settings. YAML is allowed for settings import/export/bootstrap (allowlisted non-secret settings only) but must never contain secrets; API keys and provider secrets live in the OS keychain. `.env`/environment-variable API key fallback is allowed for local development and tests only.
 
 ## Provider Credential Status
 
-```json
-{
-  "providerId": "provider_gemini",
-  "secretKind": "api_key",
-  "configured": true,
-  "storage": "os_keychain",
-  "label": "Gemini API key",
-  "devFallbackAvailable": false,
-  "error": null
-}
-```
-
-Rules:
-
-- Credential status is non-secret metadata and may be returned to React.
-- Secret values must never be returned to React.
-- Runtime secret storage uses the OS keychain.
-- One API key per provider (ADR 0028): the same provider key serves all of that provider's usages (analysis and, for Gemini, transcription). Purpose is not part of the credential identity.
-- Development/test fallback may use environment variables (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`), but this must be reported as `storage = "development_environment"` and must not count as exported settings.
-- Supported `secretKind` values begin with `api_key`; future supported kinds may include `username_password`, `session_token`, or `oauth_token` after source-specific design.
-- Credential commands are generic and keyed by `providerId` (`provider_gemini`, `provider_anthropic`, `provider_openai`, `provider_openai_compatible`, `provider_mistral`). **Every credential-bearing provider must be enterable from Settings** (owner rule 2026-07-14): the canonical id list is `CREDENTIAL_PROVIDER_IDS` (`providers/credentials.rs`), pinned to `src/test/scenarios/credentialProviders.json`, which the frontend contract test checks against the Settings form list — a descriptor without a form reddens the gate.
-  - `get_provider_credential_status({ providerId })` returns the non-secret status for one provider.
-  - `set_provider_api_key({ providerId, apiKey })` stores or replaces only that provider's API key.
-  - `clear_provider_api_key({ providerId })` removes only that provider's OS-keychain key and must not mutate `.env` or process environment values.
-- Legacy purpose-scoped Gemini credential commands were removed with no backward compatibility; legacy keychain entries are best-effort cleared on startup.
+Retired ([ADR 0111](adr/0111-retire-video-transcription.md), #463): the provider-credential commands and the Gemini API key are gone with video transcription; the app asks for no provider API key. The `CredentialDescriptor` keychain boundary survives for the MCP auth token and the KPI-acquisition token (see [External Surface — MCP Server](#external-surface--mcp-server-capability-tier-registry)); secret values never reach React, only non-secret status metadata.
 
 ## AI Provider Catalog — retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 
-Retired — the only remaining AI dependency is the Gemini transcript provider (see [Credentials](#credentials)), data acquisition rather than analysis; decision and rationale: [ADR 0084](adr/0084-retire-in-app-ai-layer.md).
+Retired — no AI dependency remains ([ADR 0084](adr/0084-retire-in-app-ai-layer.md), [ADR 0111](adr/0111-retire-video-transcription.md)).
 
 ## Research Evidence Boundary
 
@@ -2042,7 +1850,6 @@ Initial evidence types:
 - `feed_item`
 - `notebook_entry`
 - `claim`
-- `transcript_segment`
 - `company_event`
 - `ai_analysis`
 - `research_question`
@@ -2057,7 +1864,6 @@ Initial trust categories:
 - `company_publication`
 - `public_media`
 - `market_calendar`
-- `transcript`
 - `user_note`
 - `ai_generated`
 - `unknown`
@@ -2150,7 +1956,7 @@ Rules:
 - The storage and command shape keeps `scopeType` open for later watchlist-scoped questions, but normal UI must not expose watchlist question creation until that workflow is designed.
 - A research question appears in the research evidence timeline as `evidenceType: "research_question"` so it can be reviewed and linked like other evidence.
 - Question-to-evidence relationships use typed `evidence_links` with `fromType: "research_question"` and the target evidence type/id.
-- Deleting a research question removes that question and any evidence links attached to it. It must not delete linked feed items, notes, events, transcript segments, AI analysis, or other canonical evidence objects.
+- Deleting a research question removes that question and any evidence links attached to it. It must not delete linked feed items, notes, events, AI analysis, or other canonical evidence objects.
 
 AI research briefs are retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 5): brief generation and the `ai_research_brief*`/`ai_research_digest*` tables are gone (dropped by migration `0102`, no readable history). Talking to research evidence is now an MCP-connected agent's job (BYOA).
 
@@ -2679,17 +2485,6 @@ Initial Tauri command groups:
 - `backfill_company_history`
 - `get_backfill_progress`
 - `confirm_derived_event`
-- `create_video_transcript_job`
-- `list_video_transcript_jobs`
-- `delete_video_transcript_job`
-- `update_video_transcript_job`
-- `run_video_transcript_job`
-- `resolve_transcript_job_company`
-- `list_transcript_segments`
-- `create_note_from_transcript_selection`
-- `get_provider_credential_status`
-- `set_provider_api_key`
-- `clear_provider_api_key`
 - `get_settings`
 - `update_settings`
 - `export_research_data`
@@ -2744,8 +2539,8 @@ Rules:
 - Watchlist IDs are preserved when absent locally. Existing watchlist IDs merge memberships while keeping local name and description.
 - Membership companies must resolve from existing companies, companies included in the import, or an explicit future repair result. Placeholder companies are not created.
 - Notebook entries import for existing or included companies. Duplicate notebook entry IDs are skipped with preview warnings.
-- Notebook origins preserve source URL and label metadata even when referenced feed/transcript records are not part of M20 export.
-- Provider secrets, API keys, private signing material, logs, diagnostics, metrics, feed items, transcripts, and full backup data are excluded.
+- Notebook origins preserve source URL and label metadata even when referenced feed records are not part of M20 export.
+- Provider secrets, API keys, private signing material, logs, diagnostics, metrics, feed items, and full backup data are excluded.
 - Review checkpoints are excluded from research import/export because they are local review-progress state. Research questions and evidence links are included because they are user-owned research content.
 
 Initial `refresh_gpw_company_registry` behavior:
@@ -2835,7 +2630,7 @@ Initial `list_unmatched_source_items` behavior:
 - Must not make unmatched items visible in normal Inbox or company workspace views.
 - Returns source URL, source-derived company name, title, publication timestamp, and fetched timestamp when available.
 
-Feed, job, transcript, and notebook changes should be emitted as Tauri events.
+Feed, job, and notebook changes should be emitted as Tauri events.
 
 ## External Surface — MCP Server (capability-tier registry)
 
@@ -2845,7 +2640,7 @@ A second **driving adapter** ([ADR 0039](adr/0039-ports-and-adapters-posture.md)
 
 | Tier | What | MCP posture |
 | --- | --- | --- |
-| `read` | Domain reads (companies/watchlists, feed, signals, facts + provenance, coverage, quotes, ownership, insiders, analyst recs, health/red flags, reports/diffs/transcripts, notes, claims, expectations, journal, research questions, quality frameworks, calendar, autopilot runs, attention, briefing). | Active whenever the server is enabled. |
+| `read` | Domain reads (companies/watchlists, feed, signals, facts + provenance, coverage, quotes, ownership, insiders, analyst recs, health/red flags, reports/diffs, notes, claims, expectations, journal, research questions, quality frameworks, calendar, autopilot runs, attention, briefing). | Active whenever the server is enabled. |
 | `act` | Research writes, workspace actions, and job triggers. | Gated at `tools/call` by the live `mcpWritesEnabled` setting (**default OFF**) → typed `writes_disabled` when off; **provenance mandatory** on writes carrying a carrier (`origins` / `sourceEvidenceId` / `citationsJson` / manual-fact citation), checked BEFORE the handler and rejected with typed `provenance_required` if empty (ADR 0088 dec. 3). Both are domain failures (`isError: true`), never protocol errors. |
 | `excluded` | Deletes, undo, bulk import/backup, settings/credentials mutations, MCP self-management, dev/diagnostic mutations. | Permanent denylist — UI-only, never reachable over MCP. |
 
@@ -2870,7 +2665,6 @@ Read wave, per domain (tool name = backing command; `{ company }` = required qua
 | Quotes / ownership / insiders / analysts | `get_price_context { company }`, `get_ownership_overview { company }`, `get_insider_overview { company }`, `list_short_positions { company }`, `get_analyst_recommendations { company }` |
 | Health / red flags | `get_company_health { company }`, `get_red_flags { company }` |
 | Reports / diffs | `get_report_documents_view { company }`, `list_report_diff_candidates { company }`, `get_report_diff { olderReportDocumentId, newerReportDocumentId }` |
-| Transcripts | `list_video_transcript_jobs { company? }`, `list_transcript_segments { transcriptJobId }` |
 | Notes / claims | `list_notebook_entries { company }`, `list_management_claims { company }` |
 | Expectations / journal / questions | `list_report_expectations { company? }`, `list_decision_entries { company? }`, `list_research_questions` |
 | Calendar / attention / briefing / autopilot | `list_report_season`, `list_attention_events { company?, includeDismissed? }`, `get_latest_morning_briefing`, `list_autopilot_runs { company?, limit? }`, `get_autopilot_run { runId }` |
@@ -2892,19 +2686,19 @@ Read tool inputs are strict (`deny_unknown_fields` ⇒ `additionalProperties: fa
 
 **Internal ids, not tickers.** Unlike reads, act tools reference entities by the **internal ids** the read tools return in every payload (e.g. `Company.id`, a period id, a framework/criterion id) — an agent reads the workspace, then writes against the ids it saw. Handlers live in `src-tauri/src/mcp/acts.rs`; each binds to the same `AppState`/sub-facade write the Tauri command delegates to (ADR 0039), so the MCP and UI write paths cannot diverge. When the command wraps additional logic in an extracted `<command>_impl` helper (e.g. `create_company_impl`'s GPW quote-backfill enqueue), the act handler routes through **that same helper**, never the bare storage write — guarded by a source-scan test over `src/commands/` (issue #250).
 
-**Provenance carriers.** Enforced where the input carries the carrier and a new provenance-bearing datum enters: `create_notebook_entry` (`origins`), `create_note_from_transcript_selection` (`transcriptSegmentIds` — the selection is the origin), `create_management_claim` / `update_management_claim` (`sourceEvidenceId`), `create_financial_fact` / `update_financial_fact` (`sourceDocumentRef` only — `attribution` is the fact's slot dimension, never an alternate citation carrier, epic #285 T9), `set_qualitative_verdicts` (every `results[].citationsJson` non-empty), `record_financial_facts` (`DocumentAndPerFactCitations`: a non-blank `reportDocumentId` AND a non-blank `citation` on every entry of `facts` — a single blank citation refuses the WHOLE batch before any write). **No carrier** on `update_notebook_entry` (origins are immutable from creation; the update input has no origins field) and `set_claim_verdict` (a verdict's evidence is the optional `verifyingFactId`, absent for a qualitative claim) — provenance integrity is enforced at create.
+**Provenance carriers.** Enforced where the input carries the carrier and a new provenance-bearing datum enters: `create_notebook_entry` (`origins`), `create_management_claim` / `update_management_claim` (`sourceEvidenceId`), `create_financial_fact` / `update_financial_fact` (`sourceDocumentRef` only — `attribution` is the fact's slot dimension, never an alternate citation carrier, epic #285 T9), `set_qualitative_verdicts` (every `results[].citationsJson` non-empty), `record_financial_facts` (`DocumentAndPerFactCitations`: a non-blank `reportDocumentId` AND a non-blank `citation` on every entry of `facts` — a single blank citation refuses the WHOLE batch before any write). **No carrier** on `update_notebook_entry` (origins are immutable from creation; the update input has no origins field) and `set_claim_verdict` (a verdict's evidence is the optional `verifyingFactId`, absent for a qualitative claim) — provenance integrity is enforced at create.
 
 **Exposed act catalog** (59 tools; tool name = backing command):
 
 | Group | Tools |
 | --- | --- |
-| Research writes (provenance) | `create_notebook_entry`, `create_note_from_transcript_selection`, `update_notebook_entry`, `create_management_claim`, `update_management_claim`, `set_claim_verdict`, `create_financial_fact`, `update_financial_fact`, `set_qualitative_verdicts`, `record_financial_facts` |
+| Research writes (provenance) | `create_notebook_entry`, `update_notebook_entry`, `create_management_claim`, `update_management_claim`, `set_claim_verdict`, `create_financial_fact`, `update_financial_fact`, `set_qualitative_verdicts`, `record_financial_facts` |
 | Research writes (no carrier) | `capture_report_document` (see below), `create_research_question`, `update_research_question`, `create_evidence_link`, `create_research_reminder`, `update_research_reminder`, `create_decision_entry`, `create_report_expectation`, `update_report_expectation`, `record_expectation_resolution`, `create_company_event`, `create_kpi_definition`, `create_kpi_relevance`, `update_kpi_relevance`, `create_quality_framework`, `update_quality_framework`, `create_framework_criterion`, `update_framework_criterion`, `create_alert_rule`, `update_alert_rule` |
 | Workspace actions | `create_company`, `create_watchlist`, `add_company_to_watchlist`, `remove_company_from_watchlist`, `update_feed_item_state`, `mark_report_prepared`, `mark_report_processed`, `mark_research_scope_reviewed`, `confirm_company_signal`, `reject_company_signal`, `classify_filing` (unclassified-bucket triage; `feedItemId` is the evidence anchor, no provenance carrier — ADR 0088 dec. 4), `confirm_derived_event`, `acknowledge_red_flag`, `set_ownership_holder_type`, `mark_attention_event_seen`, `dismiss_attention_event`, `set_autopilot_run_notification_state` |
 | Job triggers (light / fail-fast) | `evaluate_framework`, `compute_comparative_valuation` (ADR 0089), `set_alert_rule_enabled`, `trigger_autopilot_run`, `generate_morning_briefing` |
 | Job triggers (networked / heavy) | `refresh_sources`, `refresh_source`, `run_aggregator_fundamentals_pull`, `backfill_company_history`, `run_structured_extraction`, `rerun_extraction_outcome`, `run_pipeline_reextraction` (ADR 0100 dec. 11 — re-arms the company's landed ESEF runs whose stored pipeline version is stale; poll `get_pipeline_reextraction_progress`) — gated identically; **invocation-exempt** in the hermetic `every_exposed_act_tool_is_listed_and_gated` umbrella (they run live source/extraction/backfill work with no hermetic seam), exercised by the **M6 live dogfooding ritual** instead |
 
-Act commands **classified but not exposed** (each justified inline in the registry's tool tables, `src-tauri/src/mcp/registry/`): niche period plumbing (`create/update_financial_period`), `clone_framework`, company-config setters (`set_company_ir_reports_url`, `set_company_sector`, `rename_watchlist`), report-pipeline document machinery (`fetch_report_document`, `extract_report_sections`, `reclassify_report_documents`, `resolve_ir_report`, `extract_report_document_data`, `resolve_transcript_job_company` — `capture_report_document` itself is now exposed, T8 below), the video-transcript lifecycle (`create/update/run_video_transcript_job` — the only in-app AI dependency), and the **admin / one-off job triggers** (`backfill_company_health_facts`, `backfill_ownership_extraction`, `run_history_sweep`, `rebuild_fundamentals`, `refresh_gpw_company_registry(_if_stale)`) — whole-corpus rebuilds, quote-history sweeps, registry refresh, and derived-fact backfills the exposed extraction/refresh tools already cover.
+Act commands **classified but not exposed** (each justified inline in the registry's tool tables, `src-tauri/src/mcp/registry/`): niche period plumbing (`create/update_financial_period`), `clone_framework`, company-config setters (`set_company_ir_reports_url`, `set_company_sector`, `rename_watchlist`), report-pipeline document machinery (`fetch_report_document`, `extract_report_sections`, `reclassify_report_documents`, `resolve_ir_report`, `extract_report_document_data`, — `capture_report_document` itself is now exposed, T8 below), and the **admin / one-off job triggers** (`backfill_company_health_facts`, `backfill_ownership_extraction`, `run_history_sweep`, `rebuild_fundamentals`, `refresh_gpw_company_registry(_if_stale)`) — whole-corpus rebuilds, quote-history sweeps, registry refresh, and derived-fact backfills the exposed extraction/refresh tools already cover.
 
 **`set_qualitative_verdicts { frameworkId, companyId, results: [{ criterionId, verdict, reasoning, citationsJson, confidence }] }`** — the qualitative-verdict WRITE path (successor to the in-app agent writer retired by [ADR 0084](adr/0084-retire-in-app-ai-layer.md) dec. 5). A typed command (`Result<FrameworkEvaluation, CommandError>`, async + `spawn_blocking`) that is **MCP-first / headless — no UI entry point**; it and the MCP `act` handler share `build_persist_qualitative_input` (resolves each result's `ordinal`/`label` from the framework criteria, writes `prompt_version = "mcp"`), persisting one immutable qualitative snapshot via `persist_qualitative_assessment`. Registry: `act` + `CitationsJson`. Read the result back via the `get_quality_assessment` read tool.
 

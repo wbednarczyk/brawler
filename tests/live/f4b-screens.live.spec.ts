@@ -130,14 +130,3 @@ test("Źródła renders every registered source with no filled action at rest", 
   expect(await page.locator('[data-ui-button-variant="primary"]:visible').count()).toBe(0);
   await shoot(page, "sources", testInfo);
 });
-
-test("Transkrypcje opens as the invitation with the URL field on the real (empty) database", async ({}, testInfo) => {
-  const { page } = connection;
-  test.setTimeout(120_000);
-  await openLibrary(page, /^(Transkrypcje|Transcripts)$/);
-  const fetch = page.getByRole("button", { name: /Pobierz transkrypcję|Fetch transcript|Otwórz ustawienia|Open settings/ });
-  await expect(fetch.first()).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator("[data-transcript-status]")).toHaveCount(0);
-  await expectAtMostOneFilled(page);
-  await shoot(page, "transcripts-empty", testInfo);
-});

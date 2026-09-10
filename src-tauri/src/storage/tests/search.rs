@@ -206,42 +206,6 @@ fn indexes_watchlists_and_company_events() {
 }
 
 #[test]
-fn transcript_segment_carries_parent_job_id() {
-    let connection = open_in_memory_database().expect("database should initialize");
-    let state = AppState::new(connection);
-    {
-        let connection = state.checkout().expect("database connection");
-        connection
-            .execute(
-                "INSERT INTO transcript_jobs (id, provider_id, source_type, source_url, status) \
-                 VALUES ('job_1', 'provider_gemini', 'youtube', 'https://example.test/v', 'succeeded')",
-                [],
-            )
-            .expect("transcript job should insert");
-        connection
-            .execute(
-                "INSERT INTO transcript_segments (id, transcript_job_id, text) \
-                 VALUES ('seg_1', 'job_1', 'distinctive dragonfruit transcript segment')",
-                [],
-            )
-            .expect("transcript segment should insert");
-    }
-
-    let hits = state
-        .search("dragonfruit", &["transcript_segment".to_owned()], None, 50)
-        .expect("search should run");
-    let hit = hits
-        .iter()
-        .find(|hit| hit.source_id == "seg_1")
-        .expect("transcript segment should be indexed");
-    assert_eq!(
-        hit.parent_id.as_deref(),
-        Some("job_1"),
-        "transcript segment should carry its owning job id for navigation"
-    );
-}
-
-#[test]
 fn blank_and_operator_only_queries_are_safe() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);

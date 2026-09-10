@@ -73,8 +73,7 @@ per feature.
   valuation read models stay reachable for agents over MCP
   (`get_kpi_comparison`, `get_sector_percentiles`,
   `compute_comparative_valuation`).
-- **[AI in Brawler: transcripts only (BYOA)](ai-provider-presets.md)**
-  — the only in-app AI feature is YouTube transcription (Gemini); intelligence
+- **AI in Brawler: none in-app (BYOA)** — intelligence
   over your research comes from your own agent talking to Brawler over MCP.
 - **[The decision journal and pre-report expectations](decision-journal.md)**
   — capture your buy/pass/keep-watching decisions in an append-only,
@@ -108,7 +107,7 @@ per feature.
   how-to: connect Claude Code/Desktop step by step, turn on write tools, the
   per-write citation rules, the full tool catalog, and example workflows.
 - **[Settings](settings.md)** — app-wide preferences: appearance, source
-  polling and history depth, transcription, credentials, import/export,
+  polling and history depth, import/export,
   keyboard shortcuts, logs, data storage and background work, the MCP
   server.
 

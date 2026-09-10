@@ -77,9 +77,7 @@ describe("Research screen workflows", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("CDR follow-up note")).toBeInTheDocument();
     expect(screen.getByText("Shareholder Meeting")).toBeInTheDocument();
-    expect(screen.getByText("Gemini")).toBeInTheDocument();
     expect(screen.queryByText("shareholder_meeting")).not.toBeInTheDocument();
-    expect(screen.queryByText("provider_gemini")).not.toBeInTheDocument();
     const reviewSummary = screen.getByLabelText("Research review summary");
     expect(within(reviewSummary).getByText("Evidence")).toBeInTheDocument();
     expect(within(reviewSummary).getByText("Last reviewed")).toBeInTheDocument();

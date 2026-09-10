@@ -425,77 +425,6 @@ fn kpi_run_item(
     }
 }
 
-/// A `transcript_jobs` row still `queued` — not yet awaited/started, so no
-/// `job_runs`/registry entry exists for it yet (ADR 0109 dec. 3).
-fn queued_transcript_item(
-    connection: &rusqlite::Connection,
-    row: reads::QueuedTranscriptRow,
-) -> ActivityItem {
-    let subject = row
-        .source_label
-        .filter(|label| !label.trim().is_empty())
-        .unwrap_or(row.source_url);
-    ActivityItem {
-        id: format!("transcript_jobs:{}", row.id),
-        activity_key: format!("transcript:{}", row.id),
-        family: ActivityFamily::Transcript,
-        status: "queued".to_owned(),
-        subject,
-        qualified_ticker: row
-            .company_id
-            .as_deref()
-            .and_then(|id| reads::qualified_ticker(connection, id)),
-        company_id: row.company_id,
-        progress: None,
-        in_flight: None,
-        attempt: 0,
-        started_at: row.created_at,
-        finished_at: None,
-        error: None,
-        members: Vec::new(),
-
-        target: ActivityTarget::Transcripts,
-    }
-}
-
-/// A `transcript_jobs` row literally `running` with no matching open
-/// `job_runs` occurrence — `stalled` (sol diff R1 #6: the transcript
-/// runner's finalizer means this should not exist while the app is alive,
-/// but the read model states it honestly rather than hiding it, mirroring
-/// [`stalled_queue_items`]).
-fn stalled_transcript_items(connection: &rusqlite::Connection) -> StorageResult<Vec<ActivityItem>> {
-    Ok(reads::stalled_transcript_rows(connection)?
-        .into_iter()
-        .map(|row| {
-            let subject = row
-                .source_label
-                .filter(|label| !label.trim().is_empty())
-                .unwrap_or(row.source_url);
-            ActivityItem {
-                id: format!("transcript_jobs:{}", row.id),
-                activity_key: format!("transcript:{}", row.id),
-                family: ActivityFamily::Transcript,
-                status: "stalled".to_owned(),
-                subject,
-                qualified_ticker: row
-                    .company_id
-                    .as_deref()
-                    .and_then(|id| reads::qualified_ticker(connection, id)),
-                company_id: row.company_id,
-                progress: None,
-                in_flight: None,
-                attempt: 0,
-                started_at: row.started_at,
-                finished_at: None,
-                error: None,
-                members: Vec::new(),
-
-                target: ActivityTarget::Transcripts,
-            }
-        })
-        .collect())
-}
-
 /// Non-terminal domain rows (`autopilot_run`, `history_sweeps`,
 /// `pipeline_reextraction_batches`) with no live backing job — `stalled`
 /// (D3/ADR 0109 dec. 4). Rare once startup reconciliation has run; the read
@@ -668,7 +597,6 @@ pub(crate) fn compute_activity(state: &AppState) -> StorageResult<ActivityView> 
     // ---- stalled (precedence 1) ----
     let mut stalled = stalled_queue_items(&connection, state)?;
     stalled.extend(stalled_domain_items(&connection)?);
-    stalled.extend(stalled_transcript_items(&connection)?);
     stalled.extend(registry_stalled_items(&connection, state)?);
 
     // ---- queued (precedence 2) ----
@@ -677,11 +605,6 @@ pub(crate) fn compute_activity(state: &AppState) -> StorageResult<ActivityView> 
         kpi_unleased
             .into_iter()
             .map(|run| kpi_run_item(&connection, run, "queued")),
-    );
-    queued.extend(
-        reads::queued_transcript_jobs(&connection)?
-            .into_iter()
-            .map(|row| queued_transcript_item(&connection, row)),
     );
 
     // Collapse running/stalled/queued into ONE keyed set — first-seen wins,
@@ -774,9 +697,6 @@ fn resolved_key_statuses(
             stalled.push((format!("{prefix}:{}", row.id), "stalled".to_owned()));
         }
     }
-    for row in reads::stalled_transcript_rows(connection)? {
-        stalled.push((format!("transcript:{}", row.id), "stalled".to_owned()));
-    }
     let snapshot = activity_registry::snapshot(state);
     for id in &snapshot.stalled_run_ids {
         if let Some(key) = reads::activity_key_for_occurrence(connection, *id)? {
@@ -795,9 +715,6 @@ fn resolved_key_statuses(
     }
     for run in &kpi_unleased {
         queued.push((format!("kpi-ingest:{}", run.id), "queued".to_owned()));
-    }
-    for row in reads::queued_transcript_jobs(connection)? {
-        queued.push((format!("transcript:{}", row.id), "queued".to_owned()));
     }
 
     let mut seen = std::collections::HashSet::new();

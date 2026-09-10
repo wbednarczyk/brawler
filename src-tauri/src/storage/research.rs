@@ -5,7 +5,6 @@ pub(crate) const EVIDENCE_TYPES: &[&str] = &[
     "feed_item",
     "notebook_entry",
     "claim",
-    "transcript_segment",
     "company_event",
     "research_question",
     "company_signal",
@@ -162,25 +161,6 @@ pub(super) fn list_research_evidence(
                 END AS trust_category
             FROM company_events
             JOIN scope_companies ON scope_companies.company_id = company_events.company_id
-
-            UNION ALL
-
-            SELECT
-                'evidence_transcript_segment_' || transcript_segments.id AS id,
-                'transcript_segment' AS evidence_type,
-                'transcripts' AS source_domain,
-                transcript_segments.id AS source_id,
-                transcript_segments.company_id AS company_id,
-                transcript_segments.created_at AS occurred_at,
-                COALESCE(transcript_segments.speaker, 'Transcript segment') AS title,
-                substr(transcript_segments.text, 1, 240) AS summary,
-                transcript_jobs.source_url AS source_url,
-                transcript_jobs.provider_id AS attribution,
-                'transcript' AS trust_category
-            FROM transcript_segments
-            JOIN transcript_jobs ON transcript_jobs.id = transcript_segments.transcript_job_id
-            JOIN scope_companies ON scope_companies.company_id = transcript_segments.company_id
-
 
             UNION ALL
 
@@ -843,9 +823,6 @@ pub(super) fn validate_evidence_reference(
         // Claims are a first-class entity (ADR 0040); claim evidence resolves against
         // management_claims, not notebook_entries.
         "claim" => validate_reference_exists(connection, "management_claims", evidence_id),
-        "transcript_segment" => {
-            validate_reference_exists(connection, "transcript_segments", evidence_id)
-        }
         "company_event" => validate_reference_exists(connection, "company_events", evidence_id),
         "research_question" => {
             validate_reference_exists(connection, "research_questions", evidence_id)

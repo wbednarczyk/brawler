@@ -132,7 +132,7 @@ pub(super) fn exposed_tools() -> Vec<RegistryEntry> {
         exposed_read(
             "search_research",
             "search",
-            "Full-text search across the user's research workspace (notes, report documents, transcripts, claims, facts). Returns ranked matches with snippets.",
+            "Full-text search across the user's research workspace (notes, report documents, claims, facts). Returns ranked matches with snippets.",
             tools::tool_schema::<SearchResearchInput>,
             tools::search_research_handler,
         ),

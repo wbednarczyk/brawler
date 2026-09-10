@@ -49,37 +49,6 @@ test.describe("settings", { tag: "@clickable" }, () => {
     }
   });
 
-  // Post-ADR 0084: the in-app analysis layer and its per-capability routing are
-  // retired — the only model-backed capability left is the transcript provider
-  // (transcription is data acquisition, not interpretation). Its settings live
-  // under the "Transcripts" tab; the user-visible outcome is that a chosen model
-  // and timeout persist through update_settings across tab navigation.
-  test("persists the transcript provider model and timeout across tab navigation", async ({
-    page,
-  }) => {
-    await openApp(page);
-    await navTo(page, "Settings").click();
-
-    const settingsRegion = page.getByLabel("Application settings");
-    await settingsRegion.getByRole("button", { name: "Transcripts" }).click();
-
-    const model = page.getByLabel("Transcription quality");
-    const timeout = page.getByLabel("Give up after");
-
-    // Seed is gemini-2.5-flash / 300s; change both to non-default values.
-    await expect(model).toHaveValue("gemini-2.5-flash");
-    await model.selectOption("gemini-3.5-flash");
-    await timeout.selectOption("600");
-
-    // Navigate away and back — the stateful mock runtime (ADR 0048) persists the
-    // saved settings, so the model + timeout re-render as saved, not reset.
-    await settingsRegion.getByRole("button", { name: "Credentials" }).click();
-    await settingsRegion.getByRole("button", { name: "Transcripts" }).click();
-
-    await expect(page.getByLabel("Transcription quality")).toHaveValue("gemini-3.5-flash");
-    await expect(page.getByLabel("Give up after")).toHaveValue("600");
-  });
-
   // M4 (ADR 0078): the MCP section's connection snippet is unbreakable command
   // text — the widest content in Settings. It must scroll inside its own bounded
   // `data-hscroll` scroller, never force a global/panel horizontal scrollbar,

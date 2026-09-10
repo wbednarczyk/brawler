@@ -5,4 +5,4 @@
  * kinds plus every instrumented awaited path (ADR 0109 dec. 1); `Corrupted`
  * is the explicit malformed-payload item, never a silent drop.
  */
-export type ActivityFamily = "sourceRefresh" | "companyRefresh" | "registryRefresh" | "fxPull" | "fundamentalsPull" | "briefing" | "historyFetch" | "reportSweep" | "reextraction" | "reportReading" | "ownershipReading" | "managementReading" | "priceHistory" | "kpiIngest" | "transcript" | "corrupted";
+export type ActivityFamily = "sourceRefresh" | "companyRefresh" | "registryRefresh" | "fxPull" | "fundamentalsPull" | "briefing" | "historyFetch" | "reportSweep" | "reextraction" | "reportReading" | "ownershipReading" | "managementReading" | "priceHistory" | "kpiIngest" | "corrupted";

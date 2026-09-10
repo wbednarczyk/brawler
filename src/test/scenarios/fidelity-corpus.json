@@ -177,12 +177,8 @@
         {
           "command": "get_kpi_comparison",
           "input": {
-            "companyIds": [
-              "$cmp_cid"
-            ],
-            "metricKeys": [
-              "revenue"
-            ],
+            "companyIds": ["$cmp_cid"],
+            "metricKeys": ["revenue"],
             "granularity": "annual"
           },
           "expectField": {
@@ -269,9 +265,7 @@
             "input": {
               "path": "/tmp/brawler-fidelity-export",
               "contents": "{\"ok\":true}",
-              "allowedExtensions": [
-                "json"
-              ],
+              "allowedExtensions": ["json"],
               "defaultExtension": "json"
             }
           }
@@ -356,9 +350,7 @@
           "command": "set_companies_autopilot",
           "input": {
             "input": {
-              "companyIds": [
-                "$cid"
-              ],
+              "companyIds": ["$cid"],
               "mode": "off"
             }
           }
@@ -1385,10 +1377,7 @@
           "command": "mark_attention_events_seen",
           "input": {
             "input": {
-              "ids": [
-                "$eid",
-                "no_such_event"
-              ]
+              "ids": ["$eid", "no_such_event"]
             }
           }
         },
@@ -1871,35 +1860,18 @@
       ]
     },
     {
-      "name": "a freshly created transcript job surfaces as queued activity (ADR 0109, #133)",
-      "_comment": "create_video_transcript_job only inserts the row (status 'queued') — no job_runs/registry entry exists until run_video_transcript_job actually starts it (ADR 0109 dec. 3), so the item must land in list_activity's queued array, never active, with family 'transcript' and a transcripts target. get_activity_summary is checked shape-only (its counts move with whatever else a fresh in-memory db seeds).",
+      "name": "activity list and summary respond with the expected shape (ADR 0109, #133)",
+      "_comment": "#463 (ADR 0111) removed the transcript-job journey that previously exercised these two commands. The mock synthesizes its activity view from the sample companies (makeActivityView) while the backend reads job_runs, so VALUES differ by construction; the DTO shape (ActivityView / ActivitySummary fields, contracts.md § Activity) is pinned on both sides via expectKeys.",
       "steps": [
-        {
-          "command": "create_video_transcript_job",
-          "input": {
-            "input": {
-              "companyId": null,
-              "providerId": null,
-              "sourceUrl": "https://youtube.test/watch?v=fidelity-mock",
-              "sourceLabel": "Fidelity corpus mock transcript",
-              "recognizedCompanyCandidates": null
-            }
-          }
-        },
         {
           "command": "list_activity",
           "input": {},
-          "expectContainsField": "queued",
-          "expectContains": {
-            "family": "transcript",
-            "subject": "Fidelity corpus mock transcript",
-            "target": { "kind": "transcripts" }
-          }
+          "expectKeys": ["active", "queued", "recent", "generatedAt"]
         },
         {
           "command": "get_activity_summary",
           "input": {},
-          "expectField": {}
+          "expectKeys": ["active", "queued", "lastFinishedAt"]
         }
       ]
     },

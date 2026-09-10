@@ -11,7 +11,6 @@ import {
   LayoutPanelTop,
   ListChecks,
   Settings,
-  Video,
 } from "lucide-react";
 import type { LocaleKey } from "../shared/locale";
 
@@ -32,7 +31,6 @@ export type Section =
   | "Alerts"
   | "Research"
   | "Events"
-  | "Transcripts"
   | "Sources"
   | "Diagnostics"
   | "Settings";
@@ -55,7 +53,7 @@ export type NavGroup = {
 //   • Modes — the investor's jobs as top-level destinations: Today, Inbox,
 //     Spółka (opens the last-viewed company).
 //   • Library — the named reference surfaces the modes draw on (Companies,
-//     Watchlists, Alerts, Events, Report Season, Transcripts, Sources).
+//     Watchlists, Alerts, Events, Report Season, Sources).
 //   • Utilities — Settings + Diagnostics (developer-gated).
 // Pinned/favorite companies render as a data-driven group between Modes
 // and Library (built at runtime from `UserSettings.pinnedCompanyIds`).
@@ -89,7 +87,6 @@ export const navGroups: NavGroup[] = [
       // Research (F4c S3, contract § Decisions #4): joins the Library nav —
       // language pass + labelled actions, not a redesign (owner 28.08).
       { label: "Research", icon: FlaskConical, localeKey: "nav.research" },
-      { label: "Transcripts", icon: Video, localeKey: "nav.transcripts" },
       { label: "Sources", icon: Activity, localeKey: "nav.sources" },
     ],
   },

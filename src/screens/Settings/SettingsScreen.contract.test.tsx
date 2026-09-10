@@ -18,24 +18,23 @@ import { appShortcutReferenceItems } from "../../app/shortcuts";
 // `data-action-kind` is `"unclassified"` and several labels are pre-F4c
 // (`Stdio adapter` instead of `Claude Code (terminal)`, etc.).
 //
-// The nine Subnav tab buttons (Appearance/Sources/…/MCP, unchanged labels
-// per dec. 5, `kind="control"` per s1-guardrails item 4) render on EVERY
-// state regardless of which tab is active — `SettingsScreen.tsx:141-147`
-// (`Subnav`) always renders all nine; only the section select's `<select>`
-// (not a button) hides at wider tiers.
+// The Subnav tab buttons (Appearance/Sources/…/MCP, unchanged labels per
+// dec. 5, `kind="control"` per s1-guardrails item 4) render on EVERY state
+// regardless of which tab is active — `SettingsScreen.tsx` (`Subnav`) always
+// renders all of them; only the section select's `<select>` (not a button)
+// hides at wider tiers. The Transcripts and Credentials tabs retired with
+// video transcription (ADR 0111) — seven tabs remain.
 //
 // ASSUMPTIONS not settled verbatim by the plan (S4 owns the final call):
 // (a) which tab(s) are "the token composers" carrying the single
-// primary at rest — read as Credentials (the Gemini API key save) and MCP
-// (the access-token Generate — NOT the acquisition-token Generate, since a
-// screen carries one primary); the other tabs
+// primary at rest — read as MCP (the access-token Generate — NOT the
+// acquisition-token Generate, since a screen carries one primary); the other tabs
 // assert `expectSinglePrimary(region, 0)`. (b) `kind` for controls the plan
 // doesn't name explicitly: the four DB/Queue/MCP "Reset…" buttons and the
 // per-shortcut "Reset" button → `control` (no dictionary verb fits a
 // revert-to-default action); Import/Export actions → `Export` = `fetch`,
 // `Import` (opens the file picker) = `open`, `Apply import` = `apply`
-// (exact dictionary match). (c) Credentials' "Clear" (wipes the stored/draft
-// credential) → `remove`.
+// (exact dictionary match).
 //
 // S4 DEVIATION (stated reason, per f4c-common.md "adjust expected values
 // only with a stated reason"): `copyTerminal` corrected from "Copy — Claude
@@ -60,8 +59,6 @@ const TAB_LABELS = {
   en: {
     appearance: "Appearance",
     sources: "Sources",
-    transcripts: "Transcripts",
-    credentials: "Credentials",
     importExport: "Import And Export",
     shortcuts: "Keyboard shortcuts",
     logs: "Logs",
@@ -71,8 +68,6 @@ const TAB_LABELS = {
   pl: {
     appearance: "Wygląd",
     sources: "Źródła",
-    transcripts: "Transkrypcje",
-    credentials: "Poświadczenia",
     importExport: "Import i eksport",
     shortcuts: "Skróty klawiaturowe",
     logs: "Logi",
@@ -83,9 +78,6 @@ const TAB_LABELS = {
 
 const LABELS = {
   en: {
-    save: "Save",
-    clear: "Clear",
-    getGeminiKey: "Get Gemini API key",
     resetToDefaults: "Reset to defaults",
     resetToDefaultPort: "Reset to default port",
     generateToken: "Generate token",
@@ -100,9 +92,6 @@ const LABELS = {
     restore: "Restore",
   },
   pl: {
-    save: "Zapisz",
-    clear: "Wyczyść",
-    getGeminiKey: "Pobierz klucz API Gemini",
     resetToDefaults: "Przywróć domyślne",
     resetToDefaultPort: "Przywróć domyślny port",
     generateToken: "Wygeneruj token",
@@ -150,33 +139,6 @@ describe("Settings action inventory (F4c contract § Settings, plan dec. 5)", ()
     expectPrimaryMarkerMatchesVariant(region);
     expectSinglePrimary(region, 0);
   });
-
-  it.each(LOCALES)("Transcripts tab: tab nav only, no content actions (%s)", async (locale) => {
-    const region = await openSettingsTab(locale, "transcripts");
-    expect(collectActionInventory(region, locale)).toEqual(sorted(tabNavInventory(locale)));
-    expectPrimaryMarkerMatchesVariant(region);
-    expectSinglePrimary(region, 0);
-  });
-
-  it.each(LOCALES)(
-    "Credentials tab: Save is the primary token composer at rest (%s)",
-    async (locale) => {
-      const t = LABELS[locale];
-      const region = await openSettingsTab(locale, "credentials");
-      expect(collectActionInventory(region, locale)).toEqual(
-        sorted([
-          ...tabNavInventory(locale),
-          { name: t.save, kind: "save" },
-          { name: t.clear, kind: "remove" },
-          { name: t.getGeminiKey, kind: "open" },
-        ]),
-      );
-      expectPrimaryMarkerMatchesVariant(region);
-      expectSinglePrimary(region, 1);
-      const primary = region.querySelector('[data-ux-primary-action="true"]');
-      expect(primary).toHaveTextContent(t.save);
-    },
-  );
 
   it.each(LOCALES)("Import and export tab: Export/Import per panel, no preview yet (%s)", async (locale) => {
     const t = LABELS[locale];

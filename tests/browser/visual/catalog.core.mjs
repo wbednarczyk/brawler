@@ -99,16 +99,6 @@ const RAW_CATALOG = [
     figures: { selector: "[data-figure]", min: 2 },
   },
   {
-    screen: "transcripts",
-    spec: "visual-utility.spec.ts",
-    states: ["default", "empty"],
-    tiers: FULL_TIERS,
-    // The mock seeds 3 realistic segments once a transcript completes (sol
-    // R1 finding 3) — the default-state row carries its fetched-at date PLUS
-    // its segment count once expanded.
-    figures: { selector: "[data-figure]", min: 2 },
-  },
-  {
     // No `figures` proof: the default landing tab (Appearance) carries no
     // numeric data by design; the Logs tab's "History kept" figure is asserted
     // by SettingsScreen.test.tsx, not by a baseline that would have to shoot a

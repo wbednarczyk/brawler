@@ -67,11 +67,9 @@ type AppLifecycleEffectsInput = {
    * its `.then`, so a scheduler-status read failure never blocks the summary.
    */
   refreshActivitySummary: () => void;
-  refreshGeminiCredentialStatus: () => void;
   refreshHealth: () => void;
   refreshSettings: () => void;
   refreshSourceAdapters: () => void;
-  refreshTranscriptJobs: () => void;
   refreshWatchlistMemberships: () => void;
   refreshWatchlists: () => void;
   selectedFeedItemId: string | null;
@@ -112,11 +110,9 @@ export function useAppLifecycleEffects({
   onRefreshCompletion,
   refreshAttention,
   refreshActivitySummary,
-  refreshGeminiCredentialStatus,
   refreshHealth,
   refreshSettings,
   refreshSourceAdapters,
-  refreshTranscriptJobs,
   refreshWatchlistMemberships,
   refreshWatchlists,
   selectedFeedItemId,
@@ -214,9 +210,7 @@ export function useAppLifecycleEffects({
     refreshFeedItems();
     refreshSignals();
     refreshCompanyEvents();
-    refreshTranscriptJobs();
     refreshSourceAdapters();
-    refreshGeminiCredentialStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial data load, runs once on mount; the non-memoized refresh callbacks from AppStateRoot are intentionally excluded so startup does not re-fetch every render
   }, []);
 

@@ -63,8 +63,6 @@ export interface AppTestState {
   researchRemindersResponse: Data["researchReminders"];
   companyEventsResponse: Data["events"];
   companySignalsResponse: Data["signals"];
-  transcriptJobsResponse: Data["transcriptJobs"];
-  transcriptSegmentsResponse: Data["transcriptSegments"];
   companyRegistryEntriesResponse: Data["registry"];
   watchlistsResponse: Data["watchlists"];
   watchlistMembershipsResponse: Data["watchlistMemberships"];
@@ -92,7 +90,6 @@ export interface AppTestState {
   alertRulesResponse: Data["alertRules"];
   morningBriefingResponse: Data["morningBriefing"];
   researchReviewCheckpointResponse: Data["researchReviewCheckpoints"][number] | null;
-  geminiCredentialStatusResponse: Data["credentialStatuses"][number] | null;
   searchResponse: unknown | null;
   refreshSourcesError: string | null;
 }
@@ -108,8 +105,6 @@ export const appTestState = Object.defineProperties(
     researchRemindersResponse: field("researchReminders"),
     companyEventsResponse: field("events"),
     companySignalsResponse: field("signals"),
-    transcriptJobsResponse: field("transcriptJobs"),
-    transcriptSegmentsResponse: field("transcriptSegments"),
     companyRegistryEntriesResponse: field("registry"),
     watchlistsResponse: field("watchlists"),
     watchlistMembershipsResponse: field("watchlistMemberships"),
@@ -143,15 +138,6 @@ export const appTestState = Object.defineProperties(
         runtime.data.researchReviewCheckpoints = value
           ? [structuredClone(value) as Data["researchReviewCheckpoints"][number]]
           : [];
-      },
-      enumerable: true,
-    },
-    geminiCredentialStatusResponse: {
-      get: () => runtime.data.credentialStatuses.find((c) => c.providerId === "provider_gemini") ?? null,
-      set: (value: unknown) => {
-        const next = runtime.data.credentialStatuses.filter((c) => c.providerId !== "provider_gemini");
-        if (value) next.unshift(structuredClone(value) as Data["credentialStatuses"][number]);
-        runtime.data.credentialStatuses = next;
       },
       enumerable: true,
     },
@@ -204,10 +190,7 @@ export function seedScenario(spec: ScenarioName | ScenarioSpec) {
 const SEED = runtime.data;
 export const initialCompanies = SEED.companies;
 export const initialFeedItems = SEED.feedItems;
-export const initialGeminiCredentialStatus =
-  SEED.credentialStatuses.find((c) => c.providerId === "provider_gemini") ?? SEED.credentialStatuses[0];
 export const initialNotebookEntry = legacyNotebookEntry;
-export const initialTranscriptJobs = SEED.transcriptJobs;
 
 // Re-queries by role/name on every poll (the RTL equivalent of a Playwright
 // locator) so it survives a control that relocates in the DOM while data

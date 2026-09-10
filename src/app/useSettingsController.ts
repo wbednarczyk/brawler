@@ -1,41 +1,27 @@
-import type { Dispatch, FormEvent, SetStateAction } from "react";
-import * as credentialsApi from "../api/credentials";
+import type { Dispatch, SetStateAction } from "react";
 import * as settingsApi from "../api/settings";
 import type {
   AccentPalette,
   AppLocale,
-  CredentialStatus,
   ShortcutBindingSetting,
   Theme,
   UserSettings,
 } from "../api/types";
 
 type SettingsControllerInput = {
-  geminiApiKeyDraft: string;
-  setGeminiApiKeyDraft: Dispatch<SetStateAction<string>>;
-  setGeminiCredentialError: Dispatch<SetStateAction<string | null>>;
-  setGeminiCredentialInFlight: Dispatch<SetStateAction<boolean>>;
-  setGeminiCredentialStatus: Dispatch<SetStateAction<CredentialStatus | null>>;
   setSettings: Dispatch<SetStateAction<UserSettings | null>>;
   setSettingsError: Dispatch<SetStateAction<string | null>>;
   setAccentPalette: Dispatch<SetStateAction<AccentPalette>>;
   setLocale: Dispatch<SetStateAction<AppLocale>>;
   setTheme: Dispatch<SetStateAction<Theme>>;
-  text: (value: string) => string;
 };
 
 export function useSettingsController({
-  geminiApiKeyDraft,
-  setGeminiApiKeyDraft,
-  setGeminiCredentialError,
-  setGeminiCredentialInFlight,
-  setGeminiCredentialStatus,
   setSettings,
   setSettingsError,
   setAccentPalette,
   setLocale,
   setTheme,
-  text,
 }: SettingsControllerInput) {
   function applySettingsResponse(response: UserSettings) {
     setSettings(response);
@@ -99,14 +85,6 @@ export function useSettingsController({
   // MCP-excluded posture as the writes toggle.
   function updateKpiAcquisitionEnabled(nextEnabled: boolean) {
     updateSettings({ kpiAcquisitionEnabled: nextEnabled });
-  }
-
-  function updateYoutubeTranscriptionModel(nextModel: string) {
-    updateSettings({ youtubeTranscriptionModel: nextModel });
-  }
-
-  function updateYoutubeTranscriptionTimeout(nextTimeoutSeconds: number) {
-    updateSettings({ youtubeTranscriptionTimeoutSeconds: nextTimeoutSeconds });
   }
 
   function updateShortcutBindings(
@@ -192,51 +170,8 @@ export function useSettingsController({
       });
   }
 
-  function saveGeminiApiKey(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const apiKey = geminiApiKeyDraft.trim();
-    if (!apiKey) {
-      setGeminiCredentialError(text("Gemini API key is required."));
-      return;
-    }
-
-    setGeminiCredentialInFlight(true);
-    credentialsApi
-      .setGeminiTranscriptionApiKey(apiKey)
-      .then((response) => {
-        setGeminiCredentialStatus(response);
-        setGeminiCredentialError(null);
-        setGeminiApiKeyDraft("");
-      })
-      .catch((error) => {
-        setGeminiCredentialError(String(error));
-      })
-      .finally(() => {
-        setGeminiCredentialInFlight(false);
-      });
-  }
-
-  function clearGeminiApiKey() {
-    setGeminiCredentialInFlight(true);
-    credentialsApi
-      .clearGeminiTranscriptionApiKey()
-      .then((response) => {
-        setGeminiCredentialStatus(response);
-        setGeminiCredentialError(null);
-        setGeminiApiKeyDraft("");
-      })
-      .catch((error) => {
-        setGeminiCredentialError(String(error));
-      })
-      .finally(() => {
-        setGeminiCredentialInFlight(false);
-      });
-  }
-
   return {
-    clearGeminiApiKey,
     disableDeveloperMode,
-    saveGeminiApiKey,
     unlockDeveloperMode,
     updateAccentPalette,
     updateDbAcquireTimeoutMs,
@@ -259,7 +194,5 @@ export function useSettingsController({
     updateShortcutBindings,
     updateTodayReviewedDays,
     updateTheme,
-    updateYoutubeTranscriptionModel,
-    updateYoutubeTranscriptionTimeout,
   };
 }

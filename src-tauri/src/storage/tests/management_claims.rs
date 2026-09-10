@@ -25,8 +25,8 @@ fn creates_lists_and_defaults_claim() {
             statement: "Management expects the next release within two quarters.".to_owned(),
             due_fiscal_year: Some(2026),
             due_period_type: Some("q4".to_owned()),
-            source_evidence_type: Some("transcript_segment".to_owned()),
-            source_evidence_id: Some("seg_42".to_owned()),
+            source_evidence_type: Some("report_document".to_owned()),
+            source_evidence_id: Some("doc_42".to_owned()),
             ..Default::default()
         })
         .expect("claim should be created");
@@ -35,7 +35,7 @@ fn creates_lists_and_defaults_claim() {
     assert_eq!(claim.body_format, "markdown");
     assert_eq!(claim.due_fiscal_year, Some(2026));
     assert_eq!(claim.due_period_type.as_deref(), Some("Q4"));
-    assert_eq!(claim.source_evidence_type, "transcript_segment");
+    assert_eq!(claim.source_evidence_type, "report_document");
 
     let claims = state
         .list_management_claims(&company.id)
@@ -131,6 +131,34 @@ fn rejects_claim_for_unknown_company() {
         result,
         Err(StorageError::MissingClaimReference { .. })
     ));
+}
+
+#[test]
+fn rejects_retired_transcript_source_evidence_types() {
+    // ADR 0111 (#463): video transcription is retired — `transcript_segment`
+    // and `transcript` are no longer allowed source_evidence_type values.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = sample_company(&state);
+
+    for retired in ["transcript_segment", "transcript"] {
+        let result = state.create_management_claim(NewManagementClaim {
+            company_id: company.id.clone(),
+            statement: "Retired source evidence type".to_owned(),
+            source_evidence_type: Some(retired.to_owned()),
+            ..Default::default()
+        });
+        assert!(
+            matches!(
+                result,
+                Err(StorageError::InvalidClaimValue {
+                    key: "source_evidence_type",
+                    ..
+                })
+            ),
+            "{retired} must be rejected, got {result:?}"
+        );
+    }
 }
 
 #[test]

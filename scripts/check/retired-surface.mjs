@@ -29,7 +29,9 @@ const PLANS_LIVE = ["docs/plans/README.md"];
 export function isScanned(rel) {
   const p = rel.split(sep).join("/");
   if (!p.endsWith(".md")) return false;
-  if (!(p.startsWith("docs/") || p.startsWith("wiki/"))) return false;
+  // .claude/skills is executable agent guidance — a retired tool named there
+  // becomes an invalid live call (#463 review).
+  if (!(p.startsWith("docs/") || p.startsWith("wiki/") || p.startsWith(".claude/skills/"))) return false;
   if (EXCLUDED.some((e) => p === e || p.startsWith(`${e}/`))) return false;
   if (p.startsWith(`${PLANS_DIR}/`)) return PLANS_LIVE.includes(p);
   return true;
@@ -87,6 +89,7 @@ export function scan(root, manifest) {
   const files = [];
   listMarkdown(root, "docs", files);
   listMarkdown(root, "wiki", files);
+  listMarkdown(root, ".claude/skills", files);
   const violations = [];
   for (const rel of files) {
     const content = readFileSync(join(root, rel), "utf8");

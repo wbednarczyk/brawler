@@ -28,9 +28,6 @@ pub fn reconcile_on_startup(state: &AppState) {
     if let Err(error) = interrupt_open_occurrences(state) {
         log::error!("activity reconcile: open occurrences: {error}");
     }
-    if let Err(error) = fail_running_transcripts(state) {
-        log::warn!("activity reconcile: transcripts: {error}");
-    }
     if let Err(error) = fail_orphaned_autopilot_runs(state) {
         log::warn!("activity reconcile: autopilot runs: {error}");
     }
@@ -68,27 +65,6 @@ fn interrupt_open_occurrences(state: &AppState) -> Result<(), String> {
     }
     job_runs::prune(&tx).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
-}
-
-/// A `transcript_jobs` row left `running` by a crash: no queue and no
-/// worker survive process death, so it is honestly `failed` with
-/// `error_code = "interrupted"`.
-fn fail_running_transcripts(state: &AppState) -> Result<(), String> {
-    let connection = state.checkout().map_err(|e| e.to_string())?;
-    connection
-        .execute(
-            "
-            UPDATE transcript_jobs
-            SET status = 'failed',
-                error_code = 'interrupted',
-                error = COALESCE(error, 'Interrupted by app restart'),
-                finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            WHERE status = 'running'
-            ",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(())
 }
 
 /// A non-terminal `autopilot_run` (`pending`/`running`) with NO live stage job

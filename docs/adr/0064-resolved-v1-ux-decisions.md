@@ -129,6 +129,8 @@ control for claim notes.
 
 ## Transcript Editability
 
+*Retired 2026-09-10 with video transcription ([ADR 0111](0111-retire-video-transcription.md)); kept as the record of the decision.*
+
 Decision: after Gemini produces transcript segments from a YouTube
 conference, transcript segments are treated as source output and are not
 edited directly in v1. Notes created from transcripts are editable.

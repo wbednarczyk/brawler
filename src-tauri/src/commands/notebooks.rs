@@ -21,16 +21,6 @@ pub fn create_notebook_entry(
 }
 
 #[tauri::command]
-pub fn create_note_from_transcript_selection(
-    input: storage::CreateNoteFromTranscriptSelectionInput,
-    state: tauri::State<'_, app_state::AppState>,
-) -> Result<storage::NotebookEntry, String> {
-    state
-        .create_note_from_transcript_selection(input)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
 pub fn update_notebook_entry(
     input: storage::NotebookEntryUpdate,
     state: tauri::State<'_, app_state::AppState>,

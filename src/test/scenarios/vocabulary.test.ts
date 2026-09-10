@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMockRuntime } from "./runtime";
 import type { ScenarioName } from "./scenarios";
-import type { CompanyEvent, TranscriptJob } from "../../api/types";
+import type { CompanyEvent } from "../../api/types";
 
 // F4b S1 guardrail: the mock/backend vocabulary must stay a SUBSET of what
 // the Rust storage layer actually validates — a mock value the real INSERT
@@ -9,18 +9,6 @@ import type { CompanyEvent, TranscriptJob } from "../../api/types";
 // frontend a shape that can never occur. Sets copied verbatim from the
 // `validate_allowed_*_value` calls they enforce (line refs point at the
 // literal `&[...]` arrays, not the whole function).
-
-// src-tauri/src/storage/transcripts.rs:322 (validate_allowed_transcript_value("source_type", ...))
-const TRANSCRIPT_SOURCE_TYPES = new Set(["youtube_url"]);
-// src-tauri/src/storage/transcripts.rs:326-332 (company_resolution_status)
-const TRANSCRIPT_COMPANY_RESOLUTION_STATUSES = new Set([
-  "provided",
-  "recognized",
-  "unresolved",
-  "needs_user_selection",
-]);
-// src-tauri/src/storage/transcripts.rs:334-337 (status)
-const TRANSCRIPT_STATUSES = new Set(["queued", "running", "completed", "failed"]);
 
 // src-tauri/src/storage/events.rs:146-157 (event_type)
 const EVENT_TYPES = new Set([
@@ -56,17 +44,6 @@ const EVENT_SOURCE_TYPES = new Set([
   "derived_signal",
 ]);
 
-function expectTranscriptVocab(job: TranscriptJob, label: string) {
-  expect(TRANSCRIPT_SOURCE_TYPES.has(job.sourceType), `${label}: sourceType "${job.sourceType}"`).toBe(
-    true,
-  );
-  expect(
-    TRANSCRIPT_COMPANY_RESOLUTION_STATUSES.has(job.companyResolutionStatus),
-    `${label}: companyResolutionStatus "${job.companyResolutionStatus}"`,
-  ).toBe(true);
-  expect(TRANSCRIPT_STATUSES.has(job.status), `${label}: status "${job.status}"`).toBe(true);
-}
-
 function expectEventVocab(event: CompanyEvent, label: string) {
   expect(EVENT_TYPES.has(event.eventType), `${label}: eventType "${event.eventType}"`).toBe(true);
   expect(EVENT_STATUSES.has(event.status), `${label}: status "${event.status}"`).toBe(true);
@@ -76,43 +53,6 @@ function expectEventVocab(event: CompanyEvent, label: string) {
 }
 
 const SCENARIOS: ScenarioName[] = ["empty", "minimal", "rich"];
-
-describe("mock vocabulary guard (F4b S1) — transcript jobs stay inside the Rust-validated sets", () => {
-  for (const scenario of SCENARIOS) {
-    it(`every transcript job under "${scenario}"`, async () => {
-      const runtime = createMockRuntime(scenario);
-      const jobs = (await runtime.invoke("list_video_transcript_jobs", {})) as TranscriptJob[];
-      for (const job of jobs) expectTranscriptVocab(job, `${scenario}/${job.id}`);
-    });
-  }
-
-  it("create_video_transcript_job output stays inside the sets, with and without a company", async () => {
-    const runtime = createMockRuntime("minimal");
-    const withCompany = (await runtime.invoke("create_video_transcript_job", {
-      input: { companyId: "company_gpw_cdr", sourceUrl: "https://www.youtube.com/watch?v=x", sourceLabel: "X" },
-    })) as TranscriptJob;
-    expectTranscriptVocab(withCompany, "create_video_transcript_job (with company)");
-    expect(withCompany.companyResolutionStatus).toBe("provided");
-
-    const withoutCompany = (await runtime.invoke("create_video_transcript_job", {
-      input: { sourceUrl: "https://www.youtube.com/watch?v=y", sourceLabel: "Y" },
-    })) as TranscriptJob;
-    expectTranscriptVocab(withoutCompany, "create_video_transcript_job (no company)");
-    expect(withoutCompany.companyResolutionStatus).toBe("unresolved");
-  });
-
-  it("resolve_transcript_job_company output stays inside the sets", async () => {
-    const runtime = createMockRuntime("minimal");
-    const jobs = (await runtime.invoke("list_video_transcript_jobs", {})) as TranscriptJob[];
-    const unresolved = jobs.find((job) => job.companyResolutionStatus === "unresolved");
-    expect(unresolved, "a minimal-scenario job with no company").toBeTruthy();
-    const resolved = (await runtime.invoke("resolve_transcript_job_company", {
-      input: { jobId: unresolved!.id, companyId: "company_gpw_cdr" },
-    })) as TranscriptJob;
-    expectTranscriptVocab(resolved, "resolve_transcript_job_company");
-    expect(resolved.companyResolutionStatus).toBe("provided");
-  });
-});
 
 describe("mock vocabulary guard (F4b S1) — company events stay inside the Rust-validated sets", () => {
   for (const scenario of SCENARIOS) {

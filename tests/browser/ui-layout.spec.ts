@@ -37,7 +37,6 @@ test.describe("browser UI regression smoke", () => {
       "Inbox",
       "Watchlists",
       "Alerts",
-      "Transcripts",
       "Sources",
       "Settings",
     ]) {

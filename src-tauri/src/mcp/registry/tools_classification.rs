@@ -31,11 +31,10 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         read("list_log_entries"),           // app log lines (ops)
         read("get_local_metrics_snapshot"), // local perf metrics (ops)
         // Settings / config / credentials — sensitive or UI-only config:
-        read("get_settings"), // app settings surface (UI/config)
-        read("get_provider_credential_status"), // credential presence (sensitive)
-        read("list_source_adapters"), // source-adapter enable/config catalog
+        read("get_settings"),                 // app settings surface (UI/config)
+        read("list_source_adapters"),         // source-adapter enable/config catalog
         read("list_company_autopilot_modes"), // autopilot-mode picker presets (UI)
-        read("get_company_autopilot"), // per-company autopilot mode (config; runs exposed)
+        read("get_company_autopilot"),        // per-company autopilot mode (config; runs exposed)
         // Reference / lookup / autocomplete plumbing:
         read("lookup_company"), // registry autocomplete + directory bootstrap; tools resolve tickers internally
         read("list_company_registry_entries"), // GPW registry directory dump (reference)
@@ -130,7 +129,6 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         act("set_company_ir_reports_url", None),
         act("set_company_sector", None),
         act("rename_watchlist", None), // watchlist rename (UI config)
-        act("resolve_transcript_job_company", None), // transcript-triage UI step
         // Report-pipeline job triggers (multi-stage document machinery; UI-driven
         // per-document, not a clean headless agent surface):
         act("extract_report_sections", None),
@@ -149,12 +147,6 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         act("rebuild_fundamentals", None),
         act("refresh_gpw_company_registry", None),
         act("refresh_gpw_company_registry_if_stale", None),
-        // Video-transcript lifecycle (in-app AI transcript provider; UI-driven
-        // enqueue/run, and the only in-app AI dependency — kept off the agent
-        // surface):
-        act("create_video_transcript_job", None),
-        act("update_video_transcript_job", None),
-        act("run_video_transcript_job", None),
         // Local-filesystem write (the export save path; issue #106) — an agent
         // must never write arbitrary files on the owner's machine; agents read
         // exports through export_research_data/export_settings_data instead.
@@ -173,7 +165,6 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         excluded("delete_quality_framework"),
         excluded("delete_framework_criterion"),
         excluded("delete_framework_evaluation"),
-        excluded("delete_video_transcript_job"),
         excluded("delete_alert_rule"),
         // ---- Excluded: undo ------------------------------------------------
         excluded("undo_autopilot_run"),
@@ -196,9 +187,6 @@ pub(super) fn classifications() -> Vec<RegistryEntry> {
         excluded("set_source_adapter_enabled"),
         excluded("set_company_autopilot"),
         excluded("set_companies_autopilot"),
-        // ---- Excluded: credentials -------------------------------------
-        excluded("set_provider_api_key"),
-        excluded("clear_provider_api_key"),
         // ---- Excluded: MCP self-management (reads included — sensitive) -----
         excluded("regenerate_mcp_token"),
         excluded("revoke_mcp_token"),

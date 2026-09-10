@@ -2,7 +2,7 @@
 //
 // The `minimal` scenario overrides a handful of collections with this exact data
 // so the pre-existing Vitest screen tests — which assert against specific source
-// adapters, registry rows, transcripts, and settings — stay
+// adapters, registry rows, and settings — stay
 // stable through the mock-layer unification. New entity types (financials, KPIs,
 // frameworks, …) come from the generic builders so `minimal` still contains one
 // of every object. IDs follow the established semantic `*_sample_*` style.
@@ -11,13 +11,10 @@ import type {
   Company,
   CompanyEvent,
   CompanyRegistryEntry,
-  CredentialStatus,
   FeedItem,
   LocalMetricsSnapshot,
   NotebookEntry,
   SourceAdapter,
-  TranscriptJob,
-  TranscriptSegment,
   UnmatchedSourceItem,
   UserSettings,
   Watchlist,
@@ -99,21 +96,21 @@ export const legacyFeedItems: FeedItem[] = [
     attachments: noFeedAttachments,
   },
   {
-    id: "feed_sample_kgh_transcript",
+    id: "feed_sample_kgh_commentary",
     company: "GPW:KGH",
-    type: "Transcript",
-    presentationKind: presentationKindFor("Transcript", false),
-    source: "Sample transcript",
+    type: "Analyst commentary",
+    presentationKind: presentationKindFor("Analyst commentary", false),
+    source: "Sample commentary",
     time: "Mon",
-    title: "Transcript-derived note candidate waits for future provider work",
+    title: "Analyst commentary note candidate waits for future provider work",
     unread: false,
     saved: false,
-    sourceUrl: "https://example.test/sample/kgh-transcript",
+    sourceUrl: "https://example.test/sample/kgh-commentary",
     language: "en",
     publishedAt: "Mon",
     fetchedAt: "Mon",
     attribution: "Sample",
-    summary: "Transcript placeholder for future video and notebook workflows.",
+    summary: "Analyst commentary placeholder for future notebook workflows.",
     bodyText: "",
     attachments: noFeedAttachments,
   },
@@ -202,7 +199,7 @@ export const legacyResearchEvidence: ResearchEvidenceItem[] = [
     title: "AI analysis",
     summary: "AI-generated source-grounded summary.",
     sourceUrl: "https://example.test/sample/cdr-report",
-    attribution: "provider_gemini",
+    attribution: null,
     trustCategory: "ai_generated",
     reviewState: {
       changedSinceCompanyReview: false,
@@ -652,11 +649,6 @@ export const legacySettings: UserSettings = {
   settingsSource: "sqlite",
   settingsImportExportFormat: "yaml",
   yamlImportExportStatus: "accepted_deferred",
-  aiProviders: {
-    youtubeTranscriptionProvider: "provider_gemini",
-    youtubeTranscriptionModel: "gemini-2.5-flash",
-    youtubeTranscriptionTimeoutSeconds: 300,
-  },
   logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
   shortcutBindings: {},
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
@@ -664,16 +656,6 @@ export const legacySettings: UserSettings = {
   pinnedCompanyIds: [],
   todayReviewedDays: [],
   mcp: { enabled: false, port: 8317, writesEnabled: false, kpiAcquisitionEnabled: false },
-};
-
-export const legacyGeminiCredential: CredentialStatus = {
-  providerId: "provider_gemini",
-  secretKind: "api_key",
-  configured: false,
-  storage: "not_configured",
-  label: "Gemini API key",
-  devFallbackAvailable: false,
-  error: null,
 };
 
 export const legacyMetricsSnapshot: LocalMetricsSnapshot = {
@@ -746,52 +728,6 @@ export const legacyCompanyEvents: CompanyEvent[] = [
     manual: false,
     createdAt: "2026-06-01T08:00:00Z",
     updatedAt: "2026-06-01T08:00:00Z",
-  },
-];
-
-export const legacyTranscriptJobs: TranscriptJob[] = [
-  {
-    id: "transcript_job_unresolved_conference",
-    companyId: null,
-    company: null,
-    companyName: null,
-    providerId: "provider_gemini",
-    sourceType: "youtube_url",
-    sourceUrl: "https://www.youtube.com/watch?v=conference",
-    sourceLabel: "Q2 conference",
-    companyResolutionStatus: "unresolved",
-    recognizedCompanyCandidates: [],
-    status: "queued",
-    errorCode: null,
-    createdAt: "2026-06-01T10:00:00Z",
-    startedAt: null,
-    finishedAt: null,
-    error: null,
-  },
-];
-
-export const legacyTranscriptSegments: TranscriptSegment[] = [
-  {
-    id: "transcript_segment_opening",
-    transcriptJobId: "transcript_job_unresolved_conference",
-    companyId: null,
-    startSeconds: 0,
-    endSeconds: 42,
-    speaker: "CEO",
-    text: "We expect the second half to be stronger after the release window stabilizes.",
-    language: "en",
-    createdAt: "2026-06-01T10:07:00Z",
-  },
-  {
-    id: "transcript_segment_margin",
-    transcriptJobId: "transcript_job_unresolved_conference",
-    companyId: null,
-    startSeconds: 43,
-    endSeconds: 96,
-    speaker: "CFO",
-    text: "Gross margin should normalize over the next two quarters.",
-    language: "en",
-    createdAt: "2026-06-01T10:07:00Z",
   },
 ];
 

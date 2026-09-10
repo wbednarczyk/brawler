@@ -134,10 +134,6 @@
   white-space: nowrap;
 }
 
-.transcript-row .source-title-line h2 {
-  font-size: var(--font-md);
-}
-
 .source-row p {
   margin: 0;
   min-width: 0;
@@ -147,11 +143,6 @@
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.transcript-row p {
-  margin-top: var(--space-1);
-  font-size: var(--font-sm);
 }
 
 .sources-layout .ui-chip-list {
@@ -244,10 +235,6 @@
   background: var(--primary);
 }
 
-.transcript-row .source-row-status {
-  gap: var(--space-2);
-}
-
 .source-row-status .source-health {
   display: inline-flex;
   align-items: center;
@@ -280,11 +267,6 @@
 
 .source-health-off > span {
   background: var(--muted);
-}
-
-.transcript-row .source-row-status span {
-  min-height: 24px;
-  padding: 0 var(--space-2);
 }
 
 .search-highlight {

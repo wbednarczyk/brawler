@@ -1,6 +1,6 @@
 # ADR 0018: Import And Export Boundaries
 
-Status: Accepted for M20 implementation.
+Status: Accepted for M20 implementation. Amended 2026-09-10 by [ADR 0111](0111-retire-video-transcription.md): the `youtube_transcription_*` settings keys left the settings bundle (an old bundle carrying them imports with a warning).
 
 ## Context
 

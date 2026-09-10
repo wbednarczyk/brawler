@@ -34,8 +34,8 @@ export type Tool =
   | { t: "wydarzenia" };
 
 // The `notatnik` tool's payload without its discriminant — the shape every
-// cross-screen deep-link caller (Inbox, research evidence, global search,
-// transcript) builds and hands to `navigateToCompanyNotebook` (AppStateRoot,
+// cross-screen deep-link caller (Inbox, research evidence, global search)
+// builds and hands to `navigateToCompanyNotebook` (AppStateRoot,
 // sol re-review: the ONE landing point, never `spolkaTool.openTool`).
 export type NotebookToolIntent = Omit<Extract<Tool, { t: "notatnik" }>, "t">;
 

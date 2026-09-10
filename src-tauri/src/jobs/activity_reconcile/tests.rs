@@ -20,41 +20,6 @@ fn company(state: &AppState) -> String {
         .id
 }
 
-fn seed_running_transcript(state: &AppState, company_id: &str) -> String {
-    let connection = state.checkout_for_tests().expect("checkout");
-    let id = "transcript-1".to_owned();
-    connection
-        .execute(
-            "INSERT INTO transcript_jobs
-                (id, company_id, provider_id, source_type, source_url, status, started_at)
-             VALUES (?1, ?2, 'youtube', 'video', 'https://example.test/v', 'running',
-                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
-            rusqlite::params![id, company_id],
-        )
-        .expect("seed transcript");
-    id
-}
-
-#[test]
-fn startup_reconcile_interrupted_transcript() {
-    let state = state();
-    let company_id = company(&state);
-    let job_id = seed_running_transcript(&state, &company_id);
-
-    reconcile_on_startup(&state);
-
-    let connection = state.checkout_for_tests().expect("checkout");
-    let (status, error_code): (String, Option<String>) = connection
-        .query_row(
-            "SELECT status, error_code FROM transcript_jobs WHERE id = ?1",
-            [&job_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .expect("row");
-    assert_eq!(status, "failed");
-    assert_eq!(error_code.as_deref(), Some("interrupted"));
-}
-
 #[test]
 fn startup_reconcile_leaves_a_run_with_a_stage_in_retry_backoff_alone() {
     let state = state();
@@ -721,8 +686,19 @@ fn startup_reconcile_interrupts_open_occurrences() {
 #[test]
 fn startup_reconcile_is_idempotent() {
     let state = state();
-    let company_id = company(&state);
-    seed_running_transcript(&state, &company_id);
+    let run_id = state
+        .job_runs()
+        .begin_attempt(crate::storage::NewJobRun {
+            activity_key: "source-refresh:x".to_owned(),
+            run_key: "job-1".to_owned(),
+            kind: "scheduled_source_refresh".to_owned(),
+            family: crate::jobs::activity_identity::ActivityFamily::SourceRefresh,
+            company_id: None,
+            subject: "x".to_owned(),
+            target: crate::jobs::activity_identity::ActivityTarget::Sources,
+            attempt: 1,
+        })
+        .expect("begin");
 
     reconcile_on_startup(&state);
     reconcile_on_startup(&state); // second call must not error or re-flip anything
@@ -730,12 +706,12 @@ fn startup_reconcile_is_idempotent() {
     let connection = state.checkout_for_tests().expect("checkout");
     let status: String = connection
         .query_row(
-            "SELECT status FROM transcript_jobs WHERE id = 'transcript-1'",
-            [],
+            "SELECT status FROM job_runs WHERE id = ?1",
+            [run_id],
             |row| row.get(0),
         )
         .expect("status");
-    assert_eq!(status, "failed");
+    assert_eq!(status, "interrupted");
 }
 
 #[test]

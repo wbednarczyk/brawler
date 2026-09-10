@@ -575,6 +575,30 @@ fn filters_evidence_types_and_changed_since_review_in_backend() {
 }
 
 #[test]
+fn list_research_evidence_rejects_transcript_segment_filter() {
+    // ADR 0111 (#463): video transcription is retired — `transcript_segment`
+    // is no longer an allowed evidence_type.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let error = state
+        .list_research_evidence(ResearchEvidenceInput {
+            company_id: Some(company.id),
+            watchlist_id: None,
+            evidence_types: Some(vec!["transcript_segment".to_owned()]),
+            changed_since_review_only: None,
+            limit: None,
+        })
+        .expect_err("transcript_segment evidence_type filter must be rejected");
+
+    assert!(
+        matches!(error, StorageError::InvalidResearchValue { .. }),
+        "unexpected error variant: {error:?}"
+    );
+}
+
+#[test]
 fn creates_idempotent_typed_evidence_links() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);

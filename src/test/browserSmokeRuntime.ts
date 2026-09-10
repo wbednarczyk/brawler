@@ -4,7 +4,6 @@ import type {
   CompanyEvent,
   CompanyRegistryEntry,
   CompanySignal,
-  CredentialStatus,
   FeedItem,
   LocalMetricsSnapshot,
   NotebookEntry,
@@ -583,11 +582,6 @@ const settings: UserSettings = {
   settingsSource: "browser-smoke",
   settingsImportExportFormat: "yaml",
   yamlImportExportStatus: "accepted_deferred",
-  aiProviders: {
-    youtubeTranscriptionProvider: "provider_gemini",
-    youtubeTranscriptionModel: "gemini-2.5-flash",
-    youtubeTranscriptionTimeoutSeconds: 300,
-  },
   logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
   shortcutBindings: {},
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
@@ -595,16 +589,6 @@ const settings: UserSettings = {
   pinnedCompanyIds: [],
   todayReviewedDays: [],
   mcp: { enabled: false, port: 8317, writesEnabled: false, kpiAcquisitionEnabled: false },
-};
-
-const credentialStatus: CredentialStatus = {
-  providerId: "provider_gemini",
-  secretKind: "api_key",
-  configured: true,
-  storage: "keychain",
-  label: "Gemini API key",
-  devFallbackAvailable: false,
-  error: null,
 };
 
 const localMetricsSnapshot: LocalMetricsSnapshot = {
@@ -1287,7 +1271,6 @@ function seedBrowserStore(data: ScenarioData) {
   data.notebookEntries = structuredClone(notebookEntries);
   data.events = structuredClone(companyEvents);
   data.settings = structuredClone(settings);
-  data.credentialStatuses = [structuredClone(credentialStatus)];
   data.metricsSnapshot = structuredClone(localMetricsSnapshot);
   data.kpiDefinitions = structuredClone(kpiDefinitions);
   data.financialPeriods = structuredClone(financialPeriods);
@@ -1337,7 +1320,6 @@ function seedBrowserStore(data: ScenarioData) {
       ],
     },
   ];
-  data.transcriptJobs = [];
   data.databaseStatus = {
     appliedMigrations: 29,
     companies: companies.length,
