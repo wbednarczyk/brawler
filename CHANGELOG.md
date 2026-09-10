@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.84.0 - 2026-09-10
+
+
+### refactor
+
+- **licensing**: remove the local entitlement module — Settings › License, the three commands, the keychain gate in the scheduler, ed25519-dalek (#462, ADR 0110) (#504)
+
 ## v0.83.7 - 2026-09-10
 
 
