@@ -60,12 +60,12 @@ Each category records its matching rules and whether it derives a calendar event
 
 ### 6. Surfacing
 
-Classified signals are surfaced where the investor already looks: type badges and type filters on feed items, type-aware digest grouping (e.g. insider-activity grouping), and reminder hooks for high-signal categories. Surfacing details and copy (en/pl) are specified in [product-spec.md](../product-spec.md) and [ui-flows.md](../ui-flows.md).
+Classified signals are surfaced where the investor already looks: type badges and type filters on feed items, and type-aware digest grouping (e.g. insider-activity grouping); the high-signal reminder hook is retired ([ADR 0025](0025-research-reminders-and-digest-boundaries.md) amendment 2026-09-10, #465). Surfacing details and copy (en/pl) are specified in [product-spec.md](../product-spec.md) and [ui-flows.md](../ui-flows.md).
 
 Research-workspace integration (the digest/reminder half of surfacing) plugs signals into the existing research-evidence boundary (ADR-tracked M24/M31 model) rather than adding a parallel path:
 
 - **Confirmed** signals become a `company_signal` research **evidence type** in the backend timeline read model (proposed AI signals stay out of research evidence until confirmed). Because the personal digest is generated from collected changed evidence, signals flow into the digest automatically and the digest groups them by type alongside other evidence — no separate digest pipeline.
-- A **high-signal** classification (insider transaction, profit warning) generates a research reminder of kind `signal_review` (`source_type = company_signal`), created once when the signal is first classified. Reminder generation is best-effort and never fails ingestion.
+- A **high-signal** classification (insider transaction, profit warning) no longer generates a `signal_review` reminder — retired 2026-09-10 by the [ADR 0025](0025-research-reminders-and-digest-boundaries.md) amendment (#465); signals reach the investor through the feed badge, digest grouping and Today.
 
 ## Scope boundary
 

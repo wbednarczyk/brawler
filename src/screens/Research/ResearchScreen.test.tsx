@@ -385,6 +385,8 @@ describe("Research screen workflows", () => {
       });
     });
 
+    // A completed reminder leaves the open queue (#465) — Reopen lives in History.
+    await user.click(await screen.findByRole("button", { name: "History" }));
     await user.click(await screen.findByRole("button", { name: "Reopen: Review open claim follow-up" }));
 
     await waitFor(() => {

@@ -180,7 +180,7 @@ Behavior:
 - A deterministic rule classifier runs during ingestion over the filing's official category label, title, and body, and types the formulaic majority of filings automatically.
 - Filings the rules cannot place land in an explicit unclassified bucket, triaged headless via the MCP tool pair (`list_unclassified_filings`/`classify_filing` — BYOA). The app never silently assigns a wrong type.
 - Typed filings show a type badge in the Inbox and company feed, and the feed can be filtered by type.
-- The digest groups high-signal types (for example, insider activity) so the user sees them together, and high-signal types can drive reminders.
+- The digest groups high-signal types (for example, insider activity) so the user sees them together. Typed filings and calendar events never create research reminders: the Research review queue holds only the investor's own follow-ups — manual reminders and open questions ([ADR 0025](adr/0025-research-reminders-and-digest-boundaries.md) amendment, #465).
 - A typed filing that carries a real future date (such as a dividend record/payment date or a general-meeting date) also appears as a company event in the calendar. Past disclosures stay in the feed and do not create calendar entries.
 
 Typed signals are decision support, not recommendations: a signal states what kind of disclosure occurred, with a link back to the official filing, and never implies a buy/sell/hold action.

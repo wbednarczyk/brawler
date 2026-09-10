@@ -512,6 +512,10 @@ export const plText: Record<string, string> = {
   "Company evidence timeline and review checkpoint.": "Oś dowodów spółki i punkt przeglądu.",
   "Review queue": "Do przeglądu",
   "Items that need a concrete follow-up action.": "Elementy wymagające konkretnej akcji kontrolnej.",
+  // #465: the queue shows open follow-ups; closed ones sit behind History.
+  "Reminder view": "Widok przypomnień",
+  "Open items": "Otwarte",
+  "No open reminders.": "Brak otwartych przypomnień.",
   "Open questions you are actively tracking.": "Otwarte pytania, które aktywnie śledzisz.",
   "Source items, notes, events, and transcripts for this scope.": "Elementy kanału, notatki, wydarzenia i transkrypcje dla tego zakresu.",
   "Refresh": "Odśwież",

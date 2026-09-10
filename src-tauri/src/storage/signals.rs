@@ -15,12 +15,7 @@ use crate::interpretation::{
     build_classifier, CategoryRule, ClassificationRequest, STATIC_STRATEGY,
 };
 
-use super::research_reminders::{create_research_reminder, NewResearchReminder};
 use super::*;
-
-/// Categories important enough to generate a research reminder when classified
-/// (ADR 0034 §6). High-signal disclosures the investor should not miss.
-const HIGH_SIGNAL_CATEGORIES: &[&str] = &["insider_transaction", "profit_warning"];
 
 /// The deterministic id of a signal: a filing has at most one signal per category.
 pub(super) fn signal_id(feed_item_id: &str, category: &str) -> String {
@@ -155,76 +150,6 @@ pub(super) fn classify_and_store_signal(
     }
 
     Ok(affected > 0)
-}
-
-/// Ensure every confirmed high-signal disclosure (ADR 0034 §6) has a
-/// `signal_review` research reminder. Idempotent: it creates a reminder only for
-/// high-signal signals that do not already have one (matched by `source_id`), so
-/// it both back-fills signals classified before the reminder hook existed and
-/// never duplicates on re-runs. Best-effort per signal — a single failure is
-/// logged and does not abort the sweep.
-pub(super) fn ensure_high_signal_reminders(connection: &Connection) -> StorageResult<usize> {
-    let placeholders = HIGH_SIGNAL_CATEGORIES
-        .iter()
-        .map(|category| format!("'{category}'"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let query = format!(
-        "
-        SELECT
-            company_signals.id,
-            company_signals.company_id,
-            company_signals.category,
-            feed_items.title
-        FROM company_signals
-        JOIN feed_items ON feed_items.id = company_signals.feed_item_id
-        WHERE company_signals.status = 'confirmed'
-          AND company_signals.category IN ({placeholders})
-          AND NOT EXISTS (
-              SELECT 1 FROM research_reminders
-              WHERE research_reminders.source_type = 'company_signal'
-                AND research_reminders.source_id = company_signals.id
-          )
-        "
-    );
-    let mut statement = connection.prepare(&query)?;
-    let pending = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let mut created = 0;
-    for (signal_id, company_id, category, title) in pending {
-        let readable = category.replace('_', " ");
-        match create_research_reminder(
-            connection,
-            NewResearchReminder {
-                scope_type: "company".to_owned(),
-                scope_id: company_id.clone(),
-                company_id: Some(company_id),
-                reminder_kind: "signal_review".to_owned(),
-                source_type: Some("company_signal".to_owned()),
-                source_id: Some(signal_id.clone()),
-                title: title.trim().chars().take(160).collect::<String>(),
-                body: Some(format!("High-signal disclosure classified as {readable}.")),
-                due_at: None,
-            },
-        ) {
-            Ok(_) => created += 1,
-            Err(error) => log::warn!(
-                "module=signals stage=reminder_hook signalId={} error={}",
-                signal_id,
-                error
-            ),
-        }
-    }
-    Ok(created)
 }
 
 /// Categories whose confirmed signals can carry a real future date and therefore derive a
@@ -533,11 +458,6 @@ pub(super) fn classify_pending_feed_items(
         }
     }
 
-    // Back-fill / refresh reminders for any high-signal disclosures (including
-    // those classified before the reminder hook existed). Best-effort.
-    if let Err(error) = ensure_high_signal_reminders(connection) {
-        log::warn!("module=signals stage=reminder_sweep error={error}");
-    }
     // Derive proposed calendar events for confirmed dividend / general-meeting filings whose
     // body now yields a future date. Best-effort.
     if let Err(error) = ensure_derived_events(connection) {
@@ -604,10 +524,6 @@ pub(super) fn confirm_company_signal(
         ",
         [signal_id],
     )?;
-    // A confirmed high-signal AI proposal also raises a review reminder.
-    if let Err(error) = ensure_high_signal_reminders(connection) {
-        log::warn!("module=signals stage=reminder_sweep error={error}");
-    }
     // A confirmed dividend / general-meeting signal may now derive a proposed calendar event.
     if let Err(error) = ensure_derived_events(connection) {
         log::warn!("module=signals stage=derive_event_sweep error={error}");
@@ -946,9 +862,6 @@ pub(super) fn classify_filing(
         ) {
             log::warn!("module=signals stage=classify_filing_eval signalId={id} error={error}");
         }
-    }
-    if let Err(error) = ensure_high_signal_reminders(connection) {
-        log::warn!("module=signals stage=classify_filing_reminders error={error}");
     }
     if let Err(error) = ensure_derived_events(connection) {
         log::warn!("module=signals stage=classify_filing_derive error={error}");

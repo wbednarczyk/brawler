@@ -61,8 +61,16 @@ const evidenceFixture: ResearchEvidenceItem = makeResearchEvidenceItem(cdr);
 const pkn = COMPANY_SPECS.find((spec) => spec.key === "pkn")!;
 const kgh = COMPANY_SPECS.find((spec) => spec.key === "kgh")!;
 // Non-open, so its row exercises the "Reopen" action the four states above
-// never reach (the skeleton's one documented gap).
-const reminderFixtureClosed: ResearchReminder = { ...makeResearchReminder(pkn), status: "completed" };
+// never reach (the skeleton's one documented gap). Scoped to the SELECTED
+// company (`cdr`): the mock `list_research_reminders` filters by scope, so a
+// `pkn` reminder never rendered here and Reopen was never exercised (#465
+// harvest) — a distinct title keeps the accessible names apart.
+const reminderFixtureClosed: ResearchReminder = {
+  ...makeResearchReminder(cdr),
+  id: "reminder_sample_cdr_closed",
+  title: `Closed follow-up on ${cdr.name} guidance`,
+  status: "completed",
+};
 const questionFixture2: ResearchQuestion = makeResearchQuestion(pkn);
 const evidenceFixture2: ResearchEvidenceItem = makeResearchEvidenceItem(pkn);
 const evidenceFixture3: ResearchEvidenceItem = makeResearchEvidenceItem(kgh);
@@ -444,5 +452,26 @@ describe("Research action inventory — dense state, accessible-name uniqueness 
 
     const names = collectActionInventory(region, locale).map((entry) => entry.name);
     expect(new Set(names).size).toBe(names.length);
+
+    // #465 (ADR 0025 amendment): the queue shows OPEN follow-ups only — the
+    // fold chip and the header count read 1 (not 2), "Mark as reviewed" stays
+    // primary on that one open row, and the completed row is reachable
+    // through the History segment (its Reopen action absent by default,
+    // present after the switch; the open row's actions hidden in History).
+    expect(within(region).getByRole("button", { name: foldName(t.reviewQueueFold, 1) })).toBeInTheDocument();
+    expect(
+      within(region).queryByRole("button", { name: `${t.reopenQuestion}: ${reminderFixtureClosed.title}` }),
+    ).toBeNull();
+    const historyLabel = locale === "pl" ? "Historia" : "History";
+    const openLabel = locale === "pl" ? "Otwarte" : "Open items";
+    await userEvent.setup().click(within(region).getByRole("button", { name: historyLabel }));
+    expect(
+      within(region).getByRole("button", { name: `${t.reopenQuestion}: ${reminderFixtureClosed.title}` }),
+    ).toBeInTheDocument();
+    expect(within(region).queryByRole("button", { name: `${t.markAsDone}: ${reminderFixture.title}` })).toBeNull();
+    const historyNames = collectActionInventory(region, locale).map((entry) => entry.name);
+    expect(new Set(historyNames).size).toBe(historyNames.length);
+    await userEvent.setup().click(within(region).getByRole("button", { name: openLabel }));
+    expect(within(region).getByRole("button", { name: `${t.markAsDone}: ${reminderFixture.title}` })).toBeInTheDocument();
   });
 });

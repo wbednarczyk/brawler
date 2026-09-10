@@ -714,8 +714,8 @@ Rules:
 
 - Reminder records are research-owned review pressure, not generic tasks.
 - Reminder `source_type` and `source_id` point to the canonical object when a reminder comes from a claim, event, question, digest, signal, or other evidence.
-- `reminder_kind` values: `claim_follow_up`, `event_review`, `question_review`, `manual_research`, `digest_review`, and `signal_review` (a high-signal ESPI/EBI classification — insider transaction or profit warning — `source_type = company_signal`; ADR 0034).
-- Derived reminders may be synchronized from claims, events, and open research questions.
+- `reminder_kind` values: `claim_follow_up`, `event_review`, `question_review`, `manual_research`, `digest_review`, and `signal_review`. `event_review` and `signal_review` are no longer auto-generated ([ADR 0025](adr/0025-research-reminders-and-digest-boundaries.md) amendment, #465): migration `0155` dismissed the automatic rows, dated (event ids `reminder_event_*`; signal rows with `source_type = company_signal` and the classifier body); both kinds stay valid for deliberate creation and import.
+- Derived reminders are synchronized from claims and open research questions only; company events and typed signals never derive reminders.
 - Confirmed `company_signals` appear in the backend research timeline as `company_signal` evidence items and so flow into the personal digest; proposed (unconfirmed AI) signals do not.
 - Completion and dismissal are stored on the reminder record and do not modify the linked source object by default.
 

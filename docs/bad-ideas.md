@@ -21,3 +21,4 @@ rows into prose here — add the detail to the ADR instead.
 | Compare screen (cross-company mode) | 2026-08-10 | built v0.61, never used; MCP reads stay | [0089](adr/0089-cross-company-comparison-and-valuation-l1.md) amendment (#351) |
 | Notebooks-global + Journal-global screens | 2026-09-02 | 7 notes / 2 journal entries in 3 months; per-company Spółka tools + MCP cover the jobs | [0108](adr/0108-retire-docking-engine.md) + [0071](adr/0071-judgment-capture.md) amendments (#410 F4c) |
 | Local entitlement module (license tokens, Settings › License) | 2026-09-07 | every state already `canUseApp`; single-impl traits | [0110](adr/0110-retire-local-entitlement-module.md) |
+| Auto-generated event/signal review reminders | 2026-09-07 | ~830 open, 0 acted on in 3 months; feed/calendar/Today already carry them | [0025](adr/0025-research-reminders-and-digest-boundaries.md) amendment (#465) |

@@ -90,6 +90,19 @@ fn confirmed_dividend_signal_derives_proposed_event_and_confirms() {
         .iter()
         .any(|s| s.category == "dividend" && s.derived_event_id.is_some()));
 
+    // The derived company_event exists, but it does not seed an event_review
+    // reminder (#465): event/signal review reminders are never auto-generated.
+    let reminders = state
+        .list_research_reminders(ResearchReminderListInput {
+            scope_type: "company".to_owned(),
+            scope_id: company.id.clone(),
+            status: None,
+        })
+        .expect("reminders should list");
+    assert!(!reminders
+        .iter()
+        .any(|reminder| reminder.source_type.as_deref() == Some("company_event")));
+
     // Confirming places it on the calendar.
     state
         .confirm_derived_event(&proposed[0].id, true)
@@ -131,6 +144,19 @@ fn general_meeting_derivation_can_be_rejected() {
     assert_eq!(proposed.len(), 1);
     assert_eq!(proposed[0].event_type, "shareholder_meeting");
     assert_eq!(proposed[0].event_date, "2030-06-28");
+
+    // The derived company_event exists, but it does not seed an event_review
+    // reminder (#465): event/signal review reminders are never auto-generated.
+    let reminders = state
+        .list_research_reminders(ResearchReminderListInput {
+            scope_type: "company".to_owned(),
+            scope_id: company.id.clone(),
+            status: None,
+        })
+        .expect("reminders should list");
+    assert!(!reminders
+        .iter()
+        .any(|reminder| reminder.source_type.as_deref() == Some("company_event")));
 
     // Rejecting discards the proposed event and clears the link.
     state
@@ -467,24 +493,133 @@ fn confirmed_signals_surface_in_research_timeline_and_high_signal_creates_remind
         .iter()
         .all(|item| item.evidence_type == "company_signal"));
 
-    // The high-signal insider transaction drives a signal_review reminder; the
-    // dividend (not high-signal) does not.
+    // Signal review reminders are no longer auto-generated (#465), even for a
+    // high-signal insider transaction.
     let reminders = state
         .list_research_reminders(ResearchReminderListInput {
             scope_type: "company".to_owned(),
             scope_id: company.id.clone(),
-            status: Some("open".to_owned()),
+            status: None,
         })
         .expect("reminders should list");
     let signal_reminders: Vec<_> = reminders
         .iter()
         .filter(|reminder| reminder.reminder_kind == "signal_review")
         .collect();
-    assert_eq!(signal_reminders.len(), 1);
-    assert_eq!(
-        signal_reminders[0].source_type.as_deref(),
-        Some("company_signal")
+    assert_eq!(signal_reminders.len(), 0);
+}
+
+#[test]
+fn confirming_a_high_signal_proposed_signal_creates_no_reminder() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    // An ambiguous filing the rules leave unknown; the AI fallback proposes a
+    // high-signal category (insider_transaction is one of HIGH_SIGNAL_CATEGORIES).
+    let items = vec![espi_item(
+        &company,
+        "9000052",
+        "Pozostałe informacje korporacyjne spółki",
+    )];
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("ingestion should run");
+    assert!(
+        state
+            .list_company_signals(CompanySignalListInput::default())
+            .expect("list")
+            .is_empty(),
+        "ambiguous filings produce no rule signal"
     );
+
+    let feed_item = state
+        .list_feed_items()
+        .expect("feed items list")
+        .into_iter()
+        .find(|item| item.title.contains("Pozostałe"))
+        .expect("ambiguous feed item");
+
+    state
+        .propose_company_signal(ProposedSignalInput {
+            feed_item_id: feed_item.id.clone(),
+            company_id: company.id.clone(),
+            category: "insider_transaction".to_owned(),
+            confidence: 0.81,
+            signal_date: Some("2026-05-28".to_owned()),
+            provider_id: "gemini".to_owned(),
+            model_id: "gemini-2.5-pro".to_owned(),
+        })
+        .expect("proposal should be created");
+
+    let proposed = state
+        .list_company_signals(CompanySignalListInput {
+            status: Some("proposed".to_owned()),
+            ..Default::default()
+        })
+        .expect("list proposals");
+    assert_eq!(proposed.len(), 1);
+
+    state
+        .confirm_company_signal(&proposed[0].id)
+        .expect("confirm should succeed");
+
+    let reminders = state
+        .list_research_reminders(ResearchReminderListInput {
+            scope_type: "company".to_owned(),
+            scope_id: company.id,
+            status: None,
+        })
+        .expect("reminders should list");
+    assert!(!reminders
+        .iter()
+        .any(|reminder| reminder.reminder_kind == "signal_review"));
+}
+
+#[test]
+fn classify_filing_with_high_signal_category_creates_no_reminder() {
+    use crate::storage::ClassifyFilingOutcome;
+
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .ingest_bankier_company_items(&[espi_item(
+            &company,
+            "9400003",
+            "Zawiadomienie o zmianie adresu Spółki",
+        )])
+        .expect("ingestion should classify");
+
+    let feed_item_id = state
+        .list_unclassified_filings(None, 50)
+        .expect("bucket")
+        .first()
+        .expect("one unclassified filing")
+        .feed_item_id
+        .clone();
+
+    let signal = match state
+        .classify_filing_outcome(&feed_item_id, "insider_transaction")
+        .expect("classification should create a signal")
+    {
+        ClassifyFilingOutcome::Created(signal) => signal,
+        other => panic!("expected a created signal, got {other:?}"),
+    };
+    assert_eq!(signal.category, "insider_transaction");
+    assert_eq!(signal.status, "confirmed");
+
+    let reminders = state
+        .list_research_reminders(ResearchReminderListInput {
+            scope_type: "company".to_owned(),
+            scope_id: company.id,
+            status: None,
+        })
+        .expect("reminders should list");
+    assert!(!reminders
+        .iter()
+        .any(|reminder| reminder.reminder_kind == "signal_review"));
 }
 
 #[test]

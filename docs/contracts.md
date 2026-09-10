@@ -2180,11 +2180,11 @@ Initial research reminder shape:
 Initial reminder kinds:
 
 - `claim_follow_up`
-- `event_review`
+- `event_review` — no longer auto-generated from company events ([ADR 0025](adr/0025-research-reminders-and-digest-boundaries.md) amendment 2026-09-10, #465); deliberate (manual/MCP) creation only
 - `question_review`
 - `manual_research`
 - `digest_review`
-- `signal_review` (generated when a high-signal ESPI/EBI category — insider transaction, profit warning — is classified; ADR 0034)
+- `signal_review` — no longer auto-generated from high-signal classifications (the ADR 0034 §6 hook is retired by the ADR 0025 amendment, #465); deliberate (manual/MCP) creation only
 
 Initial reminder statuses:
 
@@ -2196,7 +2196,8 @@ Rules:
 
 - Research reminders are research-owned records, not notebook entries and not a generic task system.
 - Reminders should link to canonical research evidence whenever possible.
-- The backend may derive reminders from open claims, scheduled events, and open research questions, then store durable reminder status.
+- The backend derives reminders from open claims and open research questions only; company events and typed signals never create reminders (ADR 0025 amendment, #465 — migration `0155` dismissed the automatic rows, dated). Reminder status is stored durably on the record.
+- `list_research_reminders` returns every status for the scope. The Research review queue shows **open** reminders by default — its count and the screen's primary "Mark as reviewed" state follow the open count — and completed/dismissed rows behind a **History** segment, where Reopen lives.
 - Completing a reminder does not mark a company or watchlist reviewed by default.
 - Deleting a reminder must not delete the linked claim, event, question, note, feed item, or digest.
 

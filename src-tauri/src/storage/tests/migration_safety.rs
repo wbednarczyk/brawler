@@ -6241,3 +6241,192 @@ fn migration_0154_retires_license_metadata_rows_and_keeps_the_table() {
         "re-running the migration must stay idempotent"
     );
 }
+
+/// Full-row snapshot (pipe-joined, NULL-sentinelled) for byte-identity comparison.
+fn reminder_row_snapshot(connection: &rusqlite::Connection, id: &str) -> String {
+    connection
+        .query_row(
+            "SELECT
+                COALESCE(id, '<NULL>') || '|' ||
+                COALESCE(scope_type, '<NULL>') || '|' ||
+                COALESCE(scope_id, '<NULL>') || '|' ||
+                COALESCE(company_id, '<NULL>') || '|' ||
+                COALESCE(reminder_kind, '<NULL>') || '|' ||
+                COALESCE(source_type, '<NULL>') || '|' ||
+                COALESCE(source_id, '<NULL>') || '|' ||
+                COALESCE(title, '<NULL>') || '|' ||
+                COALESCE(body, '<NULL>') || '|' ||
+                COALESCE(due_at, '<NULL>') || '|' ||
+                COALESCE(status, '<NULL>') || '|' ||
+                COALESCE(snoozed_until, '<NULL>') || '|' ||
+                COALESCE(completed_at, '<NULL>') || '|' ||
+                COALESCE(dismissed_at, '<NULL>') || '|' ||
+                COALESCE(created_at, '<NULL>') || '|' ||
+                COALESCE(updated_at, '<NULL>')
+             FROM research_reminders WHERE id = ?1",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
+        .expect("row snapshot")
+}
+
+#[test]
+fn migration_0155_dismisses_auto_generated_reminders() {
+    // #465: event_review/signal_review reminders are no longer auto-generated.
+    // The automatic rows (deterministic id/body signatures) close as
+    // dismissed; deliberately-created and already-closed rows stay untouched.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 154).expect("apply schema through 0154");
+
+    let seed_rows = [
+        // 1. open auto event (matches on id prefix)
+        "INSERT INTO research_reminders (
+            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
+            title, body, due_at, status, snoozed_until
+        ) VALUES (
+            'reminder_event_evt1', 'company', 'company_x', 'company_x', 'event_review',
+            'company_event', 'evt1', 'Quarterly report', '', '2030-01-01', 'open',
+            '2030-01-01T00:00:00.000Z'
+        )",
+        // 2. open auto signal (matches on source_type + body signature)
+        "INSERT INTO research_reminders (
+            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
+            title, body, status
+        ) VALUES (
+            'research_reminder_company_x_001', 'company', 'company_x', 'company_x',
+            'signal_review', 'company_signal', 'signal_1', 'High-signal disclosure',
+            'High-signal disclosure classified as insider transaction.', 'open'
+        )",
+        // 3. open DELIBERATE event review (no source_type, id does not match the auto prefix)
+        "INSERT INTO research_reminders (
+            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
+            title, body, status
+        ) VALUES (
+            'research_reminder_company_x_002', 'company', 'company_x', 'company_x',
+            'event_review', NULL, NULL, 'My own reminder', 'my own note', 'open'
+        )",
+        // 4. already dismissed auto event
+        "INSERT INTO research_reminders (
+            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
+            title, body, status, dismissed_at, updated_at
+        ) VALUES (
+            'reminder_event_evt2', 'company', 'company_x', 'company_x', 'event_review',
+            'company_event', 'evt2', 'Old event', '', 'dismissed',
+            '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z'
+        )",
+        // 5. open manual
+        "INSERT INTO research_reminders (
+            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
+            title, body, status
+        ) VALUES (
+            'reminder_manual_1', 'company', 'company_x', 'company_x', 'manual_research',
+            NULL, NULL, 'Manual note', 'body', 'open'
+        )",
+        // 6. open question
+        "INSERT INTO research_reminders (
+            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
+            title, body, status
+        ) VALUES (
+            'reminder_question_q1', 'company', 'company_x', 'company_x', 'question_review',
+            'research_question', 'q1', 'Question', 'body', 'open'
+        )",
+        // 7. completed auto event
+        "INSERT INTO research_reminders (
+            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
+            title, body, status, completed_at, updated_at
+        ) VALUES (
+            'reminder_event_evt3', 'company', 'company_x', 'company_x', 'event_review',
+            'company_event', 'evt3', 'Completed event', '', 'completed',
+            '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z'
+        )",
+    ];
+    for sql in seed_rows {
+        connection.execute(sql, []).expect("seed reminder row");
+    }
+
+    let untouched_ids = [
+        "research_reminder_company_x_002",
+        "reminder_event_evt2",
+        "reminder_manual_1",
+        "reminder_question_q1",
+        "reminder_event_evt3",
+    ];
+    let before: Vec<String> = untouched_ids
+        .iter()
+        .map(|id| reminder_row_snapshot(&connection, id))
+        .collect();
+    let updated_at_1_before = reminder_row_snapshot(&connection, "reminder_event_evt1");
+    let updated_at_2_before = reminder_row_snapshot(&connection, "research_reminder_company_x_001");
+
+    apply_migrations(&mut connection).expect("upgrade to the latest schema");
+
+    let (status_1, dismissed_at_1): (String, Option<String>) = connection
+        .query_row(
+            "SELECT status, dismissed_at FROM research_reminders WHERE id = 'reminder_event_evt1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("row 1");
+    assert_eq!(status_1, "dismissed");
+    assert!(dismissed_at_1.is_some());
+    assert_ne!(
+        reminder_row_snapshot(&connection, "reminder_event_evt1"),
+        updated_at_1_before,
+        "row 1 (status/dismissed_at/updated_at) must change"
+    );
+
+    let (status_2, dismissed_at_2): (String, Option<String>) = connection
+        .query_row(
+            "SELECT status, dismissed_at FROM research_reminders
+             WHERE id = 'research_reminder_company_x_001'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("row 2");
+    assert_eq!(status_2, "dismissed");
+    assert!(dismissed_at_2.is_some());
+    assert_ne!(
+        reminder_row_snapshot(&connection, "research_reminder_company_x_001"),
+        updated_at_2_before,
+        "row 2 (status/dismissed_at/updated_at) must change"
+    );
+
+    let after: Vec<String> = untouched_ids
+        .iter()
+        .map(|id| reminder_row_snapshot(&connection, id))
+        .collect();
+    assert_eq!(
+        before, after,
+        "deliberate / already-closed / non-matching rows must be byte-identical"
+    );
+
+    // Idempotence: apply_migrations() alone does not prove this (applied
+    // versions are skipped) — execute the 0155 SQL directly a second time.
+    let all_ids: Vec<String> = connection
+        .prepare("SELECT id FROM research_reminders ORDER BY id")
+        .expect("prepare id list")
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query ids")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect ids");
+    let full_snapshot_before_rerun: Vec<String> = all_ids
+        .iter()
+        .map(|id| reminder_row_snapshot(&connection, id))
+        .collect();
+
+    connection
+        .execute_batch(include_str!(
+            "../../../migrations/0155_dismiss_auto_generated_reminders.sql"
+        ))
+        .expect("re-running the 0155 SQL directly must be safe");
+
+    let full_snapshot_after_rerun: Vec<String> = all_ids
+        .iter()
+        .map(|id| reminder_row_snapshot(&connection, id))
+        .collect();
+
+    assert_eq!(
+        full_snapshot_before_rerun, full_snapshot_after_rerun,
+        "re-running the 0155 SQL directly must be idempotent"
+    );
+}

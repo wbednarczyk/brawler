@@ -74,7 +74,7 @@ ticker, or the tool's ✕) brings back the untouched core in one click.
 | **Decision journal** | your buy/pass/keep-watching entries for this company |
 | **Quality** | the quality scorecard |
 | **Report diff** | report-over-report comparison |
-| **Research** | the research review queue/questions/reminders |
+| **Research** | the review queue (your open reminders and questions; closed ones behind **History**), research questions, evidence timeline |
 | **Ownership** | holder structure + short positions |
 | **Signals** | red flags, with acknowledge/history |
 | **Documents** | the company's report documents |
