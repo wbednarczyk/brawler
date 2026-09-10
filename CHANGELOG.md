@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.83.5 - 2026-09-10
+
+
+### Bug Fixes
+
+- **sources**: Bankier attachment hrefs resolve against the article page; the report_delay witness is a periodic-report filing (#460, #427) (#500)
+
 ## v0.83.4 - 2026-09-10
 
 
