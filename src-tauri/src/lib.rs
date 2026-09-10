@@ -118,8 +118,8 @@ pub fn run() {
                 }
             }
 
-            // One-key-per-provider migration (ADR 0028): best-effort cleanup of
-            // legacy purpose-scoped keychain entries, no fallback.
+            // Best-effort keychain cleanup: the legacy purpose-scoped Gemini entry
+            // (ADR 0028) and the retired Gemini API key (ADR 0111), no fallback.
             providers::credentials::clear_legacy_credentials();
 
             // Repair report documents mis-associated onto the wrong company by

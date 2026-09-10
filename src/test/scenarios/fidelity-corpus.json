@@ -1861,17 +1861,17 @@
     },
     {
       "name": "activity list and summary respond with the expected shape (ADR 0109, #133)",
-      "_comment": "#463 (ADR 0111) removed the transcript-job journey that previously exercised these two commands (create_video_transcript_job no longer exists) — this shape-only pair keeps list_activity/get_activity_summary accounted for in the fidelity corpus.",
+      "_comment": "#463 (ADR 0111) removed the transcript-job journey that previously exercised these two commands. The mock synthesizes its activity view from the sample companies (makeActivityView) while the backend reads job_runs, so VALUES differ by construction; the DTO shape (ActivityView / ActivitySummary fields, contracts.md § Activity) is pinned on both sides via expectKeys.",
       "steps": [
         {
           "command": "list_activity",
           "input": {},
-          "expectField": {}
+          "expectKeys": ["active", "queued", "recent", "generatedAt"]
         },
         {
           "command": "get_activity_summary",
           "input": {},
-          "expectField": {}
+          "expectKeys": ["active", "queued", "lastFinishedAt"]
         }
       ]
     },

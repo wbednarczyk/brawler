@@ -27,15 +27,6 @@
   min-width: 0;
 }
 
-.transcripts-panel {
-  overflow-y: auto;
-}
-
-.transcripts-panel .sources-layout {
-  flex: 0 0 auto;
-  overflow: visible;
-}
-
 .pane-resizer {
   align-self: stretch;
   width: 10px;

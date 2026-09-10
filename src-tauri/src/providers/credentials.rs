@@ -25,7 +25,7 @@ const MCP_KPI_ACQUISITION_TOKEN_TARGET: &str = "brawler/mcp/kpi_acquisition_toke
 const MCP_KPI_ACQUISITION_TOKEN_ACCOUNT: &str = "mcp:kpi_acquisition_token";
 const MCP_KPI_ACQUISITION_TOKEN_ENV_VAR: &str = "BRAWLER_MCP_KPI_ACQUISITION_TOKEN";
 
-/// Test support: remove every provider dev-fallback env var so hermetic tests
+/// Test support: remove every dev-fallback env var (today: the two MCP tokens) so hermetic tests
 /// asserting missing-credential behavior cannot inherit the developer's shell
 /// (guardrail 2026-07-11: an exported `GEMINI_API_KEY` turned three `jobs::`
 /// tests red on one machine and green on another). Call this at the top of any

@@ -557,16 +557,6 @@ fn runtime_metric_contract(name: &str) -> (&'static str, MetricKind, MetricUnit)
             MetricKind::Counter,
             MetricUnit::Count,
         ),
-        "brawler_credential_checks_total" => (
-            "Process-lifetime credential check outcomes by provider and purpose.",
-            MetricKind::Counter,
-            MetricUnit::Count,
-        ),
-        "brawler_credential_operations_total" => (
-            "Process-lifetime credential operations by provider and purpose.",
-            MetricKind::Counter,
-            MetricUnit::Count,
-        ),
         _ => (
             "Process-lifetime runtime metric.",
             MetricKind::Counter,

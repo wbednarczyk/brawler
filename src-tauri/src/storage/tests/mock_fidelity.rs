@@ -1058,6 +1058,18 @@ fn rust_backend_satisfies_the_fidelity_corpus() {
                     "[{name}] {command}: result {result} is missing {field}"
                 );
             }
+            // Shape pin (`expectKeys`): every named key present on the result
+            // object — the same step field the TS replayer reads, for read
+            // models whose values legitimately differ between the two sides.
+            if let Some(keys) = step.get("expectKeys").and_then(Value::as_array) {
+                for key in keys {
+                    let key = key.as_str().expect("expectKeys entries are strings");
+                    assert!(
+                        result.get(key).is_some(),
+                        "[{name}] {command}: expectKeys — result {result} has no `{key}`"
+                    );
+                }
+            }
             // Dotted-path deep pins (`"kpi.rows.0.yoyPct": 25`) — the same
             // step field the TS replayer's `expectDeep` reads, so nested
             // composed-read shapes are asserted on BOTH sides (sol R2 f7).

@@ -627,7 +627,7 @@ release-publish:
 	fi
 
 smoke-keyring:
-	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_keyring_persists_gemini_transcription_secret -- --ignored --nocapture
+	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_keyring_persists_mcp_auth_token -- --ignored --nocapture
 
 # T7-C real-data corpus regression (docs/testing.md § Real-data extraction
 # corpus): drives the structured-extraction pipeline over the maintainer's
