@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.85.0 - 2026-09-10
+
+
+### Bug Fixes
+
+- **research**: stop auto-generating event/signal review reminders, dismiss the automatic rows by migration 0155, review queue shows open follow-ups with History (#465) (#506)
+
 ## v0.84.0 - 2026-09-10
 
 
