@@ -879,40 +879,6 @@ fn report_doc(id: &str, url: &str, title: &str, created_at: &str) -> storage::Re
     }
 }
 
-#[test]
-fn disclosure_key_reads_the_emitent_month_from_espi_urls() {
-    // Both accepted ESPI attachment hosts embed /emitent/YYYY-MM/.
-    assert_eq!(
-        disclosure_month_from_url(
-            "https://bonnier.pl/static/att/emitent/2026-05/20260520_172023_x_ssf.pdf"
-        ),
-        Some("2026-05".to_owned())
-    );
-    assert_eq!(
-        disclosure_month_from_url(
-            "https://www.bankier.pl/static/att/emitent/2023-09/c-F-2023-Q2-SSF.pdf"
-        ),
-        Some("2023-09".to_owned())
-    );
-    // No /emitent/ segment (e.g. an IR landing page) → no month.
-    assert_eq!(
-        disclosure_month_from_url("https://modivo.pl/relacje-inwestorskie"),
-        None
-    );
-
-    // Key falls back to fetched_at, then created_at, when the URL has no month.
-    let mut doc = report_doc(
-        "d",
-        "https://example.com/ir",
-        "Q1 SSF",
-        "2026-06-15T10:00:00Z",
-    );
-    doc.fetched_at = Some("2023-08-01T09:00:00Z".to_owned());
-    assert_eq!(report_disclosure_key(&doc), "2023-08-01");
-    doc.fetched_at = None;
-    assert_eq!(report_disclosure_key(&doc), "2026-06-15");
-}
-
 /// Guardrail (`d60305c`): detection must rank by the report's disclosure date,
 /// not `created_at`. Real-data-shaped: an on-track backfill gives the OLD 2023
 /// report a NEWER `created_at` than the actual-latest 2026 report — ranking on
@@ -989,6 +955,63 @@ fn newest_per_type_strictly_newer_pdf_still_beats_older_xhtml() {
     assert_eq!(
         picked[0].id, "doc_ssf_pdf_new",
         "a strictly newer disclosure date must win regardless of format"
+    );
+}
+
+/// The tie-break must be order-independent: on an equal disclosure key AND
+/// equal structuredness, the SMALLER id wins regardless of input order —
+/// never "whichever candidate came first in the input Vec".
+#[test]
+fn newest_per_type_full_tie_picks_the_smaller_id_regardless_of_input_order() {
+    let pdf_a = report_doc(
+        "doc_ssf_pdf_a",
+        "https://bonnier.pl/static/att/emitent/2026-05/a.pdf",
+        "Cyber Folks 2026 Q1 SSF",
+        "2026-06-15T10:00:00.000Z",
+    );
+    let pdf_b = report_doc(
+        "doc_ssf_pdf_b",
+        "https://bonnier.pl/static/att/emitent/2026-05/b.pdf",
+        "Cyber Folks 2026 Q1 SSF",
+        "2026-06-15T10:00:00.000Z",
+    );
+
+    let picked_ab = newest_periodic_reports_per_type(vec![pdf_a.clone(), pdf_b.clone()]);
+    let picked_ba = newest_periodic_reports_per_type(vec![pdf_b, pdf_a]);
+    assert_eq!(picked_ab.len(), 1);
+    assert_eq!(
+        picked_ab[0].id, "doc_ssf_pdf_a",
+        "the smaller id must win a full tie between two non-structured docs"
+    );
+    assert_eq!(
+        picked_ba[0].id, picked_ab[0].id,
+        "the winner must not depend on input order (non-structured pair)"
+    );
+
+    // Same shape, both structured (xhtml) this time — the structured-tie
+    // branch must reach the same id tie-break, not just the non-structured one.
+    let xhtml_a = report_doc(
+        "doc_ssf_xhtml_a",
+        "https://bonnier.pl/static/att/emitent/2026-05/a.xhtml",
+        "Cyber Folks 2026 Q1 SSF",
+        "2026-06-15T10:00:00.000Z",
+    );
+    let xhtml_b = report_doc(
+        "doc_ssf_xhtml_b",
+        "https://bonnier.pl/static/att/emitent/2026-05/b.xhtml",
+        "Cyber Folks 2026 Q1 SSF",
+        "2026-06-15T10:00:00.000Z",
+    );
+
+    let picked_ab = newest_periodic_reports_per_type(vec![xhtml_a.clone(), xhtml_b.clone()]);
+    let picked_ba = newest_periodic_reports_per_type(vec![xhtml_b, xhtml_a]);
+    assert_eq!(
+        picked_ab[0].id, "doc_ssf_xhtml_a",
+        "the smaller id must win a full tie between two structured docs"
+    );
+    assert_eq!(
+        picked_ba[0].id, picked_ab[0].id,
+        "the winner must not depend on input order (structured pair)"
     );
 }
 

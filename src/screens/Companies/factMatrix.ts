@@ -133,10 +133,13 @@ export function buildFactMatrix(
     // Final-preferred cell selection (ADR 0093 dec. 2): `preliminary` and
     // `final` facts coexist in the same slot (same period + definition,
     // distinguished only by `dataQuality` — part of the storage uniqueness
-    // key), and facts arrive `created_at DESC`. A plain "last object in the
-    // array wins" assignment would let a preliminary sibling shadow its final
-    // sibling whenever the final fact (created later, so it sorts first) is
-    // followed by the preliminary one. Mirrors the backend idiom
+    // key), and facts arrive ordered by period DESC, canonical fact first,
+    // then metricKey, then id (#496: domain date, never `created_at`). A
+    // plain "last object in the array wins" assignment would let a
+    // preliminary sibling shadow its final sibling whenever array order
+    // happened to put the preliminary fact after the final one — the rank
+    // logic below is order-independent on purpose, so arrival order can
+    // change without this cell selection drifting. Mirrors the backend idiom
     // (`metric_history`/`stored_fact_set_filtered`, storage/financials.rs):
     // `rank` 0 = final, 1 = anything else; only a strictly lower rank may
     // replace the cell, so a final fact can never be shadowed regardless of

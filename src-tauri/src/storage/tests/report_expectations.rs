@@ -240,6 +240,99 @@ fn resolution_note_recorded() {
     assert!(resolved.resolved_at.is_some());
 }
 
+/// #496 real-data bug (owner DB 2026-09-10): two confirmed facts for
+/// the same `(period, metric)` — `total` filed first, `owners_of_parent`
+/// filed a day later — must resolve to `total`, the canonical confirmed
+/// fact, never the latest-inserted one.
+#[test]
+fn expectation_review_prefers_total_attribution_over_a_later_owners_of_parent_confirmed_fact() {
+    use MetricExpectationOutcome::Met;
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = sample_company(&state);
+    let store = state.report_expectations();
+
+    let mut input = expectation(&company.id, "evt-h1-2026");
+    input.metrics = vec![NewExpectationMetric {
+        metric_key: "total_equity".to_owned(),
+        comparator: "eq".to_owned(),
+        expected_value: "222".to_owned(),
+        unit: None,
+    }];
+    store.create_report_expectation(input).expect("create");
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "H1".to_owned(),
+            period_end_date: Some("2026-06-30".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period should create");
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+    let definition = definitions
+        .iter()
+        .find(|d| d.metric_key == "total_equity")
+        .expect("total_equity should be seeded");
+
+    for (attribution, value) in [("total", "222"), ("owners_of_parent", "111")] {
+        state
+            .create_financial_fact(NewFinancialFact {
+                company_id: company.id.clone(),
+                period_id: period.id.clone(),
+                definition_id: definition.id.clone(),
+                value_numeric: value.to_owned(),
+                currency: Some("PLN".to_owned()),
+                statement_basis: None,
+                attribution: Some(attribution.to_owned()),
+                variant: None,
+                measure_window: None,
+                data_quality: None,
+                as_reported_value: None,
+                as_reported_scale: None,
+                reporting_standard: None,
+                extraction_method: None,
+                confidence: None,
+                confirmation_state: Some("confirmed".to_owned()),
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("fact should create");
+    }
+
+    // Make the insert order unmistakable: `owners_of_parent` written a day
+    // AFTER `total` (the owner-DB shape) — a `created_at DESC` pick reddens.
+    {
+        let raw = state.checkout_for_tests().expect("raw connection");
+        raw.execute(
+            "UPDATE financial_facts SET created_at = CASE attribution
+                 WHEN 'total' THEN '2026-09-02T10:00:00Z' ELSE '2026-09-03T10:00:00Z' END
+             WHERE company_id = ?1",
+            [&company.id],
+        )
+        .expect("stamp created_at");
+    }
+
+    let review = store
+        .expectation_review(&company.id, "evt-h1-2026")
+        .expect("review composes");
+    assert_eq!(review.metrics.len(), 1);
+    assert_eq!(
+        review.metrics[0].actual_value.as_deref(),
+        Some("222"),
+        "the canonical `total` fact must be the actual, not the later `owners_of_parent`: {review:?}"
+    );
+    assert_eq!(review.metrics[0].outcome, Met);
+}
+
 #[test]
 fn unique_occurrence_conflict() {
     let connection = open_in_memory_database().expect("database should initialize");

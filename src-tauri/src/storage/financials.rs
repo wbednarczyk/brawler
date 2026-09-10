@@ -1282,7 +1282,7 @@ pub(super) fn list_financial_facts(
     let period_id = empty_string_to_none(input.period_id.map(|s| s.trim().to_owned()));
     let definition_id = empty_string_to_none(input.definition_id.map(|s| s.trim().to_owned()));
 
-    let mut statement = connection.prepare(
+    let sql = format!(
         "
         SELECT
             f.id,
@@ -1310,12 +1310,15 @@ pub(super) fn list_financial_facts(
             d.metric_key
         FROM financial_facts f
         JOIN kpi_definitions d ON d.id = f.definition_id
+        JOIN financial_periods p ON p.id = f.period_id
         WHERE (?1 IS NULL OR f.company_id = ?1)
             AND (?2 IS NULL OR f.period_id = ?2)
             AND (?3 IS NULL OR f.definition_id = ?3)
-        ORDER BY datetime(f.created_at) DESC, f.id
-        ",
-    )?;
+        ORDER BY IFNULL(p.period_end_date, p.fiscal_year || '-12-31') DESC,
+                 p.fiscal_year DESC, {CANONICAL_FACT_PREFERENCE_ORDER}, d.metric_key, f.id
+        "
+    );
+    let mut statement = connection.prepare(&sql)?;
 
     let rows = statement.query_map(
         params![company_id, period_id, definition_id],
@@ -1440,11 +1443,8 @@ fn stored_fact_set_filtered(
         return Ok(None);
     }
 
-    // ADR 0093 dec. 2: `final` beats every other quality for the merge below.
-    // A stable sort keeps the existing recency order (`list_financial_facts`
-    // returns `created_at DESC, id`) among facts of the SAME quality, so the
-    // only thing this changes is which of a `final`/`preliminary` PAIR is
-    // seen first by the slot-once loop.
+    // ADR 0093 dec. 2: `final` first; the stable sort keeps the list's own
+    // canonical order (period date, then CANONICAL_FACT_PREFERENCE_ORDER).
     facts.sort_by_key(|f| u8::from(f.data_quality != "final"));
 
     // The map is read out of the CATALOG (not derived from ids), so it stays
@@ -2866,12 +2866,14 @@ pub struct CanonicalComparisonFact {
     pub validation_status: Option<String>,
 }
 
+pub(crate) mod fact_preference;
+pub(crate) use fact_preference::CANONICAL_FACT_PREFERENCE_ORDER;
+
 /// Select the canonical confirmed fact per `(company, metric, period)` for the
-/// requested companies × metric keys × period types (the granularity filter).
-/// One row per slot: the DB returns every candidate ordered by the canonical
-/// preference and we keep the first per slot (same collapse as
-/// `load_period_facts`), LEFT-joining provenance for the evidence link. Empty
-/// inputs short-circuit to no rows.
+/// requested companies × metric keys × period types (the granularity filter):
+/// every candidate ordered by the canonical preference, first per slot kept
+/// (same collapse as `load_period_facts`), provenance LEFT-joined for the
+/// evidence link. Empty inputs short-circuit to no rows.
 pub(super) fn comparison_facts(
     connection: &Connection,
     company_ids: &[String],
@@ -2896,14 +2898,11 @@ pub(super) fn comparison_facts(
            AND d.metric_key IN ({})
            AND p.period_type IN ({})
          ORDER BY f.company_id, d.metric_key, p.fiscal_year, p.period_type,
-                  CASE f.data_quality WHEN 'final' THEN 0 ELSE 1 END,
-                  CASE f.variant WHEN 'reported' THEN 0 ELSE 1 END,
-                  CASE f.statement_basis WHEN 'consolidated' THEN 0 ELSE 1 END,
-                  CASE f.attribution WHEN 'total' THEN 0 WHEN 'owners_of_parent' THEN 1 ELSE 2 END,
-                  f.id",
+                  {}, f.id",
         placeholders(company_ids.len()),
         placeholders(metric_keys.len()),
         placeholders(period_types.len()),
+        CANONICAL_FACT_PREFERENCE_ORDER,
     );
 
     let mut statement = connection.prepare(&sql)?;

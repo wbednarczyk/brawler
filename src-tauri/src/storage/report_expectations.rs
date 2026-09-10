@@ -13,6 +13,7 @@
 //! `resolution_note_md` verdict stays recordable after the freeze; the app
 //! never scores judgment automatically (ADR 0042 posture).
 
+use super::financials::CANONICAL_FACT_PREFERENCE_ORDER;
 use rusqlite::{params, Connection, OptionalExtension};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -459,9 +460,12 @@ pub(super) fn expectation_review(
     })
 }
 
-/// The latest CONFIRMED actual for a metric in the occurrence's period, joined
-/// through `kpi_definitions.metric_key` (the same convention expectations key
-/// on) and `financial_periods`. `None` when no confirmed fact is recorded. The
+/// The canonical CONFIRMED actual for a metric in the occurrence's period,
+/// joined through `kpi_definitions.metric_key` (the same convention
+/// expectations key on) and `financial_periods` — the canonical confirmed
+/// fact for the slot (`CANONICAL_FACT_PREFERENCE_ORDER`), never the
+/// latest-inserted one (#496: a later `owners_of_parent` fact must not shadow
+/// an earlier `total`). `None` when no confirmed fact is recorded. The
 /// `period_type` match is exact, mirroring the freeze check's coverage join.
 fn actual_confirmed_value(
     connection: &Connection,
@@ -470,19 +474,22 @@ fn actual_confirmed_value(
     period_type: &str,
     metric_key: &str,
 ) -> StorageResult<Option<String>> {
+    let sql = format!(
+        "SELECT f.value_numeric
+         FROM financial_facts f
+         JOIN financial_periods p ON p.id = f.period_id
+         JOIN kpi_definitions k ON k.id = f.definition_id
+         WHERE p.company_id = ?1
+           AND p.fiscal_year = ?2
+           AND p.period_type = ?3
+           AND k.metric_key = ?4
+           AND f.confirmation_state = 'confirmed'
+         ORDER BY {CANONICAL_FACT_PREFERENCE_ORDER}, f.id
+         LIMIT 1"
+    );
     let value: Option<String> = connection
         .query_row(
-            "SELECT f.value_numeric
-             FROM financial_facts f
-             JOIN financial_periods p ON p.id = f.period_id
-             JOIN kpi_definitions k ON k.id = f.definition_id
-             WHERE p.company_id = ?1
-               AND p.fiscal_year = ?2
-               AND p.period_type = ?3
-               AND k.metric_key = ?4
-               AND f.confirmation_state = 'confirmed'
-             ORDER BY f.created_at DESC, f.id DESC
-             LIMIT 1",
+            &sql,
             params![company_id, fiscal_year, period_type, metric_key],
             |row| row.get(0),
         )

@@ -491,6 +491,48 @@ fn current_state_dedupes_cosmetic_name_variants_by_canonical_key() {
     assert_eq!(history.len(), 2, "append-only history keeps both variants");
 }
 
+#[test]
+fn identity_dedup_breaks_an_equal_length_tie_by_disclosure_date_not_created_at() {
+    // #496: two raw spellings of ONE identity (parentheticals are stripped from
+    // the identity key) with equal-length names — the row disclosed later must
+    // represent the holder even though it was INSERTED earlier.
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let conn = state.checkout_for_tests().expect("conn");
+    let row = |id: &str, raw: &str, as_of: &str, created_at: &str| OwnershipStakeRow {
+        id: id.to_owned(),
+        holder_name_raw: raw.to_owned(),
+        holder_name_normalized: raw.to_lowercase(),
+        holder_type: None,
+        capital_pct: Some("10".to_owned()),
+        votes_pct: Some("10".to_owned()),
+        as_of: as_of.to_owned(),
+        source: "report_document".to_owned(),
+        report_document_id: None,
+        feed_item_id: None,
+        created_at: created_at.to_owned(),
+    };
+    let rows = vec![
+        row(
+            "stake_b",
+            "Holder X S.A. (cd)",
+            "2026-03-31",
+            "2026-09-01T00:00:00Z",
+        ),
+        row(
+            "stake_a",
+            "Holder X S.A. (ab)",
+            "2026-06-30",
+            "2026-01-01T00:00:00Z",
+        ),
+    ];
+    let deduped = crate::storage::ownership::dedup_stakes_by_identity(&conn, rows).expect("dedup");
+    assert_eq!(deduped.len(), 1, "one identity: {deduped:?}");
+    assert_eq!(
+        deduped[0].id, "stake_a",
+        "the newer disclosure represents the holder, not the later-inserted row"
+    );
+}
+
 // ============================================================================
 // T4 stream 2 — `major_holdings_change` signal + deterministic ESPI stake update
 // ============================================================================

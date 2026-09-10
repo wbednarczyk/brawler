@@ -485,6 +485,85 @@ fn deletes_company_through_storage_api() {
     assert!(companies.is_empty());
 }
 
+/// #496: `latest_shares_outstanding` must pick the canonical fact
+/// within a slot (`total` over `owners_of_parent`), never the latest-inserted
+/// row — mirrors the real bug, `total` filed first, `owners_of_parent` filed
+/// later.
+#[test]
+fn latest_shares_outstanding_prefers_total_attribution_over_a_later_owners_of_parent_sibling() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "CDR".to_owned(),
+            display_name: "CD PROJEKT S.A.".to_owned(),
+            isin: Some("PLOPTTC00011".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("company should be created");
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "H1".to_owned(),
+            period_end_date: Some("2026-06-30".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period should create");
+
+    for (attribution, value) in [("total", "100000000"), ("owners_of_parent", "90000000")] {
+        state
+            .create_financial_fact(NewFinancialFact {
+                company_id: company.id.clone(),
+                period_id: period.id.clone(),
+                definition_id: "kpidef_shares_outstanding".to_owned(),
+                value_numeric: value.to_owned(),
+                currency: None,
+                statement_basis: None,
+                attribution: Some(attribution.to_owned()),
+                variant: None,
+                measure_window: None,
+                data_quality: None,
+                as_reported_value: None,
+                as_reported_scale: None,
+                reporting_standard: None,
+                extraction_method: None,
+                confidence: None,
+                confirmation_state: Some("confirmed".to_owned()),
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("fact should create");
+    }
+
+    // Make the insert order unmistakable: `owners_of_parent` written a day
+    // AFTER `total` (the owner-DB shape) — a `created_at DESC` pick reddens.
+    {
+        let raw = state.checkout_for_tests().expect("raw connection");
+        raw.execute(
+            "UPDATE financial_facts SET created_at = CASE attribution
+                 WHEN 'total' THEN '2026-09-02T10:00:00Z' ELSE '2026-09-03T10:00:00Z' END
+             WHERE company_id = ?1",
+            [&company.id],
+        )
+        .expect("stamp created_at");
+    }
+
+    let (value, label) = state
+        .companies()
+        .latest_shares_outstanding(&company.id)
+        .expect("shares outstanding should read")
+        .expect("a fact should be present");
+    assert_eq!(
+        value, "100000000",
+        "`total` must win even though `owners_of_parent` was written later"
+    );
+    assert_eq!(label, "2026 H1");
+}
+
 // ---------------------------------------------------------------------------
 // Create-time core `kpi_relevance` seeding (issue #203 residual, T7 slice 1).
 // Migration 0106 seeded the five-key IFRS core set for the companies that

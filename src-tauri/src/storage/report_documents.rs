@@ -59,6 +59,66 @@ pub struct ReportDocument {
     pub detected_container: Option<String>,
 }
 
+impl ReportDocument {
+    /// A sortable **disclosure-date** key (`YYYY-MM-DD`) for ranking report recency —
+    /// the domain date, not `created_at`/ingestion order ([data-model.md] Model
+    /// Principles; guardrail `d60305c`). The accepted ESPI/EBI attachment sources embed
+    /// the disclosure month in the URL as `/emitent/YYYY-MM/`; use it (day `01`, which
+    /// is enough for the quarterly cadence detection ranks). Falls back to `fetched_at`,
+    /// then `created_at` only as a last resort (a non-`emitent`, never-fetched doc).
+    ///
+    /// **The month segment survives a misleading slug** (epic #229 T3, #140). The
+    /// attachment host reuses one issuer's *filename* across unrelated filings, so a
+    /// slug can name a company that is not the owner — but the `/emitent/YYYY-MM/`
+    /// segment is the **article's** publication month, not the filename's, and stays
+    /// correct. Measured on the maintainer's corpus: all 53 rows whose slug names a
+    /// foreign tracked issuer carry the right month for their own filing (e.g.
+    /// cyber_Folks' H1-2024 statements under a `Vercom` filename at `/2024-09/`,
+    /// Orlen's Q3-2024 report under a `Grupy-Energa` filename at `/2024-11/`). The
+    /// distrust this epic ships therefore targets the **filename** — see
+    /// [`crate::fundamentals::extraction::classify::classify_doc_kind`] — and
+    /// deliberately NOT this date, whose only fallback is a bulk re-fetch timestamp
+    /// identical across every revision.
+    pub fn disclosure_key(&self) -> String {
+        if let Some(month) = disclosure_month_from_url(&self.url) {
+            return format!("{month}-01");
+        }
+        if let Some(fetched) = self.fetched_at.as_deref() {
+            if fetched.len() >= 10 {
+                return fetched[..10].to_owned();
+            }
+        }
+        if self.created_at.len() >= 10 {
+            return self.created_at[..10].to_owned();
+        }
+        self.created_at.clone()
+    }
+}
+
+/// Extract the disclosure month `YYYY-MM` from an ESPI/EBI attachment URL's
+/// `/emitent/YYYY-MM/` segment (bonnier.pl and bankier.pl both use it). `None` for
+/// any URL without that segment (e.g. an IR landing page).
+pub(crate) fn disclosure_month_from_url(url: &str) -> Option<String> {
+    const MARKER: &str = "/emitent/";
+    let start = url.find(MARKER)? + MARKER.len();
+    let rest = url.get(start..)?;
+    let bytes = rest.as_bytes();
+    // Expect exactly "YYYY-MM/".
+    if bytes.len() < 8
+        || !bytes[..4].iter().all(u8::is_ascii_digit)
+        || bytes[4] != b'-'
+        || !bytes[5..7].iter().all(u8::is_ascii_digit)
+        || bytes[7] != b'/'
+    {
+        return None;
+    }
+    let month: u32 = rest[5..7].parse().ok()?;
+    if !(1..=12).contains(&month) {
+        return None;
+    }
+    Some(rest[..7].to_owned())
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -299,6 +359,12 @@ pub(super) fn get(connection: &Connection, id: &str) -> StorageResult<ReportDocu
     get_report_document(connection, id)
 }
 
+/// Newest-**disclosure**-first, never newest-`created_at`-first
+/// (data-model.md § Model principles; guardrail `d60305c`): a backfilled
+/// document can carry a fresh `created_at` for a years-old disclosure, so the
+/// SQL orders only by `id` (a stable base order) and the sort below ranks by
+/// [`ReportDocument::disclosure_key`] descending, tie-broken by `id` ascending
+/// for determinism.
 pub(super) fn list_by_company(
     connection: &Connection,
     company_id: &str,
@@ -331,14 +397,21 @@ pub(super) fn list_by_company(
             detected_container
         FROM report_documents
         WHERE company_id = ?1
-        ORDER BY created_at DESC
+        ORDER BY id
         ",
     )?;
 
     let rows = statement.query_map(params![company_id], report_document_from_row)?;
 
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(StorageError::from)
+    let mut documents = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)?;
+    documents.sort_by(|a, b| {
+        b.disclosure_key()
+            .cmp(&a.disclosure_key())
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(documents)
 }
 
 /// Recompute `doc_kind` for every stored report document from its title + URL

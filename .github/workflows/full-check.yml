@@ -396,6 +396,10 @@ jobs:
         # ("repository path is not owned by current user"). No-op outside containers.
         run: chown -R "$(id -u):$(id -g)" . 2>/dev/null || true
       - run: make check-commits RANGE=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+        env:
+          # The PR description gets the same no-AI-attribution scan as every
+          # commit message; passed through the environment, never interpolated.
+          PR_BODY: ${{ github.event.pull_request.body }}
 
   # Advisory hint (ADR 0096 principle 5): says when a scoped live-drive of the
   # owner's real app is worth it before merging. Classification only ever

@@ -1,5 +1,5 @@
 use super::*;
-use crate::storage::report_documents::FETCH_ERROR_LINK_INCOMPLETE;
+use crate::storage::report_documents::{disclosure_month_from_url, FETCH_ERROR_LINK_INCOMPLETE};
 
 fn test_company(state: &AppState) -> Company {
     state
@@ -1272,5 +1272,150 @@ fn a_stale_refetch_reset_cannot_erase_a_concurrent_successful_capture() {
             .join(after.local_path.as_ref().unwrap())
             .exists(),
         "B's file must still be present"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// disclosure_key / list ordering (#496; data-model.md § Model principles,
+// guardrail d60305c): "newest/latest" must order by the domain disclosure
+// date, never created_at/ingestion order.
+// ---------------------------------------------------------------------------
+
+/// Build a `ReportDocument` in memory (no DB round-trip) for pure
+/// `disclosure_key` assertions — moved here from `jobs::autopilot::tests`
+/// alongside the method itself.
+fn synthetic_report_doc(id: &str, url: &str, title: &str, created_at: &str) -> ReportDocument {
+    ReportDocument {
+        id: id.to_owned(),
+        company_id: "company_gpw_cbf".to_owned(),
+        period_id: None,
+        source_type: "user_url".to_owned(),
+        origin_ref: None,
+        url: url.to_owned(),
+        local_path: Some("report_documents/x.pdf".to_owned()),
+        content_type: Some("application/pdf".to_owned()),
+        content_hash: None,
+        byte_size: Some(1),
+        title: Some(title.to_owned()),
+        attribution: None,
+        fetch_status: "fetched".to_owned(),
+        fetch_error: None,
+        fetched_at: None,
+        created_at: created_at.to_owned(),
+        updated_at: created_at.to_owned(),
+        doc_kind: None,
+        detected_container: None,
+    }
+}
+
+#[test]
+fn disclosure_key_reads_the_emitent_month_from_espi_urls() {
+    // Both accepted ESPI attachment hosts embed /emitent/YYYY-MM/.
+    assert_eq!(
+        disclosure_month_from_url(
+            "https://bonnier.pl/static/att/emitent/2026-05/20260520_172023_x_ssf.pdf"
+        ),
+        Some("2026-05".to_owned())
+    );
+    assert_eq!(
+        disclosure_month_from_url(
+            "https://www.bankier.pl/static/att/emitent/2023-09/c-F-2023-Q2-SSF.pdf"
+        ),
+        Some("2023-09".to_owned())
+    );
+    // No /emitent/ segment (e.g. an IR landing page) → no month.
+    assert_eq!(
+        disclosure_month_from_url("https://modivo.pl/relacje-inwestorskie"),
+        None
+    );
+
+    // Key falls back to fetched_at, then created_at, when the URL has no month.
+    let mut doc = synthetic_report_doc(
+        "d",
+        "https://example.com/ir",
+        "Q1 SSF",
+        "2026-06-15T10:00:00Z",
+    );
+    doc.fetched_at = Some("2023-08-01T09:00:00Z".to_owned());
+    assert_eq!(doc.disclosure_key(), "2023-08-01");
+    doc.fetched_at = None;
+    assert_eq!(doc.disclosure_key(), "2026-06-15");
+}
+
+/// Guardrail (`d60305c`): `list_by_company` must order newest-**disclosure**
+/// first, never newest-`created_at` first. Real-data-shaped: a document
+/// ingested later (bigger `created_at`) can carry an OLDER disclosure month
+/// (a backfill), and that must not let it jump the queue.
+#[test]
+fn list_by_company_orders_by_disclosure_date_not_created_at() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let create = |url: &str| -> ReportDocument {
+        state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "user_url".to_owned(),
+                url: url.to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: None,
+                attribution: None,
+            })
+            .expect("document should create")
+    };
+
+    // Y and W: same disclosure month (2026-05, the newest), distinct URLs.
+    let y = create("https://bonnier.pl/static/att/emitent/2026-05/y.pdf");
+    let w = create("https://bonnier.pl/static/att/emitent/2026-05/w.pdf");
+    // Z: no /emitent/ month → falls back to fetched_at (2025-03-03).
+    let z = create("https://example.com/ir/z.pdf");
+    // X: disclosed 2024-11 — the OLDEST disclosure of the four — but stamped
+    // below with the NEWEST created_at, exactly the on-track-backfill shape
+    // that breaks a created_at-ranked list.
+    let x = create("https://www.bankier.pl/static/att/emitent/2024-11/x.pdf");
+
+    let raw = state.checkout_for_tests().expect("raw connection");
+    raw.execute(
+        "UPDATE report_documents SET fetched_at = ?1 WHERE id = ?2",
+        params!["2025-03-03T00:00:00Z", z.id],
+    )
+    .expect("stamp z fetched_at");
+    for (id, created_at) in [
+        (&y.id, "2020-01-01T00:00:00Z"),
+        (&w.id, "2020-01-02T00:00:00Z"),
+        (&z.id, "2020-01-03T00:00:00Z"),
+        // X is inserted last here anyway, but pin it explicitly so the
+        // scenario never depends on real-clock timestamp resolution.
+        (&x.id, "2026-09-01T00:00:00Z"),
+    ] {
+        raw.execute(
+            "UPDATE report_documents SET created_at = ?1 WHERE id = ?2",
+            params![created_at, id],
+        )
+        .expect("stamp created_at");
+    }
+    drop(raw);
+
+    let documents = state
+        .list_report_documents_by_company(&company.id)
+        .expect("list");
+    let ids: Vec<&str> = documents.iter().map(|d| d.id.as_str()).collect();
+
+    let (first_tied, second_tied) = if y.id < w.id {
+        (&y.id, &w.id)
+    } else {
+        (&w.id, &y.id)
+    };
+    assert_eq!(
+        ids,
+        vec![
+            first_tied.as_str(),
+            second_tied.as_str(),
+            z.id.as_str(),
+            x.id.as_str()
+        ],
+        "newest-disclosure-first (Y/W tied, id asc), then Z, then X last despite X's newest created_at"
     );
 }

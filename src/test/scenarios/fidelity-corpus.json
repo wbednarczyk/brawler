@@ -2018,6 +2018,85 @@
           }
         }
       ]
+    },
+    {
+      "name": "list_financial_facts orders by period domain date, not created_at (#496)",
+      "_comment": "The fact for the LATER fiscal year (2025) is created FIRST and the fact for the EARLIER fiscal year (2023) is created SECOND — so a created_at-DESC read model would wrongly put 2023 first. valueNumeric (not periodId, which is non-deterministically suffixed on the real backend) pins which fact landed at index 0.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "FPDOM",
+              "displayName": "Fact Period Domain Order S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "create_financial_period",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "fiscalYear": 2025,
+              "periodType": "FY",
+              "periodEndDate": null,
+              "reportEvidenceRef": null
+            }
+          },
+          "capture": "p2025"
+        },
+        {
+          "command": "create_financial_period",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "fiscalYear": 2023,
+              "periodType": "FY",
+              "periodEndDate": null,
+              "reportEvidenceRef": null
+            }
+          },
+          "capture": "p2023"
+        },
+        {
+          "command": "create_financial_fact",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "periodId": "$p2025",
+              "definitionId": "kpidef_revenue",
+              "valueNumeric": "500"
+            }
+          }
+        },
+        {
+          "command": "create_financial_fact",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "periodId": "$p2023",
+              "definitionId": "kpidef_revenue",
+              "valueNumeric": "300"
+            }
+          }
+        },
+        {
+          "command": "list_financial_facts",
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectDeep": {
+            "0.valueNumeric": "500"
+          }
+        }
+      ]
     }
   ]
 }

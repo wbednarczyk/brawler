@@ -21,7 +21,7 @@ The human/agent role shrinks to: **the right `release:*` label on the PR** — t
 
 ## Commit convention (commit messages ARE the release notes)
 
-Commits use Conventional Commits `<type>(optional-scope): <subject>`. Allowed types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `style`. Single `[a-z0-9._-]+` scope (no commas). **No subject-length limit** (dropped 2026-07-27, ADR 0090) — the schema stays, enforced by `commit-lint` in CI (every commit in the PR) and the local `commit-msg` hook (`scripts/release/validate-commit-message.sh`). Breaking changes use `!`. git-cliff turns these into release notes (`feat`/`fix`/`perf` surface; `chore`/`refactor`/`test`/`docs` filtered), so a good commit subject IS the release note — there is no curation pass.
+Commits use Conventional Commits `<type>(optional-scope): <subject>`. Allowed types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `style`. Single `[a-z0-9._-]+` scope (no commas). **No subject-length limit** (dropped 2026-07-27, ADR 0090) — the schema stays, enforced by `commit-lint` in CI (every commit in the PR) and the local `commit-msg` hook (`scripts/release/validate-commit-message.sh`). Breaking changes use `!`. **No AI/agent attribution** in any commit message or PR description (no AI `Co-authored-by`, no "generated with" footer) — `scripts/release/check-forge-attribution.sh`, run by the same hook, `check-commits` and its PR-body scan (harvest 2026-09-10). git-cliff turns these into release notes (`feat`/`fix`/`perf` surface; `chore`/`refactor`/`test`/`docs` filtered), so a good commit subject IS the release note — there is no curation pass.
 
 Examples:
 
