@@ -24,6 +24,6 @@ ADR 0017 kept a local entitlement module "for future gated features": an Ed25519
 
 ## Consequences
 
-- Settings loses one tab; About shows app name and version only; Import/Export copy no longer mentions licenses.
+- Settings loses one tab (the shell's brand mark keeps showing the app version; there is no About tab); Import/Export copy no longer mentions licenses.
 - The scheduler no longer touches the OS keychain on every tick.
 - `docs/bad-ideas.md` records the retreat; ADR 0017 is Superseded.

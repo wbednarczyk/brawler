@@ -381,7 +381,6 @@ Sections:
 - Import and Export: export/import research data, export/import safe preferences, preview import changes before applying them
 - MCP server ([ADR 0078](adr/0078-mcp-external-surface.md)): enable toggle with a live Active/Stopped status pill (refusal reasons — missing token, port in use — surface inline), listen port (commit-on-blur, clamped 1024–65535, applies on next start), access-token lifecycle (generate with a one-time copyable reveal, revoke behind an inline confirm, configured/storage status), and copyable example connection snippets for Claude Code (HTTP) and the stdio adapter
 - Privacy: local data location, provider data disclosure
-- About: app name, app version
 
 ## License Entitlements
 

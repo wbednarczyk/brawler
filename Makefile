@@ -212,6 +212,7 @@ check-docs-gates:
 	$(NIX) node scripts/check/docs-drift.mjs
 	$(NIX) node scripts/check/retired-surface.mjs
 	$(NIX) node scripts/check/file-size-ratchet.mjs
+	$(NIX) node scripts/check/docs-headings-ratchet.mjs
 	$(NIX) node --test "scripts/check/*.test.mjs" "scripts/ux/*.test.mjs"
 	$(NIX) npm run release:version-check
 	$(NIX) npm run release:commit-msg-check
