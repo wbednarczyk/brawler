@@ -23,11 +23,26 @@ export const DOCS = [
 
 export function headingsOf(markdown) {
   const out = [];
-  let fenced = false;
+  // CommonMark fence tracking: a fence opens with ≥3 backticks or tildes and
+  // closes only with the SAME character and at least the same length, so a
+  // ```` block that contains ``` (and a fake heading) stays one fence.
+  let fence = null;
   for (const line of markdown.split("\n")) {
-    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
-    if (fenced) continue;
-    const m = /^(##|###) +(.+?)\s*#*\s*$/.exec(line);
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (f) {
+      const run = f[1];
+      if (!fence) {
+        fence = run;
+        continue;
+      }
+      if (run[0] === fence[0] && run.length >= fence.length) {
+        fence = null;
+        continue;
+      }
+    }
+    if (fence) continue;
+    // Optional closing sequence: `## B ##` → "B"; a literal `## C#` keeps its hash.
+    const m = /^(##|###) +(.+?)(?: +#+)?\s*$/.exec(line);
     if (m) out.push(`${m[1]} ${m[2]}`);
   }
   return out;
