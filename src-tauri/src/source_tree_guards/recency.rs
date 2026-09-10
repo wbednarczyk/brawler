@@ -565,31 +565,31 @@ fn comparator_marker() -> &'static regex::Regex {
     })
 }
 
-/// Whether the read at `pos` is a block's TAIL expression — a closure body
-/// `{ let _ = …; d.created_at.clone() }` ends in an unmatched `}` before any
-/// `;` at the read's own depth.
-fn in_tail_expression(code: &str, pos: usize) -> bool {
+/// The `{` of the CLOSURE block whose tail expression is the read at `pos`
+/// (`sort_by_key(|d| { let _ = …; d.created_at.clone() })`), if any: the
+/// read ends in an unmatched `}` before any `;` at its own depth, and that
+/// block's opening brace follows a closure parameter list (`|…| {`). A fn
+/// body's closing brace is NOT such a block — a fn-tail read stays inside its
+/// own statement.
+fn owning_closure_open(code: &str, pos: usize) -> Option<usize> {
+    let bytes = code.as_bytes();
     let mut depth = 0i32;
-    for &byte in &code.as_bytes()[pos..] {
+    let mut closes_a_block = false;
+    for &byte in &bytes[pos..] {
         match byte {
             b'{' => depth += 1,
             b'}' if depth > 0 => depth -= 1,
-            b'}' => return true,
-            b';' if depth == 0 => return false,
+            b'}' => {
+                closes_a_block = true;
+                break;
+            }
+            b';' if depth == 0 => break,
             _ => {}
         }
     }
-    false
-}
-
-/// Start of the statement that owns the read at `pos`: the byte after the
-/// previous `;` at the read's own brace depth. A read that is a block's tail
-/// expression belongs to the ENCLOSING statement (the `sort_by_key(|d| {` that
-/// owns the closure), so the walk leaves that block first and stops at the
-/// parent's previous `;`.
-fn statement_lo(code: &str, pos: usize) -> usize {
-    let bytes = code.as_bytes();
-    let mut leave_block = in_tail_expression(code, pos);
+    if !closes_a_block {
+        return None;
+    }
     let mut depth = 0i32;
     let mut i = pos;
     while i > 0 {
@@ -597,9 +597,36 @@ fn statement_lo(code: &str, pos: usize) -> usize {
         match bytes[i] {
             b'}' => depth += 1,
             b'{' if depth > 0 => depth -= 1,
-            b'{' if leave_block => leave_block = false,
-            b'{' => return i + 1,
-            b';' if depth == 0 && !leave_block => return i + 1,
+            b'{' => {
+                let mut j = i;
+                while j > 0 && bytes[j - 1].is_ascii_whitespace() {
+                    j -= 1;
+                }
+                return (j > 0 && bytes[j - 1] == b'|').then_some(i);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Start of the statement that owns the read at `pos`: the byte after the
+/// previous `;` (or unmatched `{`) at the read's own brace depth. A read that
+/// is a closure block's tail expression belongs to the statement that owns
+/// the closure, so the walk restarts from that block's `{`.
+fn statement_lo(code: &str, pos: usize) -> usize {
+    if let Some(open) = owning_closure_open(code, pos) {
+        return statement_lo(code, open);
+    }
+    let bytes = code.as_bytes();
+    let mut depth = 0i32;
+    let mut i = pos;
+    while i > 0 {
+        i -= 1;
+        match bytes[i] {
+            b'}' => depth += 1,
+            b'{' if depth > 0 => depth -= 1,
+            b'{' | b';' if depth == 0 => return i + 1,
             _ => {}
         }
     }
@@ -607,16 +634,19 @@ fn statement_lo(code: &str, pos: usize) -> usize {
 }
 
 /// End of the statement that owns the read ending at `from`: the next `;` at
-/// the read's own depth, leaving any block the read closes as a tail
-/// expression (`d.created_at.clone() });`).
+/// the read's own depth; a closure block the read closes as its tail
+/// expression is left first (`d.created_at.clone() });`), a fn body's
+/// closing brace ends the statement.
 fn statement_hi(code: &str, from: usize) -> usize {
     let bytes = code.as_bytes();
+    let mut leave_closure = owning_closure_open(code, from).is_some();
     let mut depth = 0i32;
     for (offset, &byte) in bytes[from..].iter().enumerate() {
         match byte {
             b'{' => depth += 1,
             b'}' if depth > 0 => depth -= 1,
-            b'}' => {}
+            b'}' if leave_closure => leave_closure = false,
+            b'}' => return from + offset,
             b';' if depth == 0 => return from + offset,
             _ => {}
         }
@@ -814,6 +844,29 @@ mod comparator_scanner_tests {
             comparator_sites_in_file("x.rs", source),
             vec![("x.rs".to_string(), "pick".to_string(), 1)]
         );
+    }
+
+    #[test]
+    fn a_fn_tail_comparator_is_its_own_site_and_a_fn_tail_read_is_none() {
+        // astra r4: a fn's closing brace is not a closure block — the tail
+        // statement (no final `;`) must not swallow the statement before it.
+        let two = concat!(
+            "fn pick(c: &mut Vec<Doc>, d: &mut Vec<Doc>) {\n",
+            "    c.sort_by_key(|x| x.created_at.clone());\n",
+            "    d.sort_by_key(|x| x.created_at.clone())\n",
+            "}\n",
+        );
+        assert_eq!(
+            comparator_sites_in_file("x.rs", two),
+            vec![("x.rs".to_string(), "pick".to_string(), 2)]
+        );
+        let none = concat!(
+            "fn label(d: &Doc, v: &mut Vec<u8>) -> String {\n",
+            "    v.sort_by(|a, b| a.cmp(b));\n",
+            "    d.created_at.clone()\n",
+            "}\n",
+        );
+        assert!(comparator_sites_in_file("x.rs", none).is_empty());
     }
 
     #[test]
