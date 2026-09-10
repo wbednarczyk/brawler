@@ -56,6 +56,7 @@ mod severity;
 mod shape_corpus;
 mod short_positions;
 mod signals;
+mod source_outcome_coverage;
 mod source_registry;
 mod t7_cbf_corpus;
 mod transcripts;

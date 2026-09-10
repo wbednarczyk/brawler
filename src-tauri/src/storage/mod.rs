@@ -1536,12 +1536,8 @@ impl AppState {
             .record_source_adapter_attempt(adapter_id, trigger)
     }
 
-    /// Mark an adapter's refresh successful: `last_success_at` + the per-run item
-    /// counters the Sources screen reads back (DoD §C). The public counterpart of
-    /// the in-crate `ingestion::record_source_outcome`, for source paths that live
-    /// outside an ingest store — today the fundamentals witness (ADR 0085 dec. 6),
-    /// whose fetch happens inside the extraction pipeline rather than a feed
-    /// adapter, and would otherwise show as "never refreshed" forever.
+    /// Sweep-level success record for an adapter whose per-item ingest never
+    /// ran (an all-empty page set); transactional, see `ingestion`.
     pub fn record_source_outcome_for_adapter(
         &self,
         adapter_id: &str,
@@ -1551,9 +1547,9 @@ impl AppState {
         items_matched: usize,
         items_unmatched: usize,
     ) -> StorageResult<()> {
-        let connection = self.db.checkout()?;
-        ingestion::record_source_outcome(
-            &connection,
+        let mut connection = self.db.checkout()?;
+        ingestion::record_source_outcome_transactional(
+            &mut connection,
             adapter_id,
             fetched_at,
             items_fetched,

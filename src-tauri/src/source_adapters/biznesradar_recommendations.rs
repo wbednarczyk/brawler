@@ -358,11 +358,23 @@ pub(crate) fn refresh_with(
         return Err(message);
     }
 
-    total.fetched_at = Some(
-        OffsetDateTime::now_utc()
-            .format(&Rfc3339)
-            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned()),
-    );
+    let fetched_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+    if any_success {
+        // An all-landing sweep skips the per-company outcome write (#496-class); recorded here instead (DoD §C).
+        state
+            .record_source_outcome_for_adapter(
+                ADAPTER_ID,
+                &fetched_at,
+                total.items_fetched,
+                total.items_created,
+                total.items_matched,
+                total.items_unmatched,
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    total.fetched_at = Some(fetched_at);
     Ok(crate::jobs::source_refresh::RefreshOutcome::Ingestion(
         total,
     ))
@@ -541,6 +553,119 @@ mod tests {
             .expect("list");
         assert_eq!(stored.len(), 3, "CDR's three recommendations are stored");
         assert_eq!(stored[0].rating, "akumuluj");
+    }
+
+    #[test]
+    fn refresh_records_last_success_at_when_every_page_is_a_landing_page() {
+        // An all-landing sweep must still stamp last_success_at (DoD §C).
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        company(&state, "LND");
+        let mut pages = HashMap::new();
+        pages.insert("LND".to_owned(), Ok(LANDING_SAMPLE.to_owned()));
+        let fetcher = StubFetcher { pages };
+
+        let outcome =
+            refresh_with(&fetcher, &state, &ctx(), false).expect("refresh should succeed");
+        let RefreshOutcome::Ingestion(result) = outcome else {
+            panic!("expected an ingestion outcome");
+        };
+        assert_eq!(
+            result.items_created, 0,
+            "a landing-only sweep ingests nothing"
+        );
+
+        let row = state
+            .list_source_adapters()
+            .expect("adapters")
+            .into_iter()
+            .find(|a| a.id == ADAPTER_ID)
+            .expect("the adapter is registered");
+        assert!(
+            row.last_success_at.is_some(),
+            "an all-landing-page sweep is still a clean successful run — \
+             last_success_at must be set, not left null"
+        );
+    }
+
+    #[test]
+    fn refresh_outcome_record_is_transactional_on_a_poisoned_counter_write() {
+        // Fault injection (testing.md § Failure-path tests): poisons the last
+        // statement `record_source_outcome` writes, so a rollback must
+        // restore the whole record, not just `last_success_at`.
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        company(&state, "LND");
+
+        // Seed a prior record via the real write paths (DoD §C).
+        state
+            .record_source_outcome_for_adapter(ADAPTER_ID, "2020-01-01T00:00:00.000Z", 7, 3, 2, 1)
+            .expect("seed prior success");
+        state
+            .record_source_adapter_error(ADAPTER_ID, "seeded prior error")
+            .expect("seed prior error");
+
+        let mut pages = HashMap::new();
+        pages.insert("LND".to_owned(), Ok(LANDING_SAMPLE.to_owned()));
+        let fetcher = StubFetcher { pages };
+
+        {
+            let connection = state.checkout_for_tests().expect("checkout");
+            connection
+                .execute_batch(&format!(
+                    "CREATE TRIGGER poison_biznesradar_recommendations_outcome
+                     BEFORE INSERT ON source_adapter_state
+                     WHEN NEW.source_adapter_id = '{ADAPTER_ID}'
+                          AND NEW.state_key = 'last_items_unmatched'
+                     BEGIN SELECT RAISE(ABORT, 'poisoned for test'); END;"
+                ))
+                .expect("create poison trigger");
+        }
+
+        let before = state
+            .list_source_adapters()
+            .expect("adapters")
+            .into_iter()
+            .find(|a| a.id == ADAPTER_ID)
+            .expect("adapter registered");
+        assert_eq!(
+            before.last_success_at.as_deref(),
+            Some("2020-01-01T00:00:00.000Z"),
+            "seed landed the prior success"
+        );
+        assert!(before.last_error.is_some(), "seed landed the prior error");
+
+        let result = refresh_with(&fetcher, &state, &ctx(), false);
+        assert!(
+            result.is_err(),
+            "a poisoned outcome-record write must fail the refresh, not return Ok with partial state"
+        );
+
+        let after = state
+            .list_source_adapters()
+            .expect("adapters")
+            .into_iter()
+            .find(|a| a.id == ADAPTER_ID)
+            .expect("adapter registered");
+        assert_eq!(
+            (
+                &after.last_success_at,
+                &after.last_error_at,
+                &after.last_error,
+                after.last_items_fetched,
+                after.last_items_created,
+                after.last_items_matched,
+                after.last_items_unmatched,
+            ),
+            (
+                &before.last_success_at,
+                &before.last_error_at,
+                &before.last_error,
+                before.last_items_fetched,
+                before.last_items_created,
+                before.last_items_matched,
+                before.last_items_unmatched,
+            ),
+            "no partial state: the whole outcome record must be unchanged when the final counter write fails"
+        );
     }
 
     #[test]

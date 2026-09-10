@@ -514,7 +514,11 @@ if (hookContent === null) {
 // and each `.sh` wrapper must be executable and `exec node` its paired `.mjs`
 // — a hook that is present but chmod-stripped or gutted silently no-ops
 // instead of running (hard gates wave 2 harvest, 2026-09-08).
-const REQUIRED_BASH_HOOKS = [".claude/hooks/one-heavy-build.sh", ".claude/hooks/git-boundaries.sh"];
+const REQUIRED_BASH_HOOKS = [
+  ".claude/hooks/one-heavy-build.sh",
+  ".claude/hooks/git-boundaries.sh",
+  ".claude/hooks/check-evidence.sh",
+];
 const preToolUseSettings = readIfExists(".claude/settings.json");
 if (preToolUseSettings === null) {
   contextArchErrors.push(
@@ -580,10 +584,68 @@ for (const hookFile of [
   ".claude/hooks/one-heavy-build.mjs",
   ".claude/hooks/one-heavy-build-classify.mjs",
   ".claude/hooks/git-boundaries.mjs",
+  ".claude/hooks/check-evidence.mjs",
 ]) {
   if (readIfExists(hookFile) === null) {
     contextArchErrors.push(`\`${hookFile}\` not found (hard gate G1/G2).`);
   }
+}
+
+// (4b-ii) S1 (hard-gates closing wave): the ts-export-reminder PostToolUse
+// hook — the mechanical nudge that a changed `#[ts(export)]` Rust item needs
+// `make types` before handover (DoD §C) — must stay wired. Mirrors the
+// REQUIRED_BASH_HOOKS checks above (exact matcher + exact command string,
+// executable, pure exec shim) for the PostToolUse hook list.
+const REQUIRED_POST_TOOL_USE_HOOKS = [{ file: ".claude/hooks/ts-export-reminder.sh", matcher: "Edit|Write|MultiEdit" }];
+if (preToolUseSettings !== null) {
+  let parsedPostToolUse;
+  try {
+    parsedPostToolUse = JSON.parse(preToolUseSettings);
+  } catch {
+    parsedPostToolUse = null;
+  }
+  for (const { file: hookFile, matcher } of REQUIRED_POST_TOOL_USE_HOOKS) {
+    const entry = Array.isArray(parsedPostToolUse?.hooks?.PostToolUse)
+      ? parsedPostToolUse.hooks.PostToolUse.find((m) => m.matcher === matcher)
+      : null;
+    const commands = (entry?.hooks ?? []).map((h) => h.command).filter((c) => typeof c === "string");
+    const expected = `bash "$CLAUDE_PROJECT_DIR/${hookFile}"`;
+    if (!commands.includes(expected)) {
+      contextArchErrors.push(
+        `\`.claude/settings.json\` does not wire \`${hookFile}\` as a PostToolUse hook with matcher\n` +
+          `    \`${matcher}\` and the exact command \`${expected}\` (S1, ts-export reminder).`,
+      );
+    }
+  }
+}
+for (const { file: hookFile } of REQUIRED_POST_TOOL_USE_HOOKS) {
+  const abs = resolve(repoRoot, hookFile);
+  let stat;
+  try {
+    stat = statSync(abs);
+  } catch {
+    contextArchErrors.push(`\`${hookFile}\` not found (S1, ts-export reminder).`);
+    continue;
+  }
+  if ((stat.mode & 0o111) === 0) {
+    contextArchErrors.push(`\`${hookFile}\` is not executable (missing chmod +x) (S1, ts-export reminder).`);
+  }
+  const mjsName = hookFile.split("/").pop().replace(/\.sh$/, ".mjs");
+  const content = readIfExists(hookFile) ?? "";
+  const codeLines = content
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "" && !l.startsWith("#"));
+  const expectedExecLine = `exec node "$(dirname "$0")/${mjsName}"`;
+  if (codeLines.length !== 1 || codeLines[0] !== expectedExecLine) {
+    contextArchErrors.push(
+      `\`${hookFile}\` is not a pure exec shim for \`${mjsName}\` (S1, ts-export reminder) — expected\n` +
+        `    exactly \`${expectedExecLine}\`.`,
+    );
+  }
+}
+if (readIfExists(".claude/hooks/ts-export-reminder.mjs") === null) {
+  contextArchErrors.push("`.claude/hooks/ts-export-reminder.mjs` not found (S1, ts-export reminder).");
 }
 
 // (4c) Nextest config must live where nextest actually reads it (2026-09

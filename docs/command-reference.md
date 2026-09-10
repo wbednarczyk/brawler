@@ -9,8 +9,8 @@ The `make` target catalog agents work from (extracted from [engineering-workflow
 | `check-rust-lint` · `check-rust-test` · `check-frontend-static` · `check-frontend-test` · `check-frontend-build` · `check-browser` · `check-visual` · `check-deps` · `check-docs-gates` · `check-commits` | granular gate wrappers | One per `full-check.yml` job (job name mirrors the target, `check-visual` ↔ `Visual baselines (pinned renderer)`); `make check`/`check-local` compose subsets. `check-deps` policy/exceptions: `src-tauri/deny.toml` (network-bound → not in `check-local`). `check-visual` requires docker: runs the two visual Playwright projects inside the pinned renderer (official Playwright image tagged at the locked `@playwright/test` version, #448); zero tolerance. |
 | `visual-update SCREEN=<id>\|ALL=1 REASON="why"` | `npm run visual-update` in the pinned renderer (docker) | Deliberate baseline update ([testing.md](testing.md) § Visual baseline); refuses without `REASON` and exactly one of `SCREEN`/`ALL`. |
 | `check-release-label` | exactly-one-`release:*` check | Runs in `release-label.yml` (split out so label events re-run a 4s job, not the whole gate). |
-| `check-local` | `npm run check:parallel` | Developer inner loop + pre-handover DoD step; never proof of done (renamed from `check-fast`). |
-| `check-docs` | docs-only subset | Docs-only changes. |
+| `check-local` | `npm run check:parallel` | Developer inner loop + pre-handover DoD step; never proof of done (renamed from `check-fast`); on success writes a `check-stamp` to `.artifacts/check-local.json` (DoD §K evidence for `check-evidence`). |
+| `check-docs` | docs-only subset | Docs-only changes; on success writes a `check-stamp` to `.artifacts/check-docs.json` (DoD §K evidence). |
 | `docs-drift` | `node scripts/check/docs-drift.mjs` | Spec↔code drift gate standalone (also a `check` step); `--write-adr-index` regenerates `docs/adr/INDEX.md`. |
 | `coverage-frontend` | Vitest v8 coverage + ratchet | PR required check; floor 80.0% vs `coverage-baseline.json` ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)). |
 | `coverage-rust` | `cargo-llvm-cov --lcov` → `rust-coverage-summary.mjs` (production-only) → ratchet | PR required check; floors vs `coverage-baseline.json`; Rust counts physical lcov lines minus `#[cfg(test)]` code ([Testing § Coverage ratchet](testing.md#coverage-ratchet), #488). |
@@ -23,7 +23,7 @@ The `make` target catalog agents work from (extracted from [engineering-workflow
 | `ui-smoke-install` | `npm run test:browser:install` | Download Chromium for Playwright. |
 | `ui-smoke` | `npm run test:browser` | Playwright suite standalone (also a `check` step). |
 | `ui-smoke-clickable` | scoped Playwright clickable pass | Broad-clickable subset standalone. |
-| `types` | `cargo test --features ts-export export_bindings` | Regenerate TS DTOs from Rust `#[ts(export)]`. |
+| `types` | `cargo test --features ts-export export_bindings` + refreshes the `ts-export-reminder` span cache (`.artifacts/ts-export-spans.json`) | Regenerate TS DTOs from Rust `#[ts(export)]`. |
 | `types-check` | `types` + hash diff on generated bindings | Drift guard. |
 | `install-git-hooks` | `git config core.hooksPath .githooks` | Wires the `commit-msg` hook (only survivor). |
 | `sync-rad` | `git push rad master` + tags | Async Radicle mirror (owner-run; not a process step). |

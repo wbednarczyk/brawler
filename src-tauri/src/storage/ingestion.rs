@@ -90,6 +90,32 @@ pub(super) fn upsert_feed_item(
 /// adapter healthy (last-success, cleared error) and record the item counters
 /// other code and the Sources screen read back. Shared by every adapter's ingest
 /// path so the ~20-line state-update block is written once.
+/// One `Immediate` transaction around [`record_source_outcome`]: an adapter-
+/// level success record never leaves `last_success_at` set without its
+/// counters (DoD §C; storage's transactional-write discipline).
+pub(super) fn record_source_outcome_transactional(
+    connection: &mut Connection,
+    adapter_id: &str,
+    fetched_at: &str,
+    items_fetched: usize,
+    items_created: usize,
+    items_matched: usize,
+    items_unmatched: usize,
+) -> StorageResult<()> {
+    let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    record_source_outcome(
+        &tx,
+        adapter_id,
+        fetched_at,
+        items_fetched,
+        items_created,
+        items_matched,
+        items_unmatched,
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
 pub(super) fn record_source_outcome(
     connection: &Connection,
     adapter_id: &str,

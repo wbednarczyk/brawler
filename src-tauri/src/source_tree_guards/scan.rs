@@ -36,11 +36,37 @@ pub(super) fn is_test_file(rel_path: &str) -> bool {
         || rel_path.contains("/tests/")
 }
 
+/// The kind of a non-code span computed by [`classified_non_code_spans`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpanKind {
+    /// A quoted string, raw string, or char/byte-char literal — CODE DATA
+    /// (e.g. a SQL literal's own text), not commentary.
+    Literal,
+    /// A `//` or `/* */` comment — commentary, never code or data.
+    Comment,
+}
+
 /// Byte ranges of `content` that are inside a quoted string, raw string, or
 /// `//`/`/* */` comment — shares the string/raw-string skip logic
 /// `extract_fn_body` (in `mod.rs`) uses for brace-matching; comments are new
 /// here since fn-body extraction never previously needed to look past one.
+/// Thin wrapper over [`classified_non_code_spans`] for callers that don't
+/// need to tell literals and comments apart.
 fn non_code_spans(content: &str) -> Vec<(usize, usize)> {
+    classified_non_code_spans(content)
+        .into_iter()
+        .map(|(start, end, _kind)| (start, end))
+        .collect()
+}
+
+/// Like [`non_code_spans`], but each span carries its [`SpanKind`] — needed by
+/// a caller (the recency guard, `recency.rs`) that must tell "this text sits
+/// inside a comment" (never a real site — commentary) apart from "this text
+/// sits inside a string literal" (a real site — SQL lives in Rust string
+/// literals), rather than treating both as equally inert the way
+/// `strip_comments_and_strings` does for callers that just want code-only
+/// text.
+pub(super) fn classified_non_code_spans(content: &str) -> Vec<(usize, usize, SpanKind)> {
     let bytes = content.as_bytes();
     let mut spans = Vec::new();
     let mut i = 0;
@@ -53,7 +79,7 @@ fn non_code_spans(content: &str) -> Vec<(usize, usize)> {
                     i += if bytes[i] == b'\\' { 2 } else { 1 };
                 }
                 i = (i + 1).min(bytes.len());
-                spans.push((start, i));
+                spans.push((start, i, SpanKind::Literal));
             }
             b'r' if matches!(bytes.get(i + 1), Some(b'"') | Some(b'#')) => {
                 let start = i;
@@ -80,7 +106,7 @@ fn non_code_spans(content: &str) -> Vec<(usize, usize)> {
                         }
                         j += 1;
                     }
-                    spans.push((start, j));
+                    spans.push((start, j, SpanKind::Literal));
                     i = j;
                     continue;
                 }
@@ -91,7 +117,7 @@ fn non_code_spans(content: &str) -> Vec<(usize, usize)> {
                 while i < bytes.len() && bytes[i] != b'\n' {
                     i += 1;
                 }
-                spans.push((start, i));
+                spans.push((start, i, SpanKind::Comment));
             }
             // A char/byte-char literal (`'{'`, `'\''`, `'\u{7b}'`, `b'{'`)
             // must be blanked too — an unblanked `'{'` corrupts a caller's
@@ -100,7 +126,7 @@ fn non_code_spans(content: &str) -> Vec<(usize, usize)> {
             // actually followed by a closing `'` (escaped or one-char).
             b'\'' => {
                 if let Some(end) = char_literal_end(bytes, i) {
-                    spans.push((i, end));
+                    spans.push((i, end, SpanKind::Literal));
                     i = end;
                     continue;
                 }
@@ -108,7 +134,7 @@ fn non_code_spans(content: &str) -> Vec<(usize, usize)> {
             }
             b'b' if bytes.get(i + 1) == Some(&b'\'') => {
                 if let Some(end) = char_literal_end(bytes, i + 1) {
-                    spans.push((i, end));
+                    spans.push((i, end, SpanKind::Literal));
                     i = end;
                     continue;
                 }
@@ -133,7 +159,7 @@ fn non_code_spans(content: &str) -> Vec<(usize, usize)> {
                         i += 1;
                     }
                 }
-                spans.push((start, i));
+                spans.push((start, i, SpanKind::Comment));
             }
             _ => i += 1,
         }
