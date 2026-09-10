@@ -40,7 +40,7 @@ Public repo, free Actions minutes ([ADR 0090](adr/0090-github-canonical-forge-an
 
 The Makefile is the preferred local command surface from WSL; targets stay thin wrappers around documented project commands.
 
-**Only the `commit-msg` hook remains** ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)) — `pre-commit`/`pre-push` are deleted (a local commit ships nothing under continuous release). Rules: Conventional Commits, single `[a-z0-9._-]+` scope, no subject-length limit (ADR 0090). Pre-validate: `scripts/release/validate-commit-message.sh --message "<subject>"`; CI's `commit-lint` re-checks every commit. `--no-verify` is WIP-only, never valid under "done". `git-boundaries` (G1) hook-denies master/force/no-verify/discards; launcher-only escape; Codex uses the written rule.
+**Only the `commit-msg` hook remains** ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)) — `pre-commit`/`pre-push` are deleted (a local commit ships nothing under continuous release). Rules: Conventional Commits, single `[a-z0-9._-]+` scope, no subject-length limit (ADR 0090), no AI attribution. Local: `scripts/release/validate-commit-message.sh <file>`; CI `commit-lint` re-checks each message + PR body. `--no-verify` is WIP-only, never valid under "done". `git-boundaries` (G1) hook-denies master/force/no-verify/discards; launcher-only escape; Codex uses the written rule.
 
 **What runs where** (`make check-local`, renamed from `check-fast`, is the inner loop + pre-handover [DoD](#definition-of-done-the-handover-gate) step — invoked deliberately, never hook-triggered; docs-only uses `make check-docs`; multi-phase epics gate each phase on `check-local`, the matrix runs in the PR's CI):
 

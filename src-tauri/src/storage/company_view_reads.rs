@@ -21,6 +21,7 @@
 
 use rusqlite::Connection;
 
+pub(crate) use super::financials::fact_preference::canonical_fact_rank;
 use crate::commands::fundamentals_coverage::{
     canonical_period_label, period_sort_index, period_type_for_index, CoverageFactsCell,
     CoveragePeriodRow, CoverageReportCell, CoverageReviewCell,
@@ -28,7 +29,7 @@ use crate::commands::fundamentals_coverage::{
 use crate::fundamentals::extraction::classify::{
     canonical_reports_per_period, CanonicalReportCandidate, DocKind,
 };
-use crate::jobs::autopilot::{is_structured_document, report_disclosure_key};
+use crate::jobs::autopilot::is_structured_document;
 use crate::jobs::structured_extraction::{
     derive_report_period_uncached, intern_period_type, DERIVATION_VERSION,
 };
@@ -162,7 +163,7 @@ pub(crate) fn coverage_rows(
             document_id: document.id.clone(),
             doc_kind: kind,
             period: (fiscal_year as i32, index),
-            disclosure_key: report_disclosure_key(&document),
+            disclosure_key: document.disclosure_key(),
             structured: is_structured_document(&document),
         });
         doc_by_id.insert(document.id.clone(), document);

@@ -8,8 +8,24 @@
 //! excluded) whose leading key is `created_at`, checked against the frozen,
 //! ratchet-only allowlist ([`ALLOWED`]: `(file, fn, ordinal, Reason)`).
 //!
+//! Second scan (#496): every Rust comparator that ranks on `created_at`
+//! (`sort_by`/`sort_by_key`/`max_by`/`min_by`/`Reverse(`/`.cmp(`/
+//! `partial_cmp(` within one statement-sized window of a `.created_at`
+//! field read), checked against [`ALLOWED_COMPARATORS`] — the SQL scan
+//! could not see `history_sweep`'s sibling rank, the KPI-table cell pick or
+//! the report-diff representative, all of which ranked on insert time.
+//!
 //! Ceilings: literal-split fragments are invisible; the enclosing-fn lookup
-//! is a text heuristic (no brace-depth tracking).
+//! is a text heuristic (no brace-depth tracking); a comparator built from a
+//! `created_at` value bound to a local first (`let t = x.created_at; …
+//! .cmp(&t)`) and a bare scalar `a.created_at > b.created_at` (tuple
+//! comparisons `>= (` ARE markers) are the scan's known
+//! blind spots; the window never crosses a `;` at the read's own depth (a
+//! closure body's tail expression — `|d| {` or `|d| -> T {` — still belongs
+//! to the comparator that owns the closure; a block opened any other way is
+//! a statement boundary), so a `.cmp(` in the next statement cannot vouch
+//! for a plain read in this one. Punctuation-level, not syntax-aware: it is
+//! a ratchet for the shapes the codebase actually writes, reviewed per pin.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -39,6 +55,9 @@ pub(super) enum Reason {
     /// artifacts of the SAME event, not competing "latest" candidates.
     SharedPublicationEvent,
     /// A genuine offender, not fixed yet — tracked by the named issue.
+    /// Unused since #496 paid the three pinned debts; kept so the next
+    /// offender must still carry its issue (never a bare allow).
+    #[allow(dead_code)]
     Debt(&'static str),
 }
 
@@ -224,25 +243,6 @@ const ALLOWED: &[(&str, &str, u8, Reason)] = &[
         "list_by_origin",
         1,
         Reason::SharedPublicationEvent,
-    ),
-    // Debt — genuine offenders, not fixed yet; tracked by #496, do not fix here.
-    (
-        "storage/report_documents.rs",
-        "list_by_company",
-        1,
-        Reason::Debt("#496"),
-    ),
-    (
-        "storage/financials.rs",
-        "list_financial_facts",
-        1,
-        Reason::Debt("#496"),
-    ),
-    (
-        "storage/report_expectations.rs",
-        "actual_confirmed_value",
-        1,
-        Reason::Debt("#496"),
     ),
 ];
 
@@ -523,5 +523,420 @@ mod scanner_tests {
             fn_names_for(&stripped).is_empty(),
             "a #[cfg(test)] mod's content must be excluded from the production scan"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rust-comparator scan (#496): `created_at` ranked in Rust, not SQL.
+// ---------------------------------------------------------------------------
+
+/// Every Rust site that ranks on `created_at` today, reviewed and pinned
+/// `(file, fn, sites, Reason)` — `sites` is how many distinct comparison
+/// expressions in that fn read `created_at`; same ratchet idiom as
+/// [`ALLOWED`]: a listed fn that vanishes must be deleted, a fn with MORE
+/// sites than pinned fails loud (an unreviewed comparator inside an exempted
+/// fn), a new fn fails loud.
+const ALLOWED_COMPARATORS: &[(&str, &str, u8, Reason)] = &[
+    // The attachments of ONE filing, newest registered first — artifacts of
+    // the same publication event, not competing "latest" candidates.
+    (
+        "jobs/insider_attachment.rs",
+        "process_filing",
+        1,
+        Reason::SharedPublicationEvent,
+    ),
+];
+
+/// How far (bytes) around a `.created_at` read a comparator marker still
+/// counts as ranking on it — one statement-sized window, so a multi-line
+/// `right\n.created_at\n.cmp(&left.created_at)` is one site and a
+/// `format!("{}", x.created_at)` two statements away is not.
+const COMPARATOR_WINDOW: usize = 160;
+
+fn created_at_read_marker() -> &'static regex::Regex {
+    static MARKER: OnceLock<regex::Regex> = OnceLock::new();
+    MARKER.get_or_init(|| regex::Regex::new(r"\.created_at\b").expect("valid regex"))
+}
+
+fn comparator_marker() -> &'static regex::Regex {
+    static MARKER: OnceLock<regex::Regex> = OnceLock::new();
+    MARKER.get_or_init(|| {
+        regex::Regex::new(
+            r"sort_by\(|sort_by_key\(|sort_by_cached_key\(|sort_unstable_by\(|sort_unstable_by_key\(|max_by\(|max_by_key\(|min_by\(|min_by_key\(|Reverse\(|\.cmp\(|partial_cmp\(|[<>]=?\s*\(",
+        )
+        .expect("valid regex")
+    })
+}
+
+/// The `{` of the CLOSURE block whose tail expression is the read at `pos`
+/// (`sort_by_key(|d| { let _ = …; d.created_at.clone() })`), if any: the
+/// read ends in an unmatched `}` before any `;` at its own depth, and that
+/// block's opening brace follows a closure parameter list (`|…| {`). A fn
+/// body's closing brace is NOT such a block — a fn-tail read stays inside its
+/// own statement.
+fn owning_closure_open(code: &str, pos: usize) -> Option<usize> {
+    let bytes = code.as_bytes();
+    let mut depth = 0i32;
+    let mut closes_a_block = false;
+    for &byte in &bytes[pos..] {
+        match byte {
+            b'{' => depth += 1,
+            b'}' if depth > 0 => depth -= 1,
+            b'}' => {
+                closes_a_block = true;
+                break;
+            }
+            b';' if depth == 0 => break,
+            _ => {}
+        }
+    }
+    if !closes_a_block {
+        return None;
+    }
+    let mut depth = 0i32;
+    let mut i = pos;
+    while i > 0 {
+        i -= 1;
+        match bytes[i] {
+            b'}' => depth += 1,
+            b'{' if depth > 0 => depth -= 1,
+            b'{' => return opens_a_closure_body(code, i).then_some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Whether the `{` at `open` starts a closure body: it follows a parameter
+/// list `|…|`, either directly (`|d| {`) or through an explicit return type
+/// (`|d| -> String {`). Looks back within the same statement only.
+fn opens_a_closure_body(code: &str, open: usize) -> bool {
+    let head = code[..open].trim_end();
+    if head.ends_with('|') {
+        return true;
+    }
+    let Some(arrow) = head.rfind("->") else {
+        return false;
+    };
+    let return_type = &head[arrow + 2..];
+    if return_type.contains([';', '{', '}']) {
+        return false;
+    }
+    head[..arrow].trim_end().ends_with('|')
+}
+
+/// Start of the statement that owns the read at `pos`: the byte after the
+/// previous `;` (or unmatched `{`) at the read's own brace depth. A read that
+/// is a closure block's tail expression belongs to the statement that owns
+/// the closure, so the walk restarts from that block's `{`.
+fn statement_lo(code: &str, pos: usize) -> usize {
+    if let Some(open) = owning_closure_open(code, pos) {
+        return statement_lo(code, open);
+    }
+    let bytes = code.as_bytes();
+    let mut depth = 0i32;
+    let mut i = pos;
+    while i > 0 {
+        i -= 1;
+        match bytes[i] {
+            b'}' => depth += 1,
+            b'{' if depth > 0 => depth -= 1,
+            b'{' | b';' if depth == 0 => return i + 1,
+            _ => {}
+        }
+    }
+    0
+}
+
+/// End of the statement that owns the read ending at `from`: the next `;` at
+/// the read's own depth; a closure block the read closes as its tail
+/// expression is left first (`d.created_at.clone() });`), a fn body's
+/// closing brace ends the statement.
+fn statement_hi(code: &str, from: usize) -> usize {
+    let bytes = code.as_bytes();
+    let mut leave_closure = owning_closure_open(code, from).is_some();
+    let mut depth = 0i32;
+    for (offset, &byte) in bytes[from..].iter().enumerate() {
+        match byte {
+            b'{' => depth += 1,
+            b'}' if depth > 0 => depth -= 1,
+            b'}' if leave_closure => leave_closure = false,
+            b'}' => return from + offset,
+            b';' if depth == 0 => return from + offset,
+            _ => {}
+        }
+    }
+    code.len()
+}
+
+/// Byte offsets of every `.created_at` field read in code (comments and
+/// string literals excluded — SQL text is the other scan's job) that has a
+/// comparator marker within [`COMPARATOR_WINDOW`] bytes on either side.
+/// Reads closer than the window to the previous hit are folded into it (one
+/// comparison expression reads the field twice).
+fn created_at_comparator_offsets(content: &str) -> Vec<usize> {
+    // Blank every comment and string literal to spaces (same byte length, so
+    // offsets stay valid): neither a `// sort_by(created_at)` remark nor a SQL
+    // literal's text may count as a marker or as a field read.
+    let mut code = content.as_bytes().to_vec();
+    for (start, end, _kind) in classified_non_code_spans(content) {
+        for byte in &mut code[start..end] {
+            if !byte.is_ascii_whitespace() {
+                *byte = b' ';
+            }
+        }
+    }
+    let code = String::from_utf8(code).expect("blanking keeps ASCII/UTF-8 boundaries intact");
+
+    let mut offsets: Vec<usize> = Vec::new();
+    for m in created_at_read_marker().find_iter(&code) {
+        let pos = m.start();
+        let lo = pos
+            .saturating_sub(COMPARATOR_WINDOW)
+            .max(statement_lo(&code, pos));
+        let hi = (m.end() + COMPARATOR_WINDOW).min(statement_hi(&code, m.end()));
+        // Clamp to char boundaries (the window is a byte count).
+        let lo = (lo..=pos)
+            .find(|&i| code.is_char_boundary(i))
+            .unwrap_or(pos);
+        let hi = (m.end()..=hi)
+            .rev()
+            .find(|&i| code.is_char_boundary(i))
+            .unwrap_or(m.end());
+        if !comparator_marker().is_match(&code[lo..hi]) {
+            continue;
+        }
+        if offsets.last().is_some_and(|&prev| {
+            pos - prev <= COMPARATOR_WINDOW && statement_lo(&code, pos) <= prev
+        }) {
+            continue; // the same comparison expression reading the field again
+        }
+        offsets.push(pos);
+    }
+    offsets
+}
+
+/// `(file, fn, sites)` for every fn in one file's (test-span-stripped)
+/// content that ranks on `created_at` — `sites` counts distinct comparison
+/// expressions (window-folded), so a second comparator added to an exempted
+/// fn is visible to the ratchet.
+fn comparator_sites_in_file(rel: &str, content: &str) -> Vec<(String, String, u8)> {
+    let mut sites: Vec<(String, String, u8)> = Vec::new();
+    for offset in created_at_comparator_offsets(content) {
+        let Some(function) = enclosing_fn_name(content, offset) else {
+            continue;
+        };
+        match sites.iter_mut().find(|(_, f, _)| *f == function) {
+            Some(entry) => entry.2 += 1,
+            None => sites.push((rel.to_string(), function, 1)),
+        }
+    }
+    sites
+}
+
+fn find_comparator_sites() -> Vec<(String, String, u8)> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src_dir = manifest_dir.join("src");
+    let mut sites = Vec::new();
+    for path in source_files(&src_dir) {
+        let rel = path
+            .strip_prefix(&src_dir)
+            .expect("under src")
+            .to_string_lossy()
+            .replace('\\', "/");
+        if is_test_file(&rel) || rel.starts_with("source_tree_guards/") {
+            continue;
+        }
+        let raw = std::fs::read_to_string(&path).expect("readable source file");
+        let content = strip_test_spans(&raw);
+        sites.extend(comparator_sites_in_file(&rel, &content));
+    }
+    sites
+}
+
+/// Guard (#496): the SQL rule applies to Rust ranking too — see
+/// [`ALLOWED_COMPARATORS`] and the module docs.
+#[test]
+fn recency_selection_never_ranks_on_created_at_in_rust() {
+    let sites = find_comparator_sites();
+    let mut violations = Vec::new();
+
+    for (file, function, count) in &sites {
+        let pinned = ALLOWED_COMPARATORS
+            .iter()
+            .find(|(f, func, _sites, _reason)| f == file && func == function)
+            .map(|(_, _, sites, _)| *sites);
+        match pinned {
+            Some(pinned) if pinned >= *count => {}
+            _ => violations.push(format!(
+                "{file}:{function} ({count} comparison site(s), pinned {}): a Rust \
+                 comparator ranks on created_at — domain recency must order by the \
+                 DOMAIN date (a document's disclosure_key(), a fact's \
+                 canonical_fact_rank(), a period's end date), never created_at \
+                 (data-model.md § Model principles, guardrail d60305c, #496). Fix \
+                 the comparator, or add a reviewed entry to ALLOWED_COMPARATORS \
+                 with a Reason",
+                pinned.map_or("none".to_owned(), |p| p.to_string())
+            )),
+        }
+    }
+    for (file, function, pinned, reason) in ALLOWED_COMPARATORS {
+        let found = sites
+            .iter()
+            .find(|(f, func, _)| f == file && func == function)
+            .map(|(_, _, count)| *count);
+        match found {
+            Some(count) if count == *pinned => {}
+            Some(count) => violations.push(format!(
+                "{file}:{function} ({reason:?}): {count} comparison site(s) but {pinned} \
+                 pinned — ratchet the pin down to {count} (per-site ratchet)"
+            )),
+            None => violations.push(format!(
+                "{file}:{function} ({reason:?}): no longer a created_at comparator \
+                 site — delete this entry from ALLOWED_COMPARATORS (per-site ratchet)"
+            )),
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "recency source-tree guard (#496, Rust comparators):\n{}",
+        violations.join("\n")
+    );
+}
+
+#[cfg(test)]
+mod comparator_scanner_tests {
+    use super::{comparator_sites_in_file, created_at_comparator_offsets};
+
+    #[test]
+    fn a_reverse_on_created_at_inside_a_rank_fn_is_one_site() {
+        let source = "fn rank(d: &Doc) -> (u8, std::cmp::Reverse<String>) {\n    (0, std::cmp::Reverse(d.created_at.clone()))\n}\n";
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "rank".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_multi_line_cmp_reading_the_field_twice_is_one_site() {
+        let source = "fn pick(c: &mut Vec<Doc>) {\n    c.sort_by(|left, right| {\n        right\n            .created_at\n            .cmp(&left.created_at)\n    });\n}\n";
+        assert_eq!(created_at_comparator_offsets(source).len(), 1);
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "pick".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn two_separate_comparisons_in_one_fn_count_as_two_sites() {
+        // Adjacent statements, no padding: each is its own comparison site.
+        let source = concat!(
+            "fn pick(c: &mut Vec<Doc>, d: &mut Vec<Doc>) {\n",
+            "    c.sort_by_cached_key(|x| x.created_at.clone());\n",
+            "    d.sort_by_key(|x| std::cmp::Reverse(x.created_at.clone()));\n",
+            "}\n",
+        );
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "pick".to_string(), 2)]
+        );
+    }
+
+    #[test]
+    fn a_closure_body_with_its_own_statements_is_still_one_site() {
+        // astra r3: an internal `;` must not cut the tail-expression read
+        // off from the `sort_by_key(` that owns the closure.
+        let source = concat!(
+            "fn pick(docs: &mut Vec<Doc>) {\n",
+            "    docs.sort_by_key(|d| {\n",
+            "        let _ = d.id.len();\n",
+            "        d.created_at.clone()\n",
+            "    });\n",
+            "}\n",
+        );
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "pick".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_tuple_comparison_on_created_at_is_a_site() {
+        // astra r6: `(len, &a.created_at) >= (len, &b.created_at)` ranks too.
+        let source = concat!(
+            "fn keep(existing: &Row, row: &Row) -> bool {\n",
+            "    (existing.name.len(), &existing.created_at)\n",
+            "        >= (row.name.len(), &row.created_at)\n",
+            "}\n",
+        );
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "keep".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_closure_with_an_explicit_return_type_is_still_one_site() {
+        // astra r5: `|d| -> String {` is a closure body too.
+        let source = concat!(
+            "fn pick(docs: &mut Vec<Doc>) {\n",
+            "    docs.sort_by_key(|d| -> String {\n",
+            "        let _ = d.id.len();\n",
+            "        d.created_at.clone()\n",
+            "    });\n",
+            "}\n",
+        );
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "pick".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_fn_tail_comparator_is_its_own_site_and_a_fn_tail_read_is_none() {
+        // astra r4: a fn's closing brace is not a closure block — the tail
+        // statement (no final `;`) must not swallow the statement before it.
+        let two = concat!(
+            "fn pick(c: &mut Vec<Doc>, d: &mut Vec<Doc>) {\n",
+            "    c.sort_by_key(|x| x.created_at.clone());\n",
+            "    d.sort_by_key(|x| x.created_at.clone())\n",
+            "}\n",
+        );
+        assert_eq!(
+            comparator_sites_in_file("x.rs", two),
+            vec![("x.rs".to_string(), "pick".to_string(), 2)]
+        );
+        let none = concat!(
+            "fn label(d: &Doc, v: &mut Vec<u8>) -> String {\n",
+            "    v.sort_by(|a, b| a.cmp(b));\n",
+            "    d.created_at.clone()\n",
+            "}\n",
+        );
+        assert!(comparator_sites_in_file("x.rs", none).is_empty());
+    }
+
+    #[test]
+    fn a_comparator_in_the_next_statement_does_not_vouch_for_a_plain_read() {
+        let source = concat!(
+            "fn label(d: &Doc, v: &mut Vec<u8>) -> String {\n",
+            "    let t = format!(\"{}\", d.created_at);\n",
+            "    v.sort_by(|a, b| a.cmp(b));\n",
+            "    t\n",
+            "}\n",
+        );
+        assert!(comparator_sites_in_file("x.rs", source).is_empty());
+    }
+
+    #[test]
+    fn a_plain_read_a_comment_and_a_sql_literal_are_not_sites() {
+        let source = concat!(
+            "fn label(d: &Doc) -> String {\n",
+            "    // sort_by(created_at) would be wrong here\n",
+            "    let sql = \"SELECT 1 ORDER BY created_at\"; let _ = sql;\n",
+            "    format!(\"{}\", d.created_at)\n",
+            "}\n",
+        );
+        assert!(comparator_sites_in_file("x.rs", source).is_empty());
     }
 }

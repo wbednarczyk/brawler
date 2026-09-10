@@ -135,7 +135,6 @@ const FROZEN_BASELINE = new Set([
   "list_evidence_links",
   "list_fact_provenance",
   "list_feed_items",
-  "list_financial_facts",
   "list_financial_periods",
   "list_framework_evaluations",
   "list_kpi_definitions",

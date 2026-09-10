@@ -98,7 +98,7 @@ Canonical strategy/layers: [docs/testing.md](docs/testing.md). Which-test-where 
 
 - Repository-owned workflows are skills under `.claude/skills/` (`repoctx`, `guardrail-harvest`, `packaging`, `brawler-mcp`, `ship-pr`, `brawler-design`) — loaded on demand, not re-derived.
 - The session hook (`.claude/hooks/session-context.sh`, all four SessionStart matchers) re-grounds the always-on rules after start/resume/clear/compact. Gate-integrity enforces this file's and the hook's byte budgets and parity markers ([ADR 0063](docs/adr/0063-claude-native-context-architecture.md)).
-- Durable rules/decisions live in this repo (this file, ADRs, canonical docs) — not agent-private memory. No AI/agent attribution anywhere on the forge — commits, co-authors, trailers, PR descriptions, issues, comments; history stays authored by the human maintainer.
+- Durable rules/decisions live in this repo (this file, ADRs, canonical docs) — not agent-private memory. No AI/agent attribution anywhere on the forge — commits, co-authors, trailers, PR descriptions, issues, comments; history stays authored by the human maintainer (a harness-injected `Co-Authored-By`/"Generated with" line is dropped, never pasted; gate: `check-commits` + the PR-body scan).
 
 <!-- repoctx:start -->
 ## Code navigation with `repoctx`

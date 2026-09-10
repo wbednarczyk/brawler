@@ -219,27 +219,38 @@ check-docs-gates:
 	$(NIX) node scripts/check/file-size-ratchet.mjs
 	$(NIX) node --test "scripts/check/*.test.mjs" "scripts/ux/*.test.mjs"
 	$(NIX) npm run release:version-check
+	$(NIX) npm run release:commit-msg-check
 	# G4 (ADR 0081 Q7 follow-up): a malformed escaped-defect table (wrong cell
 	# count, unknown enum value, duplicate ref) is a docs-hygiene gap the
 	# advisory `report-escaped-defects` never enforces on its own — --validate
 	# is silent on success, non-zero + the row errors on failure.
 	$(NIX) node scripts/ux/escaped-defects-report.mjs --validate
 
-# Commit-message gate (ADR 0090): validate every commit subject in RANGE against
-# the Conventional Commits schema. CI passes the PR's commit range
+# Commit-message gate (ADR 0090): validate every commit message in RANGE against
+# the Conventional Commits schema AND the no-AI-attribution rule (CLAUDE.md
+# § Claude-Native Ecosystem); `PR_BODY` (env, never interpolated) gets the
+# attribution scan too. CI passes the PR's commit range
 # (RANGE=<base>..<head>); locally e.g. RANGE=origin/master..HEAD. Commit
 # descriptions ARE the release notes (git-cliff), so this is a hard gate.
 check-commits:
 	@test -n "$(RANGE)" || { printf "Usage: make check-commits RANGE=<base>..<head>\n" >&2; exit 64; }
-	@fail=0; \
+	@fail=0; tmp="$$(mktemp)"; \
 	for sha in $$(git rev-list --reverse $(RANGE)); do \
-		subject="$$(git log -1 --format=%s "$$sha")"; \
-		if ! scripts/release/validate-commit-message.sh --message "$$subject" >/dev/null 2>&1; then \
-			printf "✖ commit %s: subject fails Conventional Commits: %s\n" "$$(git rev-parse --short "$$sha")" "$$subject" >&2; \
+		git log -1 --format=%B "$$sha" >"$$tmp"; \
+		if ! scripts/release/validate-commit-message.sh "$$tmp" >"$$tmp.out" 2>&1; then \
+			printf "✖ commit %s: %s\n" "$$(git rev-parse --short "$$sha")" "$$(git log -1 --format=%s "$$sha")" >&2; \
+			sed 's/^/    /' "$$tmp.out" >&2; \
 			fail=1; \
 		fi; \
 	done; \
-	if [ "$$fail" -eq 0 ]; then printf "✓ check-commits: all commits in %s conform to Conventional Commits.\n" "$(RANGE)"; fi; \
+	if [ -n "$${PR_BODY:-}" ]; then \
+		printf "%s\n" "$$PR_BODY" >"$$tmp"; \
+		if ! scripts/release/check-forge-attribution.sh "$$tmp" >"$$tmp.out" 2>&1; then \
+			printf "✖ PR description:\n" >&2; sed 's/^/    /' "$$tmp.out" >&2; fail=1; \
+		fi; \
+	fi; \
+	rm -f "$$tmp" "$$tmp.out"; \
+	if [ "$$fail" -eq 0 ]; then printf "✓ check-commits: all commits in %s conform (Conventional Commits, no AI attribution)%s.\n" "$(RANGE)" "$${PR_BODY:+; PR description clean}"; fi; \
 	exit $$fail
 
 # Tests-touched gate (G14, hard gates wave 2, ADR 0045 harvest 2026-09-08): a

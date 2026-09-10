@@ -33,6 +33,7 @@ use crate::commands::fundamentals_coverage::CoveragePeriodRow;
 use crate::commands::market_data;
 use crate::commands::today::SectionErrorKind;
 use crate::storage::company_view_reads as reads;
+use crate::storage::company_view_reads::canonical_fact_rank;
 use crate::storage::{
     AnalystRecommendationRow, Company, CompanyEventListInput, FinancialFact,
     ListFinancialFactsInput, ListFinancialPeriodsInput, PresentationKind,
@@ -529,17 +530,19 @@ fn compute_kpi(connection: &Connection, company_id: &str) -> Result<CompanyViewK
                 .get(&year)
                 .and_then(|period_id| facts_by_period.get(period_id));
             // Preferred fact for (metric, year): confirmed over any other
-            // state, newest `created_at` among equally-preferred candidates.
+            // state, then the canonical fact within the slot
+            // (`canonical_fact_rank`, never `created_at` — #496), then the
+            // smallest id for a fully-tied remainder.
             let best = facts.and_then(|facts| {
                 facts
                     .iter()
                     .filter(|fact| fact.metric_key == metric_key)
-                    .max_by(|a, b| {
-                        let a_confirmed = a.confirmation_state == "confirmed";
-                        let b_confirmed = b.confirmation_state == "confirmed";
-                        a_confirmed
-                            .cmp(&b_confirmed)
-                            .then_with(|| a.created_at.cmp(&b.created_at))
+                    .min_by_key(|fact| {
+                        (
+                            fact.confirmation_state != "confirmed",
+                            canonical_fact_rank(fact),
+                            fact.id.clone(),
+                        )
                     })
             });
             let cell = match best {

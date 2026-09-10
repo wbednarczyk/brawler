@@ -479,6 +479,17 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        "list_financial_facts" => {
+            let input: crate::storage::ListFinancialFactsInput =
+                serde_json::from_value(inner).expect("ListFinancialFactsInput");
+            serde_json::to_value(
+                state
+                    .financials()
+                    .list_financial_facts(input)
+                    .expect("list_financial_facts"),
+            )
+            .unwrap()
+        }
         "update_financial_fact" => {
             let update: crate::storage::UpdateFinancialFact =
                 serde_json::from_value(inner).expect("UpdateFinancialFact");

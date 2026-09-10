@@ -23,7 +23,7 @@ use crate::commands::fundamentals_coverage::document_period;
 use crate::fundamentals::extraction::classify::{
     canonical_reports_per_period, CanonicalReportCandidate, DocKind,
 };
-use crate::jobs::autopilot::{is_structured_document, report_disclosure_key};
+use crate::jobs::autopilot::is_structured_document;
 use crate::{app_state, storage};
 
 // ============================================================================
@@ -233,7 +233,7 @@ pub fn compute_report_documents_view(
             document_id: document.id.clone(),
             doc_kind: kind,
             period: (*fiscal_year as i32, *index),
-            disclosure_key: report_disclosure_key(document),
+            disclosure_key: document.disclosure_key(),
             structured: is_structured_document(document),
         });
     }

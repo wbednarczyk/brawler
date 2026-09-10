@@ -2980,6 +2980,78 @@ fn stored_fact_set_unfiltered_final_preferred_slot_once() {
     );
 }
 
+/// `stored_fact_set`'s slot-once merge sits on top of
+/// `list_financial_facts`'s new domain-ordered base — within a SAME-quality
+/// pair the canonical `attribution` preference (`total` over
+/// `owners_of_parent`) must decide the winner too, not just `data_quality`,
+/// and not insertion order (#496's real-data bug: `owners_of_parent` written
+/// a day after `total`).
+#[test]
+fn stored_fact_set_prefers_total_attribution_over_a_later_owners_of_parent_sibling() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2025-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period should create");
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+    let definition = definitions
+        .iter()
+        .find(|d| d.metric_key == "total_equity")
+        .expect("total_equity should be seeded");
+
+    // Mirrors the real bug (#496, owner DB 2026-09-10): `total` filed first,
+    // `owners_of_parent` filed a day later.
+    for (attribution, value) in [("total", "222"), ("owners_of_parent", "111")] {
+        state
+            .create_financial_fact(NewFinancialFact {
+                company_id: company.id.clone(),
+                period_id: period.id.clone(),
+                definition_id: definition.id.clone(),
+                value_numeric: value.to_owned(),
+                currency: Some("PLN".to_owned()),
+                statement_basis: None,
+                attribution: Some(attribution.to_owned()),
+                variant: None,
+                measure_window: None,
+                data_quality: None,
+                as_reported_value: None,
+                as_reported_scale: None,
+                reporting_standard: None,
+                extraction_method: None,
+                confidence: None,
+                confirmation_state: Some("confirmed".to_owned()),
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("fact should create");
+    }
+
+    let set = state
+        .financials()
+        .stored_fact_set(&company.id, 2025, "FY")
+        .expect("stored_fact_set should query")
+        .expect("a period with facts should yield Some");
+    assert_eq!(
+        set.get("total_equity"),
+        Some(&Decimal::new(222, 0)),
+        "`total` must win even though `owners_of_parent` was written later: {set:?}"
+    );
+}
+
 /// §2 safety property (load-bearing, ADR 0093 dec. 1): an incoming ESEF
 /// (issuer) extraction outranks the agent tier, so EVERY agent-tier fact — A's
 /// preliminary sibling AND B (preliminary-only) — must be excluded from the
@@ -3058,6 +3130,74 @@ fn metric_history_final_preferred_one_value_per_period() {
         .metric_history(&fixture.company_id, "revenue", 2099, "FY")
         .expect("metric history should read");
     assert_eq!(c_history, vec![Decimal::new(9_000_000, 0)], "unchanged");
+}
+
+/// Within a SAME-quality pair (`metric_history`'s
+/// first-equal-rank-wins loop only distinguishes `data_quality`), the
+/// canonical `attribution` preference must decide which sibling is "first",
+/// not insertion order — mirrors the real bug (#496): `total` filed before
+/// `owners_of_parent`.
+#[test]
+fn metric_history_prefers_total_attribution_over_a_later_owners_of_parent_sibling() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2025-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period should create");
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+    let definition = definitions
+        .iter()
+        .find(|d| d.metric_key == "total_equity")
+        .expect("total_equity should be seeded");
+
+    for (attribution, value) in [("total", "222"), ("owners_of_parent", "111")] {
+        state
+            .create_financial_fact(NewFinancialFact {
+                company_id: company.id.clone(),
+                period_id: period.id.clone(),
+                definition_id: definition.id.clone(),
+                value_numeric: value.to_owned(),
+                currency: Some("PLN".to_owned()),
+                statement_basis: None,
+                attribution: Some(attribution.to_owned()),
+                variant: None,
+                measure_window: None,
+                data_quality: None,
+                as_reported_value: None,
+                as_reported_scale: None,
+                reporting_standard: None,
+                extraction_method: None,
+                confidence: None,
+                confirmation_state: Some("confirmed".to_owned()),
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("fact should create");
+    }
+
+    let history = state
+        .financials()
+        .metric_history(&company.id, "total_equity", 2099, "FY")
+        .expect("metric history should read");
+    assert_eq!(
+        history,
+        vec![Decimal::new(222, 0)],
+        "`total` must win even though `owners_of_parent` was written later: {history:?}"
+    );
 }
 
 /// `metric_history_batch`'s (`metric_histories`) equivalence contract: same
@@ -3911,5 +4051,288 @@ fn an_alias_source_that_already_holds_facts_is_never_redirected() {
     assert_eq!(
         b_facts[0].definition_id, "kpidef_inventories",
         "a clean company still redirects — the guard is per company, never a global switch"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// list_financial_facts orders by the DOMAIN period date, never
+// created_at (data-model.md § Model principles).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn list_financial_facts_orders_newest_fiscal_year_first_even_when_inserted_earlier() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    // FY2025 is created FIRST (so its created_at sorts EARLIER) — a
+    // created_at-based order would put FY2023 first.
+    let fy2025 = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2025-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("FY2025 period should create");
+    let fy2023 = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2023,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2023-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("FY2023 period should create");
+    seed_fact(&state, &company.id, &fy2025.id, "revenue", "1000");
+    seed_fact(&state, &company.id, &fy2023.id, "revenue", "900");
+
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts should list");
+    assert_eq!(facts.len(), 2);
+    assert_eq!(
+        facts[0].period_id, fy2025.id,
+        "the newer fiscal year must sort first regardless of insert order"
+    );
+}
+
+#[test]
+fn list_financial_facts_orders_fy_before_h1_within_the_same_fiscal_year() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    // H1 (dated 2026-06-30) is created FIRST; FY (undated, falls back to
+    // 2026-12-31) is created second. The domain date key must still rank FY
+    // ahead of H1 since 12-31 > 06-30.
+    let h1 = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "H1".to_owned(),
+            period_end_date: Some("2026-06-30".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("H1 period should create");
+    let fy = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "FY".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("FY period should create");
+    // Seed the FY fact FIRST (earlier created_at) and H1 SECOND (later
+    // created_at) — a created_at-based order would put H1 first, wrong.
+    seed_fact(&state, &company.id, &fy.id, "revenue", "1000");
+    seed_fact(&state, &company.id, &h1.id, "revenue", "500");
+
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts should list");
+    assert_eq!(facts.len(), 2);
+    assert_eq!(
+        facts[0].period_id, fy.id,
+        "an undated FY period (-> -12-31) must sort ahead of a dated H1 (-06-30)"
+    );
+}
+
+#[test]
+fn list_financial_facts_prefers_total_attribution_over_a_later_owners_of_parent_sibling() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "H1".to_owned(),
+            period_end_date: Some("2026-06-30".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period should create");
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+    let definition = definitions
+        .iter()
+        .find(|d| d.metric_key == "total_equity")
+        .expect("total_equity should be seeded");
+
+    // Mirrors the real bug (#496, owner DB 2026-09-10): `total` filed first,
+    // `owners_of_parent` filed a day later (later created_at) — the
+    // owners_of_parent value must not win just because it was written last.
+    state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company.id.clone(),
+            period_id: period.id.clone(),
+            definition_id: definition.id.clone(),
+            value_numeric: "222".to_owned(),
+            currency: Some("PLN".to_owned()),
+            statement_basis: None,
+            attribution: Some("total".to_owned()),
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: Some("confirmed".to_owned()),
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect("total fact should create");
+    state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company.id.clone(),
+            period_id: period.id.clone(),
+            definition_id: definition.id.clone(),
+            value_numeric: "111".to_owned(),
+            currency: Some("PLN".to_owned()),
+            statement_basis: None,
+            attribution: Some("owners_of_parent".to_owned()),
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: Some("confirmed".to_owned()),
+            supersedes_id: None,
+            source_document_ref: None,
+            annotation: None,
+        })
+        .expect("owners_of_parent fact should create");
+
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id.clone()),
+            period_id: Some(period.id.clone()),
+            definition_id: None,
+        })
+        .expect("facts should list");
+    assert_eq!(facts.len(), 2);
+    assert_eq!(
+        facts[0].value_numeric, "222",
+        "`total` must sort first within a slot even when inserted after `owners_of_parent`"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// CANONICAL_FACT_PREFERENCE_ORDER (SQL) and canonical_fact_rank
+// (Rust) must agree on which fact represents a slot (ADR 0093 dec. 2 /
+// ADR 0086), whatever order the candidates were inserted in.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn canonical_fact_preference_order_matches_rust_mirror() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "H1".to_owned(),
+            period_end_date: Some("2026-06-30".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("period should create");
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+    let definition = definitions
+        .iter()
+        .find(|d| d.metric_key == "total_equity")
+        .expect("total_equity should be seeded");
+
+    // Permuted, deliberately out of preference order: the LAST-inserted combo
+    // ("final"/"reported"/"consolidated"/"total") is the canonical winner on
+    // every dimension, so ordering by created_at/id alone would pick wrong.
+    let combos = [
+        (
+            "preliminary",
+            "reported",
+            "consolidated",
+            "owners_of_parent",
+        ),
+        ("final", "restated", "standalone", "nci"),
+        ("final", "reported", "consolidated", "owners_of_parent"),
+        ("preliminary", "reported", "standalone", "total"),
+        ("final", "reported", "consolidated", "total"),
+    ];
+    for (data_quality, variant, statement_basis, attribution) in combos {
+        state
+            .create_financial_fact(NewFinancialFact {
+                company_id: company.id.clone(),
+                period_id: period.id.clone(),
+                definition_id: definition.id.clone(),
+                value_numeric: "1000".to_owned(),
+                currency: Some("PLN".to_owned()),
+                statement_basis: Some(statement_basis.to_owned()),
+                attribution: Some(attribution.to_owned()),
+                variant: Some(variant.to_owned()),
+                measure_window: None,
+                data_quality: Some(data_quality.to_owned()),
+                as_reported_value: None,
+                as_reported_scale: None,
+                reporting_standard: None,
+                extraction_method: None,
+                confidence: None,
+                confirmation_state: Some("confirmed".to_owned()),
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("fact should create");
+    }
+
+    let mut facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id.clone()),
+            period_id: Some(period.id.clone()),
+            definition_id: None,
+        })
+        .expect("facts should list");
+    assert_eq!(facts.len(), combos.len());
+    facts.sort_by_key(crate::storage::financials::fact_preference::canonical_fact_rank);
+    let expected_best = facts[0].id.clone();
+
+    let comparisons = state
+        .financials()
+        .comparison_facts(
+            std::slice::from_ref(&company.id),
+            &["total_equity".to_owned()],
+            &["H1"],
+        )
+        .expect("comparison facts should read");
+    assert_eq!(comparisons.len(), 1, "one slot, one canonical row");
+    assert_eq!(
+        comparisons[0].fact_id, expected_best,
+        "SQL CANONICAL_FACT_PREFERENCE_ORDER and Rust canonical_fact_rank must agree"
     );
 }

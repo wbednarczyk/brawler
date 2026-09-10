@@ -15,6 +15,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+use super::financials::CANONICAL_FACT_PREFERENCE_ORDER;
 use super::{slug_part, StorageError, StorageResult};
 use crate::fundamentals::expr::{self, referenced_metrics};
 use crate::fundamentals::metrics::{Computation, MetricDef, MetricsContext, PeriodFacts};
@@ -1285,17 +1286,14 @@ fn load_period_facts(
     connection: &Connection,
     period_id: &str,
 ) -> StorageResult<HashMap<String, Decimal>> {
-    let mut statement = connection.prepare(
+    let sql = format!(
         "SELECT d.metric_key, f.value_numeric
          FROM financial_facts f
          JOIN kpi_definitions d ON d.id = f.definition_id
          WHERE f.period_id = ?1 AND f.confirmation_state = 'confirmed'
-         ORDER BY
-            CASE f.data_quality WHEN 'final' THEN 0 ELSE 1 END,
-            CASE f.variant WHEN 'reported' THEN 0 ELSE 1 END,
-            CASE f.statement_basis WHEN 'consolidated' THEN 0 ELSE 1 END,
-            CASE f.attribution WHEN 'total' THEN 0 WHEN 'owners_of_parent' THEN 1 ELSE 2 END",
-    )?;
+         ORDER BY {CANONICAL_FACT_PREFERENCE_ORDER}"
+    );
+    let mut statement = connection.prepare(&sql)?;
     let rows = statement.query_map([period_id], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })?;

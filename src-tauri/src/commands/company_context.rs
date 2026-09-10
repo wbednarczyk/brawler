@@ -143,7 +143,13 @@ pub fn compute_company_context(
 
     let latest_period_facts = match latest_period {
         Some(period) => {
-            let facts = state
+            // `list_financial_facts` already orders each metric's own facts
+            // canonical-first (CANONICAL_FACT_PREFERENCE_ORDER), so
+            // the FIRST occurrence of a metric_key in this single-period read
+            // IS its canonical fact — dedup keeps that one and drops later
+            // (non-canonical) siblings, never a `created_at`-latest one.
+            let mut seen_metrics = std::collections::HashSet::new();
+            let mut representatives: Vec<_> = state
                 .financials()
                 .list_financial_facts(ListFinancialFactsInput {
                     company_id: Some(company_id.to_owned()),
@@ -152,7 +158,17 @@ pub fn compute_company_context(
                 })
                 .map_err(|error| error.to_string())?
                 .into_iter()
-                .take(MAX_LATEST_PERIOD_FACTS)
+                // The list is canonical-first per metric, so the first fact per
+                // key IS that key's canonical representative.
+                .filter(|fact| seen_metrics.insert(fact.metric_key.clone()))
+                .collect();
+            // Owner decision A: a bounded sample of the period's distinct
+            // metrics, alphabetical by key — never a relevance ranking, and a
+            // key whose only fact is preliminary still gets its slot.
+            representatives.sort_by(|a, b| a.metric_key.cmp(&b.metric_key));
+            representatives.truncate(MAX_LATEST_PERIOD_FACTS);
+            let facts = representatives
+                .into_iter()
                 .map(|fact| CompanyContextFact {
                     metric_key: fact.metric_key,
                     value_numeric: fact.value_numeric,
@@ -601,5 +617,153 @@ mod tests {
         let context = compute_company_context(&state, &company_id).expect("context");
         assert_eq!(context.latest_period_facts.expect("latest").facts.len(), 6);
         assert_eq!(context.upcoming_events.len(), 3);
+    }
+
+    /// #496: MAX_LATEST_PERIOD_FACTS caps at 6 DISTINCT metric keys
+    /// — same-metric siblings (final vs preliminary; total vs
+    /// owners_of_parent) must collapse to their canonical fact BEFORE the cap
+    /// runs, never leak a non-canonical value or waste a slot on a metric
+    /// already taken.
+    #[test]
+    fn caps_at_six_distinct_metrics_each_the_canonical_fact_among_siblings() {
+        let state = state();
+        let company_id = company(&state);
+        let period_id = period(&state, &company_id, 2025, "FY", "2025-12-31");
+
+        fn seed(
+            state: &AppState,
+            company_id: &str,
+            period_id: &str,
+            definition_id: &str,
+            value: &str,
+            attribution: Option<&str>,
+            data_quality: Option<&str>,
+        ) {
+            state
+                .financials()
+                .create_financial_fact(NewFinancialFact {
+                    company_id: company_id.to_owned(),
+                    period_id: period_id.to_owned(),
+                    definition_id: definition_id.to_owned(),
+                    value_numeric: value.to_owned(),
+                    currency: Some("PLN".to_owned()),
+                    statement_basis: None,
+                    attribution: attribution.map(str::to_owned),
+                    variant: None,
+                    measure_window: None,
+                    data_quality: data_quality.map(str::to_owned),
+                    as_reported_value: None,
+                    as_reported_scale: None,
+                    reporting_standard: None,
+                    extraction_method: None,
+                    confidence: None,
+                    confirmation_state: Some("confirmed".to_owned()),
+                    supersedes_id: None,
+                    source_document_ref: None,
+                    annotation: None,
+                })
+                .expect("fact");
+        }
+
+        // m0: preliminary (wrong) filed, then final (canonical) filed.
+        let m0 = definition(&state, &company_id, "metric_0");
+        seed(
+            &state,
+            &company_id,
+            &period_id,
+            &m0,
+            "991",
+            None,
+            Some("preliminary"),
+        );
+        seed(
+            &state,
+            &company_id,
+            &period_id,
+            &m0,
+            "100",
+            None,
+            Some("final"),
+        );
+
+        // m1: owners_of_parent (wrong) filed, then total (canonical) filed.
+        let m1 = definition(&state, &company_id, "metric_1");
+        seed(
+            &state,
+            &company_id,
+            &period_id,
+            &m1,
+            "992",
+            Some("owners_of_parent"),
+            None,
+        );
+        seed(
+            &state,
+            &company_id,
+            &period_id,
+            &m1,
+            "101",
+            Some("total"),
+            None,
+        );
+
+        // A metric whose ONLY fact is preliminary still earns its slot (it is
+        // that key's canonical representative) and, sorting first, must not be
+        // pushed out by lower-ranked-but-final siblings (astra r1 finding 1).
+        let a_prelim = definition(&state, &company_id, "a_prelim_only");
+        seed(
+            &state,
+            &company_id,
+            &period_id,
+            &a_prelim,
+            "50",
+            None,
+            Some("preliminary"),
+        );
+
+        // 5 more distinct metrics, one fact each — 8 distinct metric keys total.
+        for i in 2..7 {
+            let def = definition(&state, &company_id, &format!("metric_{i}"));
+            seed(
+                &state,
+                &company_id,
+                &period_id,
+                &def,
+                &(100 + i).to_string(),
+                None,
+                None,
+            );
+        }
+
+        let context = compute_company_context(&state, &company_id).expect("context");
+        let facts = context.latest_period_facts.expect("latest").facts;
+        assert_eq!(
+            facts.len(),
+            6,
+            "capped at MAX_LATEST_PERIOD_FACTS: {facts:?}"
+        );
+
+        let sample: Vec<(&str, &str)> = facts
+            .iter()
+            .map(|f| (f.metric_key.as_str(), f.value_numeric.as_str()))
+            .collect();
+        assert_eq!(
+            sample,
+            vec![
+                ("a_prelim_only", "50"),
+                ("metric_0", "100"),
+                ("metric_1", "101"),
+                ("metric_2", "102"),
+                ("metric_3", "103"),
+                ("metric_4", "104"),
+            ],
+            "alphabetical by metric key, one canonical fact per key: {facts:?}"
+        );
+        for wrong_value in ["991", "992"] {
+            assert!(
+                facts.iter().all(|f| f.value_numeric != wrong_value),
+                "a non-canonical sibling value must never appear: {facts:?}"
+            );
+        }
     }
 }

@@ -618,6 +618,61 @@ fn kpi_last_four_fy_with_yoy_and_document_tickets() {
     assert!(op_row.yoy_pct.is_none());
 }
 
+/// Task 5 (#496): the KPI cell pick must prefer the canonical fact within a
+/// slot (`total` over `owners_of_parent`), never the latest-inserted one —
+/// mirrors the real bug, `total` filed first, `owners_of_parent` filed later.
+#[test]
+fn kpi_cell_prefers_total_attribution_over_a_later_owners_of_parent_sibling() {
+    let state = state();
+    let company_id = company(&state, "ATB");
+    let period_id = kpi_period(&state, &company_id, 2025);
+
+    for (attribution, value) in [("total", "222"), ("owners_of_parent", "111")] {
+        state
+            .financials()
+            .create_financial_fact(NewFinancialFact {
+                company_id: company_id.clone(),
+                period_id: period_id.clone(),
+                definition_id: "kpidef_revenue".to_owned(),
+                value_numeric: value.to_owned(),
+                currency: Some("PLN".to_owned()),
+                statement_basis: None,
+                attribution: Some(attribution.to_owned()),
+                variant: None,
+                measure_window: None,
+                data_quality: None,
+                as_reported_value: None,
+                as_reported_scale: None,
+                reporting_standard: None,
+                extraction_method: None,
+                confidence: None,
+                confirmation_state: Some("confirmed".to_owned()),
+                supersedes_id: None,
+                source_document_ref: None,
+                annotation: None,
+            })
+            .expect("fact");
+    }
+
+    let view = compute_company_view(&state, &company_id).expect("view");
+    let kpi = view.kpi.expect("kpi");
+    let revenue_row = kpi
+        .rows
+        .iter()
+        .find(|row| row.metric_key == "revenue")
+        .expect("revenue row");
+    let cell = revenue_row
+        .cells
+        .iter()
+        .find(|cell| cell.fiscal_year == 2025)
+        .expect("2025 cell");
+    assert_eq!(
+        cell.value_numeric.as_deref(),
+        Some("222"),
+        "`total` must win even though `owners_of_parent` was written later"
+    );
+}
+
 // sol-review finding 6: yoy must span the two NEWEST POPULATED cells, not
 // just the final two array positions — a gapped penultimate FY must not
 // collapse yoy to `None` when an older populated FY exists.
