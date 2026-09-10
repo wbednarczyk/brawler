@@ -8,7 +8,15 @@
 # can kill either swap; excluding them is standard mutation-testing hygiene,
 # not gate weakening. These are the only `&&`/`||` in `eval_binary`, so the
 # patterns cannot mask a real gap elsewhere.
+#
+# Documented-equivalent mutant (issue #499, 2026-09-10): the two `OpenFlags`
+# bits combined in `open_database_readonly` (`SQLITE_OPEN_READ_ONLY` = 0x1,
+# `SQLITE_OPEN_NO_MUTEX` = 0x8000) are disjoint, so `|` and `^` produce the
+# same value — no test can tell them apart. `migration_safety::
+# readonly_open_neither_writes_nor_migrates` pins both the disjointness and
+# the behavior the flags exist for. This is the only `|` in that function.
 exclude_re = [
     'replace && with \|\| in eval_binary',
     'replace \|\| with && in eval_binary',
+    'replace \| with \^ in open_database_readonly',
 ]

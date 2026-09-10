@@ -1101,7 +1101,10 @@ triage into cards, never blockers) — on standard
 `ubuntu-latest`, `MUTANTS_JAIL=off` since a hosted runner has no user systemd
 manager to jail. `make audit-mutants` (jailed by default) stays the documented
 local equivalent for a dedicated box; findings are advisory and become tracked
-cards, never a blocker.
+cards, never a blocker. **Equivalent mutants** (no observable difference exists,
+e.g. `|`↔`^` on disjoint bit flags) are excluded by a mutant-specific
+`exclude_re` in `src-tauri/.cargo/mutants.toml` with the rationale beside it and
+a test pinning that rationale — never a broad pattern, never a skipped module.
 
 **Red means a survivor, not a slow mutant** (#256). The workflow captures
 cargo-mutants' exit code and decides the job in a separate `Sweep verdict`

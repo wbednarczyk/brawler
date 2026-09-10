@@ -6149,3 +6149,49 @@ fn migration_0152_drops_cockpit_layouts_carrying_a_legacy_row() {
     // Re-run is a safe no-op (self-heal / idempotence on an already-clean DB).
     apply_migrations(&mut connection).expect("re-run is safe");
 }
+
+/// `open_database_readonly` is SQLite-enforced read-only and never migrates
+/// (the doc comment's whole contract). Also pins that its two `OpenFlags`
+/// bits are disjoint — the ground for the documented-equivalent
+/// `|`→`^` mutant exclusion in `src-tauri/.cargo/mutants.toml` (#499).
+#[test]
+fn readonly_open_neither_writes_nor_migrates() {
+    use crate::storage::migrations::{apply_migrations_up_to, open_database_readonly};
+    use rusqlite::{Connection, OpenFlags};
+
+    assert!(
+        (OpenFlags::SQLITE_OPEN_READ_ONLY & OpenFlags::SQLITE_OPEN_NO_MUTEX).is_empty(),
+        "flags must stay disjoint or the mutants.toml exclusion is no longer equivalent",
+    );
+
+    let dir = std::env::temp_dir().join(format!(
+        "brawler-test-readonly-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("old-schema.sqlite3");
+    {
+        let mut connection = Connection::open(&path).expect("create db file");
+        apply_migrations_up_to(&mut connection, 1).expect("apply only the first migration");
+    }
+
+    let connection = open_database_readonly(&path).expect("open read-only");
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        1,
+        "a read-only open must not migrate the file",
+    );
+    let err = connection
+        .execute("CREATE TABLE scratch (id INTEGER)", [])
+        .expect_err("a write must be refused by SQLite itself");
+    assert!(
+        err.to_string().contains("readonly"),
+        "expected SQLITE_READONLY, got: {err}",
+    );
+    drop(connection);
+    std::fs::remove_dir_all(&dir).ok();
+}
