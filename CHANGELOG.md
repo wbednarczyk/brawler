@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.87.0 - 2026-09-10
+
+
+### refactor
+
+- **transcripts**: retire video transcription — the last in-app AI dependency, its Gemini credential, screen, commands and MCP tools; migration 0156 (#463, ADR 0111) (#507)
+
 ## v0.85.0 - 2026-09-10
 
 
