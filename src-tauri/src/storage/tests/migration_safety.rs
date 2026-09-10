@@ -6195,3 +6195,49 @@ fn readonly_open_neither_writes_nor_migrates() {
     drop(connection);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn migration_0154_retires_license_metadata_rows_and_keeps_the_table() {
+    // ADR 0110 (#462): the entitlement module is retired — no reader remains.
+    // Migrations are append-only, so `license_metadata` stays (schema.rs
+    // asserts it), but every row it may carry from a pre-#462 install must go.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 153).expect("apply schema through 0153");
+
+    connection
+        .execute(
+            "INSERT INTO license_metadata (id, status, checked_at, updated_at)
+             VALUES (1, 'valid', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')",
+            [],
+        )
+        .expect("seed a legacy license_metadata row");
+
+    apply_migrations(&mut connection).expect("upgrade to the latest schema");
+
+    assert_eq!(
+        count_rows(&connection, "license_metadata").expect("row count"),
+        0,
+        "license_metadata rows must be retired"
+    );
+
+    let table_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+              WHERE type = 'table' AND name = 'license_metadata')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("table existence check");
+    assert!(
+        table_exists,
+        "license_metadata table must stay (migrations are append-only)"
+    );
+
+    // Re-run is a safe no-op (self-heal / idempotence on an already-clean DB).
+    apply_migrations(&mut connection).expect("re-run is safe");
+    assert_eq!(
+        count_rows(&connection, "license_metadata").expect("row count after re-run"),
+        0,
+        "re-running the migration must stay idempotent"
+    );
+}

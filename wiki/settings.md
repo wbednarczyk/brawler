@@ -31,7 +31,6 @@ a few (marked below) apply the next time you restart Brawler.
 - **MCP server** — let an AI assistant read your research over the Model
   Context Protocol; see [The MCP server](mcp-server.md) for the full
   reference.
-- **License** — your license status and key.
 
 ## Everyday moves
 

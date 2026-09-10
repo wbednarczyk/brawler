@@ -4,12 +4,12 @@
 // into one in-memory dataset — the single store both the Vitest harness and the
 // Playwright browser-smoke runtime materialize. Three named scenarios:
 //
-//   empty   — singletons only (valid license, default settings, catalogs); every
+//   empty   — singletons only (default settings, catalogs); every
 //             collection empty, so empty-state rendering is exercised.
 //   minimal — first 4 companies + ONE of every entity type, so every read/list
 //             command returns non-trivial data and every screen renders.
-//   rich    — all 28 companies + dense multiples + varied source-adapter health
-//             and license kinds, for scale/pagination/filtering coverage.
+//   rich    — all 28 companies + dense multiples + varied source-adapter health,
+//             for scale/pagination/filtering coverage.
 //
 // Each call returns a FRESH deep clone (`structuredClone`), so a test that mutates
 // its dataset can never leak into another test or worker.
@@ -31,7 +31,6 @@ import {
   legacyCompanyEvents,
   legacyFeedItems,
   legacyGeminiCredential,
-  legacyLicenseStatus,
   legacyMetricsSnapshot,
   legacyRegistry,
   legacyResearchEvidence,
@@ -71,7 +70,6 @@ import {
   makeKpiComparison,
   makeKpiDefinition,
   makeKpiRelevance,
-  makeLicenseStatus,
   makeLocalMetricsSnapshot,
   makeLogEntry,
   makeLogStatus,
@@ -111,7 +109,6 @@ import type {
   CredentialStatus,
   DiagnosticEvent,
   FeedItem,
-  LicenseStatus,
   LocalMetricsSnapshot,
   LogEntry,
   NotebookEntry,
@@ -284,7 +281,6 @@ export interface ScenarioData {
   // read; not part of `UserSettings`/`get_settings` on the real backend
   // either, so it stays a sibling field rather than a settings key.
   todayLastVisitAt: string | null;
-  licenseStatus: LicenseStatus;
   providerCatalog: typeof AI_PROVIDER_CATALOG[number][];
   credentialStatuses: CredentialStatus[];
   metricsSnapshot: LocalMetricsSnapshot;
@@ -335,7 +331,6 @@ interface Density {
 const EMPTY_SINGLETONS = (companies: number, adapters: number) => ({
   settings: makeUserSettings(),
   todayLastVisitAt: null,
-  licenseStatus: makeLicenseStatus("valid"),
   providerCatalog: AI_PROVIDER_CATALOG.map((entry) => ({ ...entry })),
   credentialStatuses: makeCredentialStatuses(),
   metricsSnapshot: makeLocalMetricsSnapshot(),
@@ -497,7 +492,6 @@ function applyLegacyOverrides(data: ScenarioData): void {
   data.unmatchedSourceItems = legacyUnmatchedSourceItems.map((i) => ({ ...i }));
   data.settings = { ...legacySettings };
   data.metricsSnapshot = { ...legacyMetricsSnapshot };
-  data.licenseStatus = { ...legacyLicenseStatus };
   data.transcriptJobs = legacyTranscriptJobs.map((j) => ({ ...j }));
   data.transcriptSegments = legacyTranscriptSegments.map((s) => ({ ...s }));
   data.watchlists = legacyWatchlists.map((w) => ({ ...w }));
@@ -588,8 +582,6 @@ export function buildScenario(spec: ScenarioName | ScenarioSpec): ScenarioData {
         segmentsPerTranscript: 4,
         deepCompanies: 8,
       });
-      // Rich exercises varied license kinds beyond the default-valid path.
-      data.licenseStatus = makeLicenseStatus("valid");
       break;
   }
 

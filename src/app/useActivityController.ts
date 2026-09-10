@@ -109,7 +109,7 @@ function useCoalescedResource<T>(
   return run;
 }
 
-export function useActivityController({ enabled }: { enabled: boolean }): ActivityController {
+export function useActivityController(): ActivityController {
   const [summary, setSummary] = useState<ActivitySummary>(EMPTY_SUMMARY);
   const [view, setView] = useState<ActivityView | null>(null);
   const [loading, setLoading] = useState(false);
@@ -118,7 +118,7 @@ export function useActivityController({ enabled }: { enabled: boolean }): Activi
   const [open, setOpen] = useState(false);
   const hydratedRef = useRef(false);
 
-  const refreshSummary = useCoalescedResource(enabled, getActivitySummary, (result) => {
+  const refreshSummary = useCoalescedResource(true, getActivitySummary, (result) => {
     if (result.error === null) {
       setSummary(result.value);
       return;
@@ -127,10 +127,10 @@ export function useActivityController({ enabled }: { enabled: boolean }): Activi
     setError(result.error);
   });
 
-  // Gated by `enabled && open` (sol R1 #11) — closing the panel (or
-  // disabling the controller) mid-flight must invalidate the in-flight
-  // response's generation, not just stop future polling.
-  const refreshView = useCoalescedResource(enabled && open, listActivity, (result) => {
+  // Gated by `open` (sol R1 #11) — closing the panel mid-flight must
+  // invalidate the in-flight response's generation, not just stop future
+  // polling.
+  const refreshView = useCoalescedResource(open, listActivity, (result) => {
     setLoading(false);
     if (result.error === null) {
       setView(result.value);
@@ -154,14 +154,14 @@ export function useActivityController({ enabled }: { enabled: boolean }): Activi
   // close/unmount, never stacking (the coalescing above already prevents an
   // overlapping request; this only stops issuing NEW ticks).
   useEffect(() => {
-    if (!open || !enabled) return undefined;
+    if (!open) return undefined;
     refreshViewWithLoading();
     const intervalId = window.setInterval(refreshViewWithLoading, VIEW_POLL_MS);
     return () => {
       window.clearInterval(intervalId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshViewWithLoading's identity is stable (see useCoalescedResource); re-running this effect on every render would restart the poll interval
-  }, [open, enabled]);
+  }, [open]);
 
   return {
     summary,

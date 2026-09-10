@@ -18,17 +18,17 @@ import { appShortcutReferenceItems } from "../../app/shortcuts";
 // `data-action-kind` is `"unclassified"` and several labels are pre-F4c
 // (`Stdio adapter` instead of `Claude Code (terminal)`, etc.).
 //
-// The ten Subnav tab buttons (Appearance/Sources/…/License, unchanged labels
+// The nine Subnav tab buttons (Appearance/Sources/…/MCP, unchanged labels
 // per dec. 5, `kind="control"` per s1-guardrails item 4) render on EVERY
 // state regardless of which tab is active — `SettingsScreen.tsx:141-147`
-// (`Subnav`) always renders all ten; only the section select's `<select>`
+// (`Subnav`) always renders all nine; only the section select's `<select>`
 // (not a button) hides at wider tiers.
 //
 // ASSUMPTIONS not settled verbatim by the plan (S4 owns the final call):
-// (a) which tab(s) are "the token/license composers" carrying the single
-// primary at rest — read as Credentials (the Gemini API key save), MCP (the
-// access-token Generate — NOT the acquisition-token Generate, since a screen
-// carries one primary), and License (Save license); the other seven tabs
+// (a) which tab(s) are "the token composers" carrying the single
+// primary at rest — read as Credentials (the Gemini API key save) and MCP
+// (the access-token Generate — NOT the acquisition-token Generate, since a
+// screen carries one primary); the other tabs
 // assert `expectSinglePrimary(region, 0)`. (b) `kind` for controls the plan
 // doesn't name explicitly: the four DB/Queue/MCP "Reset…" buttons and the
 // per-shortcut "Reset" button → `control` (no dictionary verb fits a
@@ -67,7 +67,6 @@ const TAB_LABELS = {
     logs: "Logs",
     database: "Data storage",
     mcp: "MCP server",
-    license: "License",
   },
   pl: {
     appearance: "Wygląd",
@@ -79,7 +78,6 @@ const TAB_LABELS = {
     logs: "Logi",
     database: "Przechowywanie danych",
     mcp: "Serwer MCP",
-    license: "Licencja",
   },
 } as const;
 
@@ -94,8 +92,6 @@ const LABELS = {
     generateAcquisitionToken: "Generate report-data token",
     copyHttp: "Copy — Claude Code (HTTP)",
     copyTerminal: "Copy — Bridge command",
-    saveLicense: "Save license",
-    clearLicense: "Clear license",
     export: "Export",
     import: "Import",
     reset: "Reset",
@@ -113,8 +109,6 @@ const LABELS = {
     generateAcquisitionToken: "Wygeneruj token do danych raportów",
     copyHttp: "Kopiuj — Claude Code (HTTP)",
     copyTerminal: "Kopiuj — Polecenie mostka",
-    saveLicense: "Zapisz licencję",
-    clearLicense: "Wyczyść licencję",
     export: "Eksport",
     import: "Import",
     reset: "Resetuj",
@@ -299,25 +293,6 @@ describe("Settings action inventory (F4c contract § Settings, plan dec. 5)", ()
       expectSinglePrimary(region, 1);
       const primary = region.querySelector('[data-ux-primary-action="true"]');
       expect(primary).toHaveTextContent(t.generateToken);
-    },
-  );
-
-  it.each(LOCALES)(
-    "License tab: Save license is the primary composer at rest (%s)",
-    async (locale) => {
-      const t = LABELS[locale];
-      const region = await openSettingsTab(locale, "license");
-      expect(collectActionInventory(region, locale)).toEqual(
-        sorted([
-          ...tabNavInventory(locale),
-          { name: t.saveLicense, kind: "save" },
-          { name: t.clearLicense, kind: "remove" },
-        ]),
-      );
-      expectPrimaryMarkerMatchesVariant(region);
-      expectSinglePrimary(region, 1);
-      const primary = region.querySelector('[data-ux-primary-action="true"]');
-      expect(primary).toHaveTextContent(t.saveLicense);
     },
   );
 

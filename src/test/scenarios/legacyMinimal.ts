@@ -2,7 +2,7 @@
 //
 // The `minimal` scenario overrides a handful of collections with this exact data
 // so the pre-existing Vitest screen tests — which assert against specific source
-// adapters, registry rows, transcripts, settings, and license metadata — stay
+// adapters, registry rows, transcripts, and settings — stay
 // stable through the mock-layer unification. New entity types (financials, KPIs,
 // frameworks, …) come from the generic builders so `minimal` still contains one
 // of every object. IDs follow the established semantic `*_sample_*` style.
@@ -13,7 +13,6 @@ import type {
   CompanyRegistryEntry,
   CredentialStatus,
   FeedItem,
-  LicenseStatus,
   LocalMetricsSnapshot,
   NotebookEntry,
   SourceAdapter,
@@ -703,41 +702,6 @@ export const legacyMetricsSnapshot: LocalMetricsSnapshot = {
       collectedAt: "2026-06-04T10:00:00.000Z",
     },
   ],
-};
-
-export const legacyLicenseStatus: LicenseStatus = {
-  status: "valid",
-  canUseApp: true,
-  reason: null,
-  license: {
-    licenseId: "lic_friend_test",
-    holder: "Friend Tester",
-    channel: "friend_test",
-    edition: "friend",
-    features: ["core"],
-    issuedAt: "2026-06-01T00:00:00Z",
-    expiresAt: "2027-01-01T00:00:00Z",
-    appVersionRange: "*",
-    keyId: "owner_friend_test_2026_06",
-  },
-  checkedAt: "2026-06-04T10:00:00Z",
-};
-
-export const legacyMissingLicenseStatus: LicenseStatus = {
-  status: "missing",
-  canUseApp: true,
-  reason:
-    "Core features are available without a license. Add a license only for gated entitlements.",
-  license: null,
-  checkedAt: "2026-06-04T10:00:00Z",
-};
-
-export const legacyInvalidLicenseStatus: LicenseStatus = {
-  status: "invalid",
-  canUseApp: true,
-  reason: "This license key could not be verified.",
-  license: null,
-  checkedAt: "2026-06-04T10:00:00Z",
 };
 
 export const legacyCompanyEvents: CompanyEvent[] = [

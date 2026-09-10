@@ -1261,7 +1261,7 @@ Rules:
 - Retention trims diagnostic events to the latest 1,000 events or 7 days, whichever trims first.
 - `module`, `stage`, and `severity` use stable contract values so modules can adopt the framework without schema changes.
 - `metadata_json` stores small structured JSON after redaction.
-- Diagnostic storage must not store API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default.
+- Diagnostic storage must not store API keys, full prompts, full source bodies, full transcript text, raw provider responses, or private signing material by default.
 - Diagnostic events are not runtime logs, metrics, traces, or user-facing status records.
 - Clearing diagnostics deletes diagnostic events but must not change user data, settings, source state, jobs, AI analysis results, notes, or transcripts.
 
@@ -1321,34 +1321,7 @@ Rules:
 
 ### Entitlements
 
-The local entitlement module stores accepted entitlement evidence through separate local stores:
-
-- Raw entitlement material: OS keychain.
-- Derived non-secret status/metadata: local `license_metadata`.
-
-Recommended `license_metadata` fields:
-
-- `id`: singleton row, currently `1`
-- `status`
-- `reason`
-- `license_id`
-- `holder`
-- `channel`
-- `edition`
-- `features_json`
-- `issued_at`
-- `expires_at`
-- `app_version_range`
-- `key_id`
-- `checked_at`
-- `updated_at`
-
-Rules:
-
-- `license_metadata` must never store the full entitlement token, private signing material, or private key material.
-- Clearing the license deletes the keychain token and removes derived metadata.
-- Invalid replacement attempts do not overwrite an existing valid keychain token.
-- Future entitlement policies may add derived metadata fields through migrations, but raw tokens and private signing material must remain outside SQLite.
+Retired ([ADR 0110](adr/0110-retire-local-entitlement-module.md), #462). `license_metadata` remains as an empty legacy table (migrations are append-only; migration `0154` deleted its rows) with no reader; raw entitlement material never lived in SQLite.
 
 ## Origin Model
 

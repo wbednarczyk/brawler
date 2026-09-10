@@ -17,7 +17,7 @@
 - [0014](0014-portal-analiz-authenticated-source-policy.md) — Portal Analiz Authenticated Source Policy — Accepted
 - [0015](0015-developer-mode-local-observability.md) — Developer Mode And Local Observability — Accepted
 - [0016](0016-provider-neutral-ai-analysis-framework.md) — Provider-Neutral AI Analysis Framework — Accepted
-- [0017](0017-license-gate.md) — Local Entitlement Module — Accepted
+- [0017](0017-license-gate.md) — Local Entitlement Module — **Superseded (2026-09-10) by ADR 0110**
 - [0018](0018-import-export-boundaries.md) — Import And Export Boundaries — Accepted for M20 implementation
 - [0019](0019-portable-windows-executable-candidate.md) — Portable Windows Executable Candidate — Accepted for M21 implementation
 - [0020](0020-sources-visibility-and-directory-boundaries.md) — Sources Visibility And Company Directory Boundaries — Accepted
@@ -109,3 +109,4 @@
 - [0107](0107-company-view-paradigm.md) — Company View Paradigm — Engine-Free Main Surface — Accepted (2026-08-25, owner approval of the F3a experience contract after
 - [0108](0108-retire-docking-engine.md) — Retire the Docking Engine — No dockview, No Cockpit, No Named Views — Accepted (2026-08-28)
 - [0109](0109-activity-center-occurrence-ledger.md) — Activity Center — Occurrence Ledger Over Existing Background Work, Topbar Placement — Accepted (2026-09-03, owner approval of the F3d plan; epic #410 / #133)
+- [0110](0110-retire-local-entitlement-module.md) — Retire the Local Entitlement Module — Accepted (2026-09-07, owner decision at the architecture audit, N02; implemented

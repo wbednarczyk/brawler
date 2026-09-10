@@ -65,7 +65,6 @@ mod kpi_ingest_drafts;
 mod kpi_ingest_profiles;
 mod kpi_ingest_runs;
 mod kpi_ingest_staging;
-mod licensing;
 mod management_claims;
 mod management_holdings;
 mod market_data;
@@ -175,8 +174,6 @@ pub use kpi_extraction::{
     KpiExtractionJob, KpiExtractionProposal, NewKpiExtractionJob, NewKpiProposal,
     ResolvedKpiDefinition, StructuredFactCommit, StructuredFactInput,
 };
-pub use licensing::LicensingStore;
-pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
 pub use management_claims::ManagementClaimStore;
 pub use management_claims::{
     ClaimToVerify, ClaimsToVerify, ManagementClaim, ManagementClaimUpdate, NewManagementClaim,
@@ -592,11 +589,6 @@ impl AppState {
     /// kpi_extraction domain store (Architecture v2 / ADR 0050).
     pub fn kpi_extraction(&self) -> kpi_extraction::KpiExtractionStore {
         kpi_extraction::KpiExtractionStore::new(self.db.clone())
-    }
-
-    /// licensing domain store (Architecture v2 / ADR 0050).
-    pub fn licensing(&self) -> licensing::LicensingStore {
-        licensing::LicensingStore::new(self.db.clone())
     }
 
     /// management_claims domain store (Architecture v2 / ADR 0050).
@@ -1591,21 +1583,6 @@ impl AppState {
 
     pub fn get_similarity_strategy(&self) -> StorageResult<String> {
         self.settings().get_similarity_strategy()
-    }
-
-    pub fn get_license_metadata(&self) -> StorageResult<Option<StoredLicenseMetadata>> {
-        self.licensing().get_license_metadata()
-    }
-
-    pub fn upsert_license_metadata(
-        &self,
-        input: LicenseMetadataUpdate,
-    ) -> StorageResult<StoredLicenseMetadata> {
-        self.licensing().upsert_license_metadata(input)
-    }
-
-    pub fn clear_license_metadata(&self) -> StorageResult<()> {
-        self.licensing().clear_license_metadata()
     }
 
     pub fn record_diagnostic_event(

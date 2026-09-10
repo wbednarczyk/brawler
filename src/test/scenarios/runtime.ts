@@ -18,11 +18,6 @@ import {
   makeActivityView,
 } from "./entities";
 import {
-  legacyInvalidLicenseStatus,
-  legacyLicenseStatus,
-  legacyMissingLicenseStatus,
-} from "./legacyMinimal";
-import {
   buildScenario,
   type ScenarioData,
   type ScenarioName,
@@ -775,7 +770,6 @@ function buildHandlers(): Record<string, Handler> {
     health: () => ({ status: "ok", version: packageJson.version }),
     database_status: (d) => d.databaseStatus,
     get_settings: (d) => d.settings,
-    get_license_status: (d) => d.licenseStatus,
     get_local_metrics_snapshot: (d) => d.metricsSnapshot,
     get_diagnostic_summary: (d) => d.diagnosticSummary,
     list_diagnostic_events: (d) => d.diagnosticEvents,
@@ -4336,18 +4330,6 @@ function buildHandlers(): Record<string, Handler> {
       return { eventsDeleted };
     },
 
-    // --- License / credentials ---
-    submit_license_key: (d, a) => {
-      const licenseKey = str(unwrap(a).licenseKey) ?? "";
-      d.licenseStatus = licenseKey.includes("valid-friend-license")
-        ? { ...legacyLicenseStatus }
-        : { ...legacyInvalidLicenseStatus };
-      return d.licenseStatus;
-    },
-    clear_license_key: (d) => {
-      d.licenseStatus = { ...legacyMissingLicenseStatus };
-      return d.licenseStatus;
-    },
     // --- MCP server token (ADR 0078 M1). Mirrors the Rust commands: the
     // plaintext token is returned exactly once (regenerate); status/revoke
     // report only configuration state. Deterministic pseudo-token: the shared
@@ -4560,7 +4542,6 @@ HANDLERS.search = (d, a) => runSearch(d, str(unwrap(a).query) ?? "");
 export const READ_COMMANDS: readonly string[] = Object.freeze([
   "database_status",
   "get_settings",
-  "get_license_status",
   "get_local_metrics_snapshot",
   "get_diagnostic_summary",
   "list_diagnostic_events",

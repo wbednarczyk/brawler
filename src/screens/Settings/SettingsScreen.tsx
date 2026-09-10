@@ -3,7 +3,6 @@ import {
   Captions,
   Database,
   Download,
-  FileKey2,
   KeyRound,
   Keyboard,
   Logs,
@@ -17,7 +16,6 @@ import { CredentialSettings } from "./CredentialSettings";
 import { DatabaseSettings } from "./DatabaseSettings";
 import { QueueSettings } from "./QueueSettings";
 import { ImportExportSettings } from "./ImportExportSettings";
-import { LicenseSettings } from "./LicenseSettings";
 import { LogSettings } from "./LogSettings";
 import { McpSettings } from "./McpSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
@@ -40,8 +38,7 @@ type SettingsTab =
   | "shortcuts"
   | "logs"
   | "database"
-  | "mcp"
-  | "license";
+  | "mcp";
 
 const settingsTabs = [
   { id: "appearance", icon: Palette, labelKey: "settings.appearance.title" },
@@ -57,7 +54,6 @@ const settingsTabs = [
   { id: "logs", icon: Logs, labelText: "Logs" },
   { id: "database", icon: Database, labelText: "Data storage" },
   { id: "mcp", icon: Plug, labelText: "MCP server" },
-  { id: "license", icon: FileKey2, labelText: "License" },
 ] satisfies Array<{
   id: SettingsTab;
   icon: LucideIcon;
@@ -72,10 +68,6 @@ export function SettingsScreen() {
     locale,
     settings,
     settingsError,
-    licenseStatus,
-    licenseError,
-    licenseInFlight,
-    licenseKeyDraft,
     geminiCredentialStatus,
     geminiCredentialError,
     geminiCredentialInFlight,
@@ -103,9 +95,6 @@ export function SettingsScreen() {
     onSourcesWorkersChange,
     onAutopilotWorkersChange,
     onResetQueueSettings,
-    onClearLicenseKey,
-    onLicenseKeyDraftChange,
-    onSubmitLicenseKey,
     onGeminiApiKeyDraftChange,
     onSaveGeminiApiKey,
     onClearGeminiApiKey,
@@ -254,17 +243,6 @@ export function SettingsScreen() {
               onMcpPortChange={onMcpPortChange}
               onMcpWritesEnabledChange={onMcpWritesEnabledChange}
           onKpiAcquisitionEnabledChange={onKpiAcquisitionEnabledChange}
-            />
-          ) : null}
-          {activeSettingsTab === "license" ? (
-            <LicenseSettings
-              licenseError={licenseError}
-              licenseInFlight={licenseInFlight}
-              licenseKeyDraft={licenseKeyDraft}
-              licenseStatus={licenseStatus}
-              onClearLicenseKey={onClearLicenseKey}
-              onLicenseKeyDraftChange={onLicenseKeyDraftChange}
-              onSubmitLicenseKey={onSubmitLicenseKey}
             />
           ) : null}
         </div>

@@ -10,7 +10,6 @@ pub mod fx;
 pub mod interpretation;
 pub mod ir_resolution;
 pub mod jobs;
-pub mod licensing;
 pub mod logging;
 pub mod mcp;
 pub mod observability;
@@ -533,9 +532,6 @@ pub fn run() {
             commands::logs::list_log_entries,
             commands::logs::open_logs_directory,
             commands::metrics::get_local_metrics_snapshot,
-            commands::licensing::get_license_status,
-            commands::licensing::submit_license_key,
-            commands::licensing::clear_license_key,
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::disable_developer_mode,

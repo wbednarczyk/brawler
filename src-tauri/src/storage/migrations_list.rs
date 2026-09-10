@@ -777,4 +777,9 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         name: "job_runs",
         sql: include_str!("../../migrations/0153_job_runs.sql"),
     },
+    Migration {
+        version: 154,
+        name: "retire_license_metadata",
+        sql: include_str!("../../migrations/0154_retire_license_metadata.sql"),
+    },
 ];

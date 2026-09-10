@@ -339,7 +339,7 @@ Purpose: inspect local module behavior while Developer mode is active without ex
 
 Main regions:
 
-- module filter: AI analysis, external AI, sources, scheduler, credentials, storage, transcripts, shortcuts, locale, licensing, packaging, and future modules
+- module filter: AI analysis, external AI, sources, scheduler, credentials, storage, transcripts, shortcuts, locale, packaging, and future modules
 - severity filter: debug, info, warning, error
 - timeline list: newest meaningful diagnostic events first
 - event detail pane or inline expansion: redacted metadata, scope/entity ID, stage, timestamp, severity, and message
@@ -380,21 +380,11 @@ Sections:
 - Backups (in Data storage, moved from Developer Diagnostics 2026-09-08, #451): last-backup time and count, `Utwórz kopię`, the backup list with a human title first (`Kopia · <date>` / `Kopia sprzed aktualizacji · <date>`, file name as secondary metadata) and `Przywróć` behind an inline confirmation that says the restore applies on relaunch ([ADR 0032](adr/0032-search-and-backup-boundaries.md) dec. 10 amendment)
 - Import and Export: export/import research data, export/import safe preferences, preview import changes before applying them
 - MCP server ([ADR 0078](adr/0078-mcp-external-surface.md)): enable toggle with a live Active/Stopped status pill (refusal reasons — missing token, port in use — surface inline), listen port (commit-on-blur, clamped 1024–65535, applies on next start), access-token lifecycle (generate with a one-time copyable reveal, revoke behind an inline confirm, configured/storage status), and copyable example connection snippets for Claude Code (HTTP) and the stdio adapter
-- License: optional local entitlement status, safe metadata, replace, and clear controls
 - Privacy: local data location, provider data disclosure
-- About: app name, app version, license status
 
 ## License Entitlements
 
-Purpose: show and manage optional local license entitlements without blocking normal open-core app use.
-
-Behavior:
-
-- Normal app navigation remains available without a license key.
-- Settings accepts a pasted license key and shows recoverable missing, malformed, invalid, expired, unsupported-version, unsupported-channel, and storage-error states.
-- Successful activation can enable current or future gated entitlements.
-- Normal Settings/About license controls remain available for inspection, replacement, and clearing.
-- The UI must not imply cloud activation, billing, account sync, telemetry, or investment advice.
+Retired ([ADR 0110](adr/0110-retire-local-entitlement-module.md), #462): no license tab, status or key entry exists; the app never blocks on entitlement state.
 
 ## Search
 

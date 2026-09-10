@@ -22,7 +22,7 @@ Related: [ADR 0016](0016-provider-neutral-ai-analysis-framework.md) (provider-ne
    - **Interpretative capabilities** — `Classifier`, `SimilarityProvider`, `Matcher`, `SemanticSearch` capability contracts with a static baseline adapter and optional embedding adapter ([ADR 0035](0035-two-layer-ai-and-local-interpretative-layer.md)). This is the project's reference implementation of the metapattern.
    - **Credentials** — a reusable secret-kind boundary, not provider-specific storage.
    - **Search, backups/restore, the connection pool** ([ADR 0032](0032-search-and-backup-boundaries.md)) and **import/export format adapters** ([ADR 0018](0018-import-export-boundaries.md)) — requested through typed boundaries, never by touching files or internals directly.
-   - **Licensing** — parser/verifier/entitlement-policy adapters ([ADR 0017](0017-license-gate.md)).
+   - **Licensing** — retired ([ADR 0110](0110-retire-local-entitlement-module.md)); no entitlement adapters remain.
    - **The UI ↔ Rust seam** — the React UI is a driving adapter that reaches the domain only through typed Tauri commands and events; it never holds secrets, SQL, or filesystem access.
 
 2. **Inside the core, organize by domain (vertical slice), then by layer.** The metapattern does not prescribe the core's internal structure; Brawler fills that gap with package-by-feature (`companies/`, `feed/`, `notebooks/`, …) as defined in [modularization-design.md](../modularization-design.md), not with onion-style concentric layers.

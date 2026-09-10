@@ -8,8 +8,6 @@ import { App } from "../app/App";
 import type { Section } from "../app/navigation";
 import {
   currentWeekTestDate,
-  legacyInvalidLicenseStatus,
-  legacyMissingLicenseStatus,
   legacyNotebookEntry,
 } from "./scenarios/legacyMinimal";
 import { createMockRuntime } from "./scenarios/runtime";
@@ -74,7 +72,6 @@ export interface AppTestState {
   managementClaimsResponse: Data["managementClaims"];
   settingsResponse: Data["settings"];
   localMetricsSnapshotResponse: Data["metricsSnapshot"];
-  licenseStatusResponse: Data["licenseStatus"];
   sourceAdaptersResponse: Data["sourceAdapters"];
   backupStatusResponse: Data["backupStatus"];
   autopilotRunsResponse: Data["autopilotRuns"];
@@ -120,7 +117,6 @@ export const appTestState = Object.defineProperties(
     managementClaimsResponse: field("managementClaims"),
     settingsResponse: field("settings"),
     localMetricsSnapshotResponse: field("metricsSnapshot"),
-    licenseStatusResponse: field("licenseStatus"),
     sourceAdaptersResponse: field("sourceAdapters"),
     backupStatusResponse: field("backupStatus"),
     autopilotRunsResponse: field("autopilotRuns"),
@@ -212,8 +208,6 @@ export const initialGeminiCredentialStatus =
   SEED.credentialStatuses.find((c) => c.providerId === "provider_gemini") ?? SEED.credentialStatuses[0];
 export const initialNotebookEntry = legacyNotebookEntry;
 export const initialTranscriptJobs = SEED.transcriptJobs;
-export const invalidLicenseStatus = legacyInvalidLicenseStatus;
-export const missingLicenseStatus = legacyMissingLicenseStatus;
 
 // Re-queries by role/name on every poll (the RTL equivalent of a Playwright
 // locator) so it survives a control that relocates in the DOM while data
@@ -232,18 +226,13 @@ export async function findEnabledButton(name: string | RegExp): Promise<HTMLElem
 // directly in App.test. Pass `section` to land on a specific screen (e.g. one
 // the sidebar spine reaches but a focused test wants to bypass).
 export function renderApp(options?: { section?: Section }) {
-  return render(
-    <App
-      initialLicenseStatus={appTestState.licenseStatusResponse as never}
-      initialSection={options?.section ?? "Inbox"}
-    />,
-  );
+  return render(<App initialSection={options?.section ?? "Inbox"} />);
 }
 
 // Renders the app with NO section override, so the production default shell
 // (Today/Pulse) decides the landing screen. Use this to assert the default.
 export function renderAppDefaultShell() {
-  return render(<App initialLicenseStatus={appTestState.licenseStatusResponse as never} />);
+  return render(<App />);
 }
 
 // Tauri module mocks live in src/test/setup.ts (a configured setupFile); vitest

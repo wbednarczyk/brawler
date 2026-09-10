@@ -37,7 +37,6 @@ import { useActivityController } from "./useActivityController";
 import { AlertsScreenHost } from "./useAlertsScreenWiring";
 import { useAppViewModel } from "./useAppViewModel";
 import { useNotebookController } from "./useNotebookController";
-import { useLicenseController } from "./useLicenseController";
 import { useResearchController } from "./useResearchController";
 import { useSettingsController } from "./useSettingsController";
 import { useSourceDisplayController } from "./useSourceDisplayController";
@@ -128,7 +127,6 @@ import type {
   DatabaseStatus,
   FeedItem,
   HealthResponse,
-  LicenseStatus,
   SourceAdapter,
   SourceIngestionResult,
   Theme,
@@ -142,12 +140,10 @@ import type { ResearchEvidenceItem } from "../api/researchTypes";
 import type { SearchMatch } from "../api/search";
 
 type AppStateRootProps = {
-  initialLicenseStatus?: LicenseStatus | null;
   initialSection?: Section;
 };
 
 export function AppStateRoot({
-  initialLicenseStatus = null,
   initialSection = "Today",
 }: AppStateRootProps) {
   const contentGridRef = useRef<HTMLElement | null>(null);
@@ -312,12 +308,6 @@ export function AppStateRoot({
   >(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(
-    initialLicenseStatus,
-  );
-  const [licenseError, setLicenseError] = useState<string | null>(null);
-  const [licenseKeyDraft, setLicenseKeyDraft] = useState("");
-  const [licenseInFlight, setLicenseInFlight] = useState(false);
   const [geminiCredentialStatus, setGeminiCredentialStatus] =
     useState<CredentialStatus | null>(null);
   const [geminiCredentialError, setGeminiCredentialError] = useState<
@@ -471,13 +461,12 @@ export function AppStateRoot({
     companyEventDueLabel(eventDate, locale);
   const shortcutBindings = settings?.shortcutBindings ?? {};
   const shortcutReferences = resolveAppShortcutReferenceItems(shortcutBindings);
-  const licenseCanUseApp = licenseStatus?.canUseApp !== false;
 
   // THE attention state (ADR 0097 dec. 6): Today's stream, the Alerts fired
   // list, and the sidebar Today badge all consume this one controller.
-  const attention = useAttentionController(licenseCanUseApp);
+  const attention = useAttentionController();
   // THE Activity center state (ADR 0109 dec. 6, #133) — AppShell renders it.
-  const activity = useActivityController({ enabled: licenseCanUseApp });
+  const activity = useActivityController();
 
   const {
     researchMode,
@@ -607,15 +596,6 @@ export function AppStateRoot({
     setWatchlists,
     setWatchlistsError,
   });
-
-  const { clearLicenseKey, refreshLicenseStatus, submitLicenseKey } =
-    useLicenseController({
-      licenseKeyDraft,
-      setLicenseError,
-      setLicenseInFlight,
-      setLicenseKeyDraft,
-      setLicenseStatus,
-    });
 
   const { refreshCompletionCount, bumpRefreshCompletionCount } = useRefreshCompletionSignal();
 
@@ -1052,14 +1032,12 @@ export function AppStateRoot({
     refreshSignals,
     refreshGeminiCredentialStatus,
     refreshHealth,
-    refreshLicenseStatus,
     refreshSettings,
     refreshSourceAdapters,
     refreshTranscriptJobs,
     refreshWatchlistMemberships,
     refreshWatchlists,
     selectedFeedItemId,
-    licenseCanUseApp,
     setNextRegistryRefreshAt,
     setNextSourceRefreshAtByAdapterId,
     setSelectedFeedItemId,
@@ -1804,10 +1782,6 @@ export function AppStateRoot({
                     locale,
                     settings,
                     settingsError,
-                    licenseError,
-                    licenseInFlight,
-                    licenseKeyDraft,
-                    licenseStatus,
                     geminiCredentialStatus,
                     geminiCredentialError,
                     geminiCredentialInFlight,
@@ -1837,9 +1811,6 @@ export function AppStateRoot({
                     onSourcesWorkersChange: updateSourcesWorkers,
                     onAutopilotWorkersChange: updateAutopilotWorkers,
                     onResetQueueSettings: resetQueueSettings,
-                    onClearLicenseKey: clearLicenseKey,
-                    onLicenseKeyDraftChange: setLicenseKeyDraft,
-                    onSubmitLicenseKey: submitLicenseKey,
                     onGeminiApiKeyDraftChange: setGeminiApiKeyDraft,
                     onSaveGeminiApiKey: saveGeminiApiKey,
                     onClearGeminiApiKey: clearGeminiApiKey,

@@ -24,7 +24,7 @@
     "src-tauri/src/storage/kpi_extraction.rs": 3273,
     "src-tauri/src/storage/kpi_ingest_drafts.rs": 1149,
     "src-tauri/src/storage/kpi_ingest_runs.rs": 6017,
-    "src-tauri/src/storage/mod.rs": 1926,
+    "src-tauri/src/storage/mod.rs": 1903,
     "src-tauri/src/storage/ownership.rs": 1748,
     "src-tauri/src/storage/quality_frameworks.rs": 1896,
     "src-tauri/src/storage/red_flags.rs": 1002,
@@ -32,6 +32,6 @@
     "src-tauri/src/storage/research.rs": 1098,
     "src-tauri/src/storage/signals.rs": 1049,
     "src-tauri/src/storage/sources.rs": 1541,
-    "src/app/AppStateRoot.tsx": 1865
+    "src/app/AppStateRoot.tsx": 1836
   }
 }

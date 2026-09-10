@@ -35,7 +35,7 @@ describe("useActivityController — summary", () => {
     mockedSummary().mockResolvedValue({ active: 3, queued: 1, lastFinishedAt: "2026-09-04T12:01:00Z" });
     vi.mocked(sourcesApi.getSchedulerStatus).mockRejectedValue(new Error("scheduler status down"));
 
-    const { result } = renderHook(() => useActivityController({ enabled: true }));
+    const { result } = renderHook(() => useActivityController());
 
     // Simulate the app-lifecycle tick calling BOTH siblings, one failing.
     void sourcesApi.getSchedulerStatus().catch(() => {});
@@ -49,7 +49,7 @@ describe("useActivityController — summary", () => {
 
   it("keeps the last-known-good summary and sets error on a failed refresh", async () => {
     mockedSummary().mockResolvedValueOnce({ active: 2, queued: 0, lastFinishedAt: null });
-    const { result } = renderHook(() => useActivityController({ enabled: true }));
+    const { result } = renderHook(() => useActivityController());
     act(() => {
       result.current.refreshSummary();
     });
@@ -79,7 +79,7 @@ describe("useActivityController — panel view polling", () => {
     });
     mockedView().mockReturnValueOnce(first).mockResolvedValue(EMPTY_VIEW);
 
-    const { result } = renderHook(() => useActivityController({ enabled: true }));
+    const { result } = renderHook(() => useActivityController());
     act(() => {
       result.current.setOpen(true);
     });
@@ -107,7 +107,7 @@ describe("useActivityController — panel view polling", () => {
       }),
     );
 
-    const { result, unmount } = renderHook(() => useActivityController({ enabled: true }));
+    const { result, unmount } = renderHook(() => useActivityController());
     act(() => {
       result.current.setOpen(true);
     });
@@ -128,7 +128,7 @@ describe("useActivityController — panel view polling", () => {
 
   it("closing the panel clears the poll timer (no further ticks while closed)", async () => {
     mockedView().mockResolvedValue(EMPTY_VIEW);
-    const { result } = renderHook(() => useActivityController({ enabled: true }));
+    const { result } = renderHook(() => useActivityController());
 
     await act(async () => {
       result.current.setOpen(true);
@@ -153,7 +153,7 @@ describe("useActivityController — panel view polling", () => {
       }),
     );
 
-    const { result } = renderHook(() => useActivityController({ enabled: true }));
+    const { result } = renderHook(() => useActivityController());
     act(() => {
       result.current.setOpen(true);
     });
@@ -187,7 +187,7 @@ describe("useActivityController — panel view polling", () => {
         }),
       );
 
-    const { result } = renderHook(() => useActivityController({ enabled: true }));
+    const { result } = renderHook(() => useActivityController());
     act(() => {
       result.current.setOpen(true);
     });
@@ -221,36 +221,9 @@ describe("useActivityController — panel view polling", () => {
     expect(result.current.view?.generatedAt).toBe("fresh");
   });
 
-  it("disabling the controller mid-flight drops the pending response (sol R1 #11)", async () => {
-    let resolvePending: (value: ActivityView) => void = () => {};
-    mockedView().mockReturnValue(
-      new Promise((resolve) => {
-        resolvePending = resolve;
-      }),
-    );
-
-    const { result, rerender } = renderHook(({ enabled }) => useActivityController({ enabled }), {
-      initialProps: { enabled: true },
-    });
-    act(() => {
-      result.current.setOpen(true);
-    });
-    expect(mockedView()).toHaveBeenCalledTimes(1);
-
-    rerender({ enabled: false });
-
-    await act(async () => {
-      resolvePending({ ...EMPTY_VIEW, generatedAt: "dropped" });
-      await vi.advanceTimersByTimeAsync(0);
-    });
-
-    expect(result.current.view).toBeNull();
-    expect(result.current.error).toBeNull();
-  });
-
   it("an error keeps the previous view and sets error", async () => {
     mockedView().mockResolvedValueOnce({ ...EMPTY_VIEW, generatedAt: "first" });
-    const { result } = renderHook(() => useActivityController({ enabled: true }));
+    const { result } = renderHook(() => useActivityController());
     await act(async () => {
       result.current.setOpen(true);
       await vi.advanceTimersByTimeAsync(0);

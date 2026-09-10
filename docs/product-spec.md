@@ -327,4 +327,4 @@ Brawler uses an open-core posture. The desktop core is open source under the Moz
 
 Detailed owner-only monetization strategy belongs in the private sibling repository when available locally. Public product docs should describe the posture at a high level without exposing speculative business plans.
 
-Entitlement mechanics (license status model, gated-state handling) are specified in [Contracts § Entitlements](contracts.md#entitlements); the AI/open-core boundary and named future paid areas are recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md).
+There is no entitlement module in the app ([ADR 0110](adr/0110-retire-local-entitlement-module.md)); the AI/open-core boundary and named future paid areas are recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md), and a future gated feature starts from a new ADR.
