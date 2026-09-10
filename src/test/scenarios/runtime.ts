@@ -32,6 +32,7 @@ import {
   createControlledAsync,
   type MockRuntimeControls,
 } from "./controlledAsync";
+import { isPeriodicReportFiling } from "./periodicFiling";
 import type { ResearchEvidenceInput } from "../../api/researchTypes";
 import type { OwnershipOverview } from "../../api/ownership";
 import type { CompanyContext } from "../../api/generated/CompanyContext";
@@ -1162,14 +1163,21 @@ function buildHandlers(): Record<string, Handler> {
 
       // Non-arrival: `periodic_report` events past their date with no
       // witnessing report and no `report_delay` flag yet (shares the
-      // deterministic flag-id shape `raise_flag`/`red_flags.rs` writes).
+      // deterministic flag-id shape `raise_flag`/`red_flags.rs` writes). The
+      // witness itself must be the PERIODIC filing the calendar event expects
+      // (#427) — an unrelated "Official report" (a current report, a
+      // preliminary estimate, a publication-date change) published after the
+      // due date must not falsely witness it, so the same classifier the
+      // real backend uses (`isPeriodicReportFiling`, ported from
+      // `periodic_filing_markers.json`) gates the match.
       for (const event of d.events) {
         if (event.eventType !== "periodic_report" || event.eventDate > today) continue;
         const witnessed = d.feedItems.some(
           (fi) =>
             fi.type === "Official report" &&
             fi.company === event.company &&
-            fi.publishedAt >= event.eventDate,
+            fi.publishedAt >= event.eventDate &&
+            isPeriodicReportFiling(fi.title, fi.bodyText ?? null),
         );
         if (witnessed) continue;
         const flagId = `rf:report_delay:${event.companyId}:${event.id}`;
@@ -1812,6 +1820,45 @@ function buildHandlers(): Record<string, Handler> {
       d.events = [...d.events, event];
       return event;
     },
+    // Corpus-only setup bridge (mock_fidelity.rs dispatch inserts the real
+    // feed row). Seeds an "Official report" feed item that may or may not
+    // witness a periodic-report event, for the Today non-arrival journey
+    // (issue #427, ADR 0083 §8). Not a registered tauri command — a fidelity
+    // seed step only. Id is deterministic from title+publishedAt (never a
+    // counter) so a repeated corpus replay is stable.
+    seed_official_report_for_fidelity: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const title = str(input.title) ?? "";
+      const bodyText = str(input.bodyText) ?? "";
+      const publishedAt = str(input.publishedAt) ?? SAMPLE_NOW;
+      const company = d.companies.find((c) => c.id === companyId);
+      const slug = `${title}-${publishedAt}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_");
+      const id = `feed_fidelity_${slug}`;
+      const item = {
+        id,
+        company: company?.qualifiedTicker ?? companyId,
+        type: "Official report",
+        presentationKind: "filing" as const,
+        source: "GPW ESPI/EBI",
+        time: publishedAt,
+        title,
+        unread: true,
+        saved: false,
+        sourceUrl: "https://example.test/fidelity-seed",
+        language: "pl",
+        publishedAt,
+        fetchedAt: publishedAt,
+        attribution: "GPW",
+        summary: title,
+        bodyText,
+        attachments: [],
+      };
+      d.feedItems = [item, ...d.feedItems];
+      return { id };
+    },
     list_company_signals: (d, a) => {
       const input = unwrap(a);
       const companyId = str(input.companyId);
@@ -2046,6 +2093,7 @@ function buildHandlers(): Record<string, Handler> {
           evidenceTitle: firedRun?.reportDocumentTitle ?? null,
           evidenceDetail: firedRun?.status ?? null,
           witnessUrl: null,
+          evidenceDate: null,
         };
         d.attentionEvents = [...d.attentionEvents, event];
         firstEvent ??= event;
@@ -2087,6 +2135,7 @@ function buildHandlers(): Record<string, Handler> {
         evidenceTitle: subject ?? error,
         evidenceDetail: kind,
         witnessUrl: null,
+        evidenceDate: null,
       };
       d.attentionEvents = [...d.attentionEvents, event];
       return event;

@@ -1109,7 +1109,7 @@ Classified `read`-tier in the MCP registry but deliberately **not exposed** as a
 
 `get_today_view(dayLimit)` returns `TodayView` — everything the Dziś v2 morning queue renders, composed in ONE read ([ADR 0106](adr/0106-screen-data-layer-posture.md) decision 3; F2, epic #410). Computed; async / `spawn_blocking`. `dayLimit` is clamped to `1..=7` server-side.
 
-- `items: TodayItem[]` — a **flat** tagged union (`kind`): `filing` (official feed row: `feedItemId`, `companyId`, `qualifiedTicker`, `title`, `publishedAt`, `read`, `presentationKind`) · `mediaItem` (one row per media feed item × matched company: `feedItemId`, `companyId`, `qualifiedTicker`, `title`, `publishedAt`, `read`, `sourceName`; an item matched to several companies yields one row per company; unmatched media is excluded — same scope the Inbox feed query uses; **day-clustering is a frontend display concern** over the user's LOCAL day, never done here) · `nonArrival` (`eventKey`, `eventDate`, `title` — a `periodic_report` calendar event past its date with no witnessing official report, **suppressed once the `report_delay` red flag exists** for it: the flag's attention event takes over, atomic handoff; an event emitted as `nonArrival` is deduped out of the `calendar` list) · `calendar` (upcoming events within the window) · `autopilotRun` (the existing `AutopilotRun` shape, boxed).
+- `items: TodayItem[]` — a **flat** tagged union (`kind`): `filing` (official feed row: `feedItemId`, `companyId`, `qualifiedTicker`, `title`, `publishedAt`, `read`, `presentationKind`) · `mediaItem` (one row per media feed item × matched company: `feedItemId`, `companyId`, `qualifiedTicker`, `title`, `publishedAt`, `read`, `sourceName`; an item matched to several companies yields one row per company; unmatched media is excluded — same scope the Inbox feed query uses; **day-clustering is a frontend display concern** over the user's LOCAL day, never done here) · `nonArrival` (`eventKey`, `eventDate`, `title` — a `periodic_report` calendar event past its date with no witnessing **periodic-report** filing (issue #427: a preliminary/estimated-results notice, publication-date change, or current-report correction never witnesses it — `crate::source_adapters::periodic_filing::is_periodic_report_filing`), **suppressed once the `report_delay` red flag exists** for it: the flag's attention event takes over, atomic handoff; an event emitted as `nonArrival` is deduped out of the `calendar` list) · `calendar` (upcoming events within the window) · `autopilotRun` (the existing `AutopilotRun` shape, boxed).
 - `toVerify: TodayClaim[]` — pending management claims across **all tracked companies** (bulk; replaces the old per-pinned-company fan-out), `{ claim, qualifiedTicker, bucket: due|overdue }`.
 - `deltaSummary` — counts of report/filing/media items newer than `previousVisitAt`.
 - `previousVisitAt: string | null` — read from the `todayLastVisitAt` settings KV row (tolerant `null`). The command never takes an anchor input: one source of truth.
@@ -1280,11 +1280,14 @@ Attention event (`AttentionEvent`, returned by the event commands):
   "severity": "notable",
   "evidenceTitle": "Skonsolidowany raport kwartalny Q2 2026",
   "evidenceDetail": "succeeded",
-  "witnessUrl": null
+  "witnessUrl": null,
+  "evidenceDate": null
 }
 ```
 
 `witnessUrl` (nullable, [ADR 0097](adr/0097-toasts-are-action-feedback-only.md) decision 8): for a `source_reconciliation` event, the missed report's own URL from the reconciliation ledger (`witness_url`), so the row's Review can open the report itself — witness items never enter the feed ([ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md)), so no feed navigation can reach it. `null` for every other evidence type or when the ledger row is gone (legacy rows fall back to the company Feed).
+
+`evidenceDate` (nullable, since issue #427): the calendar/signal date the evidence is about — `company_signals.signal_date` for a `company_signal` event (e.g. the `report_delay` flag's expected periodic-report date), `null` for every other evidence type or when the signal row is gone.
 
 `evidenceType` ∈ `company_signal` (ref = signal id) | `autopilot_run` (ref = run id) | `daily_quote` (ref = quote date) | `source_reconciliation` (ref = reconciliation-result id) | `job` (ref = `job_queue.id`).
 

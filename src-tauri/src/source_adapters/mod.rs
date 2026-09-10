@@ -1,5 +1,6 @@
 pub mod bankier_calendar;
 pub mod bankier_company;
+pub(crate) mod bankier_links;
 pub mod bankier_rss;
 pub mod biznesradar_fundamentals;
 pub mod biznesradar_ownership;
@@ -13,6 +14,7 @@ pub mod market_data_fetch;
 pub mod nbp_fx;
 pub mod newconnect_company_directory;
 pub(crate) mod parsing;
+pub(crate) mod periodic_filing;
 pub mod registry;
 pub mod yahoo_eod;
 

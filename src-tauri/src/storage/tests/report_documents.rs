@@ -1,4 +1,5 @@
 use super::*;
+use crate::storage::report_documents::FETCH_ERROR_LINK_INCOMPLETE;
 
 fn test_company(state: &AppState) -> Company {
     state
@@ -298,6 +299,7 @@ fn periodic_report_attachments_register_pending_for_full_fetch() {
         vec![BankierCompanyAttachment {
             label: "Raport XHTML".to_owned(),
             url: "https://bonnier.pl/report-q1.xhtml".to_owned(),
+            incomplete: false,
         }],
     )];
     state
@@ -337,6 +339,7 @@ fn non_periodic_attachments_register_metadata_only() {
         vec![BankierCompanyAttachment {
             label: "Załącznik".to_owned(),
             url: "https://bonnier.pl/insider-notice.pdf".to_owned(),
+            incomplete: false,
         }],
     )];
     items[0].body_text =
@@ -379,14 +382,17 @@ fn structured_xhtml_attachment_registers_pending_even_on_non_periodic_item() {
             BankierCompanyAttachment {
                 label: "Raport XHTML".to_owned(),
                 url: "https://bonnier.pl/static/att/emitent/2026-05/report.xhtml".to_owned(),
+                incomplete: false,
             },
             BankierCompanyAttachment {
                 label: "Raport PDF".to_owned(),
                 url: "https://bonnier.pl/static/att/emitent/2026-05/report.pdf".to_owned(),
+                incomplete: false,
             },
             BankierCompanyAttachment {
                 label: "Podpis".to_owned(),
                 url: "https://bonnier.pl/static/att/emitent/2026-05/report.xades".to_owned(),
+                incomplete: false,
             },
         ],
     )];
@@ -426,6 +432,84 @@ fn structured_xhtml_attachment_registers_pending_even_on_non_periodic_item() {
     assert_eq!(pending[0].id, xhtml.id);
 }
 
+/// #460: the two bare-filename attachments the PAS periodic filing actually
+/// carried register `metadata_only` with the typed reason — even though the
+/// filing itself classifies as periodic (which would otherwise mean
+/// `pending`) — while a proper `/static/att/emitent/...` sibling on the same
+/// filing registers `pending` as usual. A re-ingest of the same item changes
+/// nothing (idempotent upsert).
+#[test]
+fn incomplete_source_link_attachments_register_metadata_only_even_on_periodic_items() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let items = vec![espi_item_with_attachments(
+        &company,
+        "9200001",
+        "Skonsolidowany i jednostkowy raport półroczny za I półrocze 2023 roku",
+        vec![
+            BankierCompanyAttachment {
+                label: "Skonsolidowane SF".to_owned(),
+                url: "https://www.bankier.pl/wiadomosc/_2410_Passus_2023_PSSF.pdf".to_owned(),
+                incomplete: true,
+            },
+            BankierCompanyAttachment {
+                label: "Jednostkowe SF".to_owned(),
+                url: "https://www.bankier.pl/wiadomosc/_2410_Passus_2023_PSF.pdf".to_owned(),
+                incomplete: true,
+            },
+            BankierCompanyAttachment {
+                label: "Raport XHTML".to_owned(),
+                url: "https://bonnier.pl/static/att/emitent/2023-08/report.xhtml".to_owned(),
+                incomplete: false,
+            },
+        ],
+    )];
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("ingestion should register attachments");
+
+    let docs = state
+        .list_report_documents_by_company(&company.id)
+        .expect("documents should list");
+    assert_eq!(docs.len(), 3);
+
+    let incomplete_docs: Vec<_> = docs.iter().filter(|d| d.url.contains("_2410_")).collect();
+    assert_eq!(incomplete_docs.len(), 2);
+    for doc in &incomplete_docs {
+        assert_eq!(doc.fetch_status, "metadata_only");
+        assert_eq!(
+            doc.fetch_error,
+            Some(FETCH_ERROR_LINK_INCOMPLETE.to_owned())
+        );
+        assert!(doc.local_path.is_none());
+    }
+
+    let complete_doc = docs
+        .iter()
+        .find(|d| d.url.ends_with(".xhtml"))
+        .expect("complete xhtml doc");
+    assert_eq!(complete_doc.fetch_status, "pending");
+    assert_eq!(complete_doc.fetch_error, None);
+
+    // Re-ingesting the same item is a pure no-op.
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("re-ingestion should succeed");
+    let docs_again = state
+        .list_report_documents_by_company(&company.id)
+        .expect("documents should list");
+    assert_eq!(docs_again.len(), 3, "re-ingestion must not duplicate rows");
+    for doc in docs_again.iter().filter(|d| d.url.contains("_2410_")) {
+        assert_eq!(doc.fetch_status, "metadata_only");
+        assert_eq!(
+            doc.fetch_error,
+            Some(FETCH_ERROR_LINK_INCOMPLETE.to_owned())
+        );
+    }
+}
+
 #[test]
 fn attachment_registration_is_idempotent_across_reruns() {
     let connection = open_in_memory_database().expect("database should initialize");
@@ -439,6 +523,7 @@ fn attachment_registration_is_idempotent_across_reruns() {
         vec![BankierCompanyAttachment {
             label: "Raport roczny".to_owned(),
             url: "https://bonnier.pl/annual-2025.xhtml".to_owned(),
+            incomplete: false,
         }],
     )];
 

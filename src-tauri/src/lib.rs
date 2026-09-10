@@ -137,6 +137,21 @@ pub fn run() {
                 }
             }
 
+            // Repair report documents glued from a bare-filename attachment
+            // href onto a bogus host (#460): downgrades them to
+            // `metadata_only` so autopilot stops re-selecting/re-failing
+            // them. Idempotent and self-healing; never rewrites a URL, never
+            // deletes a row. Best-effort — a failure is logged, never fatal.
+            match state.report_documents().repair_incomplete_attachment_links() {
+                Ok(0) => {}
+                Ok(repaired) => log::warn!(
+                    "startup incomplete-attachment-link repair downgraded {repaired} report document(s)"
+                ),
+                Err(error) => {
+                    log::warn!("startup incomplete-attachment-link repair failed: {error}");
+                }
+            }
+
             // Restore the documents migration 0107 wrongly deleted (epic #229 T3):
             // four cyber_Folks Q3-2024 filings removed on URL-slug evidence their
             // own bytes contradict. Runs AFTER the

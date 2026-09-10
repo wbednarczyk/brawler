@@ -10,12 +10,14 @@
 //! The corpus targets the `AppState`/storage layer the thin `#[tauri::command]`
 //! wrappers delegate to (the `tauri::State` wrapper itself is not unit-constructible).
 
+use rusqlite::params;
 use serde_json::{json, Map, Value};
 
 use super::*;
 use crate::mcp::lifecycle::McpLifecycle;
 use crate::storage::{
-    NewCompany, NewFrameworkCriterion, NewQualityFramework, NewWatchlist, WatchlistUpdate,
+    NewCompany, NewCompanyEvent, NewFrameworkCriterion, NewQualityFramework, NewWatchlist,
+    WatchlistUpdate,
 };
 
 // Path resolved by build.rs into BRAWLER_FIDELITY_CORPUS (derived from
@@ -36,6 +38,22 @@ fn substitute(value: &Value, caps: &Map<String, Value>) -> Value {
         ),
         other => other.clone(),
     }
+}
+
+/// Deterministic feed-item id for `seed_official_report_for_fidelity`, from
+/// title+publishedAt (never a counter) so repeat corpus replays are stable.
+fn fidelity_seed_feed_item_id(title: &str, published_at: &str) -> String {
+    let slug: String = format!("{title}-{published_at}")
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("feed_fidelity_{slug}")
 }
 
 /// True when `actual` is an object containing every key/value pair in `subset`.
@@ -78,6 +96,15 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
         }
         "list_companies" => {
             serde_json::to_value(state.list_companies().expect("list_companies")).unwrap()
+        }
+        "create_company_event" => {
+            let new: NewCompanyEvent = serde_json::from_value(inner).expect("NewCompanyEvent");
+            serde_json::to_value(
+                state
+                    .create_company_event(new)
+                    .expect("create_company_event"),
+            )
+            .unwrap()
         }
         // Price context read model (v0.53 T5, ADR 0067/0082). Same computed-model
         // helper the command wrapper offloads, so the corpus can never diverge
@@ -878,6 +905,40 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
                     .find(|event| event.evidence_ref == job_id),
             )
             .unwrap()
+        }
+        // Corpus-only setup bridge (issue #427, ADR 0083 §8): a periodic-report
+        // witness arrives as an `Official report` feed item; there is no user
+        // command that mints a bare feed item for a fixture company. Insert one
+        // directly — the same shape `storage::today`'s `official_report` test
+        // helper writes (source adapter id `brawler-red-flags`, the seed adapter
+        // the other witness tests use), `match_type` 'derived' — with an id
+        // deterministic from title+publishedAt so a repeated seed call is safe
+        // (the mock runtime seeds an equivalent feed item in its handler). Not a
+        // `#[tauri::command]`, so it never enters the membership gate.
+        "seed_official_report_for_fidelity" => {
+            let company_id = inner["companyId"].as_str().expect("companyId");
+            let title = inner["title"].as_str().expect("title");
+            let body_text = inner["bodyText"].as_str();
+            let published_at = inner["publishedAt"].as_str().expect("publishedAt");
+            let id = fidelity_seed_feed_item_id(title, published_at);
+            let connection = state.checkout_for_tests().expect("connection");
+            connection
+                .execute(
+                    "INSERT INTO feed_items (id, type, source_adapter_id, source_name,
+                         source_url, title, body_text, fetched_at, dedupe_key, published_at)
+                     VALUES (?1, 'Official report', 'brawler-red-flags', 'ESPI',
+                         'https://x', ?3, ?4, '2026-01-01T00:00:00Z', ?1, ?2)",
+                    params![id, published_at, title, body_text],
+                )
+                .expect("feed item insert");
+            connection
+                .execute(
+                    "INSERT INTO feed_item_companies (feed_item_id, company_id, match_type)
+                     VALUES (?1, ?2, 'derived')",
+                    params![id, company_id],
+                )
+                .expect("feed item company link");
+            json!({ "id": id })
         }
         // Morning briefing (ADR 0068 decision 4, §T5). `generate` enqueues an
         // async compose job (no synchronous result); `get_latest` returns the most

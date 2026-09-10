@@ -62,7 +62,7 @@ function corpusCommandNames(): Set<string> {
 // out of the "every command must be accounted for" test below are a corpus
 // step or a headless-only declaration. This ceiling is the second lock: it
 // may only be LOWERED as entries are fixed, never raised to fit a new one.
-const BASELINE_CEILING = 117;
+const BASELINE_CEILING = 116;
 
 // B1 fix (owner-approved hard gate 2026-09-07, Astra re-verification of PR
 // #477 finding (a)): the ceiling alone permits regrowth-by-replacement — drop
@@ -87,7 +87,6 @@ const FROZEN_BASELINE = new Set([
   "confirm_company_signal",
   "confirm_derived_event",
   "create_backup",
-  "create_company_event",
   "create_evidence_link",
   "create_kpi_definition",
   "create_management_claim",

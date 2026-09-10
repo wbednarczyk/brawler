@@ -583,8 +583,11 @@ fn transform_modules_carry_their_property_and_golden_tests() {
             if !is_module_unit {
                 continue;
             }
-            let content = read_rs_module_content(&entry_path);
-            if !contains_transform_shaped_fn(&content) {
+            // Discovery reads PRODUCTION code only: a whole-file test module
+            // (`<mod>/tests.rs`, `tests/`) or an inline `#[cfg(test)]` block
+            // names its cases after what they exercise (`parses_…`), which is
+            // not a transform definition.
+            if !contains_transform_shaped_fn(&read_rs_production_content(&entry_path)) {
                 continue;
             }
             let rel_path = format!("{root}/{name}");
@@ -634,6 +637,74 @@ fn read_rs_module_content(path: &Path) -> String {
         }
     }
     content
+}
+
+/// Production text of a module unit for transform DISCOVERY: inline test spans
+/// stripped, whole-file test modules (`tests.rs`, `tests/`) and `snapshots/`
+/// skipped — the opposite of [`read_rs_module_content`], which deliberately
+/// includes declared test modules so a `proptest_in` credit can be verified.
+fn read_rs_production_content(path: &Path) -> String {
+    if path.is_file() {
+        return scan::strip_test_spans(&std::fs::read_to_string(path).unwrap_or_default());
+    }
+    let mut content = String::new();
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries {
+            let entry_path = entry.expect("readable dir entry").path();
+            let name = entry_path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned());
+            if entry_path.is_dir() {
+                if name.as_deref() != Some("snapshots") && name.as_deref() != Some("tests") {
+                    stack.push(entry_path);
+                }
+            } else if entry_path.extension().is_some_and(|ext| ext == "rs")
+                && name.as_deref() != Some("tests.rs")
+            {
+                content.push_str(&scan::strip_test_spans(
+                    &std::fs::read_to_string(&entry_path).unwrap_or_default(),
+                ));
+                content.push('\n');
+            }
+        }
+    }
+    content
+}
+
+#[test]
+fn transform_discovery_ignores_test_modules_but_sees_production_transforms() {
+    let dir = std::env::temp_dir().join(format!("brawler-g7-discovery-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("m/tests")).expect("tmp module dirs");
+    std::fs::write(
+        dir.join("m.rs"),
+        "pub fn keep() {}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn parses_probe() {}\n}\n",
+    )
+    .expect("write m.rs");
+    std::fs::write(dir.join("m/tests.rs"), "fn parse_other() {}\n").expect("write tests.rs");
+    std::fs::write(dir.join("m/tests/more.rs"), "fn match_more() {}\n").expect("write more.rs");
+    std::fs::write(
+        dir.join("n.rs"),
+        "pub fn parse_real(x: &str) -> &str { x }\n",
+    )
+    .expect("write n.rs");
+
+    assert!(!contains_transform_shaped_fn(&read_rs_production_content(
+        &dir.join("m.rs")
+    )));
+    assert!(!contains_transform_shaped_fn(&read_rs_production_content(
+        &dir.join("m")
+    )));
+    assert!(contains_transform_shaped_fn(&read_rs_production_content(
+        &dir.join("n.rs")
+    )));
+    // The crediting reader still sees the declared test module's text.
+    assert!(read_rs_module_content(&dir.join("m")).contains("parse_other"));
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Whether `content` defines a fn whose name starts with `parse`, `normalize`,

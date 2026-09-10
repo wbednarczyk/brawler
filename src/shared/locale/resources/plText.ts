@@ -480,6 +480,7 @@ export const plText: Record<string, string> = {
   "Feed summary": "Podsumowanie kanału",
   "Official report body": "Treść raportu oficjalnego",
   "Stored": "Zapisane",
+  "Attachment link incomplete at the source": "Niepełny link do załącznika u źródła",
   "Not stored": "Niezapisane",
   "No official report body is stored for this item yet. Refresh sources and check Sources for detail warnings if this remains empty.":
     "Treść raportu oficjalnego nie jest jeszcze zapisana dla tego elementu. Odśwież źródła i sprawdź ostrzeżenia szczegółów w Źródłach, jeśli nadal będzie pusto.",

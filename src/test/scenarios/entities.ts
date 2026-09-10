@@ -827,6 +827,11 @@ export function makeAttentionEvent(
     evidenceTitle: "Powiadomienie o transakcjach, o których mowa w art. 19 ust. 1 MAR",
     evidenceDetail: null,
     witnessUrl: null,
+    // (#427) Not itself a report_delay event — most callers never set this.
+    // The mock runtime raises no report_delay events dynamically (there is no
+    // evaluate_signal_rules-equivalent handler); a caller that needs the
+    // exact-date suppression path overrides this explicitly.
+    evidenceDate: null,
   };
 }
 

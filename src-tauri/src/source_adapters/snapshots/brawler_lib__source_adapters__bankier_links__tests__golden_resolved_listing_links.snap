@@ -1,0 +1,14 @@
+---
+source: src/source_adapters/bankier_links.rs
+expression: listing_cases
+---
+[
+    (
+        "/wiadomosc/x-1.html",
+        "https://www.bankier.pl/wiadomosc/x-1.html",
+    ),
+    (
+        "wiadomosc/x-1.html",
+        "https://www.bankier.pl/wiadomosc/x-1.html",
+    ),
+]

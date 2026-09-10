@@ -62,7 +62,7 @@ Flag taxonomy (fixed, per-type severity — a static map, not user-configurable 
 | flag | source | severity |
 |---|---|---|
 | `auditor_red_flag` (qualified/disclaimer/negative/going-concern) | existing `auditor_opinion` signal | high |
-| `report_delay` | expected `company_events.periodic_report` date passed (3-day grace) with no official report ingested | high |
+| `report_delay` | expected `company_events.periodic_report` date passed (3-day grace) with no official report **classified as a periodic-report filing** ingested since; preliminary/estimated results, publication-date changes and current-report corrections never count (amended 2026-09-10, #427) | high |
 | `fund_exit` | read-only derivation over `ownership_stakes` bases (holder present in previous full-picture basis, absent from newest; or an ESPI `major_holdings_change` crossing below the 5% disclosure threshold — a mere above-threshold decrease raises nothing, refined at T7) | medium |
 | `score_deterioration` | F drop ≥ 2 vs prior FY, or Z″ band downgrade | medium |
 | `short_spike` | KNF `delta_30d_pp` above threshold | medium |

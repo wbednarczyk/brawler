@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { companyId, COMPANY_SPECS, makeEvent, makeManagementClaim } from "./entities";
+import { companyId, COMPANY_SPECS, makeEvent, makeFeedItem, makeManagementClaim, qualifiedTicker } from "./entities";
 import { createMockRuntime, knownCommands, READ_COMMANDS } from "./runtime";
 import { buildScenario } from "./scenarios";
 import type { CompanyView } from "../../api/generated/CompanyView";
+import type { TodayView } from "../../api/generated/TodayView";
 
 /** True for a populated array, a non-empty bucketed read model, or any object. */
 function isNonEmpty(value: unknown): boolean {
@@ -561,5 +562,70 @@ describe("get_company_view mock — sol-review finding 7 fixes", () => {
     const view = (await runtime.invoke("get_company_view", { companyId: cid })) as CompanyView;
     expect(view.recommendations).toHaveLength(3);
     expect(view.recommendations.map((r) => r.firm)).toEqual(["A", "B", "C"]);
+  });
+});
+
+// get_today_view's non-arrival witness must gate on the PERIODIC classifier
+// (#427), not on presentationKind alone — an unrelated "Official report"
+// (current report, preliminary estimate, publication-date change) published
+// after the due date must not falsely witness a `periodic_report` calendar
+// event.
+describe("get_today_view — periodic-report witness classifier (#427)", () => {
+  const spec = COMPANY_SPECS[0];
+  const cid = companyId(spec);
+  const ticker = qualifiedTicker(spec);
+
+  function withEventAndFilings(
+    filingOverrides: Array<Partial<ReturnType<typeof makeFeedItem>>>,
+  ) {
+    const runtime = createMockRuntime("minimal");
+    runtime.data = {
+      ...runtime.data,
+      events: [
+        {
+          ...makeEvent(spec),
+          id: "event_witness_427",
+          eventType: "periodic_report",
+          eventDate: "2026-06-01",
+        },
+      ],
+      feedItems: filingOverrides.map((overrides, index) => ({
+        ...makeFeedItem(spec, index),
+        id: `feed_witness_427_${index}`,
+        company: ticker,
+        type: "Official report",
+        publishedAt: "2026-06-02T09:00:00Z",
+        bodyText: null,
+        ...overrides,
+      })),
+    } as typeof runtime.data;
+    return runtime;
+  }
+
+  it("an unrelated official filing after the due date does NOT witness it — the nonArrival row stays", async () => {
+    const runtime = withEventAndFilings([
+      { title: "Powiadomienie o transakcjach osób zarządzających" },
+    ]);
+    const view = (await runtime.invoke("get_today_view", { dayLimit: 3 })) as TodayView;
+    expect(view.items.some((item) => item.kind === "nonArrival" && item.companyId === cid)).toBe(true);
+  });
+
+  it("a periodic filing (form body) DOES witness it — the nonArrival row is suppressed", async () => {
+    const runtime = withEventAndFilings([
+      {
+        title: "Komunikat spółki",
+        bodyText: "Spis treści:1. STRONA TYTUŁOWA2. WYBRANE DANE FINANSOWE3. ZAWARTOŚĆ RAPORTU",
+      },
+    ]);
+    const view = (await runtime.invoke("get_today_view", { dayLimit: 3 })) as TodayView;
+    expect(view.items.some((item) => item.kind === "nonArrival" && item.companyId === cid)).toBe(false);
+  });
+
+  it("a preliminary-results-only filing does NOT witness it — the nonArrival row stays", async () => {
+    const runtime = withEventAndFilings([
+      { title: "Wstępne wyniki finansowe za I kwartał 2026" },
+    ]);
+    const view = (await runtime.invoke("get_today_view", { dayLimit: 3 })) as TodayView;
+    expect(view.items.some((item) => item.kind === "nonArrival" && item.companyId === cid)).toBe(true);
   });
 });

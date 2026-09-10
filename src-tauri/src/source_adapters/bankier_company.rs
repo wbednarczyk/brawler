@@ -1,3 +1,6 @@
+use super::bankier_links::{
+    is_report_attachment_url, resolve_attachment_href, resolve_listing_link,
+};
 use super::parsing::slug_part;
 use super::USER_AGENT;
 use scraper::{Html, Selector};
@@ -54,6 +57,9 @@ pub struct BankierCompanyItem {
 pub struct BankierCompanyAttachment {
     pub label: String,
     pub url: String,
+    /// The source's own `href` was incomplete (no directory), joined against
+    /// the page URL rather than trusted as-is (#460); never fetched.
+    pub incomplete: bool,
 }
 
 #[derive(Debug, Error)]
@@ -140,7 +146,7 @@ fn fetch_company_items_with_detail_filter_at(
         }
 
         let html = fetcher.fetch_text(&item.link)?;
-        let detail = parse_company_report_detail(&html, &item.title);
+        let detail = parse_company_report_detail(&html, &item.title, &item.link);
         item.detail_fetch_attempted = true;
         item.body_text = detail.body_text;
         item.attachments = detail.attachments;
@@ -232,7 +238,7 @@ pub fn fetch_company_backfill_items(
             }
             match fetcher.fetch_text(&item.link) {
                 Ok(html) => {
-                    let detail = parse_company_report_detail(&html, &item.title);
+                    let detail = parse_company_report_detail(&html, &item.title, &item.link);
                     item.detail_fetch_attempted = true;
                     item.body_text = detail.body_text;
                     item.attachments = detail.attachments;
@@ -432,7 +438,7 @@ impl ListingArticle {
             return None;
         }
 
-        let link = normalize_article_link(&raw_link);
+        let link = resolve_listing_link(&raw_link);
         let published_at = self.time.as_deref().and_then(normalize_article_time);
         let pub_id = self.pub_id.unwrap_or_default();
         let summary = summary_from_filters(&self.messages_filters);
@@ -464,13 +470,17 @@ struct BankierCompanyReportDetail {
     attachments: Vec<BankierCompanyAttachment>,
 }
 
-fn parse_company_report_detail(html: &str, title: &str) -> BankierCompanyReportDetail {
+fn parse_company_report_detail(
+    html: &str,
+    title: &str,
+    page_url: &str,
+) -> BankierCompanyReportDetail {
     let document = Html::parse_document(html);
     let body_text = extract_structured_article_body(&document).unwrap_or_else(|| {
         let root_text = normalized_lines(document.root_element().text());
         extract_report_body(&root_text, title)
     });
-    let attachments = extract_report_attachments(&document);
+    let attachments = extract_report_attachments(&document, page_url);
 
     BankierCompanyReportDetail {
         body_text: empty_string_to_none(body_text),
@@ -587,7 +597,7 @@ fn is_report_detail_noise(line: &str) -> bool {
     ) || line.starts_with("Spis załączników:")
 }
 
-fn extract_report_attachments(document: &Html) -> Vec<BankierCompanyAttachment> {
+fn extract_report_attachments(document: &Html, page_url: &str) -> Vec<BankierCompanyAttachment> {
     let anchor_selector = Selector::parse("a").expect("valid selector");
 
     document
@@ -599,13 +609,18 @@ fn extract_report_attachments(document: &Html) -> Vec<BankierCompanyAttachment> 
                 return None;
             }
 
+            let resolved = resolve_attachment_href(href, page_url);
+            if !resolved.scheme_ok {
+                return None;
+            }
             Some(BankierCompanyAttachment {
                 label: if label.is_empty() {
                     href.rsplit('/').next().unwrap_or(href).to_owned()
                 } else {
                     label
                 },
-                url: normalize_article_link(href),
+                url: resolved.url,
+                incomplete: resolved.incomplete,
             })
         })
         .fold(Vec::new(), |mut attachments, attachment| {
@@ -624,37 +639,6 @@ fn is_source_page_chrome_link(label: &str) -> bool {
         label.trim().to_lowercase().as_str(),
         "regulamin" | "polityka prywatności" | "polityka prywatnosci" | "polityka cookies"
     )
-}
-
-fn is_report_attachment_url(value: &str) -> bool {
-    let lower = value.to_lowercase();
-    lower.contains("bonnier.pl")
-        || lower.ends_with(".pdf")
-        || lower.contains(".pdf?")
-        || lower.ends_with(".xhtml")
-        || lower.contains(".xhtml?")
-        || lower.ends_with(".xades")
-        || lower.contains(".xades?")
-}
-
-/// Whether an attachment URL is an ESEF/iXBRL digital-signature file (`.xades`).
-/// A signature carries no financial data, so it is always registered
-/// `metadata_only` (kept for audit/attribution) and never fetched (ADR 0061
-/// decision 1b).
-pub fn is_signature_attachment_url(value: &str) -> bool {
-    let lower = value.to_lowercase();
-    lower.ends_with(".xades") || lower.contains(".xades?")
-}
-
-/// Whether an attachment URL is a structured ESEF/iXBRL statement (`.xhtml`) —
-/// the deterministic structured-extraction pipeline's preferred input (ADR
-/// 0061 decision 1b). Structured attachments are always registered as fetch
-/// candidates, independent of [`is_periodic_report_item`]: that classifier is
-/// a Polish-language text heuristic over the filing title/body and can miss a
-/// filing that is xhtml-only under the EU ESEF mandate.
-pub fn is_structured_attachment_url(value: &str) -> bool {
-    let lower = value.to_lowercase();
-    lower.ends_with(".xhtml") || lower.contains(".xhtml?")
 }
 
 fn normalized_lines<'a>(text: impl IntoIterator<Item = &'a str>) -> Vec<String> {
@@ -680,14 +664,6 @@ fn empty_string_to_none(value: String) -> Option<String> {
         None
     } else {
         Some(trimmed.to_owned())
-    }
-}
-
-fn normalize_article_link(value: &str) -> String {
-    if value.starts_with("http://") || value.starts_with("https://") {
-        value.to_owned()
-    } else {
-        format!("https://www.bankier.pl{value}")
     }
 }
 
@@ -828,376 +804,4 @@ pub fn refresh_bankier_company_for_trigger(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::cell::RefCell;
-
-    const HTML: &str = include_str!("../../samples/bankier_company_cdr.html");
-    const JSON: &str = include_str!("../../samples/bankier_company_cdr_listing.json");
-
-    fn target() -> BankierCompanyTarget {
-        BankierCompanyTarget {
-            company_id: "company_gpw_cdr".to_owned(),
-            ticker: "CDR".to_owned(),
-            qualified_ticker: "GPW:CDR".to_owned(),
-            bankier_slug: None,
-            bankier_tag_id: None,
-        }
-    }
-
-    struct DetailFilterFetcher {
-        fetched_urls: RefCell<Vec<String>>,
-    }
-
-    impl BankierCompanyFetcher for DetailFilterFetcher {
-        fn fetch_text(&self, url: &str) -> Result<String, BankierCompanyError> {
-            self.fetched_urls.borrow_mut().push(url.to_owned());
-
-            if url.starts_with(API_SOURCE_URL) {
-                Ok(JSON.to_owned())
-            } else if url.contains("9141553") {
-                Ok(r#"
-                    <html>
-                      <head>
-                        <script type="application/ld+json">
-                          {
-                            "@type": "NewsArticle",
-                            "articleBody": "First report body"
-                          }
-                        </script>
-                      </head>
-                      <body></body>
-                    </html>
-                "#
-                .to_owned())
-            } else {
-                Ok(r#"
-                    <html>
-                      <head>
-                        <script type="application/ld+json">
-                          {
-                            "@type": "NewsArticle",
-                            "articleBody": "Second report body"
-                          }
-                        </script>
-                      </head>
-                      <body></body>
-                    </html>
-                "#
-                .to_owned())
-            }
-        }
-    }
-
-    #[test]
-    fn detects_periodic_reports_and_rejects_current_reports() {
-        // Periodic / financial report titles and form codes.
-        for title in [
-            "Skonsolidowany raport kwartalny QSr 1/2026",
-            "Raport roczny za 2025 rok",
-            "Raport półroczny PSr 2025",
-            "Wyniki finansowe za III kwartał 2025",
-            "SA-R 2025",
-        ] {
-            assert!(
-                text_marks_periodic_report(title),
-                "expected periodic: {title}"
-            );
-        }
-
-        // Routine current reports must not be treated as periodic.
-        for title in [
-            "Powiadomienie o transakcjach na akcjach - art. 19 ust. 1 MAR",
-            "Zwołanie Zwyczajnego Walnego Zgromadzenia",
-            "Rekomendacja Zarządu w sprawie wypłaty dywidendy za rok 2025",
-            "Zawarcie znaczącej umowy",
-        ] {
-            assert!(
-                !text_marks_periodic_report(title),
-                "expected non-periodic: {title}"
-            );
-        }
-    }
-
-    #[test]
-    fn parses_company_page_identifiers() {
-        let identifiers = parse_company_identifiers(HTML).expect("HTML should parse");
-
-        assert_eq!(identifiers.slug, "CDPROJEKT");
-        assert_eq!(identifiers.tag_id, "722");
-    }
-
-    #[test]
-    fn builds_listing_api_url() {
-        let url = listing_api_url("722", 1, 25).expect("URL should build");
-
-        assert!(url.starts_with("https://api.bankier.pl/articles/listing/1/25?"));
-        assert!(url.contains("tags_ids=722"));
-        assert!(url.contains("pub_id"));
-    }
-
-    #[test]
-    fn parses_company_listing_json() {
-        let items =
-            parse_company_listing_json(&target(), JSON, "2026-05-31T10:00:00Z").expect("JSON");
-
-        assert_eq!(items.len(), 2);
-        assert_eq!(items[0].company_id, "company_gpw_cdr");
-        assert_eq!(items[0].qualified_ticker, "GPW:CDR");
-        assert_eq!(items[0].pub_id, 3);
-        assert_eq!(items[0].article_id, "9141553");
-        assert_eq!(items[0].title, "Wyniki finansowe QSr 1/2026");
-        assert_eq!(
-            items[0].link,
-            "https://www.bankier.pl/wiadomosc/CD-PROJEKT-SA-Wyniki-finansowe-QSr-1-2026-9141553.html"
-        );
-        assert_eq!(
-            items[0].published_at,
-            Some("2026-05-28T17:33:09".to_owned())
-        );
-        assert_eq!(
-            items[0].dedupe_key,
-            "bankier-company-komunikaty:article:9141553"
-        );
-        assert_eq!(items[0].summary, "Komunikat ESPI/EBI");
-        assert_eq!(items[0].body_text, None);
-        assert!(!items[0].detail_fetch_attempted);
-    }
-
-    #[test]
-    fn golden_parsed_company_listing_items() {
-        // Golden ingestion pin (ADR 0069 / plan v0.55 T2): the sample listing JSON
-        // must parse into a byte-stable set of items across the Fetcher migration.
-        let items =
-            parse_company_listing_json(&target(), JSON, "2026-05-31T10:00:00Z").expect("JSON");
-        insta::assert_debug_snapshot!("golden_bankier_company_listing_items", items);
-    }
-
-    #[test]
-    fn skips_detail_fetches_when_filter_rejects_item() {
-        let fetcher = DetailFilterFetcher {
-            fetched_urls: RefCell::new(Vec::new()),
-        };
-        let target = BankierCompanyTarget {
-            bankier_slug: Some("CDPROJEKT".to_owned()),
-            bankier_tag_id: Some("722".to_owned()),
-            ..target()
-        };
-
-        let (_, items) = fetch_company_items_with_detail_filter_at(
-            &fetcher,
-            &target,
-            "2026-05-31T10:00:00Z",
-            |item| item.article_id != "9141553",
-        )
-        .expect("items should fetch");
-
-        assert_eq!(items.len(), 2);
-        assert_eq!(items[0].article_id, "9141553");
-        assert_eq!(items[0].body_text, None);
-        assert!(!items[0].detail_fetch_attempted);
-        assert_eq!(items[1].body_text, Some("Second report body".to_owned()));
-        assert!(items[1].detail_fetch_attempted);
-        assert_eq!(
-            fetcher
-                .fetched_urls
-                .borrow()
-                .iter()
-                .filter(|url| url.contains("/wiadomosc/"))
-                .count(),
-            1
-        );
-    }
-
-    #[test]
-    fn parses_company_report_detail_body_and_attachments() {
-        let html = r#"
-            <html>
-              <head>
-                <script type="application/ld+json">
-                  {
-                    "@context": "https://schema.org",
-                    "@type": "NewsArticle",
-                    "headline": "CD PROJEKT SA: Wyniki finansowe QSr 1/2026",
-                    "articleBody": "Spis treści: 1. STRONA TYTUŁOWA STRONA TYTUŁOWA>>> KOMISJA NADZORU FINANSOWEGO Skonsolidowany raport kwartalny QSr"
-                  }
-                </script>
-              </head>
-              <body>
-                <nav>Giełda Wiadomości</nav>
-                <article>
-                  <h1>CD PROJEKT SA: Wyniki finansowe QSr 1/2026</h1>
-                  <span>2026-05-28 17:33</span>
-                  <span>publikacja</span>
-                  <p>Spis treści:</p>
-                  <ol><li>STRONA TYTUŁOWA</li></ol>
-                  <p>Spis załączników:</p>
-                  <a href="https://bonnier.pl/report.xhtml">Raport XHTML</a>
-                  <a href="https://www.bankier.pl/regulamin.pdf">Regulamin</a>
-                  <a href="https://www.bankier.pl/prywatnosc.pdf">Polityka prywatności</a>
-                  <a href="https://www.bankier.pl/cookies.pdf">Polityka Cookies</a>
-                  <h4>STRONA TYTUŁOWA&gt;&gt;&gt;</h4>
-                  <p>KOMISJA NADZORU FINANSOWEGO</p>
-                  <p>Skonsolidowany raport kwartalny QSr</p>
-                  <p>Źródło:Komunikaty spółek (ESPI)</p>
-                  <p>Podziel się</p>
-                </article>
-              </body>
-            </html>
-        "#;
-
-        let detail = parse_company_report_detail(html, "Wyniki finansowe QSr 1/2026");
-
-        assert_eq!(
-            detail.body_text,
-            Some(
-                "Spis treści: 1. STRONA TYTUŁOWA STRONA TYTUŁOWA>>> KOMISJA NADZORU FINANSOWEGO Skonsolidowany raport kwartalny QSr"
-                    .to_owned()
-            )
-        );
-        assert_eq!(
-            detail.attachments,
-            vec![BankierCompanyAttachment {
-                label: "Raport XHTML".to_owned(),
-                url: "https://bonnier.pl/report.xhtml".to_owned(),
-            }]
-        );
-    }
-
-    #[test]
-    fn filters_company_listing_items_older_than_recent_window() {
-        let json = r#"{
-          "articles": [
-            {
-              "title": "CD PROJEKT SA: Recent report",
-              "url": "/wiadomosc/recent-1.html",
-              "time": "2026-05-30 10:00:00",
-              "pub_id": 3,
-              "article_id": 1,
-              "messages_filters": []
-            },
-            {
-              "title": "CD PROJEKT SA: Old report",
-              "url": "/wiadomosc/old-2.html",
-              "time": "2026-05-20 10:00:00",
-              "pub_id": 3,
-              "article_id": 2,
-              "messages_filters": []
-            }
-          ]
-        }"#;
-
-        let items =
-            parse_company_listing_json(&target(), json, "2026-05-31T10:00:00Z").expect("JSON");
-
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].title, "Recent report");
-    }
-
-    fn preset_target() -> BankierCompanyTarget {
-        BankierCompanyTarget {
-            bankier_slug: Some("CDPROJEKT".to_owned()),
-            bankier_tag_id: Some("722".to_owned()),
-            ..target()
-        }
-    }
-
-    /// Every listing page returns one filing dated far in the future (never older
-    /// than any realistic cutoff) and never empty, so the walk can only end by
-    /// exhausting the page cap.
-    struct AlwaysRecentFetcher;
-    impl BankierCompanyFetcher for AlwaysRecentFetcher {
-        fn fetch_text(&self, url: &str) -> Result<String, BankierCompanyError> {
-            if url.starts_with(API_SOURCE_URL) {
-                Ok(r#"{"articles":[{"title":"CD PROJEKT SA: Raport","url":"/wiadomosc/x-1.html","time":"2999-01-01 10:00:00","pub_id":3,"article_id":1,"messages_filters":["ESPI"]}]}"#.to_owned())
-            } else {
-                Ok("<html></html>".to_owned())
-            }
-        }
-    }
-
-    /// Page 1 carries a recent filing, page 2 is empty — the walk ends naturally
-    /// (out of filings) before the page cap.
-    struct RecentThenEmptyFetcher;
-    impl BankierCompanyFetcher for RecentThenEmptyFetcher {
-        fn fetch_text(&self, url: &str) -> Result<String, BankierCompanyError> {
-            if url.starts_with(API_SOURCE_URL) {
-                if url.contains("/listing/1/") {
-                    return Ok(r#"{"articles":[{"title":"CD PROJEKT SA: Raport","url":"/wiadomosc/x-1.html","time":"2999-01-01 10:00:00","pub_id":3,"article_id":1,"messages_filters":["ESPI"]}]}"#.to_owned());
-                }
-                return Ok(r#"{"articles":[]}"#.to_owned());
-            }
-            Ok("<html></html>".to_owned())
-        }
-    }
-
-    #[test]
-    fn backfill_reports_truncation_when_page_cap_ends_the_walk() {
-        let (_, items, stats) = fetch_company_backfill_items(
-            &AlwaysRecentFetcher,
-            &preset_target(),
-            "2000-01-01T00:00:00",
-            3,
-            std::time::Duration::ZERO,
-            |_, _| {},
-        )
-        .expect("backfill fetch should succeed");
-
-        assert_eq!(stats.pages_fetched, 3, "the page cap was exhausted");
-        assert!(
-            stats.truncated,
-            "the page cap ended the walk before the cutoff was reached"
-        );
-        assert_eq!(items.len(), 3);
-    }
-
-    #[test]
-    fn backfill_reports_no_truncation_when_walk_ends_naturally() {
-        let (_, _items, stats) = fetch_company_backfill_items(
-            &RecentThenEmptyFetcher,
-            &preset_target(),
-            "2000-01-01T00:00:00",
-            80,
-            std::time::Duration::ZERO,
-            |_, _| {},
-        )
-        .expect("backfill fetch should succeed");
-
-        assert!(
-            !stats.truncated,
-            "running out of filings before the cap is not truncation"
-        );
-    }
-
-    #[test]
-    fn signature_attachment_url_matches_only_xades() {
-        assert!(is_signature_attachment_url(
-            "https://bonnier.pl/static/att/emitent/2026-05/report.xades"
-        ));
-        assert!(is_signature_attachment_url(
-            "https://bonnier.pl/static/att/emitent/2026-05/report.XAdES?v=1"
-        ));
-        assert!(!is_signature_attachment_url(
-            "https://bonnier.pl/static/att/emitent/2026-05/report.xhtml"
-        ));
-        assert!(!is_signature_attachment_url(
-            "https://bonnier.pl/static/att/emitent/2026-05/report.pdf"
-        ));
-    }
-
-    #[test]
-    fn structured_attachment_url_matches_only_xhtml() {
-        assert!(is_structured_attachment_url(
-            "https://bonnier.pl/static/att/emitent/2026-05/report.xhtml"
-        ));
-        assert!(is_structured_attachment_url(
-            "https://bonnier.pl/static/att/emitent/2026-05/report.XHTML?v=1"
-        ));
-        assert!(!is_structured_attachment_url(
-            "https://bonnier.pl/static/att/emitent/2026-05/report.xades"
-        ));
-        assert!(!is_structured_attachment_url(
-            "https://bonnier.pl/static/att/emitent/2026-05/report.pdf"
-        ));
-    }
-}
+mod tests;

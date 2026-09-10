@@ -250,22 +250,13 @@ fn raise_flag(
 // Detection: report_delay
 // ============================================================================
 
-/// The "no witness" half of `report_delay` (ADR 0083 D8) — shared with the
-/// Dziś non-arrival read model (F2 S1, `storage::today`).
-pub(super) fn has_no_witnessing_report(
-    connection: &Connection,
-    company_id: &str,
-    event_date: &str,
-) -> StorageResult<bool> {
-    let witnessed: bool = connection.query_row(
-        "SELECT EXISTS (SELECT 1 FROM feed_items fi JOIN feed_item_companies fic
-            ON fic.feed_item_id = fi.id WHERE fic.company_id = ?1
-            AND fi.type = 'Official report' AND fi.published_at >= ?2)",
-        params![company_id, event_date],
-        |row| row.get(0),
-    )?;
-    Ok(!witnessed)
-}
+mod witness;
+
+/// The "no witness" half of `report_delay` (ADR 0083 §8, amended 2026-09-10,
+/// #427) — shared with the Dziś non-arrival read model (`storage::today`).
+/// Implementation lives in [`witness`] (keeps this file under its
+/// file-size-ratchet pin).
+pub(super) use witness::has_no_witnessing_report;
 
 /// Whether a `report_delay` flag already exists for this event, acked or not
 /// — the Dziś non-arrival read model's flag-existence suppression (F2 S1 d2).

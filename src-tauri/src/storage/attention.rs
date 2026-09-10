@@ -33,6 +33,8 @@ use serde::{Deserialize, Serialize};
 use super::database::Database;
 use super::*;
 
+mod evidence;
+
 /// Max attention events a single rule may fire on one domain day. One keeps the
 /// attention surface to at most one ping per rule per day; additional matching
 /// evidence that day is suppressed (the underlying signals/quotes stay in their
@@ -250,6 +252,11 @@ pub struct AttentionEvent {
     /// evidence type or when the ledger row is gone.
     #[cfg_attr(feature = "ts-export", ts(type = "string | null"))]
     pub witness_url: Option<String>,
+    /// The calendar/signal date the evidence is about (issue #427): for a
+    /// `company_signal` event, `company_signals.signal_date`; `null` for
+    /// every other evidence type, or when the signal row is gone.
+    #[cfg_attr(feature = "ts-export", ts(type = "string | null"))]
+    pub evidence_date: Option<String>,
 }
 
 /// Filter for listing attention events.
@@ -579,7 +586,11 @@ pub(super) fn list_attention_events(
             failed_job.last_error AS job_last_error,
             -- The missed report's own URL (ADR 0097 dec. 8), so Review can open
             -- the report the feed cannot contain.
-            recon.witness_url AS recon_url
+            recon.witness_url AS recon_url,
+            -- The calendar date the evidence is about (issue #427): the
+            -- signal's own `signal_date` for a `company_signal` event
+            -- (e.g. the `report_delay` calendar event date); NULL otherwise.
+            company_signals.signal_date AS evidence_signal_date
         FROM attention_events
         LEFT JOIN alert_rules ON alert_rules.id = attention_events.rule_id
         -- Resolve the signal category for `signal_category` events (evidence_ref
@@ -683,29 +694,12 @@ fn attention_event_from_row(
         .get::<_, Option<String>>(15)?
         .map(|title| title.trim().to_owned())
         .filter(|title| !title.is_empty());
-    let (evidence_title, evidence_detail) = match evidence_type.as_str() {
-        EVIDENCE_COMPANY_SIGNAL => (snapshot_title.or(row.get::<_, Option<String>>(10)?), None),
-        EVIDENCE_SOURCE_RECONCILIATION => {
-            let title: Option<String> = snapshot_title.or(row.get(11)?);
-            let adapter: Option<String> = row.get(12)?;
-            (title, adapter.map(|id| adapter_display_name(&id)))
-        }
-        EVIDENCE_AUTOPILOT_RUN => (
-            snapshot_title.or(row.get::<_, Option<String>>(13)?),
-            row.get(14)?,
-        ),
-        // A terminally failed background job (ADR 0091 dec. 1). The statement is
-        // the fire-time SUBJECT snapshot when the handler had one (a document
-        // title, a ticker — `JobHandler::failure_subject`), otherwise the queue's
-        // own `last_error`: both are raw source data, so the row always states
-        // something concrete instead of "a job failed". The detail carries the raw
-        // job `kind` for the frontend to translate (the autopilot-status pattern).
-        EVIDENCE_JOB => (
-            snapshot_title.or(row.get::<_, Option<String>>(17)?),
-            row.get(16)?,
-        ),
-        _ => (None, None),
-    };
+    let (evidence_title, evidence_detail) =
+        evidence::evidence_specifics(row, &evidence_type, snapshot_title)?;
+    // The calendar/signal date the evidence is about (issue #427): only a
+    // `company_signal` event joins `company_signals`, so every other
+    // evidence type reads NULL here by construction.
+    let evidence_date: Option<String> = row.get(19)?;
     // The missed report's URL (ADR 0097 dec. 8) — reconciliation evidence only;
     // a blank ledger value degrades to None (frontend falls back to no action).
     let witness_url: Option<String> = if evidence_type == EVIDENCE_SOURCE_RECONCILIATION {
@@ -729,6 +723,7 @@ fn attention_event_from_row(
         evidence_title,
         evidence_detail,
         witness_url,
+        evidence_date,
     })
 }
 

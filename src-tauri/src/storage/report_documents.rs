@@ -10,6 +10,15 @@ use status::{
     mark_metadata_only, mark_pending_for_refetch, PROTECTION_EXISTS_CLAUSES,
 };
 
+mod repair_incomplete_links;
+
+/// Fetch-error reason for an attachment whose source `href` was itself
+/// incomplete — a bare filename/relative path Bankier serves without a
+/// directory, resolved via RFC 3986 join rather than fetched from a guess
+/// (#460). Registered `metadata_only`, never fetched. The UI matches on this
+/// exact string.
+pub const FETCH_ERROR_LINK_INCOMPLETE: &str = "attachment_link_incomplete";
+
 // ============================================================================
 // Public Structs (DTO/serializable types)
 // ============================================================================
@@ -95,7 +104,7 @@ pub(super) fn create_or_find_pending(
     connection: &Connection,
     input: CaptureReportDocumentInput,
 ) -> StorageResult<ReportDocument> {
-    create_or_find_with_status(connection, input, "pending")
+    create_or_find_with_status(connection, input, "pending", None)
 }
 
 /// Classify a document for the stored taxonomy column with the URL slug
@@ -128,14 +137,18 @@ fn classify_for_storage(
 
 /// Create a report document with an explicit initial `fetch_status`, or return the
 /// existing row for the same `(company_id, url)` (idempotent upsert on the UNIQUE key).
+/// `fetch_error` is written on INSERT only — an existing row is returned unchanged
+/// (the idempotent upsert contract), never re-stamped with a caller's error.
 ///
 /// Used by attachment ingestion to register periodic-report attachments as `pending`
 /// (a follow-up fetch stores the file) and other ESPI/EBI attachments as `metadata_only`
-/// (URL + attribution preserved, no bytes stored). See ADR 0036.
+/// (URL + attribution preserved, no bytes stored), including incomplete-source-link
+/// attachments (`fetch_error = FETCH_ERROR_LINK_INCOMPLETE`, #460). See ADR 0036.
 pub(super) fn create_or_find_with_status(
     connection: &Connection,
     input: CaptureReportDocumentInput,
     initial_status: &str,
+    fetch_error: Option<&str>,
 ) -> StorageResult<ReportDocument> {
     let company_id = input.company_id.trim().to_owned();
     let url = input.url.trim().to_owned();
@@ -216,8 +229,9 @@ pub(super) fn create_or_find_with_status(
             title,
             attribution,
             fetch_status,
+            fetch_error,
             doc_kind
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
         ",
         params![
             id,
@@ -229,6 +243,7 @@ pub(super) fn create_or_find_with_status(
             title,
             attribution,
             initial_status,
+            fetch_error,
             doc_kind.as_str()
         ],
     )?;
@@ -617,6 +632,17 @@ impl ReportDocumentStore {
         let connection = self.db.checkout()?;
 
         set_detected_container(&connection, id, container)
+    }
+
+    /// Startup self-heal for #460: downgrade existing `report_documents` rows
+    /// glued from a bare-filename attachment href (`https://www.bankier.pl_...`)
+    /// to `metadata_only` with the typed reason, so autopilot/detection stop
+    /// re-selecting and re-failing them. Idempotent; never rewrites the URL,
+    /// never deletes a row.
+    pub fn repair_incomplete_attachment_links(&self) -> StorageResult<usize> {
+        let mut connection = self.db.checkout()?;
+
+        repair_incomplete_links::repair_incomplete_attachment_links(&mut connection)
     }
 
     /// Fetched documents with a stored file and no sniffed container yet —

@@ -37,6 +37,7 @@ function event(id: string, overrides: Partial<AttentionEvent> = {}): AttentionEv
     evidenceTitle: null,
     evidenceDetail: null,
     witnessUrl: null,
+    evidenceDate: null,
     ...overrides,
   };
 }

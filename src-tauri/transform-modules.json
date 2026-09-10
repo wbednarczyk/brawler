@@ -82,9 +82,21 @@
     },
     {
       "path": "src/source_adapters/bankier_company.rs",
-      "why": "bankier.pl company-page adapter — includes IR-document URL resolution",
+      "why": "bankier.pl company-page adapter",
       "proptest": true,
       "proptest_in": "tests/parser_fuzz.rs::bankier_company_listing_parser_is_total",
+      "insta": true
+    },
+    {
+      "path": "src/source_adapters/bankier_links.rs",
+      "why": "bankier.pl attachment/listing href resolution (#460)",
+      "proptest": true,
+      "insta": true
+    },
+    {
+      "path": "src/source_adapters/periodic_filing.rs",
+      "why": "periodic-report filing classifier — the report_delay / Dziś non-arrival witness (ADR 0083 §8, #427)",
+      "proptest": true,
       "insta": true
     },
     {

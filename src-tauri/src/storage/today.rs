@@ -346,6 +346,96 @@ mod tests {
         );
     }
 
+    /// Insert an official-report feed item for `company_id`, linking it so
+    /// the witness classifier (issue #427) can see it.
+    fn official_report(
+        state: &AppState,
+        company_id: &str,
+        published_at: &str,
+        title: &str,
+        body: Option<&str>,
+    ) {
+        let connection = state.checkout_for_tests().expect("connection");
+        let id = format!("fi-official-{company_id}-{published_at}");
+        connection
+            .execute(
+                "INSERT INTO feed_items (id, type, source_adapter_id, source_name, source_url,
+                     title, body_text, fetched_at, dedupe_key, published_at)
+                 VALUES (?1, 'Official report', 'brawler-red-flags', 'ESPI', 'https://x',
+                     ?3, ?4, '2026-01-01T00:00:00Z', ?1, ?2)",
+                rusqlite::params![id, published_at, title, body],
+            )
+            .expect("feed item insert");
+        connection
+            .execute(
+                "INSERT INTO feed_item_companies (feed_item_id, company_id, match_type)
+                 VALUES (?1, ?2, 'test')",
+                rusqlite::params![id, company_id],
+            )
+            .expect("feed item company link");
+    }
+
+    #[test]
+    fn list_non_arrivals_witness_narrowing() {
+        let state = state();
+        let company_id = company(&state, "WIT");
+        state
+            .create_company_event(NewCompanyEvent {
+                company_id: company_id.clone(),
+                event_type: "periodic_report".to_owned(),
+                title: "Raport okresowy".to_owned(),
+                event_date: "2026-01-01".to_owned(),
+                event_time: None,
+                status: None,
+                source_type: None,
+                source_adapter_id: None,
+                source_event_key: None,
+                source_url: None,
+                attribution: None,
+                fetched_at: None,
+            })
+            .expect("event");
+
+        // An unrelated official filing (current-report body) never witnesses
+        // the periodic report — the row must stay visible.
+        official_report(
+            &state,
+            &company_id,
+            "2026-01-02",
+            "Zawarcie umowy znaczącej z kontrahentem",
+            Some("Spis treści:1. RAPORT BIEŻĄCY2. MESSAGE (ENGLISH VERSION)3. PODPISY"),
+        );
+        assert_eq!(
+            state
+                .today()
+                .list_non_arrivals("2026-01-03")
+                .expect("candidates")
+                .len(),
+            1,
+            "an unrelated official filing must not suppress the non-arrival row"
+        );
+
+        // A classified periodic filing DOES witness it — the row disappears.
+        official_report(
+            &state,
+            &company_id,
+            "2026-01-03",
+            "Wyniki finansowe PSr /2026",
+            Some(
+                "Spis treści:1. STRONA TYTUŁOWA2. WYBRANE DANE FINANSOWE3. ZAWARTOŚĆ RAPORTU4. PODPISY",
+            ),
+        );
+        assert_eq!(
+            state
+                .today()
+                .list_non_arrivals("2026-01-04")
+                .expect("candidates")
+                .len(),
+            0,
+            "a classified periodic filing must suppress the non-arrival row"
+        );
+    }
+
     /// Batched attachment lookup (finding 7b): `list_recent_feed_rows` used to
     /// call `feed::feed_item_attachments` once PER ROW (N+1). The bulk
     /// `EXISTS` correlated subquery must produce the SAME per-row
