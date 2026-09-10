@@ -25,7 +25,7 @@
     "src-tauri/src/storage/kpi_ingest_drafts.rs": 1149,
     "src-tauri/src/storage/kpi_ingest_runs.rs": 6017,
     "src-tauri/src/storage/mod.rs": 1926,
-    "src-tauri/src/storage/ownership.rs": 1798,
+    "src-tauri/src/storage/ownership.rs": 1748,
     "src-tauri/src/storage/quality_frameworks.rs": 1896,
     "src-tauri/src/storage/red_flags.rs": 1002,
     "src-tauri/src/storage/report_tagged_facts.rs": 1481,
