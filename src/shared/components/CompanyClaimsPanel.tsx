@@ -59,8 +59,8 @@ function verdictTone(status: ClaimStatus): StatusPillTone {
 
 /// Self-contained management claims tracker for one company (ADR 0040). Shows the
 /// "claims to verify" review queue, the full claims list with user-set verdicts, and
-/// a create-claim form. AI claim extraction is launched from the report/transcript
-/// context (like KPI extraction); this panel resolves the verdicts.
+/// a create-claim form. AI claim extraction is launched from the report context
+/// (like KPI extraction); this panel resolves the verdicts.
 export function CompanyClaimsPanel({ companyId, highlightClaimId = null }: CompanyClaimsPanelProps) {
   const { text, locale } = useLocale();
   const [claims, setClaims] = useState<ManagementClaim[]>([]);

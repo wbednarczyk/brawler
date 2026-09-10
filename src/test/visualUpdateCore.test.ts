@@ -46,9 +46,8 @@ describe("visual-update-core", () => {
 
   // Sol R1 finding 3: `allExpectedCells()` now enumerates EVERY state a
   // catalog entry declares (not just "default") — a screen with `states:
-  // ["default", "empty"]` (transcripts, events) must have a baseline for
-  // BOTH, or a missing "empty" cell went unguarded. 86 "default"-only cells
-  // + transcripts' 4 "empty" cells (S/M/L dark + M light) + events' 4 =~ 94.
+  // ["default", "empty"]` (events) must have a baseline for BOTH, or a
+  // missing "empty" cell went unguarded.
   // F4c S1 (docs/plans/f4c-contracts/s1-guardrails.md item 6): 94 → 90 — the
   // `notebooks-global` row (4 cells: S/M/L dark + M light, `states:
   // ["default"]`) is deleted from the catalog ahead of S2's screen deletion.
@@ -60,9 +59,12 @@ describe("visual-update-core", () => {
   // dark + 1 light cell) registered ahead of its baseline PNGs, same
   // precedent — the S4 integrator shoots them via `make visual-update`; the
   // `existsSync` loop stays red for those 2 files until then.
-  it("every catalog cell (94 today) has an existing baseline file", () => {
+  // #463 (ADR 0111): 94 → 86 — the `transcripts` row (8 cells: S/M/L dark +
+  // M light default, same 4 for `states: ["empty"]`) is deleted from the
+  // catalog with the retired Transcripts screen.
+  it("every catalog cell (86 today) has an existing baseline file", () => {
     const cells = allExpectedCells();
-    expect(cells.length).toBe(94);
+    expect(cells.length).toBe(86);
     // Sol R2 blocker: every cell maps to a DISTINCT file — a state-less
     // filename would alias "empty" cells onto the default PNGs and the
     // existence check below would prove nothing.

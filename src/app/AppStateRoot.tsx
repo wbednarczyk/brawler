@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { AppShell, type PinnedCompany } from "./AppShell";
 import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { useAppDataController } from "./useAppDataController";
@@ -26,11 +25,9 @@ import {
   detailPaneMinFraction,
 } from "./layout";
 import { type Section } from "./navigation";
-import { emptyNotebookForm } from "./notebookForms";
 import * as sourcesApi from "../api/sources";
 import * as eventsApi from "../api/events";
 import * as signalsApi from "../api/signals";
-import { emptyTranscriptJobForm } from "./transcriptForms";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
 import { useAttentionController } from "./useAttentionController";
 import { useActivityController } from "./useActivityController";
@@ -43,7 +40,6 @@ import { useSourceDisplayController } from "./useSourceDisplayController";
 import { useSourceRefreshController } from "./useSourceRefreshController";
 import { buildEventsScreenProps } from "./useEventsScreenWiring";
 import { buildTodayScreenProps, useRefreshCompletionSignal } from "./useTodayScreenWiring";
-import { useTranscriptController } from "./useTranscriptController";
 import { buildWatchlistsScreenProps } from "./useWatchlistsScreenWiring";
 import { useWorkspaceNavigationController } from "./useWorkspaceNavigationController";
 import {
@@ -71,11 +67,8 @@ import {
 } from "../screens/Research/ResearchScreen";
 import { SettingsScreen } from "../screens/Settings/SettingsScreen";
 import { SourcesScreen } from "../screens/Sources/SourcesScreen";
-import { TranscriptsScreen } from "../screens/Transcripts/TranscriptsScreen";
 import { WatchlistsScreen } from "../screens/Watchlists/WatchlistsScreen";
-import type { TranscriptJobForm } from "../screens/Transcripts/transcriptTypes";
 import { NotebookDateField } from "../shared/components/NotebookDateField";
-import { NotebookQuarterField } from "../shared/components/NotebookQuarterField";
 import {
   addLocalDays,
   companyEventDueClass,
@@ -89,9 +82,6 @@ import {
 import {
   formatCompanyEventStatus,
   formatCompanyEventType,
-  formatCredentialConfigured,
-  formatCredentialKind,
-  formatGeminiModel,
 } from "../shared/formatting/labels";
 import {
   LocaleContext,
@@ -107,7 +97,6 @@ import {
   ReportSeasonProvider,
   ResearchProvider,
   SettingsScreenProvider,
-  TranscriptsProvider,
   WatchlistsProvider,
 } from "./state/screenViewModels";
 import type {
@@ -115,7 +104,6 @@ import type {
   CompanyEventMode,
   CompanyEventViewMode,
 } from "../shared/types/events";
-import type { NotebookForm } from "../shared/types/notebook";
 import type {
   Company,
   CompanyForm,
@@ -123,15 +111,12 @@ import type {
   CompanyRegistryEntry,
   CompanyRegistryRefreshResult,
   CompanySignal,
-  CredentialStatus,
   DatabaseStatus,
   FeedItem,
   HealthResponse,
   SourceAdapter,
   SourceIngestionResult,
   Theme,
-  TranscriptJob,
-  TranscriptSegment,
   UserSettings,
   Watchlist,
   WatchlistMembership,
@@ -208,70 +193,6 @@ export function AppStateRoot({
   const [companyEventsError, setCompanyEventsError] = useState<string | null>(
     null,
   );
-  const [transcriptJobs, setTranscriptJobs] = useState<TranscriptJob[]>([]);
-  const [transcriptJobsError, setTranscriptJobsError] = useState<string | null>(
-    null,
-  );
-  const [transcriptJobForm, setTranscriptJobForm] = useState<TranscriptJobForm>(
-    emptyTranscriptJobForm,
-  );
-  const [transcriptJobCreateError, setTranscriptJobCreateError] = useState<
-    string | null
-  >(null);
-  const [transcriptJobCreateState, setTranscriptJobCreateState] =
-    useState<DbRefreshState>("idle");
-  const [transcriptJobRunInFlight, setTranscriptJobRunInFlight] = useState<
-    string | null
-  >(null);
-  const [selectedTranscriptJobId, setSelectedTranscriptJobId] = useState<
-    string | null
-  >(null);
-  const [transcriptSegmentsByJobId, setTranscriptSegmentsByJobId] = useState<
-    Record<string, TranscriptSegment[]>
-  >({});
-  const [transcriptSegmentsErrorByJobId, setTranscriptSegmentsErrorByJobId] =
-    useState<Record<string, string | null>>({});
-  const [transcriptSegmentSearchByJobId, setTranscriptSegmentSearchByJobId] =
-    useState<Record<string, string>>({});
-  const [
-    selectedTranscriptSegmentIdsByJobId,
-    setSelectedTranscriptSegmentIdsByJobId,
-  ] = useState<Record<string, string[]>>({});
-  const [transcriptNoteDraftJobId, setTranscriptNoteDraftJobId] = useState<
-    string | null
-  >(null);
-  const [transcriptNoteForm, setTranscriptNoteForm] =
-    useState<NotebookForm>(emptyNotebookForm);
-  const [transcriptNoteErrorByJobId, setTranscriptNoteErrorByJobId] = useState<
-    Record<string, string | null>
-  >({});
-  const [transcriptNoteSaveInFlight, setTranscriptNoteSaveInFlight] = useState<
-    string | null
-  >(null);
-  const [transcriptLinkQueryByJobId, setTranscriptLinkQueryByJobId] = useState<
-    Record<string, string>
-  >({});
-  const [transcriptLinkErrorByJobId, setTranscriptLinkErrorByJobId] = useState<
-    Record<string, string | null>
-  >({});
-  const [transcriptLinkInFlight, setTranscriptLinkInFlight] = useState<
-    string | null
-  >(null);
-  const [transcriptDeleteInFlight, setTranscriptDeleteInFlight] = useState<
-    string | null
-  >(null);
-  const [
-    transcriptDescriptionDraftByJobId,
-    setTranscriptDescriptionDraftByJobId,
-  ] = useState<Record<string, string>>({});
-  const [
-    transcriptDescriptionErrorByJobId,
-    setTranscriptDescriptionErrorByJobId,
-  ] = useState<Record<string, string | null>>({});
-  const [
-    transcriptDescriptionSaveInFlight,
-    setTranscriptDescriptionSaveInFlight,
-  ] = useState<string | null>(null);
   const [companyEventViewMode, setCompanyEventViewMode] =
     useState<CompanyEventViewMode>("week");
   const [companyEventMode, setCompanyEventMode] =
@@ -308,14 +229,6 @@ export function AppStateRoot({
   >(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [geminiCredentialStatus, setGeminiCredentialStatus] =
-    useState<CredentialStatus | null>(null);
-  const [geminiCredentialError, setGeminiCredentialError] = useState<
-    string | null
-  >(null);
-  const [geminiApiKeyDraft, setGeminiApiKeyDraft] = useState("");
-  const [geminiCredentialInFlight, setGeminiCredentialInFlight] =
-    useState(false);
   const [selectedFeedItemId, setSelectedFeedItemId] = useState<string | null>(
     null,
   );
@@ -408,7 +321,6 @@ export function AppStateRoot({
     selectedFeedItem,
     sourceStatusSummary,
     totalUnreadFeedItems,
-    transcriptCompanySuggestions,
   } = useAppViewModel({
     companies,
     companyEventViewMode,
@@ -437,7 +349,6 @@ export function AppStateRoot({
     sourceAdapters,
     sourceAdaptersError,
     theme,
-    transcriptJobForm,
     watchlistMemberships,
   });
 
@@ -560,7 +471,6 @@ export function AppStateRoot({
     refreshDatabaseBackedViews,
     refreshDatabaseStatus,
     refreshFeedItems,
-    refreshGeminiCredentialStatus,
     refreshHealth,
     refreshSettings,
     refreshSignals,
@@ -578,8 +488,6 @@ export function AppStateRoot({
     setDbRefreshState,
     setFeedError,
     setFeedState,
-    setGeminiCredentialError,
-    setGeminiCredentialStatus,
     setHealth,
     setHealthError,
     setSelectedFeedItemId,
@@ -632,9 +540,7 @@ export function AppStateRoot({
   });
 
   const {
-    clearGeminiApiKey,
     disableDeveloperMode,
-    saveGeminiApiKey,
     unlockDeveloperMode,
     updateAccentPalette,
     updateLocale,
@@ -657,20 +563,12 @@ export function AppStateRoot({
     updateShortcutBindings,
     updateTheme,
     updateTodayReviewedDays,
-    updateYoutubeTranscriptionModel,
-    updateYoutubeTranscriptionTimeout,
   } = useSettingsController({
-    geminiApiKeyDraft,
-    setGeminiApiKeyDraft,
-    setGeminiCredentialError,
-    setGeminiCredentialInFlight,
-    setGeminiCredentialStatus,
     setSettings,
     setSettingsError,
     setAccentPalette,
     setLocale,
     setTheme,
-    text,
   });
 
   useEffect(() => {
@@ -766,7 +664,7 @@ export function AppStateRoot({
     text,
   });
 
-  // Moved ahead of useNotebookController/useTranscriptController (F4c S2,
+  // Moved ahead of useNotebookController (F4c S2,
   // ADR 0108 amendment): both now land their cross-company deep links on the
   // Spółka `notatnik` tool through this ONE guarded transition, so they need
   // `navigate` at call time.
@@ -778,7 +676,7 @@ export function AppStateRoot({
 
   // The ONE landing point for the Spółka `notatnik` tool (F4c S2, ADR 0108
   // amendment, sol re-review): every cross-screen deep link (Inbox, research
-  // evidence, global search, transcript) routes through this, never
+  // evidence, global search) routes through this, never
   // `spolkaTool.openTool` directly — that only commits tool state and
   // neither selects the company nor activates Spółka.
   const navigateToCompanyNotebook = useCallback(
@@ -791,56 +689,6 @@ export function AppStateRoot({
   const { feedItemSummary, openFeedItemNoteDraft } = useNotebookController({
     companies,
     navigateToCompanyNotebook,
-  });
-
-  const {
-    createTranscriptJob,
-    createTranscriptNotebookEntry,
-    deleteTranscriptJob,
-    discardTranscriptNoteDraft,
-    linkTranscriptJobCompany,
-    openTranscriptNoteDraft,
-    refreshTranscriptJobs,
-    retryTranscriptSegments,
-    runTranscriptJob,
-    selectTranscriptCompany,
-    toggleTranscriptJob,
-    toggleTranscriptJobFromKeyboard,
-    toggleTranscriptSegment,
-    transcriptsLoading,
-    updateTranscriptJobDescription,
-    updateTranscriptLinkQuery,
-    updateTranscriptNoteForm,
-  } = useTranscriptController({
-    geminiCredentialStatus,
-    navigateToCompanyNotebook,
-    selectedTranscriptJobId,
-    selectedTranscriptSegmentIdsByJobId,
-    settings,
-    setSelectedTranscriptJobId,
-    setSelectedTranscriptSegmentIdsByJobId,
-    setTranscriptDeleteInFlight,
-    setTranscriptDescriptionDraftByJobId,
-    setTranscriptDescriptionErrorByJobId,
-    setTranscriptDescriptionSaveInFlight,
-    setTranscriptJobCreateError,
-    setTranscriptJobCreateState,
-    setTranscriptJobForm,
-    setTranscriptJobRunInFlight,
-    setTranscriptJobs,
-    setTranscriptJobsError,
-    setTranscriptLinkErrorByJobId,
-    setTranscriptLinkInFlight,
-    setTranscriptLinkQueryByJobId,
-    setTranscriptNoteDraftJobId,
-    setTranscriptNoteErrorByJobId,
-    setTranscriptNoteForm,
-    setTranscriptNoteSaveInFlight,
-    setTranscriptSegmentsByJobId,
-    setTranscriptSegmentsErrorByJobId,
-    transcriptDescriptionDraftByJobId,
-    transcriptJobForm,
-    transcriptNoteForm,
   });
 
   const {
@@ -1030,11 +878,9 @@ export function AppStateRoot({
     refreshDatabaseStatus,
     refreshFeedItems,
     refreshSignals,
-    refreshGeminiCredentialStatus,
     refreshHealth,
     refreshSettings,
     refreshSourceAdapters,
-    refreshTranscriptJobs,
     refreshWatchlistMemberships,
     refreshWatchlists,
     selectedFeedItemId,
@@ -1078,9 +924,6 @@ export function AppStateRoot({
         setCompanyEventCompanyFilter(item.companyId);
         setSelectedCompanyEventId(item.sourceId);
         setActiveSection("Events");
-        break;
-      case "transcripts":
-        setActiveSection("Transcripts");
         break;
       case "ai_analysis":
         scopeInboxToCompany(itemCompanyTicker);
@@ -1159,15 +1002,6 @@ export function AppStateRoot({
           })
           .catch(() => undefined);
         break;
-      case "transcript_segment":
-        if (match.parentId) {
-          setSelectedTranscriptJobId(match.parentId);
-          setSearchFocusSelector(
-            `[data-transcript-job-id="${match.parentId}"]`,
-          );
-        }
-        setActiveSection("Transcripts");
-        break;
     }
   }
 
@@ -1211,7 +1045,6 @@ export function AppStateRoot({
       "app.openCompanies": () => undefined,
       "app.openWatchlists": () => undefined, "app.openResearch": () => undefined,
       "app.openEvents": () => undefined,
-      "app.openTranscripts": () => undefined,
       "app.openSources": () => undefined,
       "app.openSettings": () => undefined,
       "app.openAlerts": () => undefined,
@@ -1675,64 +1508,6 @@ export function AppStateRoot({
                   <EventsScreen />
                 </EventsProvider>
               ) : null}
-              {activeSection === "Transcripts" ? (
-                <TranscriptsProvider
-                  value={{
-                    companies,
-                    geminiCredentialStatus,
-                    transcriptJobs,
-                    transcriptJobsError,
-                    transcriptsLoading,
-                    transcriptJobForm,
-                    transcriptJobCreateError,
-                    transcriptJobCreateState,
-                    transcriptJobRunInFlight,
-                    selectedTranscriptJobId,
-                    transcriptSegmentsByJobId,
-                    transcriptSegmentsErrorByJobId,
-                    transcriptSegmentSearchByJobId,
-                    selectedTranscriptSegmentIdsByJobId,
-                    transcriptNoteDraftJobId,
-                    transcriptNoteForm,
-                    transcriptNoteErrorByJobId,
-                    transcriptNoteSaveInFlight,
-                    transcriptLinkQueryByJobId,
-                    transcriptLinkErrorByJobId,
-                    transcriptLinkInFlight,
-                    transcriptDeleteInFlight,
-                    transcriptDescriptionDraftByJobId,
-                    transcriptDescriptionErrorByJobId,
-                    transcriptDescriptionSaveInFlight,
-                    transcriptCompanySuggestions,
-                    NotebookDateField,
-                    NotebookQuarterField,
-                    setTranscriptJobForm,
-                    setTranscriptJobCreateError,
-                    setTranscriptSegmentSearchByJobId,
-                    setTranscriptDescriptionDraftByJobId,
-                    refreshTranscriptJobs,
-                    retryTranscriptSegments,
-                    createTranscriptJob,
-                    toggleTranscriptJob,
-                    toggleTranscriptJobFromKeyboard,
-                    runTranscriptJob,
-                    deleteTranscriptJob,
-                    updateTranscriptJobDescription,
-                    updateTranscriptLinkQuery,
-                    linkTranscriptJobCompany,
-                    toggleTranscriptSegment,
-                    openTranscriptNoteDraft,
-                    createTranscriptNotebookEntry,
-                    discardTranscriptNoteDraft,
-                    updateTranscriptNoteForm,
-                    selectTranscriptCompany,
-                    openCompanyWorkspaceById,
-                    openSettings: () => setActiveSection("Settings"),
-                  }}
-                >
-                  <TranscriptsScreen />
-                </TranscriptsProvider>
-              ) : null}
               {activeSection === "Sources" ? (
                 <SourcesProvider
                   value={{
@@ -1782,10 +1557,6 @@ export function AppStateRoot({
                     locale,
                     settings,
                     settingsError,
-                    geminiCredentialStatus,
-                    geminiCredentialError,
-                    geminiCredentialInFlight,
-                    geminiApiKeyDraft,
                     shortcutBindings,
                     shortcutReferences,
                     onThemeChange: updateTheme,
@@ -1797,10 +1568,6 @@ export function AppStateRoot({
                     onMcpWritesEnabledChange: updateMcpWritesEnabled,
     onKpiAcquisitionEnabledChange: updateKpiAcquisitionEnabled,
                     onShortcutBindingsChange: updateShortcutBindings,
-                    onYoutubeTranscriptionModelChange:
-                      updateYoutubeTranscriptionModel,
-                    onYoutubeTranscriptionTimeoutChange:
-                      updateYoutubeTranscriptionTimeout,
                     onLogLevelChange: updateLogLevel,
                     onLogMaxFilesChange: updateLogMaxFiles,
                     onLogMaxFileBytesChange: updateLogMaxFileBytes,
@@ -1811,17 +1578,8 @@ export function AppStateRoot({
                     onSourcesWorkersChange: updateSourcesWorkers,
                     onAutopilotWorkersChange: updateAutopilotWorkers,
                     onResetQueueSettings: resetQueueSettings,
-                    onGeminiApiKeyDraftChange: setGeminiApiKeyDraft,
-                    onSaveGeminiApiKey: saveGeminiApiKey,
-                    onClearGeminiApiKey: clearGeminiApiKey,
-                    onOpenGeminiApiKeyPage: () => {
-                      void openUrl("https://aistudio.google.com/app/apikey");
-                    },
                     onImportApplied: refreshDatabaseBackedViews,
                     formatPollInterval,
-                    formatGeminiModel,
-                    formatCredentialConfigured,
-                    formatCredentialKind,
                   }}
                 >
                   <SettingsScreen />

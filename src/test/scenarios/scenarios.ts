@@ -30,7 +30,6 @@ import {
   legacyCompanies,
   legacyCompanyEvents,
   legacyFeedItems,
-  legacyGeminiCredential,
   legacyMetricsSnapshot,
   legacyRegistry,
   legacyResearchEvidence,
@@ -38,14 +37,11 @@ import {
   legacyResearchReminders,
   legacySettings,
   legacySourceAdapters,
-  legacyTranscriptJobs,
-  legacyTranscriptSegments,
   legacyUnmatchedSourceItems,
   legacyWatchlistMemberships,
   legacyWatchlists,
 } from "./legacyMinimal";
 import {
-  AI_PROVIDER_CATALOG,
   AVAILABLE_METRIC_KEYS,
   COMPANY_SPECS,
   type CompanySpec,
@@ -55,7 +51,6 @@ import {
   makeBackupStatus,
   makeClaimsToVerify,
   makeCompany,
-  makeCredentialStatuses,
   makeDatabaseStatus,
   makeDiagnosticEvent,
   makeReconciliationResult,
@@ -96,8 +91,6 @@ import {
   makeSignal,
   makeSourceAdapters,
   makeSourceIngestionResult,
-  makeTranscriptJob,
-  makeTranscriptSegment,
   makeUnmatchedSourceItem,
   makeUserSettings,
   makeWatchlist,
@@ -106,7 +99,6 @@ import type {
   CompanyEvent,
   CompanyRegistryEntry,
   CompanySignal,
-  CredentialStatus,
   DiagnosticEvent,
   FeedItem,
   LocalMetricsSnapshot,
@@ -114,8 +106,6 @@ import type {
   NotebookEntry,
   SourceAdapter,
   SourceIngestionResult,
-  TranscriptJob,
-  TranscriptSegment,
   UnmatchedSourceItem,
   UserSettings,
   Watchlist,
@@ -182,8 +172,6 @@ export interface ScenarioData {
   signals: CompanySignal[];
   events: CompanyEvent[];
   notebookEntries: NotebookEntry[];
-  transcriptJobs: TranscriptJob[];
-  transcriptSegments: TranscriptSegment[];
   watchlists: Watchlist[];
   watchlistMemberships: WatchlistMembership[];
   // Autonomous report pipeline (ADR 0055)
@@ -281,8 +269,6 @@ export interface ScenarioData {
   // read; not part of `UserSettings`/`get_settings` on the real backend
   // either, so it stays a sibling field rather than a settings key.
   todayLastVisitAt: string | null;
-  providerCatalog: typeof AI_PROVIDER_CATALOG[number][];
-  credentialStatuses: CredentialStatus[];
   metricsSnapshot: LocalMetricsSnapshot;
   diagnosticEvents: DiagnosticEvent[];
   reconciliationResults: ReconciliationResult[];
@@ -317,7 +303,6 @@ export interface ScenarioShortPositionEvent {
 interface Density {
   feedPerCompany: number;
   notebooksPerCompany: number;
-  segmentsPerTranscript: number;
   /** How many companies also get research/claims/fundamentals depth. */
   deepCompanies: number;
   /**
@@ -331,8 +316,6 @@ interface Density {
 const EMPTY_SINGLETONS = (companies: number, adapters: number) => ({
   settings: makeUserSettings(),
   todayLastVisitAt: null,
-  providerCatalog: AI_PROVIDER_CATALOG.map((entry) => ({ ...entry })),
-  credentialStatuses: makeCredentialStatuses(),
   metricsSnapshot: makeLocalMetricsSnapshot(),
   diagnosticEvents: [makeDiagnosticEvent()],
   reconciliationResults: [makeReconciliationResult()],
@@ -352,16 +335,12 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
   const notebookEntries: NotebookEntry[] = [];
   const signals: CompanySignal[] = [];
   const events: CompanyEvent[] = [];
-  const transcriptJobs: TranscriptJob[] = [];
-  const transcriptSegments: TranscriptSegment[] = [];
 
   for (const spec of specs) {
     for (let i = 0; i < density.feedPerCompany; i += 1) feedItems.push(makeFeedItem(spec, i));
     for (let i = 0; i < density.notebooksPerCompany; i += 1) notebookEntries.push(makeNotebookEntry(spec, i));
     signals.push(makeSignal(spec, true), makeSignal(spec, false), makeRecommendationSignal(spec));
     events.push(makeEvent(spec));
-    transcriptJobs.push(makeTranscriptJob(spec));
-    for (let i = 0; i < density.segmentsPerTranscript; i += 1) transcriptSegments.push(makeTranscriptSegment(spec, i));
   }
 
   const watchlists: Watchlist[] = [makeWatchlist("watchlist_sample_core", "Core holdings", specs.length)];
@@ -420,8 +399,6 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     signals,
     events,
     notebookEntries,
-    transcriptJobs,
-    transcriptSegments,
     watchlists,
     watchlistMemberships,
     autopilotModes: [],
@@ -492,14 +469,8 @@ function applyLegacyOverrides(data: ScenarioData): void {
   data.unmatchedSourceItems = legacyUnmatchedSourceItems.map((i) => ({ ...i }));
   data.settings = { ...legacySettings };
   data.metricsSnapshot = { ...legacyMetricsSnapshot };
-  data.transcriptJobs = legacyTranscriptJobs.map((j) => ({ ...j }));
-  data.transcriptSegments = legacyTranscriptSegments.map((s) => ({ ...s }));
   data.watchlists = legacyWatchlists.map((w) => ({ ...w }));
   data.watchlistMemberships = legacyWatchlistMemberships.map((m) => ({ ...m }));
-  data.credentialStatuses = [
-    { ...legacyGeminiCredential },
-    ...data.credentialStatuses.filter((c) => c.providerId !== "provider_gemini"),
-  ];
   data.databaseStatus = makeDatabaseStatus(legacyCompanies.length, legacySourceAdapters.length);
 }
 
@@ -512,8 +483,6 @@ function buildEmpty(): ScenarioData {
     signals: [],
     events: [],
     notebookEntries: [],
-    transcriptJobs: [],
-    transcriptSegments: [],
     watchlists: [],
     watchlistMemberships: [],
     autopilotModes: [],
@@ -569,7 +538,6 @@ export function buildScenario(spec: ScenarioName | ScenarioSpec): ScenarioData {
       data = buildPopulated(COMPANY_SPECS.slice(0, 4), {
         feedPerCompany: 2,
         notebooksPerCompany: 1,
-        segmentsPerTranscript: 2,
         deepCompanies: 3,
         deepOffset: 1,
       });
@@ -579,7 +547,6 @@ export function buildScenario(spec: ScenarioName | ScenarioSpec): ScenarioData {
       data = buildPopulated(COMPANY_SPECS, {
         feedPerCompany: 4,
         notebooksPerCompany: 3,
-        segmentsPerTranscript: 4,
         deepCompanies: 8,
       });
       break;

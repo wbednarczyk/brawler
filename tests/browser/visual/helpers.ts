@@ -93,7 +93,7 @@ async function assertBaseline(locator: Locator, fileName: string, opts: { mask?:
 }
 
 // F4b S2: a non-"default" state gets its own baseline filename — otherwise a
-// screen with two shot states (e.g. Transcripts default + empty) would
+// screen with two shot states (e.g. Settings default + a second state) would
 // silently overwrite one baseline with the other (both call sites shared the
 // same `${name}-${tier}.png` leaf before this).
 function snapshotName(name: string, state: string, tier: string): string {

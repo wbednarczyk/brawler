@@ -214,7 +214,9 @@ fn reports_database_status() {
     // seven retired AI rows (analysis mode, ai_workers, ai_provider_concurrency,
     // capability_providers, general_analysis_*, espi_ai_fallback_enabled,
     // history_sweep_ai_call_limit) plus the general-analysis model/timeout rows.
-    assert_eq!(status.settings, 19);
+    // Migration 0156 (ADR 0111, #463) then deletes the three retired
+    // youtube_transcription_* rows.
+    assert_eq!(status.settings, 16);
 }
 
 /// Guard (issue #404 H6): every write transaction must open `IMMEDIATE` via

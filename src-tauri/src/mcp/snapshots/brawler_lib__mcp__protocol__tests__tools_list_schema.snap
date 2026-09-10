@@ -1,5 +1,6 @@
 ---
 source: src/mcp/protocol.rs
+assertion_line: 333
 expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
 ---
 {
@@ -25,7 +26,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "get_company_dossier"
       },
       {
-        "description": "Full-text search across the user's research workspace (notes, report documents, transcripts, claims, facts). Returns ranked matches with snippets.",
+        "description": "Full-text search across the user's research workspace (notes, report documents, claims, facts). Returns ranked matches with snippets.",
         "inputSchema": {
           "additionalProperties": false,
           "properties": {
@@ -41,7 +42,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
               "type": "integer"
             },
             "query": {
-              "description": "Full-text query over the user's research: notes, reports, transcripts, claims, and facts.",
+              "description": "Full-text query over the user's research: notes, reports, claims, and facts.",
               "type": "string"
             }
           },
@@ -456,38 +457,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "get_report_diff"
       },
       {
-        "description": "Video-transcript jobs (optionally scoped to one company): their source, status, and resolved company.",
-        "inputSchema": {
-          "additionalProperties": false,
-          "properties": {
-            "company": {
-              "description": "Optional qualified ticker to scope the result to one company.",
-              "type": "string"
-            }
-          },
-          "type": "object"
-        },
-        "name": "list_video_transcript_jobs"
-      },
-      {
-        "description": "One transcript job's ordered segments (timestamped text) — the transcript body itself.",
-        "inputSchema": {
-          "additionalProperties": false,
-          "properties": {
-            "transcriptJobId": {
-              "description": "The transcript job id (from `list_video_transcript_jobs`).",
-              "type": "string"
-            }
-          },
-          "required": [
-            "transcriptJobId"
-          ],
-          "type": "object"
-        },
-        "name": "list_transcript_segments"
-      },
-      {
-        "description": "One company's research notes, each preserving the origin (report/article/transcript) it traces back to.",
+        "description": "One company's research notes, each preserving the origin (report/article) it traces back to.",
         "inputSchema": {
           "additionalProperties": false,
           "properties": {
@@ -716,7 +686,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "get_pipeline_reextraction_progress"
       },
       {
-        "description": "Create a research note for a company. Every note must carry a non-empty `origins` array tracing it to a report/article/transcript (provenance). References the company by its internal id (from list_companies).",
+        "description": "Create a research note for a company. Every note must carry a non-empty `origins` array tracing it to a report/article (provenance). References the company by its internal id (from list_companies).",
         "inputSchema": {
           "definitions": {
             "NewNotebookOrigin": {
@@ -794,72 +764,6 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "create_notebook_entry"
       },
       {
-        "description": "Create a research note anchored to selected transcript segments (the selection is the note's origin/provenance).",
-        "inputSchema": {
-          "definitions": {
-            "TranscriptNoteDraft": {
-              "properties": {
-                "body": {
-                  "type": "string"
-                },
-                "claimStatus": {
-                  "type": "string"
-                },
-                "eventDate": {
-                  "type": "string"
-                },
-                "followUpAfter": {
-                  "type": "string"
-                },
-                "followUpDate": {
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string"
-                },
-                "tags": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "title": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "body",
-                "kind",
-                "tags",
-                "title"
-              ],
-              "type": "object"
-            }
-          },
-          "properties": {
-            "noteDraft": {
-              "$ref": "#/definitions/TranscriptNoteDraft"
-            },
-            "transcriptJobId": {
-              "type": "string"
-            },
-            "transcriptSegmentIds": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            }
-          },
-          "required": [
-            "noteDraft",
-            "transcriptJobId",
-            "transcriptSegmentIds"
-          ],
-          "type": "object"
-        },
-        "name": "create_note_from_transcript_selection"
-      },
-      {
         "description": "Update an existing research note (by id): title/body/tags/kind. The note keeps its recorded origins.",
         "inputSchema": {
           "properties": {
@@ -906,7 +810,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "update_notebook_entry"
       },
       {
-        "description": "Record a tracked management claim (guidance/promise). Must anchor to a `sourceEvidenceId` (the report/transcript it was made in).",
+        "description": "Record a tracked management claim (guidance/promise). Must anchor to a `sourceEvidenceId` (the report it was made in).",
         "inputSchema": {
           "properties": {
             "body": {
@@ -1272,7 +1176,7 @@ expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
         "name": "record_financial_facts"
       },
       {
-        "description": "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry `citationsJson`: a serialized non-empty array of typed evidence refs `[{\"evidenceType\":\"notebook_entry\",\"evidenceId\":\"<id>\"}]` (types: feed_item | notebook_entry | claim | transcript_segment | company_event | research_question | company_signal | decision_entry); every ref must resolve to an existing row or the whole batch is refused. Decision support only — never an investment recommendation.",
+        "description": "Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry `citationsJson`: a serialized non-empty array of typed evidence refs `[{\"evidenceType\":\"notebook_entry\",\"evidenceId\":\"<id>\"}]` (types: feed_item | notebook_entry | claim | company_event | research_question | company_signal | decision_entry); every ref must resolve to an existing row or the whole batch is refused. Decision support only — never an investment recommendation.",
         "inputSchema": {
           "definitions": {
             "QualitativeVerdictInput": {

@@ -18,7 +18,7 @@ Rust will expose a dedicated research/evidence command and domain boundary. Comm
 
 Research evidence uses a hybrid model:
 
-- Existing domain tables remain the canonical source of truth for feed items, notebook entries, claims, transcript segments, events, AI analysis results, companies, watchlists, and sources.
+- Existing domain tables remain the canonical source of truth for feed items, notebook entries, claims, transcript segments (retired, [ADR 0111](0111-retire-video-transcription.md)), events, AI analysis results, companies, watchlists, and sources.
 - The research boundary exposes typed evidence and timeline read models assembled from canonical domains.
 - Durable cross-domain concepts that need persistence, such as review checkpoints and typed evidence links, get their own storage surfaces.
 - Full stored evidence or timeline projections are deferred until performance, review semantics, or synchronization requirements prove they are needed. The research API must leave room to introduce stored projections later without changing UI ownership.

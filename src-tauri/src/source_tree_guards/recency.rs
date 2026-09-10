@@ -98,24 +98,6 @@ const ALLOWED: &[(&str, &str, u8, Reason)] = &[
         Reason::QueueOrRunChronology,
     ),
     (
-        "storage/transcripts.rs",
-        "list_transcript_jobs",
-        1,
-        Reason::QueueOrRunChronology,
-    ),
-    (
-        "storage/transcripts.rs",
-        "find_existing_transcript_job",
-        1,
-        Reason::QueueOrRunChronology,
-    ),
-    (
-        "storage/activity_reads.rs",
-        "queued_transcript_jobs",
-        1,
-        Reason::QueueOrRunChronology,
-    ),
-    (
         "storage/autopilot.rs",
         "list_runs",
         1,

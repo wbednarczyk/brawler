@@ -42,7 +42,7 @@ pub struct GetCompanyDossierInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SearchResearchInput {
-    /// Full-text query over the user's research: notes, reports, transcripts, claims, and facts.
+    /// Full-text query over the user's research: notes, reports, claims, and facts.
     pub query: String,
     /// Optional qualified ticker to scope the search to one company.
     #[serde(default)]

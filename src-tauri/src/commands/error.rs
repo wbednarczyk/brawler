@@ -121,7 +121,6 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::InvalidSettingValue { .. } => InvalidInput,
         StorageError::InvalidNotebookValue { .. } => InvalidInput,
         StorageError::InvalidCompanyEventValue { .. } => InvalidInput,
-        StorageError::InvalidTranscriptValue { .. } => InvalidInput,
         StorageError::InvalidAiAnalysisValue { .. } => InvalidInput,
         StorageError::InvalidDiagnosticValue { .. } => InvalidInput,
         StorageError::InvalidSourceValue { .. } => InvalidInput,
@@ -336,7 +335,6 @@ impl From<crate::providers::credentials::CredentialError> for CommandError {
         let code = match &error {
             // Problems with what the caller supplied or named.
             CredentialError::EmptySecret => CommandErrorCode::InvalidInput,
-            CredentialError::UnknownProvider(_) => CommandErrorCode::InvalidInput,
             // Keychain backend failures have no more specific code.
             CredentialError::PersistenceVerificationFailed => CommandErrorCode::Internal,
             CredentialError::Backend(_) => CommandErrorCode::Internal,
@@ -509,10 +507,6 @@ mod tests {
 
         assert_eq!(
             CommandError::from(CredentialError::EmptySecret).code,
-            CommandErrorCode::InvalidInput
-        );
-        assert_eq!(
-            CommandError::from(CredentialError::UnknownProvider("provider_x".to_owned())).code,
             CommandErrorCode::InvalidInput
         );
         assert_eq!(

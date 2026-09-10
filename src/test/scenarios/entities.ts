@@ -7,13 +7,11 @@
 // runtime clones per test. IDs use a single `*_sample_*` scheme.
 
 import type {
-  AiProviderCatalogEntry,
   BackfillProgress,
   Company,
   CompanyEvent,
   CompanyRegistryEntry,
   CompanySignal,
-  CredentialStatus,
   DatabaseStatus,
   DiagnosticEvent,
   DiagnosticSummary,
@@ -25,8 +23,6 @@ import type {
   NotebookEntry,
   SourceAdapter,
   SourceIngestionResult,
-  TranscriptJob,
-  TranscriptSegment,
   UnmatchedSourceItem,
   UserSettings,
   Watchlist,
@@ -200,9 +196,10 @@ export function makeRegistryEntry(
 
 // Mirrors the backend derivation (`PresentationKind::derive`, F1 S1): real
 // data only ever carries the three production `type` strings, so an unmapped
-// mock-only pseudo-type (e.g. legacy "News"/"Transcript" fixtures) falls back
-// to "media" rather than the backend's "filing" default — that keeps their
-// summaries visible instead of wrongly suppressed by the dead-literal guard.
+// mock-only pseudo-type (e.g. legacy "News"/"Analyst commentary" fixtures)
+// falls back to "media" rather than the backend's "filing" default — that
+// keeps their summaries visible instead of wrongly suppressed by the
+// dead-literal guard.
 export function presentationKindFor(itemType: string, hasAttachments: boolean): PresentationKind {
   switch (itemType) {
     case "Red flag":
@@ -229,8 +226,8 @@ export function makeFeedItem(spec: CompanySpec, index: number): FeedItem {
       language: "pl",
     },
     {
-      type: "Transcript",
-      source: "Sample transcript",
+      type: "Analyst commentary",
+      source: "Sample commentary",
       attribution: "Sample",
       language: "en",
     },
@@ -724,44 +721,6 @@ export function makeNotebookEntry(
   };
 }
 
-export function makeTranscriptJob(spec: CompanySpec): TranscriptJob {
-  return {
-    id: `transcript_sample_${spec.key}`,
-    companyId: companyId(spec),
-    company: qualifiedTicker(spec),
-    companyName: spec.name,
-    providerId: "provider_gemini",
-    sourceType: "youtube_url",
-    sourceUrl: `https://example.test/video/${spec.key}`,
-    sourceLabel: `${spec.name} earnings call`,
-    companyResolutionStatus: "provided",
-    recognizedCompanyCandidates: [],
-    status: "completed",
-    errorCode: null,
-    createdAt: SAMPLE_NOW,
-    startedAt: SAMPLE_NOW,
-    finishedAt: SAMPLE_NOW,
-    error: null,
-  };
-}
-
-export function makeTranscriptSegment(
-  spec: CompanySpec,
-  index: number,
-): TranscriptSegment {
-  return {
-    id: `segment_sample_${spec.key}_${index}`,
-    transcriptJobId: `transcript_sample_${spec.key}`,
-    companyId: companyId(spec),
-    startSeconds: index * 30,
-    endSeconds: index * 30 + 28,
-    speaker: index % 2 === 0 ? "CEO" : "CFO",
-    text: `Transcript segment ${index} for ${spec.name}.`,
-    language: "en",
-    createdAt: SAMPLE_NOW,
-  };
-}
-
 export function makeWatchlist(
   id: string,
   name: string,
@@ -935,7 +894,7 @@ export function makeManagementClaim(spec: CompanySpec): ManagementClaim {
     dueFiscalYear: 2026,
     duePeriodType: "FY",
     status: "pending",
-    sourceEvidenceType: "transcript_segment",
+    sourceEvidenceType: "report_document",
     sourceEvidenceId: `segment_sample_${spec.key}_0`,
     targetMetricKey: "revenue",
     targetComparator: "gte",
@@ -1805,11 +1764,6 @@ export function makeUserSettings(): UserSettings {
     settingsSource: "sample",
     settingsImportExportFormat: "yaml",
     yamlImportExportStatus: "accepted_deferred",
-    aiProviders: {
-      youtubeTranscriptionProvider: "provider_gemini",
-      youtubeTranscriptionModel: "gemini-2.5-flash",
-      youtubeTranscriptionTimeoutSeconds: 300,
-    },
     logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
     shortcutBindings: {},
     database: {
@@ -1822,58 +1776,6 @@ export function makeUserSettings(): UserSettings {
     todayReviewedDays: [],
     mcp: { enabled: false, port: 8317, writesEnabled: false, kpiAcquisitionEnabled: false },
   };
-}
-
-export const AI_PROVIDER_CATALOG: readonly AiProviderCatalogEntry[] = [
-  {
-    providerId: "provider_gemini",
-    label: "Gemini",
-    models: [
-      "gemini-3.5-flash",
-      "gemini-3.1-pro-preview",
-      "gemini-2.5-flash",
-      "gemini-2.5-flash-lite",
-    ],
-    defaultModel: "gemini-3.5-flash",
-    requiresCredential: true,
-  },
-  {
-    providerId: "provider_anthropic",
-    label: "Claude (Anthropic)",
-    models: [
-      "claude-sonnet-4-6",
-      "claude-opus-4-8",
-      "claude-haiku-4-5-20251001",
-    ],
-    defaultModel: "claude-sonnet-4-6",
-    requiresCredential: true,
-  },
-  {
-    providerId: "provider_openai",
-    label: "OpenAI (ChatGPT)",
-    models: ["gpt-5.5", "gpt-5.1"],
-    defaultModel: "gpt-5.5",
-    requiresCredential: true,
-  },
-  {
-    providerId: "provider_openai_compatible",
-    label: "OpenAI-compatible (custom)",
-    models: [],
-    defaultModel: "",
-    requiresCredential: true,
-  },
-] as const;
-
-export function makeCredentialStatuses(): CredentialStatus[] {
-  return AI_PROVIDER_CATALOG.map((entry) => ({
-    providerId: entry.providerId,
-    secretKind: "api_key",
-    configured: entry.providerId === "provider_gemini",
-    storage: "keychain",
-    label: `${entry.label} API key`,
-    devFallbackAvailable: entry.providerId === "provider_gemini",
-    error: null,
-  }));
 }
 
 export function makeLocalMetricsSnapshot(): LocalMetricsSnapshot {

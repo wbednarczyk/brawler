@@ -35,9 +35,8 @@ pub struct DirectPath {
 }
 
 /// The awaited-path registry (sol diff R1 #8). Every entry's `core_fn` is
-/// called by exactly one `_direct` wrapper (or, for `run_video_transcript_job`,
-/// carries its OWN instrumentation directly — no separate wrapper exists)
-/// defined in `defining_file`, plus the queue handler when that kind is ALSO
+/// called by exactly one `_direct` wrapper defined in `defining_file`, plus
+/// the queue handler when that kind is ALSO
 /// queue-driven (`jobs/handlers.rs`, itself instrumented via the dispatch
 /// seam, never this core directly except as an intentional queue-side call
 /// that opens its own occurrence a different way).
@@ -72,16 +71,6 @@ pub const DIRECT_PATHS: &[DirectPath] = &[
         extra_allowed_files: &[(
             "jobs/handlers.rs",
             "ScheduledRegistryRefreshHandler — the queue's own dispatch seam writes its occurrence",
-        )],
-    },
-    DirectPath {
-        core_fn: "run_video_transcript_job",
-        defining_file: "jobs/transcript_runner.rs",
-        extra_allowed_files: &[(
-            "commands/transcripts.rs",
-            "the ONE Tauri command entry point — `run_video_transcript_job` carries its OWN \
-             `activity_registry::start` instrumentation directly (transcripts are never queue \
-             jobs, ADR 0109 dec. 3), so there is no separate `_direct` wrapper to route through",
         )],
     },
 ];
@@ -225,30 +214,5 @@ mod tests {
                 "direct path {kind} must not resolve to Corrupted given its real synthetic payload"
             );
         }
-
-        // The transcript direct path resolves via `identity_for_transcript`
-        // (a different signature — it takes the row, not a kind/payload
-        // pair, since transcripts are never queue jobs).
-        let identity = crate::jobs::activity_identity::identity_for_transcript(
-            &crate::storage::TranscriptJob {
-                id: "job_01".to_owned(),
-                company_id: None,
-                company: None,
-                company_name: None,
-                provider_id: "provider_gemini".to_owned(),
-                source_type: "youtube_url".to_owned(),
-                source_url: "https://www.youtube.com/watch?v=mock".to_owned(),
-                source_label: Some("Earnings call".to_owned()),
-                company_resolution_status: "unresolved".to_owned(),
-                recognized_company_candidates: Vec::new(),
-                status: "queued".to_owned(),
-                error_code: None,
-                created_at: "2026-06-01T10:00:00Z".to_owned(),
-                started_at: None,
-                finished_at: None,
-                error: None,
-            },
-        );
-        assert_eq!(identity.family, ActivityFamily::Transcript);
     }
 }

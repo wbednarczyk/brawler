@@ -383,6 +383,66 @@ fn settings_export_is_yaml_and_import_updates_allowlisted_settings_only() {
 }
 
 #[test]
+fn settings_import_tolerates_retired_transcription_keys_from_a_legacy_bundle() {
+    // ADR 0111 (#463): video transcription is retired — a bundle exported by
+    // a pre-#463 install still carries the three youtubeTranscription* keys.
+    // Importing it must not error; the retired keys are ignored with an
+    // explicit warning instead of a silent drop.
+    let legacy_bundle = r#"schemaVersion: 1
+exportedAt: "2026-06-05T00:00:00Z"
+appVersion: 0.83.0
+settings:
+  theme: dark
+  accentPalette: night-neon
+  locale: pl
+  pollIntervalSeconds: 900
+  youtubeTranscriptionProvider: provider_gemini
+  youtubeTranscriptionModel: gemini-2.5-flash
+  youtubeTranscriptionTimeoutSeconds: 300
+  logLevel: info
+  logMaxFiles: 5
+  logMaxFileBytes: 5242880
+"#;
+
+    let target = AppState::new(open_in_memory_database().expect("database should open"));
+    let preview = target
+        .preview_settings_import(legacy_bundle)
+        .expect("legacy bundle should parse");
+    assert!(preview.valid, "{:?}", preview.errors);
+    assert!(
+        preview
+            .warnings
+            .contains(&"Ignored retired setting youtube_transcription_provider".to_owned()),
+        "{:?}",
+        preview.warnings
+    );
+    assert!(
+        preview
+            .warnings
+            .contains(&"Ignored retired setting youtube_transcription_model".to_owned()),
+        "{:?}",
+        preview.warnings
+    );
+    assert!(
+        preview
+            .warnings
+            .contains(&"Ignored retired setting youtube_transcription_timeout_seconds".to_owned()),
+        "{:?}",
+        preview.warnings
+    );
+
+    let apply = target
+        .apply_settings_import(legacy_bundle)
+        .expect("legacy bundle import must not error");
+    assert_eq!(apply.warnings, preview.warnings);
+
+    let settings = target.get_settings().expect("settings should load");
+    assert_eq!(settings.theme, "dark");
+    assert_eq!(settings.locale, "pl");
+    assert_eq!(settings.poll_interval_seconds, 900);
+}
+
+#[test]
 fn research_data_round_trips_management_claims() {
     // First-class management claims (ADR 0040) are owner durable state and must
     // survive an export/import round trip.

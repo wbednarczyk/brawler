@@ -18,13 +18,7 @@ pub(super) const CLAIM_STATUSES: &[&str] = &[
     "revised",
 ];
 
-const SOURCE_EVIDENCE_TYPES: &[&str] = &[
-    "report_document",
-    "transcript_segment",
-    "transcript",
-    "feed_item",
-    "manual",
-];
+const SOURCE_EVIDENCE_TYPES: &[&str] = &["report_document", "feed_item", "manual"];
 
 const COMPARATORS: &[&str] = &["gte", "lte", "gt", "lt", "approx", "eq"];
 

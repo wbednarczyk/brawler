@@ -31,7 +31,7 @@ PLAYWRIGHT_VERSION := $(shell sed -n '/"node_modules\/@playwright\/test": {/{n;s
 PLAYWRIGHT_IMAGE := mcr.microsoft.com/playwright:v$(PLAYWRIGHT_VERSION)-noble
 VISUAL_DOCKER = docker run --rm --init --ipc=host --user "$$(id -u):$$(id -g)" -v $(CURDIR):/work -w /work -e HOME=/tmp -e SCREEN -e ALL -e REASON $(PLAYWRIGHT_IMAGE)
 
-.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-visual check-docs-gates check-commits check-tests-touched check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes smoke-gemini-transcript smoke-keyring live-drive live-up live-cycle tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help package-release-linux package-release-windows
+.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-visual check-docs-gates check-commits check-tests-touched check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes smoke-keyring live-drive live-up live-cycle tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help package-release-linux package-release-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -74,8 +74,6 @@ help:
 	@printf "                            Print the changelog entry used for GitHub Release notes\n"
 	@printf "  make dev                 Start Tauri dev mode inside nix develop, requires Linux GUI/WSLg\n"
 	@printf "  make frontend-preview    Serve built frontend preview to Windows browser, not native Tauri\n"
-	@printf "  make smoke-gemini-transcript\n"
-	@printf "                            Opt-in live Gemini YouTube transcript smoke test\n"
 	@printf "  make smoke-keyring        Opt-in live OS keyring persistence smoke test\n"
 	@printf "  make live-up             Rebuild the portable exe, launch it on Windows with CDP open, wait until ready (ADR 0066)\n"
 	@printf "  make live-drive          Drive the real running Windows app via WebView2 CDP (ADR 0066), needs a live app\n"
@@ -627,17 +625,6 @@ release-publish:
 	else \
 		gh release create "v$(VERSION)" $(RELEASE_OUT_DIR)/* --title "v$(VERSION)" --notes-file /tmp/brawler-release-notes-$(VERSION).md; \
 	fi
-
-smoke-gemini-transcript:
-	@if [ -z "$${GEMINI_API_KEY:-}" ]; then \
-		printf "GEMINI_API_KEY is required for the live Gemini smoke test.\n"; \
-		exit 1; \
-	fi
-	@if [ -z "$${BRAWLER_GEMINI_SMOKE_YOUTUBE_URL:-}" ]; then \
-		printf "BRAWLER_GEMINI_SMOKE_YOUTUBE_URL is required for the live Gemini smoke test.\n"; \
-		exit 1; \
-	fi
-	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_gemini_transcribes_youtube_url -- --ignored --nocapture
 
 smoke-keyring:
 	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_keyring_persists_gemini_transcription_secret -- --ignored --nocapture

@@ -90,7 +90,7 @@ Locale work follows the existing settings and shared-helper boundaries:
 - App-level locale state wiring belongs in the app controllers that already own settings state.
 - Locale resources and typed lookup helpers belong under `src/shared/locale/` or an equivalently focused shared module.
 - Screen components should receive localized strings or a narrow locale helper; they should not import Tauri settings APIs directly.
-- Source-provided text, company names, ticker symbols, URLs, attribution, transcript text, notebook titles/bodies, and fetched article/report bodies must remain source/user-provided and should not pass through app-locale translation.
+- Source-provided text, company names, ticker symbols, URLs, attribution, notebook titles/bodies, and fetched article/report bodies must remain source/user-provided and should not pass through app-locale translation.
 
 Shortcut work stays separate from row-navigation helpers: `src/shared/hooks/useKeyboardListNavigation.ts` remains for local arrow-key list movement; app-wide shortcut registration and the discoverability shell belong in `src/app/` and Settings/Help UI; screen-specific shortcut actions belong in the owning screen/controller, with tests near the owner.
 
@@ -172,7 +172,7 @@ Every non-trivial code change should consider modularity before implementation:
 
 This document is a standing architecture checklist, not a backlog of remaining extraction tasks (completion narrative: [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02)). Further extraction is expected during normal feature work when a module gains a new reason to change. Good future extraction triggers:
 
-- A cross-domain research workspace needs to aggregate feed items, notes, claims, transcripts, events, AI outputs, sources, review state, and evidence links without coupling screens directly to storage tables or unrelated app controllers.
+- A cross-domain research workspace needs to aggregate feed items, notes, claims, events, AI outputs, sources, review state, and evidence links without coupling screens directly to storage tables or unrelated app controllers.
 - A new app workflow adds state that can be isolated into a controller or view-model helper.
 - A screen adds a second complex panel, editor, or row/detail pattern.
 - A storage domain adds enough independent behavior to justify a focused helper/test module.
@@ -184,7 +184,7 @@ Known acceptable large files:
 
 - `src/app/AppStateRoot.tsx`, because it is the state/composition root.
 - Cohesive screen/domain components such as `CompanyWorkspace.tsx` and `SourceAdapterRow.tsx`.
-- Storage domain modules such as `storage/sources.rs` and `storage/transcripts.rs` while they remain domain-focused.
+- Storage domain modules such as `storage/sources.rs` and `storage/notebooks.rs` while they remain domain-focused.
 
 If any of these start mixing layers or unrelated domains, split the new responsibility during the feature slice that introduces the pressure.
 
@@ -203,7 +203,7 @@ Frontend ownership:
 Rust ownership:
 
 - Research/evidence commands should be thin wrappers around a dedicated research/evidence domain boundary.
-- Existing domain storage modules remain the canonical owners of feed items, notebook entries, transcript segments, events, companies, watchlists, and source state.
+- Existing domain storage modules remain the canonical owners of feed items, notebook entries, events, companies, watchlists, and source state.
 - The research/evidence boundary owns cross-domain read models, review checkpoints, and evidence links.
 
 Storage posture:

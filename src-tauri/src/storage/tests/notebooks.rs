@@ -95,6 +95,50 @@ fn creates_and_lists_notebook_entries_for_company() {
 }
 
 #[test]
+fn create_notebook_entry_rejects_transcript_segment_origin() {
+    // ADR 0111 (#463): video transcription is retired — `transcript_segment`
+    // is no longer an allowed notebook origin source_type.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "CDR".to_owned(),
+            display_name: "CD PROJEKT S.A.".to_owned(),
+            isin: Some("PLOPTTC00011".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("company should be created");
+
+    let error = state
+        .create_notebook_entry(NewNotebookEntry {
+            company_id: company.id,
+            title: "Retired origin".to_owned(),
+            body: "body".to_owned(),
+            body_format: None,
+            tags: vec![],
+            kind: "manual".to_owned(),
+            claim_status: None,
+            event_date: None,
+            follow_up_after: None,
+            follow_up_date: None,
+            origins: vec![NewNotebookOrigin {
+                source_type: "transcript_segment".to_owned(),
+                source_id: Some("seg1".to_owned()),
+                source_url: None,
+                label: None,
+            }],
+        })
+        .expect_err("transcript_segment origin must be rejected");
+
+    assert!(
+        matches!(error, StorageError::InvalidNotebookValue { .. }),
+        "unexpected error variant: {error:?}"
+    );
+}
+
+#[test]
 fn creates_and_lists_notebook_entries_for_future_exchange_company() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);

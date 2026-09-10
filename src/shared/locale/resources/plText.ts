@@ -8,10 +8,12 @@ export const plText: Record<string, string> = {
   "Not assessed yet.": "Jeszcze nie oceniono.",
   "Some report has an unreadable text layer (non-standard font), so its shareholder table could not be read. The gap is flagged here rather than guessed.":
     "Któryś raport ma nieczytelną warstwę tekstową (niestandardowa czcionka), więc nie udało się odczytać tabeli akcjonariatu. Luka jest tu oznaczona, zamiast zgadywana.",
-  "Speech-to-text for saved video sources. Set the Gemini API key in Credentials.":
-    "Zamiana mowy na tekst dla zapisanych źródeł wideo. Klucz API Gemini ustawisz w Poświadczeniach.",
   "How many things run at once in the background. Applies after restart.":
     "Ile rzeczy działa naraz w tle. Działa po ponownym uruchomieniu.",
+  // McpSettings.tsx's own dev-fallback banner (unrelated to the retired Gemini
+  // credential UI, #463) — still a live call site.
+  "Development fallback is active through environment configuration.":
+    "Fallback deweloperski jest aktywny przez konfigurację środowiska.",
   // Company health scores — Piotroski F / Altman Z″ (ADR 0083)
   "Company health": "Kondycja spółki",
   "Published-formula health scores over confirmed annual facts. Decision support only.":
@@ -517,7 +519,7 @@ export const plText: Record<string, string> = {
   "Open items": "Otwarte",
   "No open reminders.": "Brak otwartych przypomnień.",
   "Open questions you are actively tracking.": "Otwarte pytania, które aktywnie śledzisz.",
-  "Source items, notes, events, and transcripts for this scope.": "Elementy kanału, notatki, wydarzenia i transkrypcje dla tego zakresu.",
+  "Source items, notes, and events for this scope.": "Elementy kanału, notatki i wydarzenia dla tego zakresu.",
   "Refresh": "Odśwież",
   "Marking reviewed": "Oznaczanie jako przejrzane",
   "Research filters": "Filtry researchu",
@@ -562,7 +564,6 @@ export const plText: Record<string, string> = {
   "No linked evidence yet.": "Brak połączonych dowodów.",
   "Feed item": "Element kanału",
   "Decision entry": "Wpis decyzji",
-  "Transcript": "Transkrypcja",
   "Research question": "Pytanie badawcze",
   "Reminder": "Przypomnienie",
   "AI brief": "Brief AI",
@@ -723,7 +724,6 @@ export const plText: Record<string, string> = {
   "Feed": "Kanał",
   "Notebook": "Notatnik",
   "Claims": "Tezy",
-  "Transcripts": "Transkrypcje",
   "Metadata": "Metadane",
   "Company feed": "Kanał spółki",
   "Open company feed item": "Otwórz element kanału spółki",
@@ -812,7 +812,6 @@ export const plText: Record<string, string> = {
   "Open claim": "Otwórz tezę",
   "Claim detail": "Szczegóły tezy",
   "No claim notes for": "Brak notatek z tezami dla",
-  "YouTube transcript workflows start in Milestone 7.": "Workflowy transkrypcji YouTube zaczynają się w kamieniu milowym 7.",
   "Company metadata": "Metadane spółki",
   "Qualified ticker": "Ticker kwalifikowany",
   "Event view mode": "Tryb widoku wydarzeń",
@@ -858,50 +857,12 @@ export const plText: Record<string, string> = {
   "Company, title, and date are required.": "Spółka, tytuł i data są wymagane.",
   "URL is required": "URL jest wymagany",
   "URL": "URL",
-  "Optional, e.g. CDR Q2 investor conference": "Opcjonalnie, np. konferencja inwestorska CDR Q2",
-  "Company or ticker": "Spółka lub ticker",
-  "Optional, e.g. GPW:CDR, CDR, CD PROJEKT": "Opcjonalnie, np. GPW:CDR, CDR, CD PROJEKT",
-  "Transcript company suggestions": "Sugestie spółki transkrypcji",
-  "No tracked company matches. Leave company empty to keep this transcript unlinked.":
-    "Brak dopasowania do obserwowanych spółek. Zostaw spółkę pustą, aby transkrypcja pozostała niepołączona.",
   "Running": "Uruchamianie",
   "Retry": "Ponów",
-  "Unlinked": "Niepołączone",
-  "Link transcript company": "Połącz spółkę transkrypcji",
-  "Transcript link company lookup": "Wyszukiwanie spółki do połączenia transkrypcji",
-  "Transcript link company suggestions": "Sugestie spółki do połączenia transkrypcji",
-  "No tracked company matches. The transcript can stay unlinked.": "Brak dopasowania do obserwowanych spółek. Transkrypcja może pozostać niepołączona.",
-  "URL is required.": "URL jest wymagany.",
-  "Use a YouTube URL from youtube.com or youtu.be.": "Użyj URL YouTube z youtube.com albo youtu.be.",
-  "No timestamp": "Brak znacznika czasu",
-  "Notebook note draft": "Szkic notatki notatnika",
-  "Edit the note before saving it to the company notebook.": "Edytuj notatkę przed zapisaniem jej w notatniku spółki.",
-  "Transcript note title": "Tytuł notatki z transkrypcji",
-  "Transcript note kind": "Rodzaj notatki z transkrypcji",
-  "Transcript note status": "Status notatki z transkrypcji",
-  "Transcript note tags": "Tagi notatki z transkrypcji",
-  "Transcript note event date": "Data wydarzenia notatki z transkrypcji",
-  "Transcript note follow-up quarter": "Kwartał sprawdzenia notatki z transkrypcji",
-  "Transcript note follow-up date": "Data sprawdzenia notatki z transkrypcji",
-  "Transcript note body": "Treść notatki z transkrypcji",
-  "Saving": "Zapisywanie",
-  "Transcript segments unavailable": "Segmenty transkrypcji są niedostępne",
-  "Search transcript segments": "Szukaj segmentów transkrypcji",
-  "Search text, speaker, language, timestamp": "Szukaj tekstu, mówcy, języka, czasu",
-  "Transcript segments": "Segmenty transkrypcji",
-  "Select transcript segment": "Wybierz segment transkrypcji",
-  "No transcript segments match this search.": "Brak segmentów transkrypcji pasujących do wyszukiwania.",
-  "Provider": "Dostawca",
-  "Credentials": "Poświadczenia",
-  "Timeout": "Limit czasu",
   "Open source": "Otwórz źródło",
   "details": "szczegóły",
   "Enabled": "Włączone",
   "Disabled": "Wyłączone",
-  // F4b S2: repoints the (previously orphaned — no call site referenced this
-  // key) status word for the Transcripts "Ready" status chip; feminine
-  // agreement for "transkrypcja".
-  "Ready": "Gotowa",
   "Healthy": "Działa",
   "Needs attention": "Wymaga uwagi",
   "Not refreshed yet": "Jeszcze nie odświeżono",
@@ -1022,32 +983,13 @@ export const plText: Record<string, string> = {
   "Source candidates": "Kandydaci źródeł",
   "Registered source candidates and developer-only source details.": "Zarejestrowani kandydaci źródeł i szczegóły tylko dla trybu deweloperskiego.",
   "No source candidates registered.": "Brak zarejestrowanych kandydatów źródeł.",
-  "YouTube transcription": "Transkrypcja YouTube",
-  "YouTube transcription provider ID": "ID dostawcy transkrypcji YouTube",
-  "YouTube transcription model": "Model transkrypcji YouTube",
-  "YouTube transcription timeout": "Limit czasu transkrypcji YouTube",
-  "YouTube transcription credentials": "Poświadczenia transkrypcji YouTube",
-  "Stored in": "Przechowywany w",
-  "YouTube transcription disclosure": "Ujawnienie transkrypcji YouTube",
-  "YouTube transcription scope": "Zakres transkrypcji YouTube",
-  "Gemini is used only for YouTube transcription.": "Gemini jest używany tylko do transkrypcji YouTube.",
   "General AI provider": "Ogólny dostawca AI",
   "General AI model": "Ogólny model AI",
   "General AI timeout": "Limit czasu ogólnego AI",
   "Scope": "Zakres",
-  "Transcription quality": "Jakość transkrypcji",
-  "Default": "Domyślne",
-  "Cheapest supported": "Najtańszy obsługiwany",
-  "Give up after": "Poddaj się po",
-  "seconds": "sekund",
-  "minutes": "minut",
   "Replace configured key": "Zastąp skonfigurowany klucz",
   "Paste API key": "Wklej klucz API",
-  "Open Google AI Studio API keys page": "Otwórz stronę kluczy API Google AI Studio",
-  "Development fallback is active through environment configuration.": "Fallback deweloperski jest aktywny przez konfigurację środowiska.",
-  "Couldn't read the saved key": "Nie udało się odczytać zapisanego klucza",
   "Couldn't save that setting": "Nie udało się zapisać ustawienia",
-  "Gemini API key is required.": "Klucz API Gemini jest wymagany.",
   "Keyboard shortcuts": "Skróty klawiaturowe",
   "Shortcuts are ignored while typing in fields and editors.": "Skróty są ignorowane podczas pisania w polach i edytorach.",
   "Navigation": "Nawigacja",
@@ -1057,7 +999,6 @@ export const plText: Record<string, string> = {
   "Open Watchlists": "Otwórz Listy",
   "Open Alerts": "Otwórz Alerty",
   "Open Events": "Otwórz Wydarzenia",
-  "Open Transcripts": "Otwórz Transkrypcje",
   "Open Settings": "Otwórz Ustawienia",
   "Open Inbox search": "Otwórz wyszukiwanie inboxu",
   "Refresh workspace data": "Odśwież dane obszaru pracy",
@@ -1144,12 +1085,7 @@ export const plText: Record<string, string> = {
   "Remove from": "Usuń z",
   "Clear registry search": "Wyczyść wyszukiwanie rejestru",
   "Logs": "Logi",
-  "Configured": "Skonfigurowane",
-  "Not configured": "Nieskonfigurowane",
   "Clear": "Wyczyść",
-  "API key": "Klucz API",
-  "API Key": "Klucz API",
-  "Gemini": "Gemini",
   "Working week events": "Wydarzenia dni roboczych",
   "Weekend events": "Wydarzenia weekendowe",
   "Weekend": "Weekend",
@@ -1379,8 +1315,7 @@ export const plText: Record<string, string> = {
   "User link": "Link użytkownika",
   // U7-D — Research + Events + Report Season density contracts (ADR 0076 D6)
   "Toggle details": "Przełącz szczegóły",
-  // U7-E2 — Watchlists + Transcripts + Settings + Diagnostics density contracts (ADR 0076 D6)
-  "Segments": "Segmenty",
+  // U7-E2 — Watchlists + Settings + Diagnostics density contracts (ADR 0076 D6)
   "Section": "Sekcja",
   "Settings section": "Sekcja ustawień",
   // U7-E1 — Inbox + Sources density contracts (ADR 0076 D6)
@@ -2018,7 +1953,6 @@ export const plText: Record<string, string> = {
   "Couldn't load recommendations. The rest of the view is up to date.":
     "Nie udało się wczytać rekomendacji. Reszta widoku jest aktualna.",
   "No analyst recommendations yet for this company.": "Brak rekomendacji analityków dla tej spółki.",
-  "Open notebook": "Otwórz notatnik",
   "Couldn't read this company's data.": "Nie udało się odczytać danych spółki.",
   "The connection to your data may be interrupted.": "Połączenie z Twoimi danymi mogło zostać przerwane.",
   "Loading company view…": "Wczytywanie widoku spółki…",
@@ -2059,63 +1993,11 @@ export const plText: Record<string, string> = {
   "Open tool: Events": "Otwórz narzędzie: Wydarzenia",
   // ---- /wave2 S1 ----
 
-  // F4b S2 — Transcripts (docs/plans/f4b-contracts/s2-transcripts.md)
-  "New transcript": "Nowa transkrypcja",
-  "Recording link": "Link do nagrania",
-  "Transcript title": "Tytuł transkrypcji",
-  "Company (optional)": "Spółka (opcjonalnie)",
-  "Fetch transcript": "Pobierz transkrypcję",
-  "Fetching…": "Pobieranie…",
-  "Fetch again": "Pobierz ponownie",
-  "Gemini · key configured": "Gemini · klucz skonfigurowany",
   "Settings": "Ustawienia",
-  "Refresh transcripts": "Odśwież transkrypcje",
-  "You don't have any transcripts yet": "Nie masz jeszcze transkrypcji",
-  "Paste a YouTube recording link. Gemini turns speech into text — segments you select become a company notebook note, linked to the minute in the recording.":
-    "Wklej link do nagrania z YouTube. Gemini zamieni mowę na tekst; fragmenty, które zaznaczysz, zapiszesz jako notatkę spółki — z nicią do minuty nagrania.",
-  "Gemini key needed first": "Najpierw klucz Gemini",
-  "Gemini does the transcription (the app's only AI). The key is stored in your system's keychain.":
-    "Transkrypcję robi Gemini (jedyne AI w aplikacji). Klucz zapisuje się w pęku kluczy systemu.",
-  "Open settings": "Otwórz ustawienia",
-  "Couldn't load transcripts": "Nie udało się wczytać transkrypcji",
-  "Loading transcripts…": "Wczytywanie transkrypcji…",
   // F3d S2 (#133): retargeted from the unused "Trwa" to "W toku" — no live
   // `text("In progress")` call site existed before the Activity panel's
   // section header adopted it (grep confirmed, 2026-09-04).
   "In progress": "W toku",
-  "Transcript failed": "Nie udało się",
-  "Configure Gemini API key in Settings before running transcription": "Skonfiguruj klucz API Gemini w Ustawieniach przed uruchomieniem transkrypcji",
-  "Gemini is not configured": "Gemini nie jest skonfigurowany",
-  "Gemini usage limit reached": "Osiągnięto limit użycia Gemini",
-  "Gemini is unavailable right now": "Gemini jest teraz niedostępny",
-  "Gemini reported an error": "Gemini zgłosił błąd",
-  "Network error": "Błąd sieci",
-  "Invalid recording link": "Nieprawidłowy link do nagrania",
-  "Could not read the transcript": "Nie udało się odczytać transkrypcji",
-  "Unknown transcription error": "Nieznany błąd transkrypcji",
-  "Recording from YouTube": "Nagranie z YouTube",
-  "Open transcript": "Otwórz transkrypcję",
-  "Link company": "Połącz spółkę",
-  "Segments for this transcript will also be removed.": "Fragmenty tej transkrypcji również zostaną usunięte.",
-  // "Added"/"Fetched": already defined above — reused verbatim.
-  "Started": "Rozpoczęto",
-  "Show segments": "Pokaż fragmenty",
-  "Transcript details": "Szczegóły transkrypcji",
-  "Segments will be available once the transcript is ready.": "Fragmenty będą dostępne, gdy transkrypcja będzie gotowa.",
-  "Fetch segments again": "Pobierz fragmenty ponownie",
-  "No transcript segments stored.": "Brak zapisanych fragmentów transkrypcji.",
-  // "Clear search"/"Open notebook": already defined above — reused verbatim.
-  "selected of": "zaznaczone z",
-  "Add to notebook": "Dodaj do notatnika",
-  "No segment contains \"{query}\"": "Żaden fragment nie zawiera „{query}”",
-  "Note saved to the {company} notebook": "Notatka zapisana w notatniku {company}",
-  "Save note": "Zapisz notatkę",
-  // Title/Manual/Observation/Claim/Question/Follow-up/Status/Not set/Status
-  // open/Delivered/Partially delivered/Missed/Unknown/Not applicable/Tags/
-  // Event date/Follow-up quarter/Follow-up date/Body/Settings/Network error:
-  // already defined above (shared with the Notebooks screen's own note
-  // composer over the same `NotebookForm` fields) — reused verbatim, not
-  // redeclared here.
   // F4b S4 — Sources / Report Season / nav
   "No sources": "Brak źródeł",
   "Automatically every {interval}": "Automatycznie co {interval}",
@@ -2227,7 +2109,7 @@ export const plText: Record<string, string> = {
   // ---- F3d S2 ----
   // Activity center (ADR 0109, #133): topbar indicator + panel copy. Family
   // labels (`activityLabels.ts`); "Source refresh"/"Morning briefing"/
-  // "Transcript"/"Try again"/"Open company" reuse their
+  // "Try again"/"Open company" reuse their
   // existing exact-match entries above instead of duplicating a key. Status
   // labels moved to the "F3d fixT2" block below (sol diff R2 finding 6).
   "Company refresh": "Odświeżanie komunikatów spółki",
@@ -2255,7 +2137,6 @@ export const plText: Record<string, string> = {
     "Nie udało się odświeżyć listy. Pokazuję stan z {time}.",
   "Open sources": "Otwórz źródła",
   "Open Today": "Otwórz Dziś",
-  "Open transcripts": "Otwórz transkrypcje",
   "Last finished": "Ostatnio zakończone",
   "Attempt": "Próba",
   "in flight": "w toku",

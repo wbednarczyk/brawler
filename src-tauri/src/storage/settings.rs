@@ -47,19 +47,6 @@ pub(crate) const TODAY_LAST_VISIT_AT_KEY: &str = "today_last_visit_at";
 pub(crate) const TODAY_REVIEWED_DAYS_KEY: &str = "today_reviewed_days";
 const TODAY_REVIEWED_DAYS_MAX: usize = 14;
 
-#[derive(Debug, Serialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct AiProviderSettings {
-    pub youtube_transcription_provider: String,
-    pub youtube_transcription_model: String,
-    pub youtube_transcription_timeout_seconds: i64,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -170,7 +157,6 @@ pub struct UserSettings {
     pub settings_source: &'static str,
     pub settings_import_export_format: String,
     pub yaml_import_export_status: &'static str,
-    pub ai_providers: AiProviderSettings,
     pub logs: LogSettings,
     pub shortcut_bindings: HashMap<String, ShortcutBindingSetting>,
     pub database: DatabaseSettings,
@@ -218,9 +204,6 @@ pub struct SettingsUpdate {
     /// Requested backfill depth in years (ADR 0077 §3); clamped to `[1, 10]` on
     /// write rather than rejected.
     pub backfill_years: Option<i64>,
-    pub youtube_transcription_provider: Option<String>,
-    pub youtube_transcription_model: Option<String>,
-    pub youtube_transcription_timeout_seconds: Option<i64>,
     pub log_level: Option<String>,
     pub log_max_files: Option<i64>,
     pub log_max_file_bytes: Option<i64>,
@@ -267,17 +250,6 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
         settings_source: "sqlite",
         settings_import_export_format: setting_string(connection, "settings_import_export_format")?,
         yaml_import_export_status: "accepted_deferred",
-        ai_providers: AiProviderSettings {
-            youtube_transcription_provider: setting_string(
-                connection,
-                "youtube_transcription_provider",
-            )?,
-            youtube_transcription_model: setting_string(connection, "youtube_transcription_model")?,
-            youtube_transcription_timeout_seconds: setting_i64(
-                connection,
-                "youtube_transcription_timeout_seconds",
-            )?,
-        },
         logs: LogSettings {
             level: setting_string(connection, "log_level")?,
             max_files: setting_i64(connection, "log_max_files")?,
@@ -397,51 +369,6 @@ pub(crate) fn update_settings(
             "backfill_years",
             &clamped.to_string(),
             "integer",
-        )?;
-    }
-
-    if let Some(youtube_transcription_provider) = input.youtube_transcription_provider {
-        validate_allowed_setting(
-            "youtube_transcription_provider",
-            &youtube_transcription_provider,
-            &["provider_gemini"],
-        )?;
-        update_setting(
-            connection,
-            "youtube_transcription_provider",
-            &youtube_transcription_provider,
-        )?;
-    }
-
-    if let Some(youtube_transcription_model) = input.youtube_transcription_model {
-        validate_allowed_setting(
-            "youtube_transcription_model",
-            &youtube_transcription_model,
-            &[
-                "gemini-2.5-flash-lite",
-                "gemini-2.5-flash",
-                "gemini-3.1-flash-lite",
-                "gemini-3.5-flash",
-            ],
-        )?;
-        update_setting(
-            connection,
-            "youtube_transcription_model",
-            &youtube_transcription_model,
-        )?;
-    }
-
-    if let Some(youtube_transcription_timeout_seconds) = input.youtube_transcription_timeout_seconds
-    {
-        validate_allowed_setting_i64(
-            "youtube_transcription_timeout_seconds",
-            youtube_transcription_timeout_seconds,
-            &[45, 90, 180, 300, 600],
-        )?;
-        update_setting(
-            connection,
-            "youtube_transcription_timeout_seconds",
-            &youtube_transcription_timeout_seconds.to_string(),
         )?;
     }
 

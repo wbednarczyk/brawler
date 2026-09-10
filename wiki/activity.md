@@ -2,7 +2,7 @@
 
 Brawler works in the background all day — refreshing sources, fetching a
 company's report history, reading a new report into numbers, reading
-shareholder tables, pulling prices, fetching a transcript. **Activity** is the
+shareholder tables, pulling prices. **Activity** is the
 one place that answers "what is the app doing right now, and what just
 finished?" — and takes you to the result.
 

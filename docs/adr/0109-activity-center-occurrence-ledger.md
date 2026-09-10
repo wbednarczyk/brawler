@@ -13,7 +13,7 @@ navigation target).
 ## Context
 
 Brawler runs its background work through fifteen registered `job_queue` kinds plus a handful of
-awaited commands (manual source refresh, transcript fetch, direct history backfill / aggregator /
+awaited commands (manual source refresh, transcript fetch — retired by [ADR 0111](0111-retire-video-transcription.md), direct history backfill / aggregator /
 registry refresh). Each surface shows its own corner of it — the Coverage drain counter, Sources
 health, the transcript list, run rows on Today, `job_failed` attention events — and nothing answers
 "what is the app doing right now, what just finished, take me there" (#133).

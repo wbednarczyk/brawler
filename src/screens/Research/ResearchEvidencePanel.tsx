@@ -136,7 +136,7 @@ export function ResearchEvidencePanel({
       <div role="group" className="research-timeline-shell" aria-label={text("Evidence timeline")}>
         <SectionHeader
           className="research-section-evidence"
-          description={text("Source items, notes, events, and transcripts for this scope.")}
+          description={text("Source items, notes, and events for this scope.")}
           meta={<Figure value={visibleItems.length} />}
           title={text("Evidence")}
           variant="accent"

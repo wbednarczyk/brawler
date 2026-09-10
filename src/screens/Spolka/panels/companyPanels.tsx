@@ -67,7 +67,7 @@ export function CompanyNotebookPanel({
    * entry once it renders. */
   highlightEntryId?: string;
   /** A prefilled-but-unsaved note from a cross-screen caller (Inbox,
-   * research evidence, transcript) — opens the composer seeded with it. */
+   * research evidence) — opens the composer seeded with it. */
   initialDraft?: NotebookDraft;
 }) {
   const { text } = useLocale();

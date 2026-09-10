@@ -71,7 +71,6 @@ pub(crate) fn family_token(family: ActivityFamily) -> &'static str {
         ActivityFamily::ManagementReading => "managementReading",
         ActivityFamily::PriceHistory => "priceHistory",
         ActivityFamily::KpiIngest => "kpiIngest",
-        ActivityFamily::Transcript => "transcript",
         ActivityFamily::Corrupted => "corrupted",
     }
 }
@@ -171,7 +170,6 @@ pub(crate) fn parse_family_token(token: &str) -> Option<ActivityFamily> {
         "managementReading" => ActivityFamily::ManagementReading,
         "priceHistory" => ActivityFamily::PriceHistory,
         "kpiIngest" => ActivityFamily::KpiIngest,
-        "transcript" => ActivityFamily::Transcript,
         "corrupted" => ActivityFamily::Corrupted,
         _ => return None,
     })
@@ -378,5 +376,14 @@ mod tests {
             )
             .expect("status");
         assert_eq!(status, "running");
+    }
+
+    #[test]
+    fn parse_family_token_skips_the_retired_transcript_family() {
+        // ADR 0111 (#463): video transcription is retired — the `transcript`
+        // family token is no longer mapped. A legacy `job_runs` row seeded by
+        // a pre-#463 install must parse to `None` (schema drift, skipped by
+        // the read model) rather than erroring.
+        assert_eq!(parse_family_token("transcript"), None);
     }
 }

@@ -109,7 +109,7 @@ bridge always connects directly to the local server.
 
 The surface mirrors the app: **read tools** cover the whole workspace
 (companies, watchlists, feed, financial facts with their provenance, ownership
-and insiders, health and red flags, reports and diffs, transcripts, notes,
+and insiders, health and red flags, reports and diffs, notes,
 claims, expectations, the journal, quality frameworks, the calendar, autopilot
 runs, attention events, and the morning briefing); **act tools** let the
 assistant record research and run jobs once you allow writes. The complete,

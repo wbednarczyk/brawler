@@ -205,9 +205,10 @@ const RETIRED_PLTEXT_KEYS_WAVE2_S2 = [
 
 // wave2 S1 (#454): SPOLKA_TOOL_COMMANDS labels move to the "Open tool:
 // <Name>" family — the flat "Open fundamentals"-style labels retire. "Open
-// notebook" is EXCLUDED: TranscriptJobRow.tsx still renders it for its own
-// unrelated "open the linked note" destination (verified — the only other
-// live call site of any of these labels).
+// notebook" was EXCLUDED at the time: TranscriptJobRow.tsx still rendered it
+// for its own unrelated "open the linked note" destination — that screen is
+// deleted with video transcription (#463, ADR 0111), so "Open notebook"
+// joins this wave too (verified: zero remaining call sites).
 const RETIRED_PLTEXT_KEYS_WAVE2_S1 = [
   "Open overview",
   "Open fundamentals",
@@ -223,6 +224,7 @@ const RETIRED_PLTEXT_KEYS_WAVE2_S1 = [
   "Open signals",
   "Open documents",
   "Open events",
+  "Open notebook",
 ];
 
 describe("retired Fundamentals vocabulary stays retired (dogfooding wave 2026-09, S1)", () => {
@@ -372,6 +374,158 @@ describe("retired Transcripts 'job' vocabulary stays retired (F4b S2)", () => {
     // quoted-literal match would also flag unrelated identifiers (e.g.
     // "Selected" inside `dataSelected`) and prose comments that merely quote
     // the retired string while explaining something else.
+    const needles = retiredTokens.flatMap((token) => [
+      `text("${token}")`,
+      `t("${token}")`,
+      `text('${token}')`,
+      `t('${token}')`,
+    ]);
+    const hits: string[] = [];
+    for (const rel of files) {
+      const content = readFileSync(join(process.cwd(), rel), "utf8");
+      for (const needle of needles) {
+        if (content.includes(needle)) hits.push(`${rel}: ${needle}`);
+      }
+    }
+    expect(hits, `Retired keys still referenced:\n${hits.join("\n")}`).toEqual([]);
+  });
+});
+
+// #463 (ADR 0111): video transcription is retired outright — the Transcripts
+// screen, its Settings tabs (Transcripts + Credentials), the Gemini
+// credential UI, the nav entry/shortcut, and every transcript vocabulary go.
+const RETIRED_T_KEYS_463 = [
+  "globalSearch.group.transcript_segment",
+  "nav.transcripts",
+  "transcripts.title",
+  "transcripts.description",
+  "settings.credentials.title",
+  "settings.credentials.save",
+  "settings.credentials.clear",
+  "settings.credentials.getGeminiKey",
+  "settings.credentials.geminiApiKey",
+];
+
+const RETIRED_PLTEXT_KEYS_463 = [
+  "Speech-to-text for saved video sources. Set the Gemini API key in Credentials.",
+  "Source items, notes, events, and transcripts for this scope.",
+  "Transcript",
+  "Transcripts",
+  "YouTube transcript workflows start in Milestone 7.",
+  "Transcript company suggestions",
+  "No tracked company matches. Leave company empty to keep this transcript unlinked.",
+  "Link transcript company",
+  "Transcript link company lookup",
+  "Transcript link company suggestions",
+  "No tracked company matches. The transcript can stay unlinked.",
+  "Transcript note title",
+  "Transcript note kind",
+  "Transcript note status",
+  "Transcript note tags",
+  "Transcript note event date",
+  "Transcript note follow-up quarter",
+  "Transcript note follow-up date",
+  "Transcript note body",
+  "Transcript segments unavailable",
+  "Search transcript segments",
+  "Transcript segments",
+  "Select transcript segment",
+  "No transcript segments match this search.",
+  "Credentials",
+  "Optional, e.g. CDR Q2 investor conference",
+  "Company or ticker",
+  "Optional, e.g. GPW:CDR, CDR, CD PROJEKT",
+  "Unlinked",
+  "URL is required.",
+  "No timestamp",
+  "Notebook note draft",
+  "Edit the note before saving it to the company notebook.",
+  "Saving",
+  "Search text, speaker, language, timestamp",
+  "Provider",
+  "Timeout",
+  "Ready",
+  "YouTube transcription",
+  "YouTube transcription provider ID",
+  "YouTube transcription model",
+  "YouTube transcription timeout",
+  "YouTube transcription credentials",
+  "Stored in",
+  "YouTube transcription disclosure",
+  "YouTube transcription scope",
+  "Gemini is used only for YouTube transcription.",
+  "Transcription quality",
+  "Default",
+  "Cheapest supported",
+  "Give up after",
+  "seconds",
+  "minutes",
+  "Open Google AI Studio API keys page",
+  "Couldn't read the saved key",
+  "Gemini API key is required.",
+  "Open Transcripts",
+  "Not configured",
+  "API key",
+  "API Key",
+  "Gemini",
+  "Configured",
+  "Segments",
+  "New transcript",
+  "Recording link",
+  "Transcript title",
+  "Company (optional)",
+  "Fetch transcript",
+  "Fetching…",
+  "Fetch again",
+  "Gemini · key configured",
+  "Refresh transcripts",
+  "You don't have any transcripts yet",
+  "Paste a YouTube recording link. Gemini turns speech into text — segments you select become a company notebook note, linked to the minute in the recording.",
+  "Gemini key needed first",
+  "Gemini does the transcription (the app's only AI). The key is stored in your system's keychain.",
+  "Open settings",
+  "Couldn't load transcripts",
+  "Loading transcripts…",
+  "Transcript failed",
+  "Configure Gemini API key in Settings before running transcription",
+  "Gemini is not configured",
+  "Gemini usage limit reached",
+  "Gemini is unavailable right now",
+  "Gemini reported an error",
+  "Network error",
+  "Invalid recording link",
+  "Could not read the transcript",
+  "Unknown transcription error",
+  "Recording from YouTube",
+  "Open transcript",
+  "Link company",
+  "Started",
+  "Show segments",
+  "Transcript details",
+  "Fetch segments again",
+  "No transcript segments stored.",
+  "selected of",
+  "Add to notebook",
+  'No segment contains "{query}"',
+  "Note saved to the {company} notebook",
+  "Save note",
+  "Open transcripts",
+  "Open notebook",
+];
+
+describe("retired video-transcription vocabulary stays retired (#463, ADR 0111)", () => {
+  it("is absent from every locale resource table", () => {
+    const hits = [
+      ...RETIRED_T_KEYS_463.filter((key) => key in en).map((key) => `en.ts: ${key}`),
+      ...RETIRED_T_KEYS_463.filter((key) => key in pl).map((key) => `pl.ts: ${key}`),
+      ...RETIRED_PLTEXT_KEYS_463.filter((key) => key in plText).map((key) => `plText.ts: ${key}`),
+    ];
+    expect(hits, `Retired keys still present:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("is absent from every src/** call site", () => {
+    const files = listSourceFiles(process.cwd(), SCAN_ROOT, []);
+    const retiredTokens = [...RETIRED_T_KEYS_463, ...RETIRED_PLTEXT_KEYS_463];
     const needles = retiredTokens.flatMap((token) => [
       `text("${token}")`,
       `t("${token}")`,

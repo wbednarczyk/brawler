@@ -2262,9 +2262,12 @@ fn migration_0102_clean_cut_removes_ai_artifacts_and_spares_deterministic_data()
     assert_eq!(sweep_candidates, 7, "non-AI sweep counters are untouched");
     assert_eq!(sweep_enqueued, 5, "non-AI sweep counters are untouched");
     assert_eq!(sweep_trigger, "manual");
+    // 0102 itself deliberately kept the transcription setting (see its own
+    // SQL comment) — but the full chain run here also carries 0156 (ADR
+    // 0111, #463: video transcription retired), which deletes it later.
     assert!(
-        setting_exists(&connection, "youtube_transcription_provider"),
-        "the transcription setting must be KEPT"
+        !setting_exists(&connection, "youtube_transcription_provider"),
+        "the transcription setting is retired by 0156, later in the full chain"
     );
 
     // ---- referential integrity: no fact left without provenance ----
@@ -6460,5 +6463,155 @@ fn migration_0155_dismisses_auto_generated_reminders() {
     assert_eq!(
         full_snapshot_before_rerun, full_snapshot_after_rerun,
         "re-running the 0155 SQL directly must be idempotent"
+    );
+}
+
+#[test]
+fn migration_0156_retires_transcription_settings_and_search_rows() {
+    // ADR 0111 (#463): video transcription is retired. The three provider
+    // settings and any transcript_segment search_index rows go; every other
+    // settings row and search_index row of another content type stays.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 155).expect("apply schema through 0155");
+
+    // 0001_initial.sql already seeds the three youtube_transcription_* rows —
+    // no need to insert them here.
+    connection
+        .execute_batch(
+            "INSERT INTO search_index (title, body, content_type, source_id, company_id, parent_id)
+             VALUES ('Segment', 'transcript body', 'transcript_segment', 'seg1', 'c1', 'job1');
+             INSERT INTO search_index (title, body, content_type, source_id, company_id, parent_id)
+             VALUES ('My note', 'live user note', 'notebook_entry', 'note1', 'c1', NULL);",
+        )
+        .expect("seed a transcript search row + one unrelated row");
+
+    let unrelated_before: String = connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'theme'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("unrelated settings row exists pre-upgrade");
+    let notebook_row_count_before: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM search_index WHERE content_type = 'notebook_entry'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count notebook rows pre-upgrade");
+
+    apply_migrations(&mut connection).expect("upgrade to the latest schema");
+
+    let retired_settings_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key IN (
+                'youtube_transcription_provider',
+                'youtube_transcription_model',
+                'youtube_transcription_timeout_seconds'
+             )",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count retired settings rows");
+    assert_eq!(retired_settings_count, 0, "retired settings rows must go");
+
+    let transcript_search_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM search_index WHERE content_type = 'transcript_segment'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count transcript_segment search rows");
+    assert_eq!(
+        transcript_search_count, 0,
+        "transcript_segment search_index rows must go"
+    );
+
+    let unrelated_after: String = connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'theme'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("unrelated settings row still exists post-upgrade");
+    assert_eq!(
+        unrelated_before, unrelated_after,
+        "unrelated settings rows must be byte-identical"
+    );
+
+    let notebook_row_count_after: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM search_index WHERE content_type = 'notebook_entry'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count notebook rows post-upgrade");
+    assert_eq!(
+        notebook_row_count_before, notebook_row_count_after,
+        "notebook_entry search_index rows must be untouched"
+    );
+
+    let settings_table_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'settings')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("settings table existence check");
+    let search_index_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = 'search_index')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("search_index existence check");
+    assert!(settings_table_exists, "settings table must stay");
+    assert!(search_index_exists, "search_index virtual table must stay");
+
+    // Idempotence: execute the 0156 SQL directly a second time on an already-
+    // clean DB and confirm the full settings + search_index snapshot is unchanged.
+    let settings_snapshot_before: Vec<(String, String)> = connection
+        .prepare("SELECT key, value FROM settings ORDER BY key")
+        .expect("prepare settings snapshot")
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("query settings snapshot")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect settings snapshot");
+    let search_snapshot_before: Vec<String> = connection
+        .prepare("SELECT content_type || '|' || source_id FROM search_index ORDER BY rowid")
+        .expect("prepare search_index snapshot")
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query search_index snapshot")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect search_index snapshot");
+
+    connection
+        .execute_batch(include_str!(
+            "../../../migrations/0156_retire_transcription_settings.sql"
+        ))
+        .expect("re-running the 0156 SQL directly must be safe");
+
+    let settings_snapshot_after: Vec<(String, String)> = connection
+        .prepare("SELECT key, value FROM settings ORDER BY key")
+        .expect("prepare settings snapshot")
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("query settings snapshot")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect settings snapshot");
+    let search_snapshot_after: Vec<String> = connection
+        .prepare("SELECT content_type || '|' || source_id FROM search_index ORDER BY rowid")
+        .expect("prepare search_index snapshot")
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query search_index snapshot")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect search_index snapshot");
+
+    assert_eq!(
+        settings_snapshot_before, settings_snapshot_after,
+        "re-running the 0156 SQL directly must be idempotent for settings"
+    );
+    assert_eq!(
+        search_snapshot_before, search_snapshot_after,
+        "re-running the 0156 SQL directly must be idempotent for search_index"
     );
 }

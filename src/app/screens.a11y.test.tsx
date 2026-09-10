@@ -19,7 +19,6 @@ const SCREENS = [
   // F4b S1: joins the Library nav in S4 (decision 1); reachable today via the
   // palette / deep link, so the guard applies now.
   "ReportSeason",
-  "Transcripts",
 ] as const;
 
 // Only two rules stay off, each for a reason that cannot be engineered away

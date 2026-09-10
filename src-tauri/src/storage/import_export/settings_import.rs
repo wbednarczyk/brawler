@@ -2,7 +2,9 @@ use super::*;
 
 pub(super) fn preview_settings_import(contents: &str) -> StorageResult<ImportPreview> {
     let document = parse_settings_document(contents)?;
-    Ok(plan_settings_import(&document))
+    let mut preview = plan_settings_import(&document);
+    preview.warnings.extend(retired_setting_warnings(contents));
+    Ok(preview)
 }
 
 pub(super) fn apply_settings_import(
@@ -10,7 +12,8 @@ pub(super) fn apply_settings_import(
     contents: &str,
 ) -> StorageResult<ImportApplyResult> {
     let document = parse_settings_document(contents)?;
-    let preview = plan_settings_import(&document);
+    let mut preview = plan_settings_import(&document);
+    preview.warnings.extend(retired_setting_warnings(contents));
     if !preview.valid {
         return Err(StorageError::InvalidSettingValue {
             key: "import_export",
@@ -29,6 +32,37 @@ pub(super) fn apply_settings_import(
 
 fn parse_settings_document(contents: &str) -> StorageResult<SettingsExportDocument> {
     serde_yaml::from_str::<SettingsExportDocument>(contents).map_err(StorageError::from)
+}
+
+/// ADR 0111 (#463): video transcription is retired — a bundle exported by a
+/// pre-#463 install still carries the three `youtubeTranscription*` settings
+/// keys. `ExportSettings` no longer declares those fields, so serde_yaml
+/// already ignores them silently; this surfaces that as an explicit warning
+/// instead of a silent drop, without ever erroring on the old bundle.
+const RETIRED_SETTING_KEYS: &[(&str, &str)] = &[
+    (
+        "youtubeTranscriptionProvider",
+        "youtube_transcription_provider",
+    ),
+    ("youtubeTranscriptionModel", "youtube_transcription_model"),
+    (
+        "youtubeTranscriptionTimeoutSeconds",
+        "youtube_transcription_timeout_seconds",
+    ),
+];
+
+fn retired_setting_warnings(contents: &str) -> Vec<String> {
+    let Ok(raw) = serde_yaml::from_str::<serde_yaml::Value>(contents) else {
+        return Vec::new();
+    };
+    let Some(settings) = raw.get("settings").and_then(|value| value.as_mapping()) else {
+        return Vec::new();
+    };
+    RETIRED_SETTING_KEYS
+        .iter()
+        .filter(|(wire_key, _)| settings.contains_key(serde_yaml::Value::from(*wire_key)))
+        .map(|(_, snake_key)| format!("Ignored retired setting {snake_key}"))
+        .collect()
 }
 
 fn plan_settings_import(document: &SettingsExportDocument) -> ImportPreview {
@@ -75,32 +109,6 @@ fn settings_to_update(settings: ExportSettings) -> StorageResult<SettingsUpdate>
             &[300, 900, 1800, 3600],
         )?;
     }
-    if let Some(provider) = settings.youtube_transcription_provider.as_deref() {
-        validate_allowed_import_setting(
-            "youtube_transcription_provider",
-            provider,
-            &["provider_gemini"],
-        )?;
-    }
-    if let Some(model) = settings.youtube_transcription_model.as_deref() {
-        validate_allowed_import_setting(
-            "youtube_transcription_model",
-            model,
-            &[
-                "gemini-2.5-flash-lite",
-                "gemini-2.5-flash",
-                "gemini-3.1-flash-lite",
-                "gemini-3.5-flash",
-            ],
-        )?;
-    }
-    if let Some(value) = settings.youtube_transcription_timeout_seconds {
-        validate_allowed_import_setting_i64(
-            "youtube_transcription_timeout_seconds",
-            value,
-            &[45, 90, 180, 300, 600],
-        )?;
-    }
     if let Some(level) = settings.log_level.as_deref() {
         validate_allowed_import_setting(
             "log_level",
@@ -120,9 +128,6 @@ fn settings_to_update(settings: ExportSettings) -> StorageResult<SettingsUpdate>
         accent_palette: settings.accent_palette,
         locale: settings.locale,
         poll_interval_seconds: settings.poll_interval_seconds,
-        youtube_transcription_provider: settings.youtube_transcription_provider,
-        youtube_transcription_model: settings.youtube_transcription_model,
-        youtube_transcription_timeout_seconds: settings.youtube_transcription_timeout_seconds,
         log_level: settings.log_level,
         log_max_files: settings.log_max_files,
         log_max_file_bytes: settings.log_max_file_bytes,
@@ -144,15 +149,6 @@ fn settings_to_update_summary(settings: &ExportSettings) -> ImportApplySummary {
         updated += 1;
     }
     if settings.poll_interval_seconds.is_some() {
-        updated += 1;
-    }
-    if settings.youtube_transcription_provider.is_some() {
-        updated += 1;
-    }
-    if settings.youtube_transcription_model.is_some() {
-        updated += 1;
-    }
-    if settings.youtube_transcription_timeout_seconds.is_some() {
         updated += 1;
     }
     if settings.log_level.is_some() {

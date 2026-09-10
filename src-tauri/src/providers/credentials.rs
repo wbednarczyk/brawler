@@ -3,16 +3,13 @@ use thiserror::Error;
 
 const APP_SERVICE: &str = "brawler";
 
-// One API-key credential per provider. Purpose (analysis vs transcription) is a
-// usage decided by settings, not part of the credential's identity (ADR 0028).
+// ADR 0111 (#463): video transcription is retired — Gemini was the last
+// AI-provider credential, and no credential-backed provider is configurable
+// in Settings any more. These two consts stay ONLY so `clear_legacy_credentials`
+// can best-effort delete a pre-#463 install's live Gemini keychain entry;
+// nothing else reads or writes this target any more.
 const GEMINI_TARGET: &str = "brawler/provider_gemini/api_key";
 const GEMINI_ACCOUNT: &str = "provider_gemini:api_key";
-const GEMINI_ENV_VAR: &str = "GEMINI_API_KEY";
-
-// The Claude / OpenAI / OpenAI-compatible / Mistral credentials are removed
-// (ADR 0084 decision 7): Gemini, which powers **transcription only**, is the
-// last provider key the app asks for. Existing OS-keychain entries for the
-// removed providers are deliberately NOT deleted (outside app scope, harmless).
 
 // The MCP server bearer token (ADR 0078 decision 4) generalizes the credential
 // boundary beyond AI providers: same keychain service, same descriptor flow,
@@ -38,7 +35,6 @@ const MCP_KPI_ACQUISITION_TOKEN_ENV_VAR: &str = "BRAWLER_MCP_KPI_ACQUISITION_TOK
 #[cfg(test)]
 pub(crate) fn scrub_provider_env_fallbacks() {
     for var in [
-        GEMINI_ENV_VAR,
         // Not a provider key, but the same dev-fallback class: an exported
         // MCP token would flip missing-token assertions (ADR 0078 M1).
         MCP_AUTH_TOKEN_ENV_VAR,
@@ -57,8 +53,6 @@ const LEGACY_GEMINI_PURPOSE_ACCOUNT: &str = "provider_gemini:youtube_transcripti
 pub enum CredentialError {
     #[error("credential value is required")]
     EmptySecret,
-    #[error("unknown AI provider: {0}")]
-    UnknownProvider(String),
     #[error("credential backend did not persist the saved value")]
     PersistenceVerificationFailed,
     #[error("credential backend unavailable: {0}")]
@@ -90,41 +84,6 @@ pub struct CredentialStatus {
     pub label: &'static str,
     pub dev_fallback_available: bool,
     pub error: Option<String>,
-}
-
-/// The provider ids that authenticate with a single OS-keychain API key.
-pub fn credentialed_provider_ids() -> &'static [&'static str] {
-    &["provider_gemini"]
-}
-
-/// Every provider id `provider_credential_descriptor` resolves — the canonical
-/// enumeration behind the "every credential is enterable in Settings" guardrail
-/// (owner report 2026-07-14: the twelvedata-eod key had no Settings field, so
-/// it was physically un-enterable). Adding a descriptor arm below REQUIRES
-/// adding the id here: a test pins this list to the shared fixture
-/// `src/test/scenarios/credentialProviders.json`, and the frontend test checks
-/// every fixture id has a Settings form entry.
-pub const CREDENTIAL_PROVIDER_IDS: &[&str] = &["provider_gemini"];
-
-/// Resolve the credential descriptor for a provider id, if it uses a credential.
-pub fn provider_credential_descriptor(provider_id: &str) -> Option<CredentialDescriptor> {
-    match provider_id {
-        "provider_gemini" => Some(CredentialDescriptor {
-            provider_id: "provider_gemini",
-            secret_kind: "api_key",
-            // Transcription only, since ADR 0084 — the analysis adapters are gone.
-            label: "Gemini API key",
-            target: GEMINI_TARGET,
-            account: GEMINI_ACCOUNT,
-            development_env_var: Some(GEMINI_ENV_VAR),
-        }),
-        _ => None,
-    }
-}
-
-/// Read the credential status for a provider, or `None` if the id is keyless.
-pub fn provider_credential_status(provider_id: &str) -> Option<CredentialStatus> {
-    provider_credential_descriptor(provider_id).map(|descriptor| credential_status(&descriptor))
 }
 
 /// The MCP server bearer-token descriptor (ADR 0078 decision 4) — the first
@@ -188,6 +147,21 @@ pub(crate) fn test_mcp_rotation_descriptor() -> CredentialDescriptor {
     }
 }
 
+/// Test support: a Gemini-identity descriptor routed to the in-memory test
+/// backend, the seam [`clear_legacy_credentials_through`] tests exercise
+/// instead of the real OS keychain.
+#[cfg(test)]
+pub(crate) fn test_gemini_rotation_descriptor() -> CredentialDescriptor {
+    CredentialDescriptor {
+        provider_id: "provider_gemini",
+        secret_kind: "api_key",
+        label: "Gemini API key",
+        target: "brawler/test-memory/provider_gemini/api_key",
+        account: "test-memory:provider_gemini:api_key",
+        development_env_var: None,
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn test_mcp_kpi_rotation_descriptor() -> CredentialDescriptor {
     CredentialDescriptor {
@@ -224,49 +198,50 @@ pub fn credential_status_for(descriptor: &CredentialDescriptor) -> CredentialSta
 
 /// Read the stored secret for an arbitrary credential descriptor (OS keychain,
 /// then the dev env fallback). Returns `Ok(None)` when nothing is configured.
-/// The descriptor-first read path for non-AI-provider credentials (the MCP
-/// bearer token, ADR 0078 decision 4); mirrors [`read_provider_api_key`].
+/// The descriptor-first read path for every credential (the MCP bearer
+/// tokens, ADR 0078 decision 4 — the only credential kind since ADR 0111).
 pub fn read_credential(
     descriptor: &CredentialDescriptor,
 ) -> Result<Option<String>, CredentialError> {
     read_credential_secret(descriptor)
 }
 
-/// Store the API key for a provider in the OS keychain.
-pub fn set_provider_api_key(
-    provider_id: &str,
-    api_key: &str,
-) -> Result<CredentialStatus, CredentialError> {
-    let descriptor = provider_credential_descriptor(provider_id)
-        .ok_or_else(|| CredentialError::UnknownProvider(provider_id.to_owned()))?;
-    set_credential_secret(&descriptor, api_key)
-}
-
-/// Clear the stored API key for a provider.
-pub fn clear_provider_api_key(provider_id: &str) -> Result<CredentialStatus, CredentialError> {
-    let descriptor = provider_credential_descriptor(provider_id)
-        .ok_or_else(|| CredentialError::UnknownProvider(provider_id.to_owned()))?;
-    clear_credential_secret(&descriptor)
-}
-
-/// Read the configured API key for a provider (keychain, then dev env fallback).
-/// Returns `Ok(None)` for keyless providers and for configured providers with no key.
-pub fn read_provider_api_key(provider_id: &str) -> Result<Option<String>, CredentialError> {
-    match provider_credential_descriptor(provider_id) {
-        Some(descriptor) => read_credential_secret(&descriptor),
-        None => Ok(None),
-    }
-}
-
-/// Best-effort, one-time removal of legacy purpose-scoped keychain entries
-/// (ADR 0028). Errors are ignored.
+/// Best-effort, one-time removal of legacy keychain entries this app no
+/// longer reads: the purpose-scoped Gemini key (ADR 0028), plus — since
+/// video transcription retired (ADR 0111, #463) — the live Gemini provider
+/// key itself, the last AI-provider credential. Errors per entry are
+/// ignored, never blocking the others. Descriptor-list-driven so a test can
+/// exercise the same code path against the in-memory backend (the real
+/// keychain target cannot be safely read back in a hermetic test); see
+/// [`legacy_credential_descriptors`].
 pub fn clear_legacy_credentials() {
-    if let Ok(entry) = keyring::Entry::new_with_target(
-        LEGACY_GEMINI_PURPOSE_TARGET,
-        APP_SERVICE,
-        LEGACY_GEMINI_PURPOSE_ACCOUNT,
-    ) {
-        let _ = entry.delete_credential();
+    clear_legacy_credentials_through(&legacy_credential_descriptors());
+}
+
+fn legacy_credential_descriptors() -> [CredentialDescriptor; 2] {
+    [
+        CredentialDescriptor {
+            provider_id: "provider_gemini",
+            secret_kind: "api_key",
+            label: "legacy purpose-scoped Gemini key",
+            target: LEGACY_GEMINI_PURPOSE_TARGET,
+            account: LEGACY_GEMINI_PURPOSE_ACCOUNT,
+            development_env_var: None,
+        },
+        CredentialDescriptor {
+            provider_id: "provider_gemini",
+            secret_kind: "api_key",
+            label: "Gemini API key",
+            target: GEMINI_TARGET,
+            account: GEMINI_ACCOUNT,
+            development_env_var: None,
+        },
+    ]
+}
+
+fn clear_legacy_credentials_through(descriptors: &[CredentialDescriptor]) {
+    for descriptor in descriptors {
+        let _ = clear_credential_secret(descriptor);
     }
 }
 
@@ -497,66 +472,9 @@ fn status(
 mod tests {
     use super::*;
 
-    // Guardrail (owner report 2026-07-14, twelvedata-eod was un-enterable):
-    // every credential-bearing provider id is enumerated, resolvable, and
-    // pinned byte-for-byte in the shared fixture the frontend test reads to
-    // assert each one has a Settings form. Adding a descriptor without
-    // updating the fixture (and then the Settings list) reddens here or there.
-    #[test]
-    fn every_credential_provider_id_resolves_and_matches_the_shared_fixture() {
-        for provider_id in CREDENTIAL_PROVIDER_IDS {
-            assert!(
-                provider_credential_descriptor(provider_id).is_some(),
-                "{provider_id} is enumerated but resolves no descriptor"
-            );
-        }
-        let fixture: Vec<String> = serde_json::from_str(include_str!(concat!(
-            env!("BRAWLER_SCENARIOS_DIR"),
-            "/credentialProviders.json"
-        )))
-        .expect("credentialProviders.json parses");
-        assert_eq!(
-            fixture, CREDENTIAL_PROVIDER_IDS,
-            "src/test/scenarios/credentialProviders.json drifted from \
-             CREDENTIAL_PROVIDER_IDS — update BOTH deliberately (and give any \
-             new provider a Settings credential form)"
-        );
-    }
-
-    #[test]
-    fn empty_secret_is_rejected_before_keychain_access() {
-        let error = set_provider_api_key("provider_gemini", "   ")
-            .expect_err("empty secret should be rejected");
-
-        assert!(matches!(error, CredentialError::EmptySecret));
-    }
-
-    #[test]
-    fn unknown_provider_is_rejected() {
-        let error = set_provider_api_key("provider_unknown", "key")
-            .expect_err("unknown provider should be rejected");
-
-        assert!(matches!(error, CredentialError::UnknownProvider(_)));
-        assert!(provider_credential_status("provider_unknown").is_none());
-        assert_eq!(
-            read_provider_api_key("test_sample").expect("keyless read is ok"),
-            None
-        );
-    }
-
-    #[test]
-    fn descriptors_exist_for_all_credentialed_providers() {
-        for provider_id in credentialed_provider_ids() {
-            let descriptor = provider_credential_descriptor(provider_id)
-                .unwrap_or_else(|| panic!("descriptor missing for {provider_id}"));
-            assert_eq!(descriptor.secret_kind, "api_key");
-            assert_eq!(&descriptor.provider_id, provider_id);
-        }
-    }
-
     #[test]
     fn descriptor_exposes_non_secret_metadata() {
-        let descriptor = provider_credential_descriptor("provider_gemini").expect("gemini exists");
+        let descriptor = test_gemini_rotation_descriptor();
         let status = status(&descriptor, true, "os_keychain", false, None);
 
         assert_eq!(status.provider_id, "provider_gemini");
@@ -568,7 +486,7 @@ mod tests {
 
     #[test]
     fn verified_save_status_rejects_missing_read_back_secret() {
-        let descriptor = provider_credential_descriptor("provider_gemini").expect("gemini exists");
+        let descriptor = test_gemini_rotation_descriptor();
         let error = verified_save_status(&descriptor, None)
             .expect_err("missing read-back secret should fail verification");
 
@@ -580,7 +498,7 @@ mod tests {
 
     #[test]
     fn verified_save_status_reports_os_keychain_when_read_back_succeeds() {
-        let descriptor = provider_credential_descriptor("provider_gemini").expect("exists");
+        let descriptor = test_gemini_rotation_descriptor();
         let status = verified_save_status(&descriptor, Some("test-secret".to_owned()))
             .expect("read-back secret should verify persistence");
 
@@ -657,6 +575,50 @@ mod tests {
     }
 
     #[test]
+    fn legacy_credential_descriptors_includes_the_live_gemini_key() {
+        // ADR 0111 (#463): the cleanup must extend to the live Gemini
+        // provider key, not just the pre-ADR-0028 purpose-scoped entry.
+        let targets: Vec<&str> = legacy_credential_descriptors()
+            .iter()
+            .map(|descriptor| descriptor.target)
+            .collect();
+        assert!(
+            targets.contains(&GEMINI_TARGET),
+            "the live Gemini key target must be in the cleanup list: {targets:?}"
+        );
+        assert!(
+            targets.contains(&LEGACY_GEMINI_PURPOSE_TARGET),
+            "the legacy purpose-scoped target must stay in the cleanup list: {targets:?}"
+        );
+    }
+
+    #[test]
+    fn clear_legacy_credentials_through_clears_gemini_but_spares_mcp() {
+        // ADR 0111 (#463): video transcription is retired — the cleanup must
+        // also remove the live Gemini provider key (the last AI-provider
+        // credential), while leaving unrelated credentials (the MCP token)
+        // untouched.
+        scrub_provider_env_fallbacks();
+        let gemini_descriptor = test_gemini_rotation_descriptor();
+        let mcp_descriptor = test_mcp_rotation_descriptor();
+        store_credential(&gemini_descriptor, "gemini-secret").expect("seed gemini secret");
+        store_credential(&mcp_descriptor, "mcp-secret").expect("seed mcp secret");
+
+        clear_legacy_credentials_through(std::slice::from_ref(&gemini_descriptor));
+
+        assert_eq!(
+            read_credential(&gemini_descriptor).expect("read gemini"),
+            None,
+            "the live Gemini key must be cleared"
+        );
+        assert_eq!(
+            read_credential(&mcp_descriptor).expect("read mcp"),
+            Some("mcp-secret".to_owned()),
+            "the MCP token must be untouched"
+        );
+    }
+
+    #[test]
     fn scrub_provider_env_fallbacks_clears_the_mcp_token_var() {
         // Scrub-hermeticity rule (docs/testing.md): a test asserting
         // missing-token behavior must not inherit BRAWLER_MCP_TOKEN from the
@@ -718,9 +680,12 @@ mod tests {
 
     // no-assert-ok: ignored live OS-keychain smoke test; fails via its Result return (an early Err on mismatch), not an assert! macro.
     #[test]
-    #[ignore = "live keyring smoke test; writes to the real OS credential store and restores the previous Gemini key"]
-    fn live_keyring_persists_provider_secret() -> Result<(), String> {
-        let descriptor = provider_credential_descriptor("provider_gemini").expect("gemini exists");
+    #[ignore = "live keyring smoke test; writes to the real OS credential store and restores the previous MCP auth token"]
+    fn live_keyring_persists_mcp_auth_token() -> Result<(), String> {
+        // ADR 0111 (#463): video transcription retired the Gemini credential —
+        // the MCP bearer token is now the only live-keychain credential this
+        // smoke test can exercise.
+        let descriptor = mcp_auth_token_descriptor();
         let original = read_os_keychain_secret(&descriptor).map_err(|error| error.to_string())?;
         let smoke_secret = std::env::var("BRAWLER_KEYRING_SMOKE_SECRET")
             .unwrap_or_else(|_| "brawler-keyring-smoke-secret".to_owned());

@@ -1,6 +1,6 @@
 # ADR 0032: Global Search, Local Backup, And Connection-Pool Boundaries
 
-Status: Accepted
+Status: Accepted — amended 2026-09-10 by [ADR 0111](0111-retire-video-transcription.md): transcript segments left the search coverage (the `0039` triggers stay inert on the empty legacy table).
 
 > **Update (2026-07-03):** the backup boundary gains an **offsite destination**: rotating
 > backups can additionally target a user-chosen folder (e.g. a user-synced drive), same

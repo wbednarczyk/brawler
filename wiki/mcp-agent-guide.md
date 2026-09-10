@@ -90,9 +90,8 @@ write family:
 
 | Write family | Tools | Must carry |
 | --- | --- | --- |
-| Research notes | `create_notebook_entry` | a non-empty `origins[]` tracing to a source — `sourceType` one of `feed_item` / `transcript_segment` / `ai_analysis` / `manual` / `external_url` / `report_document` (plus required `tags`, may be empty, and `kind`: `manual`/`observation`/`claim`/`question`/`follow_up`) |
-| Notes from a transcript | `create_note_from_transcript_selection` | the selected `transcriptSegmentIds` (the selection *is* the origin) |
-| Management claims | `create_management_claim`, `update_management_claim` | `sourceEvidenceId` (the filing/transcript the claim was made in) |
+| Research notes | `create_notebook_entry` | a non-empty `origins[]` tracing to a source — `sourceType` one of `feed_item` / `manual` / `external_url` / `report_document` (plus required `tags`, may be empty, and `kind`: `manual`/`observation`/`claim`/`question`/`follow_up`) |
+| Management claims | `create_management_claim`, `update_management_claim` | `sourceEvidenceId` (the filing the claim was made in) |
 | Financial facts | `create_financial_fact`, `update_financial_fact` | `sourceDocumentRef` — a non-blank citation. Never `attribution`: that field is the fact's slot dimension (`total`/`owners_of_parent`/`nci`), not a citation carrier |
 | Batch financial facts | `record_financial_facts` | a non-blank `reportDocumentId` PLUS a non-blank `citation` on **every** entry of `facts` — one blank citation refuses the whole batch before any write |
 | Qualitative verdicts | `set_qualitative_verdicts` | every `results[].citationsJson` non-empty (typed evidence array) |
@@ -301,7 +300,7 @@ acquisition workflow:
 
 Grouped by domain at a glance — **companies & watchlists · feed & signals ·
 facts, periods & KPIs · quotes, ownership & insiders · health & red flags ·
-reports, diffs & transcripts · notes, claims, journal, questions & reminders ·
+reports & diffs · notes, claims, journal, questions & reminders ·
 quality frameworks · calendar & report season · attention, alerts & briefing ·
 autopilot · source & extraction jobs**. The exact, machine-generated list (kept
 in lock-step with the server by a drift gate — never edit it by hand) follows.
@@ -312,12 +311,12 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 
 <!-- BEGIN GENERATED MCP CATALOG — do not edit; regenerate: node scripts/check/docs-drift.mjs --write-mcp-catalog -->
 
-**Read tools** — always available once the server is on (50):
+**Read tools** — always available once the server is on (48):
 
 | Tool | What it does |
 | --- | --- |
 | `get_company_dossier` | One company's research dossier: identity, fundamentals coverage per fiscal period, confirmed financial facts, and quality-scorecard summaries. Sourced from the user's own research; decision support only. |
-| `search_research` | Full-text search across the user's research workspace (notes, report documents, transcripts, claims, facts). Returns ranked matches with snippets. |
+| `search_research` | Full-text search across the user's research workspace (notes, report documents, claims, facts). Returns ranked matches with snippets. |
 | `list_claims_due` | Management claims whose verification period has arrived (due), passed (overdue), or is approaching (upcoming), per company. |
 | `get_quality_assessment` | Quality-framework state for one company: the latest stored scorecard evaluation per framework, plus stored qualitative verdicts. The in-app qualitative-assessment writer was retired (ADR 0084) — this tool reads only stored verdicts; agents record new verdicts with provenance via the `set_qualitative_verdicts` write-tool (until then a criterion reads as unassessed). Decision support only — never an investment recommendation. |
 | `list_companies` | Every company tracked in the user's workspace (identity, exchange, qualified ticker). |
@@ -344,9 +343,7 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `get_report_documents_view` | One company's stored report documents, each tagged with its fiscal period and whether it is that period's canonical report. |
 | `list_report_diff_candidates` | Comparable pairs of successive financial statements for one company — the (older, newer) document pairs get_report_diff can diff. |
 | `get_report_diff` | The section-level text diff between two report documents (discover the pair via list_report_diff_candidates). |
-| `list_video_transcript_jobs` | Video-transcript jobs (optionally scoped to one company): their source, status, and resolved company. |
-| `list_transcript_segments` | One transcript job's ordered segments (timestamped text) — the transcript body itself. |
-| `list_notebook_entries` | One company's research notes, each preserving the origin (report/article/transcript) it traces back to. |
+| `list_notebook_entries` | One company's research notes, each preserving the origin (report/article) it traces back to. |
 | `list_management_claims` | One company's tracked management claims (guidance/promises), with their verification period and verdict. |
 | `list_report_expectations` | Pre-report expectations the user recorded (optionally scoped to one company), with any resolution outcome. |
 | `list_decision_entries` | The decision journal (optionally scoped to one company): recorded decisions and their rationale. |
@@ -367,21 +364,20 @@ natural result is a list return `{ "items": [...] }`, scalar results arrive as
 | `get_kpi_ingest_document` | Chunked bytes (offset/length ≤ 256 KiB, base64) from the run's content-addressed source blob, verified against the frozen sourceContentHash — the portable document delivery channel. Available once the source is captured. Pure read. |
 | `get_kpi_ingest_status` | Full status of one KPI ingest run (state, context, lease, expected KPIs, progress). Pure read — never touches the lease. |
 
-**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (65):
+**Act tools** — dispatchable only with *Settings → MCP server → Allow write tools* on (64):
 
 | Tool | What it does |
 | --- | --- |
-| `create_notebook_entry` | Create a research note for a company. Every note must carry a non-empty `origins` array tracing it to a report/article/transcript (provenance). References the company by its internal id (from list_companies). |
-| `create_note_from_transcript_selection` | Create a research note anchored to selected transcript segments (the selection is the note's origin/provenance). |
+| `create_notebook_entry` | Create a research note for a company. Every note must carry a non-empty `origins` array tracing it to a report/article (provenance). References the company by its internal id (from list_companies). |
 | `update_notebook_entry` | Update an existing research note (by id): title/body/tags/kind. The note keeps its recorded origins. |
-| `create_management_claim` | Record a tracked management claim (guidance/promise). Must anchor to a `sourceEvidenceId` (the report/transcript it was made in). |
+| `create_management_claim` | Record a tracked management claim (guidance/promise). Must anchor to a `sourceEvidenceId` (the report it was made in). |
 | `update_management_claim` | Update a tracked management claim (by id). Must carry its `sourceEvidenceId` provenance. |
 | `set_claim_verdict` | Record a verification verdict on a management claim (optionally linking the verifying fact). |
 | `create_financial_fact` | Low-level single-fact repair write (ADR 0098) — never report ingestion; once the KPI ingest run-workflow tools are present on this server, use them for ingesting reports. Records a financial fact for a company/period/metric. Must carry a non-blank `sourceDocumentRef` citation (`attribution` is the total/owners_of_parent/nci slot dimension, never a citation carrier). Decision support only. MCP writes are stamped honestly: `source_tier='agent'` provenance, `extraction_method='mcp_agent'`, `validation_status='unreviewed'` — never masquerading as a manual entry. |
 | `update_financial_fact` | Low-level single-fact repair write (ADR 0098) — never report ingestion. Updates a stored financial fact (by id). Must carry its non-blank `sourceDocumentRef` citation. Stamps `source_tier='agent'` provenance (honest takeover — never masquerading as manual), even on a previously-manual fact. |
 | `capture_report_document` | Register and fetch a report document by URL for a company — the document an agent read before citing facts from it (the fact-write tools need its returned documentId). Always registers under source_type "user_url"; passing a sourceType is refused (unknown field). Gated: https only, private/loopback/link-local network addresses refused (including via redirect), content-type restricted to application/pdf \| text/html \| application/xhtml+xml — an octet-stream or missing header defers to a strict byte sniff of the fetched body instead of an outright refusal — 30 MiB size cap. Idempotent on (companyId, url); never downgrades an already-fetched document — a call against a document whose stored file still matches its hash returns that document unchanged (no refetch), and a previously-failed row whose file matches is healed back to fetched. Returns the document's id, local path, and fetch success/error. |
 | `record_financial_facts` | Low-level batch fact write (ADR 0098). If `start_kpi_ingest` is absent from this server's tools, this is the only supported temporary report-ingest route; once the run-workflow tools are present, use them for ingestion and this tool ONLY for manual repair. Records a batch (1-100) of financial facts for one company/period from a document an agent read, with per-fact citations. Ensures the fiscal period, resolves each metricKey against the KPI catalog, judges the set against stored history and same-period accounting identities, and commits every plausible fact under the `agent` source tier (ADR 0093) — never overwriting an issuer-held or manual fact; a disagreement is reported as `divergent`, never silently resolved. Use `dataQuality: "preliminary"` for issuer pre-report releases (e.g. GPW wstępne wyniki) — record CUMULATIVE columns only (H1/9M/FY), never discrete-quarter columns. Decision support only. |
-| `set_qualitative_verdicts` | Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry `citationsJson`: a serialized non-empty array of typed evidence refs `[{"evidenceType":"notebook_entry","evidenceId":"<id>"}]` (types: feed_item \| notebook_entry \| claim \| transcript_segment \| company_event \| research_question \| company_signal \| decision_entry); every ref must resolve to an existing row or the whole batch is refused. Decision support only — never an investment recommendation. |
+| `set_qualitative_verdicts` | Record agent-authored qualitative criterion verdicts for one framework+company as one immutable snapshot. Every result must carry `citationsJson`: a serialized non-empty array of typed evidence refs `[{"evidenceType":"notebook_entry","evidenceId":"<id>"}]` (types: feed_item \| notebook_entry \| claim \| company_event \| research_question \| company_signal \| decision_entry); every ref must resolve to an existing row or the whole batch is refused. Decision support only — never an investment recommendation. |
 | `create_research_question` | Open a research question scoped to a company/watchlist/sector. |
 | `update_research_question` | Update a research question (title/body/status) by id. |
 | `create_evidence_link` | Link two research-graph entities (note/claim/fact/document…) with a typed relation. |

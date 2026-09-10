@@ -286,7 +286,6 @@ export function AppShell({
     "app.openWatchlists": () => setActiveSection("Watchlists"),
     "app.openResearch": () => setActiveSection("Research"),
     "app.openEvents": () => setActiveSection("Events"),
-    "app.openTranscripts": () => setActiveSection("Transcripts"),
     "app.openSources": () => setActiveSection("Sources"),
     "app.openSettings": () => setActiveSection("Settings"),
     "app.openAlerts": () => setActiveSection("Alerts"),

@@ -100,7 +100,7 @@ How it works:
 - Click **Assess** (whole framework) or **Assess this criterion** (one row). The
   assessment runs as a background job; results appear when it completes.
 - The agent reads **only what your app already holds** for that company —
-  claims, notes, typed signals, transcript segments, and stored report documents.
+  claims, notes, typed signals, and stored report documents.
   It never searches the web, and every verdict must cite the evidence it used.
   You can open each citation and judge it yourself.
 - The verdict is pass / partial / fail — or **insufficient evidence** when the

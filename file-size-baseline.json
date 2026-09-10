@@ -12,10 +12,9 @@
     "src-tauri/src/fundamentals/ownership/parse.rs": 1195,
     "src-tauri/src/jobs/autopilot.rs": 1053,
     "src-tauri/src/jobs/structured_extraction.rs": 3893,
-    "src-tauri/src/mcp/acts.rs": 1046,
+    "src-tauri/src/mcp/acts.rs": 1038,
     "src-tauri/src/mcp/kpi_ingest.rs": 1574,
     "src-tauri/src/mcp/kpi_ingest_submit.rs": 2467,
-    "src-tauri/src/mcp/reads.rs": 1017,
     "src-tauri/src/mcp/server.rs": 1083,
     "src-tauri/src/report_diff/classify.rs": 1141,
     "src-tauri/src/storage/attention.rs": 1243,
@@ -24,13 +23,13 @@
     "src-tauri/src/storage/kpi_extraction.rs": 3273,
     "src-tauri/src/storage/kpi_ingest_drafts.rs": 1149,
     "src-tauri/src/storage/kpi_ingest_runs.rs": 6017,
-    "src-tauri/src/storage/mod.rs": 1903,
+    "src-tauri/src/storage/mod.rs": 1815,
     "src-tauri/src/storage/ownership.rs": 1748,
     "src-tauri/src/storage/quality_frameworks.rs": 1896,
     "src-tauri/src/storage/red_flags.rs": 1002,
     "src-tauri/src/storage/report_tagged_facts.rs": 1481,
-    "src-tauri/src/storage/research.rs": 1098,
+    "src-tauri/src/storage/research.rs": 1075,
     "src-tauri/src/storage/sources.rs": 1541,
-    "src/app/AppStateRoot.tsx": 1836
+    "src/app/AppStateRoot.tsx": 1594
   }
 }

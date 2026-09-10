@@ -85,18 +85,6 @@ fn reads_default_settings_from_sqlite() {
     assert_eq!(settings.settings_source, "sqlite");
     assert_eq!(settings.settings_import_export_format, "yaml");
     assert_eq!(settings.yaml_import_export_status, "accepted_deferred");
-    assert_eq!(
-        settings.ai_providers.youtube_transcription_provider,
-        "provider_gemini"
-    );
-    assert_eq!(
-        settings.ai_providers.youtube_transcription_model,
-        "gemini-3.5-flash"
-    );
-    assert_eq!(
-        settings.ai_providers.youtube_transcription_timeout_seconds,
-        300
-    );
     assert_eq!(settings.logs.level, "info");
     assert_eq!(settings.logs.max_files, 5);
     assert_eq!(settings.logs.max_file_bytes, 5_242_880);
@@ -123,29 +111,6 @@ fn updates_developer_mode_through_dedicated_storage_api() {
 }
 
 #[test]
-fn migration_updates_old_gemini_default_model_to_validated_default() {
-    let mut connection = open_in_memory_database().expect("database should initialize");
-    connection
-            .execute(
-                "UPDATE settings SET value = 'gemini-2.5-flash-lite' WHERE key = 'youtube_transcription_model'",
-                [],
-            )
-            .expect("old model value should be set");
-    connection
-        .execute("DELETE FROM schema_migrations WHERE version = 21", [])
-        .expect("migration marker should be removable");
-
-    apply_migrations(&mut connection).expect("migration should apply");
-    let state = AppState::new(connection);
-    let settings = state.get_settings().expect("settings should load");
-
-    assert_eq!(
-        settings.ai_providers.youtube_transcription_model,
-        "gemini-2.5-flash"
-    );
-}
-
-#[test]
 fn updates_settings_through_storage_api() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
@@ -157,9 +122,6 @@ fn updates_settings_through_storage_api() {
             locale: Some("pl".to_owned()),
             poll_interval_seconds: Some(1800),
             backfill_years: None,
-            youtube_transcription_provider: None,
-            youtube_transcription_model: None,
-            youtube_transcription_timeout_seconds: Some(600),
             log_level: Some("debug".to_owned()),
             log_max_files: Some(8),
             log_max_file_bytes: Some(10_485_760),
@@ -182,10 +144,6 @@ fn updates_settings_through_storage_api() {
     assert_eq!(settings.accent_palette, "midnight-horizon");
     assert_eq!(settings.locale, "pl");
     assert_eq!(settings.poll_interval_seconds, 1800);
-    assert_eq!(
-        settings.ai_providers.youtube_transcription_timeout_seconds,
-        600
-    );
     assert_eq!(settings.logs.level, "debug");
     assert_eq!(settings.logs.max_files, 8);
     assert_eq!(settings.logs.max_file_bytes, 10_485_760);
@@ -196,10 +154,6 @@ fn updates_settings_through_storage_api() {
     assert_eq!(persisted.accent_palette, "midnight-horizon");
     assert_eq!(persisted.locale, "pl");
     assert_eq!(persisted.poll_interval_seconds, 1800);
-    assert_eq!(
-        persisted.ai_providers.youtube_transcription_timeout_seconds,
-        600
-    );
     assert_eq!(persisted.logs.level, "debug");
     assert_eq!(persisted.logs.max_files, 8);
     assert_eq!(persisted.logs.max_file_bytes, 10_485_760);
@@ -241,9 +195,6 @@ fn updates_shortcut_bindings_through_storage_api() {
             locale: None,
             poll_interval_seconds: None,
             backfill_years: None,
-            youtube_transcription_provider: None,
-            youtube_transcription_model: None,
-            youtube_transcription_timeout_seconds: None,
             log_level: None,
             log_max_files: None,
             log_max_file_bytes: None,
@@ -292,9 +243,6 @@ fn rejects_invalid_poll_interval_setting() {
         locale: None,
         poll_interval_seconds: Some(42),
         backfill_years: None,
-        youtube_transcription_provider: None,
-        youtube_transcription_model: None,
-        youtube_transcription_timeout_seconds: None,
         log_level: None,
         log_max_files: None,
         log_max_file_bytes: None,
@@ -326,9 +274,6 @@ fn rejects_invalid_theme_setting() {
         locale: None,
         poll_interval_seconds: None,
         backfill_years: None,
-        youtube_transcription_provider: None,
-        youtube_transcription_model: None,
-        youtube_transcription_timeout_seconds: None,
         log_level: None,
         log_max_files: None,
         log_max_file_bytes: None,
@@ -373,9 +318,6 @@ fn rejects_invalid_locale_setting() {
         locale: Some("de".to_owned()),
         poll_interval_seconds: None,
         backfill_years: None,
-        youtube_transcription_provider: None,
-        youtube_transcription_model: None,
-        youtube_transcription_timeout_seconds: None,
         log_level: None,
         log_max_files: None,
         log_max_file_bytes: None,
@@ -771,10 +713,6 @@ fn settings_load_with_the_retired_ai_rows_deleted() {
     assert_eq!(settings.locale, "en");
     assert_eq!(settings.poll_interval_seconds, 900);
     assert_eq!(settings.backfill_years, 3);
-    assert_eq!(
-        settings.ai_providers.youtube_transcription_provider, "provider_gemini",
-        "transcription is KEPT — it is data acquisition, not analysis"
-    );
 
     // And the queue config still resolves to its seeded defaults.
     let queue = state.queue_config();

@@ -52,7 +52,7 @@ test.describe("visual — company dashboard panels", () => {
   // F4a S2 — Companies library language pass (docs/plans/frontend-v2-f4a.md §
   // Companies library): the library screen itself (add form + toolbar + row
   // list), not a Spółka workshop tool — sized on `.workspace` like the other
-  // sidebar screens (visual-utility.spec.ts's Watchlists/Transcripts baselines).
+  // sidebar screens (visual-utility.spec.ts's Watchlists baselines).
   test("Companies library across pane tiers", async ({ page }) => {
     await openApp(page);
     await nav(page).getByRole("button", { name: "Companies" }).click();

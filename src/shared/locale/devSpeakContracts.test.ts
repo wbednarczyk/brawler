@@ -9,10 +9,10 @@ import { plText } from "./resources/plText";
 // speak the user's language, not the implementation's. "Database" leaked into
 // Settings once; this pins the class shut. Keep the list tight and justified —
 // a broad list would flag legitimate copy and erode trust in the gate.
-// F4b S2 (docs/plans/f4b-contracts/s2-transcripts.md item 6): `job`/`jobs`
-// added — the Transcripts redesign retires the "transcript job" vocabulary
-// ("a transcript", never "a job"); Settings/Diagnostics/KPI copy uses
-// worker/task/ingest instead, so this stays a precise addition.
+// F4b S2: `job`/`jobs` added — Settings/Diagnostics/KPI copy uses
+// worker/task/ingest instead, so this stays a precise addition (the
+// "transcript job" vocabulary it originally targeted retired with video
+// transcription, ADR 0111, but the rule still guards general copy).
 // F4c S1 (docs/plans/f4c-contracts/s1-guardrails.md item 2, plan § Decisions
 // 7a): the Settings language pass's vocabulary added — `pool`, `worker(s)`,
 // `thread(s)`, `adapter`, `stdio`, `backfill`, `telemetry`, `keyring`,

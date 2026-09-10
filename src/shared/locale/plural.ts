@@ -139,13 +139,6 @@ export const UPCOMING_EVENT_FORMS: PluralForms = {
   pl: ["nadchodzące wydarzenie", "nadchodzące wydarzenia", "nadchodzących wydarzeń"],
 };
 
-// F4b S2 (Transcripts redesign): the segment-count figure under a
-// completed/expanded transcript row ("42 segments" / "42 fragmenty").
-export const SEGMENT_FORMS: PluralForms = {
-  en: ["segment", "segments"],
-  pl: ["fragment", "fragmenty", "fragmentów"],
-};
-
 // Activity panel (F3d, #133, sol diff R1 #15): "active"/"failed" are
 // adjectives agreeing with the implicit neuter noun "zadanie" (task) — one
 // and few share the nominative "aktywne"/"nieudane", many takes the

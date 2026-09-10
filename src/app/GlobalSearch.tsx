@@ -14,7 +14,6 @@ const GROUP_ORDER: SearchContentType[] = [
   "watchlist",
   "feed_item",
   "notebook_entry",
-  "transcript_segment",
   "event",
   "research_brief",
   "digest",

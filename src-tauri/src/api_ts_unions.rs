@@ -33,7 +33,6 @@ ts_union!(ResearchEvidenceType {
     FeedItem,
     NotebookEntry,
     Claim,
-    TranscriptSegment,
     CompanyEvent,
     AiAnalysis,
     ResearchQuestion,
@@ -47,7 +46,6 @@ ts_union!(ResearchEvidenceType {
 ts_union!(ResearchEvidenceSourceDomain {
     Feed,
     Notebooks,
-    Transcripts,
     Events,
     AiAnalysis,
     Research,
@@ -58,7 +56,6 @@ ts_union!(ResearchTrustCategory {
     CompanyPublication,
     PublicMedia,
     MarketCalendar,
-    Transcript,
     UserNote,
     AiGenerated,
     Unknown,
@@ -132,7 +129,6 @@ ts_union!(ClaimStatus {
 
 ts_union!(ClaimSourceEvidenceType {
     ReportDocument,
-    TranscriptSegment,
     FeedItem,
     Manual,
 });
@@ -161,7 +157,6 @@ ts_union!(SearchContentType {
     Watchlist,
     FeedItem,
     NotebookEntry,
-    TranscriptSegment,
     Event,
     ResearchBrief,
     Digest,
@@ -169,7 +164,4 @@ ts_union!(SearchContentType {
 
 // --- Claim extraction (ADR 0040) ---
 
-ts_union!(ClaimExtractionSourceType {
-    ReportDocument,
-    Transcript,
-});
+ts_union!(ClaimExtractionSourceType { ReportDocument });

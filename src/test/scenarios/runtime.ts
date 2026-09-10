@@ -314,40 +314,6 @@ function mapReplace<T>(
 }
 
 // ---------------------------------------------------------------------------
-// Activity center (ADR 0109, #133)
-// ---------------------------------------------------------------------------
-
-/** The seeded storyboard view PLUS any `transcript_jobs` still `queued` — a
- * freshly created transcript job (`create_video_transcript_job`) has no
- * job_runs/registry entry yet (ADR 0109 dec. 3), so it must project into
- * `queued`, matching the real backend (`storage::activity_reads`). */
-function deriveActivityView(d: ScenarioData) {
-  const view = makeActivityView(d.companies);
-  const queuedTranscripts = d.transcriptJobs
-    .filter((job) => job.status === "queued")
-    .map((job) => ({
-      id: `transcript_jobs:${job.id}`,
-      activityKey: `transcript:${job.id}`,
-      family: "transcript" as const,
-      status: "queued" as const,
-      subject: job.sourceLabel || job.sourceUrl,
-      companyId: job.companyId,
-      qualifiedTicker:
-        d.companies.find((company) => company.id === job.companyId)
-          ?.qualifiedTicker ?? null,
-      progress: null,
-      inFlight: null,
-      attempt: 0,
-      startedAt: job.createdAt,
-      finishedAt: null,
-      error: null,
-      members: [],
-      target: { kind: "transcripts" as const },
-    }));
-  return { ...view, queued: [...view.queued, ...queuedTranscripts] };
-}
-
-// ---------------------------------------------------------------------------
 // Research timeline (ported from workflowHarness/state.ts:buildResearchTimeline)
 // ---------------------------------------------------------------------------
 
@@ -776,26 +742,6 @@ function buildHandlers(): Record<string, Handler> {
     list_source_reconciliation: (d) => d.reconciliationResults,
     get_log_status: (d) => d.logStatus,
     list_log_entries: (d) => d.logEntries,
-    get_provider_credential_status: (d, a) => {
-      const providerId = str(unwrap(a).providerId);
-      const found = providerId
-        ? d.credentialStatuses.find((c) => c.providerId === providerId)
-        : undefined;
-      if (found) return found;
-      // Mock fidelity: the real command reports an UNCONFIGURED status for a
-      // provider with no stored key — never another provider's row. Falling
-      // back to statuses[0] painted every new catalog provider as "configured"
-      // in tests (caught when Mistral joined the catalog, T4.1).
-      return {
-        providerId: providerId ?? "",
-        secretKind: "api_key",
-        configured: false,
-        storage: "keychain",
-        label: providerId ?? "",
-        devFallbackAvailable: false,
-        error: null,
-      };
-    },
     list_available_metric_keys: (d) => d.metricKeys,
     backup_status: (d) => d.backupStatus,
 
@@ -1749,8 +1695,8 @@ function buildHandlers(): Record<string, Handler> {
     // Activity center (ADR 0109, #133): a seeded, mirror-the-storyboard view.
     // Companies-driven, so the `empty` scenario (no companies) reads back the
     // honest empty view — the `activity: "empty"` knob.
-    list_activity: (d) => deriveActivityView(d),
-    get_activity_summary: (d) => makeActivitySummary(deriveActivityView(d)),
+    list_activity: (d) => makeActivityView(d.companies),
+    get_activity_summary: (d) => makeActivitySummary(makeActivityView(d.companies)),
 
     // --- Watchlists ---
     list_watchlists: (d) => d.watchlists,
@@ -2311,8 +2257,6 @@ function buildHandlers(): Record<string, Handler> {
       d.notebookEntries = [...d.notebookEntries, entry];
       return entry;
     },
-    create_note_from_transcript_selection: (d, a, ctx) =>
-      handlers.create_notebook_entry(d, a, ctx),
     update_notebook_entry: (d, a) => {
       const input = unwrap(a);
       const { next, updated } = mapReplace(
@@ -2335,130 +2279,6 @@ function buildHandlers(): Record<string, Handler> {
       const id = str(unwrap(a).id);
       d.notebookEntries = d.notebookEntries.filter((n) => n.id !== id);
       return undefined;
-    },
-
-    // --- Transcripts ---
-    list_video_transcript_jobs: (d, a) => {
-      const companyId = str(unwrap(a).companyId);
-      return companyId
-        ? d.transcriptJobs.filter((j) => j.companyId === companyId)
-        : d.transcriptJobs;
-    },
-    list_transcript_segments: (d, a) => {
-      const jobId = str(unwrap(a).transcriptJobId);
-      return d.transcriptSegments.filter(
-        (s) => !jobId || s.transcriptJobId === jobId,
-      );
-    },
-    create_video_transcript_job: (d, a, ctx) => {
-      const input = unwrap(a);
-      const companyId = str(input.companyId);
-      const company = d.companies.find((c) => c.id === companyId);
-      void ctx;
-      const job = {
-        id: "transcript_job_created",
-        companyId,
-        company: company?.qualifiedTicker ?? null,
-        companyName: company?.displayName ?? null,
-        providerId: str(input.providerId) ?? "provider_gemini",
-        sourceType: "youtube_url",
-        sourceUrl: str(input.sourceUrl) ?? "",
-        sourceLabel: str(input.sourceLabel),
-        companyResolutionStatus: companyId ? "provided" : "unresolved",
-        recognizedCompanyCandidates: [],
-        status: "queued",
-        errorCode: null,
-        createdAt: SAMPLE_NOW,
-        startedAt: null,
-        finishedAt: null,
-        error: null,
-      };
-      d.transcriptJobs = [...d.transcriptJobs, job];
-      return job;
-    },
-    run_video_transcript_job: (d, a, ctx) => {
-      const input = unwrap(a);
-      const id = str(input.jobId) ?? str(input.id);
-      let updated: ScenarioData["transcriptJobs"][number] | undefined;
-      d.transcriptJobs = d.transcriptJobs.map((job) => {
-        if (job.id !== id) return job;
-        updated = {
-          ...job,
-          status: "completed",
-          startedAt: SAMPLE_NOW,
-          finishedAt: SAMPLE_NOW,
-        };
-        return updated;
-      });
-      // Sol R1 finding 3: a completed transcript needs real segments — the
-      // visual/density figures proof (segment-count `Figure`) has nothing to
-      // count otherwise. Seed once per job (repeat runs, e.g. "Fetch again",
-      // must not duplicate).
-      if (updated && !d.transcriptSegments.some((segment) => segment.transcriptJobId === id)) {
-        const speakers = ["CEO", "CFO", "CEO"];
-        const texts = [
-          "Thank you for joining today's call — let's start with the headline results.",
-          "Revenue grew in line with guidance and margins held steady quarter over quarter.",
-          "We'll take questions after the outlook section, starting with the sell side.",
-        ];
-        d.transcriptSegments = [
-          ...d.transcriptSegments,
-          ...texts.map((text, index) => ({
-            id: ctx.nextId(`${id}_segment`),
-            transcriptJobId: id ?? "",
-            companyId: updated?.companyId ?? null,
-            startSeconds: index * 45,
-            endSeconds: index * 45 + 40,
-            speaker: speakers[index],
-            text,
-            language: "en",
-            createdAt: SAMPLE_NOW,
-          })),
-        ];
-      }
-      return updated ?? d.transcriptJobs[0];
-    },
-    update_video_transcript_job: (d, a) => {
-      const input = unwrap(a);
-      const id = str(input.jobId) ?? str(input.id);
-      const sourceLabel = str(input.sourceLabel);
-      let updated: ScenarioData["transcriptJobs"][number] | undefined;
-      d.transcriptJobs = d.transcriptJobs.map((job) => {
-        if (job.id !== id) return job;
-        updated = {
-          ...job,
-          sourceLabel: sourceLabel !== null ? sourceLabel : job.sourceLabel,
-        };
-        return updated;
-      });
-      return updated ?? d.transcriptJobs[0];
-    },
-    delete_video_transcript_job: (d, a) => {
-      const jobId = str(unwrap(a).jobId);
-      d.transcriptJobs = d.transcriptJobs.filter((j) => j.id !== jobId);
-      d.transcriptSegments = d.transcriptSegments.filter(
-        (s) => s.transcriptJobId !== jobId,
-      );
-      return undefined;
-    },
-    resolve_transcript_job_company: (d, a) => {
-      const input = unwrap(a);
-      const id = str(input.jobId);
-      const companyId = str(input.companyId);
-      const company = d.companies.find((c) => c.id === companyId);
-      let updated: ScenarioData["transcriptJobs"][number] | undefined;
-      d.transcriptJobs = d.transcriptJobs.map((job) => {
-        if (job.id !== id) return job;
-        updated = {
-          ...job,
-          companyId: companyId ?? job.companyId,
-          company: company?.qualifiedTicker ?? job.company,
-          companyName: company?.displayName ?? job.companyName,
-          companyResolutionStatus: "provided",
-        };
-        return updated;
-      });
-      return updated ?? d.transcriptJobs[0];
     },
 
     // --- Research workspace ---
@@ -4262,10 +4082,8 @@ function buildHandlers(): Record<string, Handler> {
 
     // --- Settings / developer mode / diagnostics ---
     update_settings: (d, a) => {
-      // The frontend sends a FLAT partial update; the backend maps the
-      // AI-provider keys into the nested `aiProviders` block.
+      // The frontend sends a FLAT partial update.
       const input = unwrap(a);
-      const ai = d.settings.aiProviders;
       const pick = <T>(key: string, fallback: T): T =>
         key in input ? (input[key] as T) : fallback;
       d.settings = {
@@ -4295,21 +4113,6 @@ function buildHandlers(): Record<string, Handler> {
           kpiAcquisitionEnabled: pick(
             "kpiAcquisitionEnabled",
             d.settings.mcp.kpiAcquisitionEnabled,
-          ),
-        },
-        aiProviders: {
-          ...ai,
-          youtubeTranscriptionProvider: pick(
-            "youtubeTranscriptionProvider",
-            ai.youtubeTranscriptionProvider,
-          ),
-          youtubeTranscriptionModel: pick(
-            "youtubeTranscriptionModel",
-            ai.youtubeTranscriptionModel,
-          ),
-          youtubeTranscriptionTimeoutSeconds: pick(
-            "youtubeTranscriptionTimeoutSeconds",
-            ai.youtubeTranscriptionTimeoutSeconds,
           ),
         },
       };
@@ -4381,47 +4184,6 @@ function buildHandlers(): Record<string, Handler> {
       return mcpStatusOf(d, ctx);
     },
     mcp_status: (d, _a, ctx) => mcpStatusOf(d, ctx),
-
-    // Mock fidelity: the real commands store/clear the key for EXACTLY the
-    // named provider and report that provider's status — never another row.
-    // A provider with no seeded status row upserts one, mirroring first-time
-    // configuration.
-    set_provider_api_key: (d, a) => {
-      const providerId = str(unwrap(a).providerId) ?? "";
-      const existing = d.credentialStatuses.find(
-        (c) => c.providerId === providerId,
-      );
-      const credential = existing ?? {
-        providerId,
-        secretKind: "api_key",
-        configured: false,
-        storage: "keychain",
-        label: providerId,
-        devFallbackAvailable: false,
-        error: null,
-      };
-      if (!existing) d.credentialStatuses.push(credential);
-      credential.configured = true;
-      return credential;
-    },
-    clear_provider_api_key: (d, a) => {
-      const providerId = str(unwrap(a).providerId) ?? "";
-      const credential = d.credentialStatuses.find(
-        (c) => c.providerId === providerId,
-      );
-      if (credential) credential.configured = false;
-      return (
-        credential ?? {
-          providerId,
-          secretKind: "api_key",
-          configured: false,
-          storage: "keychain",
-          label: providerId,
-          devFallbackAvailable: false,
-          error: null,
-        }
-      );
-    },
 
     // --- Backups ---
     create_backup: (d) => d.backupStatus,
@@ -4548,7 +4310,6 @@ export const READ_COMMANDS: readonly string[] = Object.freeze([
   "list_source_reconciliation",
   "get_log_status",
   "list_log_entries",
-  "get_provider_credential_status",
   "mcp_token_status",
   "mcp_status",
   "list_available_metric_keys",
@@ -4561,7 +4322,6 @@ export const READ_COMMANDS: readonly string[] = Object.freeze([
   "list_company_events",
   "list_company_signals",
   "list_notebook_entries",
-  "list_video_transcript_jobs",
   "list_research_questions",
   "list_research_reminders",
   "list_management_claims",

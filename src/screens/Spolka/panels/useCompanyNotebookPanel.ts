@@ -43,7 +43,7 @@ function notebookEntryRestoreInput(entry: NotebookEntry): CreateNotebookEntryInp
 // Company-scoped notebook state for one company (ADR 0057). It owns the
 // entry list, the composer + edit forms, and the create/save/edit commands via
 // `api/notebooks` directly — the company-scoped subset of `useNotebookController`
-// with none of its cross-screen (Inbox / Notebooks screen / transcript) coupling.
+// with none of its cross-screen (Inbox / Notebooks screen) coupling.
 // Mirrors `useFundamentalsPanel` so the dashboard `companyNotebook` panel works
 // for any pinned company.
 export function useCompanyNotebookPanel(
@@ -53,7 +53,7 @@ export function useCompanyNotebookPanel(
      * (`CompanyNotebookSection` scrolls + flashes it). */
     highlightEntryId?: string;
     /** A prefilled-but-unsaved note from a cross-screen caller (Inbox,
-     * research evidence, transcript) — opens the composer seeded with it. */
+     * research evidence) — opens the composer seeded with it. */
     initialDraft?: NotebookDraft;
   },
 ) {

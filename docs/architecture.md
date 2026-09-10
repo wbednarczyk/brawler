@@ -24,15 +24,12 @@ Rust owns domain behavior:
 - ingestion scheduler
 - article/report normalization
 - deduplication
-- transcript provider abstraction (the only AI dependency — [ADR 0084](adr/0084-retire-in-app-ai-layer.md))
 - MCP surface (the external agent's typed read/write access to the domain)
-- video/transcript processing orchestration
-- transcript-to-note selection workflows
 - local settings and secrets
 - SQLite persistence
 - Tauri command handlers and event streams
 
-The React UI talks to Rust through typed Tauri commands. Feed, job, transcription, and notebook updates should be emitted through Tauri events.
+The React UI talks to Rust through typed Tauri commands. Feed, job, and notebook updates should be emitted through Tauri events.
 
 ## Data Flow
 
@@ -44,7 +41,7 @@ The React UI talks to Rust through typed Tauri commands. Feed, job, transcriptio
 6. Deduplication prevents repeated reports or articles from appearing multiple times.
 7. The UI displays the investor inbox and receives job/feed updates through Tauri events.
 8. The user can create notebook entries from feed items.
-9. Video transcription can be requested once its provider is configured; all other interpretation happens outside the app, through the MCP port (BYOA — [ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
+9. No in-app AI: all interpretation happens outside the app, through the MCP port (BYOA — [ADR 0084](adr/0084-retire-in-app-ai-layer.md), [ADR 0111](adr/0111-retire-video-transcription.md)).
 
 **Terminal states name their invalidation (harvested 2026-07-10, ADR 0045).** Whenever a pipeline stores a terminal conclusion — a dedup marker, a "cannot extract/process" outcome, a skip — the design must answer *what makes this conclusion stale* in the same change (a capability upgrade? fresh budget? new configuration?) and encode that re-arm/invalidation path. Three separate "permanent blindness" defects in the trusted-extraction epic (tier-eligibility, run dedup, budget skips) shared this one root cause: a terminal state with no invalidation answer. Precedent mechanics: the sweep run re-arm rules ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §3, [data-model.md](data-model.md) History Sweeps).
 
@@ -73,7 +70,6 @@ Data must include enough origin to audit a feed item:
 - attribution/display source
 - raw source reference or checksum
 - notebook note origin links
-- transcript segment origin links
 
 ## Source Refresh Scheduling
 
@@ -97,7 +93,7 @@ Brawler is **hexagonal (Ports and Adapters) at its external seams and package-by
 
 Source adapters should return normalized records through a common interface. Adapters must declare source type, rate limits, supported markets, and allowed fetch mode. This port is being **realized** under [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md) (Architecture v2, delivered in v0.45.1) as a `SourceAdapter` trait + a registry. **Realized so far:** the trait and a descriptor `REGISTRY` (`src-tauri/src/source_adapters/registry.rs`) are the single source of truth for every adapter's static identity and capability metadata — id, display name, source URL, source type, fetch mode, supported markets, visibility tier, default poll interval, rate-limit policy, policy note. The source catalog (`storage/registry.rs`) and the visibility/enablement logic now read from it (collapsing a ~100-line SQL `CASE` ladder + scattered constants), and a drift-guard test binds the registry to the seed migrations. The **dispatch half** is also realized: the source-refresh path (`jobs/source_refresh.rs`) iterates a `RuntimeAdapter` registry (`runtime_adapters()`) instead of a hardcoded sweep list + per-id `match` — each adapter declares how it refreshes (`Feed` / `Calendar` / `Directory` / `Disabled`), so adding a runtime source is one registry entry. The canonical-identity text transforms — the pure normalization every name/media matcher shares — are owned by `storage::feed_matching` as the SSOT, with ADR 0049 invariant coverage. The **ingestion pipeline spine** is realized in `storage/ingestion.rs` (AV3): the shared downstream stage every feed-item adapter ran in copied form — the **outcome-recording stage** (mark the adapter healthy + record item counters) — is owned once there, and the feed-item ingest paths (Bankier media RSS, GPW ESPI/EBI listings, Bankier company komunikaty) all feed it. The spine is now **shared by every ingest path**: a unified **upsert stage** (`ingestion::upsert_feed_item` over a `NormalizedFeedItem`) replaces the three near-duplicate feed-item INSERTs (media RSS, GPW listings, Bankier company), and the **outcome-recording stage** is used by all five paths including the two calendar/event ingests. The per-adapter parse + the legitimately source-specific match-strategy (media fuzzy vs. structured ticker/ISIN) and dedup-strategy (duplicate signature vs. dedupe key) plug into this shared spine. The pipeline is thus: per-adapter parse → shared `feed_matching` normalize/resolve → per-source dedup → shared `upsert_feed_item` → derive events/signals → shared `record_source_outcome`.
 
-The **transcript provider** implements a provider-neutral interface (`VideoTranscriptProvider`); Gemini is its live implementation. This is the only remaining AI dependency in the app — transcription is data acquisition (speech to text), not interpretation; interpretation happens in the user's own agent over the MCP port (BYOA). Any future in-app inference capability re-enters only via a fresh eval-gated ADR that beats the deterministic baseline on real data ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
+There is no AI provider in the app ([ADR 0111](adr/0111-retire-video-transcription.md) retired the last one, the transcript provider); interpretation happens in the user's own agent over the MCP port (BYOA). Any future in-app inference capability re-enters only via a fresh eval-gated ADR that beats the deterministic baseline on real data ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 
 The two-layer AI split of [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md) is fully retired ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)); only the deterministic ESPI rule classifier and `signal_dates` parser survive, as ordinary domain code.
 
@@ -107,9 +103,7 @@ Modularity and configurability are core architecture constraints. Provider, sour
 
 Code organization should follow those boundaries. Large shell files are architecture debt unless they are intentional state roots, facades, composition points, or cohesive domain views. Current module ownership and future extraction triggers are defined in [Modularization Design](modularization-design.md).
 
-Gemini is preferred only for the YouTube press conference transcription workflow because the Gemini API currently has native video/audio understanding and YouTube URL support. M10 requires a working live `provider_gemini` path for supported public YouTube URLs, while automated tests continue to use mocked responses or offline test samples. The implementation must still keep provider boundaries pluggable.
-
-Provider credentials should use a reusable credential boundary rather than provider-specific ad hoc storage. The same boundary must be able to describe future API keys, username/password credentials, session tokens, or other source-specific secret material. Runtime secrets live in the OS keychain, one `CredentialDescriptor` per provider (`provider_gemini:api_key`, `provider_anthropic:api_key`, `provider_openai:api_key`, …); only non-secret status metadata is exposed to the UI. Purpose (e.g. analysis vs transcription) is a settings-level *usage* selection, not part of credential identity — a single provider key may serve multiple purposes ([ADR 0028](adr/0028-multi-provider-ai-boundary.md) decision 4).
+Runtime secrets live in the OS keychain behind one reusable credential boundary (`CredentialDescriptor`); after [ADR 0111](adr/0111-retire-video-transcription.md) the only secrets are the MCP auth token and the KPI-acquisition token — the app asks for no provider API key. Only non-secret status metadata is exposed to the UI.
 
 Global search is a typed-command domain governed by [ADR 0032](adr/0032-search-and-backup-boundaries.md): one search command over the unified `search_index`, with DTOs in `src/api/search.ts` and no SQL in command modules. Backups, pre-migration snapshots, restore, and the connection pool are storage-layer boundaries — UI and command code request backups/restore and read/write pool configuration through typed commands, never by touching files or pool internals directly. Pool configuration is user-tunable through the normal settings boundary and applied at startup.
 
@@ -117,9 +111,7 @@ Import/export is a local typed-command domain governed by [ADR 0018](adr/0018-im
 
 There is no licensing/entitlement module ([ADR 0110](adr/0110-retire-local-entitlement-module.md)); a future gated feature starts from a new ADR.
 
-Provider model choice and request timeout are configurable. Gemini YouTube transcription defaults to the cheapest configured model that passed M10 live smoke validation with direct YouTube/video input. The runtime timeout defaults to 300 seconds, can be changed in Settings, and may be overridden by `BRAWLER_GEMINI_REQUEST_TIMEOUT_SECONDS` for development/live-smoke runs.
-
-Notebook entries should be source-linked. A note can originate from manual entry, a feed item, an AI summary, a transcript segment, or a selected AI-suggested claim.
+Notebook entries should be source-linked. A note can originate from manual entry, a feed item, a report document, or an external URL.
 
 Premium or hosted convenience features must be added behind explicit interfaces, not by making local-first behavior depend on cloud services.
 

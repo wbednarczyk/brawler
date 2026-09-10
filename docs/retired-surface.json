@@ -446,6 +446,117 @@
     {
       "token": "license-friend",
       "adr": "ADR 0110"
+    },
+    {
+      "token": "create_video_transcript_job",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "list_video_transcript_jobs",
+      "adr": "ADR 0111",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "delete_video_transcript_job",
+      "adr": "ADR 0111",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "update_video_transcript_job",
+      "adr": "ADR 0111",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "run_video_transcript_job",
+      "adr": "ADR 0111",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "resolve_transcript_job_company",
+      "adr": "ADR 0111",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "list_transcript_segments",
+      "adr": "ADR 0111",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "create_note_from_transcript_selection",
+      "adr": "ADR 0111",
+      "allow": [
+        "docs/contracts.md"
+      ]
+    },
+    {
+      "token": "get_provider_credential_status",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "set_provider_api_key",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "clear_provider_api_key",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "TranscriptsScreen",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "useTranscriptController",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "VideoTranscriptProvider",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "provider_gemini",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "youtube_transcription_provider",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "youtube_transcription_model",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "smoke-gemini-transcript",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "app.openTranscripts",
+      "adr": "ADR 0111"
+    },
+    {
+      "token": "transcript_jobs",
+      "adr": "ADR 0111",
+      "allow": [
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "token": "transcript_segments",
+      "adr": "ADR 0111",
+      "allow": [
+        "docs/data-model.md"
+      ]
     }
   ]
 }

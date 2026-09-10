@@ -283,12 +283,6 @@ fn every_exposed_read_tool_is_listed_and_callable() {
             json!({ "olderReportDocumentId": "x", "newerReportDocumentId": "y" }),
             true,
         ),
-        ("list_video_transcript_jobs", json!({}), false),
-        (
-            "list_transcript_segments",
-            json!({ "transcriptJobId": "x" }),
-            false,
-        ),
         ("list_notebook_entries", company.clone(), false),
         ("list_management_claims", company.clone(), false),
         ("list_report_expectations", json!({}), false),
@@ -1258,10 +1252,6 @@ fn every_exposed_act_tool_is_listed_and_gated() {
         (
             "create_notebook_entry",
             json!({ "companyId": company_id, "title": "t", "body": "b", "kind": "note", "tags": [], "origins": [{ "sourceType": "report" }] }),
-        ),
-        (
-            "create_note_from_transcript_selection",
-            json!({ "transcriptJobId": "x", "transcriptSegmentIds": ["s"], "noteDraft": { "title": "t", "body": "b", "tags": [], "kind": "note" } }),
         ),
         (
             "update_notebook_entry",

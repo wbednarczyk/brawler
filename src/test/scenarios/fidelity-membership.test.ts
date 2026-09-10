@@ -62,7 +62,7 @@ function corpusCommandNames(): Set<string> {
 // out of the "every command must be accounted for" test below are a corpus
 // step or a headless-only declaration. This ceiling is the second lock: it
 // may only be LOWERED as entries are fixed, never raised to fit a new one.
-const BASELINE_CEILING = 113;
+const BASELINE_CEILING = 102;
 
 // B1 fix (owner-approved hard gate 2026-09-07, Astra re-verification of PR
 // #477 finding (a)): the ceiling alone permits regrowth-by-replacement — drop
@@ -81,7 +81,6 @@ const FROZEN_BASELINE = new Set([
   "backfill_ownership_extraction",
   "backup_status",
   "clear_diagnostic_events",
-  "clear_provider_api_key",
   "clone_framework",
   "confirm_company_signal",
   "confirm_derived_event",
@@ -89,7 +88,6 @@ const FROZEN_BASELINE = new Set([
   "create_evidence_link",
   "create_kpi_definition",
   "create_management_claim",
-  "create_note_from_transcript_selection",
   "create_notebook_entry",
   "create_research_question",
   "create_research_reminder",
@@ -102,7 +100,6 @@ const FROZEN_BASELINE = new Set([
   "delete_quality_framework",
   "delete_research_question",
   "delete_research_reminder",
-  "delete_video_transcript_job",
   "disable_developer_mode",
   "evaluate_framework",
   "export_research_data",
@@ -117,7 +114,6 @@ const FROZEN_BASELINE = new Set([
   "get_local_metrics_snapshot",
   "get_log_status",
   "get_pre_report_card",
-  "get_provider_credential_status",
   "get_report_diff",
   "get_scheduler_status",
   "get_settings",
@@ -148,8 +144,6 @@ const FROZEN_BASELINE = new Set([
   "list_research_reminders",
   "list_source_adapters",
   "list_source_reconciliation",
-  "list_transcript_segments",
-  "list_video_transcript_jobs",
   "list_watchlist_memberships",
   "lookup_company",
   "mark_report_prepared",
@@ -167,15 +161,12 @@ const FROZEN_BASELINE = new Set([
   "remove_company_from_watchlist",
   "rerun_extraction_outcome",
   "reset_framework_to_template",
-  "resolve_transcript_job_company",
   "restore_backup",
-  "run_video_transcript_job",
   "search",
   "set_autopilot_run_notification_state",
   "set_claim_verdict",
   "set_company_ir_reports_url",
   "set_company_sector",
-  "set_provider_api_key",
   "set_source_adapter_enabled",
   "undo_autopilot_run",
   "unlock_developer_mode",
@@ -184,7 +175,6 @@ const FROZEN_BASELINE = new Set([
   "update_research_question",
   "update_research_reminder",
   "update_settings",
-  "update_video_transcript_job",
   "validate_criterion_expression",
 ]);
 

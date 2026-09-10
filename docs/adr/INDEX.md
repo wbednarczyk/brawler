@@ -110,3 +110,4 @@
 - [0108](0108-retire-docking-engine.md) — Retire the Docking Engine — No dockview, No Cockpit, No Named Views — Accepted (2026-08-28)
 - [0109](0109-activity-center-occurrence-ledger.md) — Activity Center — Occurrence Ledger Over Existing Background Work, Topbar Placement — Accepted (2026-09-03, owner approval of the F3d plan; epic #410 / #133)
 - [0110](0110-retire-local-entitlement-module.md) — Retire the Local Entitlement Module — Accepted (2026-09-07, owner decision at the architecture audit, N02; implemented
+- [0111](0111-retire-video-transcription.md) — Retire Video Transcription — Accepted (2026-09-07, owner decision at the architecture audit, N05; implemented

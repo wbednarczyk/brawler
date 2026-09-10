@@ -64,20 +64,6 @@ describe("useCompanyEntryActions — openCompanyWorkspaceById tab mapping", () =
     ]);
   });
 
-  // The only tab with no company-scoped Spółka tool yet — its legacy global
-  // route, still committed atomically (sol R1 finding 3).
-  it("tab Transcripts lands on the legacy Transcripts route via ONE navigate() call", () => {
-    const { result } = renderHook(() => useHarness());
-
-    act(() => {
-      result.current.actions.openCompanyWorkspaceById(company.id, "Transcripts");
-    });
-
-    expect(result.current.activeSection).toBe("Transcripts");
-    expect(result.current.selectedCompanyId).toBe(company.id);
-    expect(result.current.navigateCalls).toEqual([{ companyId: company.id, section: "Transcripts" }]);
-  });
-
   it("no tab: lands on the Spółka core, no tool opened", () => {
     const { result } = renderHook(() => useHarness());
 

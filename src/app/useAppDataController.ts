@@ -1,6 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
 import * as companiesApi from "../api/companies";
-import * as credentialsApi from "../api/credentials";
 import * as feedApi from "../api/feed";
 import * as settingsApi from "../api/settings";
 import * as sourcesApi from "../api/sources";
@@ -11,7 +10,6 @@ import type {
   Company,
   CompanyRegistryEntry,
   CompanySignal,
-  CredentialStatus,
   DatabaseStatus,
   FeedItem,
   HealthResponse,
@@ -33,8 +31,6 @@ type AppDataControllerInput = {
   setDbRefreshState: Dispatch<SetStateAction<DbRefreshState>>;
   setFeedError: Dispatch<SetStateAction<string | null>>;
   setFeedState: Dispatch<SetStateAction<FeedItem[]>>;
-  setGeminiCredentialError: Dispatch<SetStateAction<string | null>>;
-  setGeminiCredentialStatus: Dispatch<SetStateAction<CredentialStatus | null>>;
   setHealth: Dispatch<SetStateAction<HealthResponse | null>>;
   setHealthError: Dispatch<SetStateAction<string | null>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
@@ -63,8 +59,6 @@ export function useAppDataController({
   setDbRefreshState,
   setFeedError,
   setFeedState,
-  setGeminiCredentialError,
-  setGeminiCredentialStatus,
   setHealth,
   setHealthError,
   setSelectedFeedItemId,
@@ -212,18 +206,6 @@ export function useAppDataController({
       });
   }
 
-  function refreshGeminiCredentialStatus() {
-    return credentialsApi.getGeminiTranscriptionCredentialStatus()
-      .then((response) => {
-        setGeminiCredentialStatus(response);
-        setGeminiCredentialError(null);
-      })
-      .catch((error) => {
-        setGeminiCredentialStatus(null);
-        setGeminiCredentialError(String(error));
-      });
-  }
-
   function refreshDatabaseBackedViews() {
     setDbRefreshState("refreshing");
 
@@ -237,7 +219,6 @@ export function useAppDataController({
       refreshCompanyEvents(),
       refreshSourceAdapters(),
       refreshSettings(),
-      refreshGeminiCredentialStatus(),
     ]).then(() => {
       setDbRefreshState("done");
       window.setTimeout(() => {
@@ -253,7 +234,6 @@ export function useAppDataController({
     refreshDatabaseStatus,
     refreshFeedItems,
     refreshSignals,
-    refreshGeminiCredentialStatus,
     refreshHealth,
     refreshSettings,
     refreshSourceAdapters,

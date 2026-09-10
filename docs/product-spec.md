@@ -36,9 +36,9 @@ The feed detail pane is a fixed-width side rail and is treated as a containment 
 - manual refresh control
 - in-app badges for new/unread items
 
-Milestone 3 introduces the company workspace as the second primary research surface after the Inbox. Opening a company from the Companies screen should show one ticker-focused page with Feed, Notebook, Claims, Transcripts, and Metadata tabs. The first implemented tab is Feed, backed by the same stored feed item model as the Inbox and filtered by the company's exchange-qualified ticker. Notebook, Claims, and Transcripts tabs may begin as placeholders until their dedicated milestones, but the navigation shape should be stable.
+Milestone 3 introduces the company workspace as the second primary research surface after the Inbox. Opening a company from the Companies screen should show one ticker-focused page with Feed, Notebook, Claims, and Metadata tabs. The first implemented tab is Feed, backed by the same stored feed item model as the Inbox and filtered by the company's exchange-qualified ticker. Notebook and Claims tabs may begin as placeholders until their dedicated milestones, but the navigation shape should be stable.
 
-Transcripts is an implemented Library-nav screen, not a placeholder (Milestone 3 scaffolding retired) — see [ui-information-architecture.md § App Shell](ui-information-architecture.md#app-shell) for the current nav spine. Notebook work is the per-company Spółka `notatnik` tool only; the cross-company Notebooks screen this section originally scoped retired 2026-09-02 (F4c S2, ADR 0108 amendment).
+The Transcripts screen is retired ([ADR 0111](adr/0111-retire-video-transcription.md)); see [ui-information-architecture.md § App Shell](ui-information-architecture.md#app-shell) for the current nav spine. Notebook work is the per-company Spółka `notatnik` tool only; the cross-company Notebooks screen this section originally scoped retired 2026-09-02 (F4c S2, ADR 0108 amendment).
 
 Desktop notifications are out of scope for v1. Portfolio positions, cost basis, and trading workflows are out of scope.
 
@@ -108,7 +108,7 @@ The screen is fully operable by keyboard (F3c, #197, contract `docs/plans/fronte
 
 ## Company Notebooks
 
-Each company has a notebook tied to its canonical company identity. Notes should support manual entry and creation from feed items, reports, and transcripts.
+Each company has a notebook tied to its canonical company identity. Notes should support manual entry and creation from feed items and reports.
 
 Notebook entries should support:
 
@@ -278,24 +278,7 @@ Feature losses are explicit and accepted: no in-app claim proposals, no feed-ana
 
 ### Video transcription — the one remaining in-app AI
 
-Transcription is data acquisition (speech→text), not interpretation, so it stays behind its provider trait. Gemini is preferred for YouTube press-conference transcription because of native vendor support for video/audio and YouTube URL input; real Gemini-backed transcript generation must work for a supported public YouTube URL (offline sample transcripts are only for tests and development). The Gemini transcription model is selectable in Settings and defaults to the cheapest configured model that passed live smoke validation. The transcription timeout is configurable so short provider checks and longer conference videos can use different tolerances. The Gemini key is the **only** provider credential the app asks for, and it is optional. Provider limits and privacy terms are shown in Settings before use.
-
-The video transcription workflow should support:
-
-- entering a YouTube press conference URL in a field labeled `Recording link`
-- optionally providing the ticker/company before transcription
-- reserving space for future company recognition from the video/transcript when the user does not provide one upfront
-- allowing transcripts to remain unlinked to any company, including general market videos
-- offering optional company linking after transcription, using the same local company lookup as Companies
-- running a transcription or transcript-like extraction
-- surfacing Gemini rejection/error causes when a direct YouTube URL cannot be processed
-- reviewing transcript segments
-- selecting whole transcript segments to add to a specific company's notebook when the transcript is linked to a company
-- preserving the YouTube URL, timestamp range when available, provider, and created note origin
-
-Any decision support — whether the app's deterministic analytics or an external agent over MCP — must be presented as decision support. It must not contain direct buy/sell/hold recommendations. Agent output arriving over MCP is the user's own agent working their own prompts; the app's contribution stays deterministic and source-cited.
-
-There is no in-app AI provider/model selection ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)). Honest failure reporting replaces guessed diagnoses: the deterministic pipeline emits typed reason codes (e.g. `no_deterministic_tier`) rendered through the translation layer, so distinct causes stay distinguishable.
+Retired ([ADR 0111](adr/0111-retire-video-transcription.md), owner decision 2026-09-07, #463): after 13 months with zero transcript jobs the YouTube→Gemini transcription workflow, its Settings tabs and the Gemini credential are gone, so the app has **no in-app AI at all** and asks for no API key. A transcript the investor wants in the workspace is captured by their own agent over the MCP port like any other external document (BYOA).
 
 ## Settings, Export, And Local Data
 

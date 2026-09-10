@@ -20,9 +20,8 @@ type CompanyEntryActionsInput = {
 };
 
 // Every `CompanyWorkspaceTab` that opens a Spółka tool (F3a S3, ADR 0107).
-// "Feed"/undefined and "Transcripts" are handled separately below — Feed is
-// the Spółka core (no tool), Transcripts has no company-scoped Spółka tool
-// yet and stays on its legacy global route.
+// "Feed"/undefined is handled separately below — it is the Spółka core (no
+// tool).
 const TAB_TOOL: Partial<Record<CompanyWorkspaceTab, Tool>> = {
   Fundamentals: { t: "fundamenty" },
   Claims: { t: "tezy" },
@@ -42,12 +41,6 @@ export function useCompanyEntryActions(input: CompanyEntryActionsInput) {
     companyId: string,
     tab?: CompanyWorkspaceTab,
   ) {
-    if (tab === "Transcripts") {
-      // No company-scoped Spółka tool for transcripts yet — the legacy
-      // global Transcripts screen (plan "Mapowanie WSZYSTKICH intencji").
-      input.navigate({ companyId, section: "Transcripts" });
-      return;
-    }
     input.navigate({ companyId, section: "Spolka", tool: tab ? TAB_TOOL[tab] : undefined });
   }
 
@@ -83,9 +76,6 @@ export function useCompanyEntryActions(input: CompanyEntryActionsInput) {
         return;
       case "today":
         input.setActiveSection("Today");
-        return;
-      case "transcripts":
-        input.setActiveSection("Transcripts");
         return;
     }
   }

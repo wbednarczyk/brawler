@@ -6,8 +6,8 @@ import type { SearchContentType } from "./SearchContentType";
  */
 export type SearchMatch = { contentType: SearchContentType, sourceId: string, companyId: string | null, 
 /**
- * Navigational container when the item's own id is not the navigation target
- * (e.g. the transcript job for a transcript segment). `None` otherwise.
+ * Navigational container when the item's own id is not the navigation
+ * target. `None` otherwise.
  */
 parentId: string | null, title: string, snippet: string, 
 /**

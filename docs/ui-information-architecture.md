@@ -14,7 +14,7 @@ The shell is **mode-based and thesis-centric** ([ADR 0054](adr/0054-mode-based-t
 
 - top toolbar: brand, **global search / "ask anything"** (a first-class session entry point, semantic; focused with **Ctrl+F**), manual refresh, source health indicator, theme/settings access.
 - **command palette (⌘K):** a **global** accelerator (v0.50 U6) — **Ctrl/⌘+K opens it from any screen**, complementing (not replacing) the visible spine. It is an APG combobox + listbox (F3c, #197): the search input is the `combobox` (`aria-activedescendant` follows `↑`/`↓`/`Home`/`End`), results are `option`s, `Escape` closes and returns focus to the control that opened it. It lists app-level commands (navigation and global actions from the rebindable shortcut registry, **`Open company: TICKER` for every tracked company**, and **`Open screen: X`** entries for Today, Events, Report Season and Research, which keep this palette entry alongside their Library nav item (F4b S4 / F4c S3, [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md) amendment — the J4 quick-open path)); while the Spółka screen is active it also contributes contextual **`Open tool: <Name>`** (`Otwórz narzędzie: …`) entries for its workshop tools (the colon family keeps a screen and a same-named tool apart, #454). Every command carries `{actionKey, verb}` (ADR 0104 dec. 3) and a copy gate (`src/app/paletteCopy.test.tsx`) enforces verb-first labels, both locales. Both `app.commandPalette` (⌘K) and `app.focusSearch` (Ctrl+F) are rebindable in Settings → Keyboard shortcuts.
-- **left sidebar — the IA spine ([ADR 0107](adr/0107-company-view-paradigm.md) amendment, F3a S3):** grouped into **Modes** (Dziś, Inbox, **Spółka** — Section `Spolka` — opens the last-viewed company, else the first pinned, else the first tracked company; never a blank screen), a **pinned/favorite companies** group (each with a glanceable conviction status — a neutral placeholder until per-company conviction lands), a **Library** group (Companies, Watchlists, Alerts, Events, Report Season, Research, Transcripts, Sources — F4b S4 added Events and Report Season, F4c S3 added Research with Ctrl+4 (#94); [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md) amendment), and a **Utilities** group (Settings, Diagnostics — developer-gated). This is the load-bearing navigation; a blank/freeform workspace is never the entry point. Exactly one sidebar row carries `aria-current="page"` at any time (a pinned+selected company's own row wins over the Spółka mode item).
+- **left sidebar — the IA spine ([ADR 0107](adr/0107-company-view-paradigm.md) amendment, F3a S3):** grouped into **Modes** (Dziś, Inbox, **Spółka** — Section `Spolka` — opens the last-viewed company, else the first pinned, else the first tracked company; never a blank screen), a **pinned/favorite companies** group (each with a glanceable conviction status — a neutral placeholder until per-company conviction lands), a **Library** group (Companies, Watchlists, Alerts, Events, Report Season, Research, Sources — F4b S4 added Events and Report Season, F4c S3 added Research with Ctrl+4 (#94), Transcripts left with [ADR 0111](adr/0111-retire-video-transcription.md); [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md) amendment), and a **Utilities** group (Settings, Diagnostics — developer-gated). This is the load-bearing navigation; a blank/freeform workspace is never the entry point. Exactly one sidebar row carries `aria-current="page"` at any time (a pinned+selected company's own row wins over the Spółka mode item).
 - **main area — the active mode's content** (see the modes below).
 - **focus surfaces:** full-screen reader/writer modes invoked from anywhere (`Esc` back).
 
@@ -217,8 +217,6 @@ Header shows: qualified ticker, display name, exchange, watchlist memberships as
 
 **Claims panel** ([ADR 0040](adr/0040-management-claims-tracker.md)): first-class claims for the company (statement, due period, optional quantitative target, source evidence, verdict) with a **review queue** ("claims to verify") at the top, bucketed due/overdue/upcoming, surfaced when the due-period report arrives. Verdicts (pending, delivered, partially delivered, missed, revised) are always user-set — the queue surfaces evidence, never assigns a verdict automatically. For a quantitative claim, the matching confirmed financial fact shows beside the claim for in-place resolution. Claims are added and edited manually, with rows expanding in place under the clicked row (the app-wide row interaction pattern); the AI claim-extraction launcher was removed in `v0.59.0` ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)).
 
-**Transcripts panel** (future milestone): transcript jobs for the company, submit YouTube `URL`, review transcript segments, create note from selected segments. Global/notebook-level transcript entry starts from a required `URL` field and optional company/ticker field; if the company is omitted the app tries to recognize it after transcription, but the transcript can stay unlinked for general market videos. Company selection is required only when saving selected segments into a company notebook.
-
 **Fundamentals panel:** a KPI-per-period matrix (KPI rows × period columns, chronological, showing as many of the newest periods as fit the width behind a full-height `Rozwiń starsze` column — [ADR 0107](adr/0107-company-view-paradigm.md) amendment 2026-09-04, no reporting-period list); as-reported values in their original scale (e.g. "1 093,6 mln PLN") with localized KPI names, never internal metric ids; the origin chip in the newest period header; a per-KPI trend sparkline (folded at the S tier). **The panel takes the shape of the report** (epic #398, approved mockup, replacing card #307's always-expanded collapsible groups — a company can carry ~150 rows): a fixed **statement switcher** shows one statement at a time — Kluczowe (key figures, the default view) / Rachunek wyników (income) / Bilans (balance) / Przepływy pieniężne (cash_flow) / Na akcję (per_share) / Operacyjne (`scope='company'` definitions plus the `other` catalog default) — each tab carrying a row-count badge, driven by the durable `kpi_definitions.statement_group` catalog field (migration `0130`, [data-model.md](data-model.md) § kpi_definitions) plus `kpi_relevance` active/primary rows ([ADR 0092](adr/0092-kpi-relevance-lifecycle.md)) for Kluczowe. A **find-a-position** field filters the active statement's rows by name. Statement subtotals (gross/operating/pre-tax/net profit) render heavier with a top rule. The newest period header carries the active statement's origin chip (or "mixed sources"); the honest count of rows still awaiting a catalog name shows as a warn chip in the section header — never silently absent (the below-table completeness bar retired 2026-09-04). **Clicking a matrix cell opens the fact detail in a `Modal` popup** (replaces the old below-table section, card #307): value large + as-reported form, data-quality/source-tier/validation chips, slot dimensions + extraction method + created/updated + supersession info, a distinctly-styled source citation (document name when resolvable, else the raw citation text), a larger trend chart for the KPI, and Edytuj/Usuń/Zamknij actions — Edytuj switches the same modal into the edit-form fields (value/currency/annotation) in place. Manual fact entry stays a separate below-table form (inline KPI search/datalist, reporting-period selector, value, currency, gated on KPI + period + value); custom per-company KPI management alongside the seeded `canonical`/`sector` taxonomy; automatically extracted facts (aggregator, ESEF, WDF) surface through the same read model as manual facts, each labeled by origin (the positional/tier-3b origin label is retired, [ADR 0095](adr/0095-retire-html-positional-tier.md); its stored facts are deleted by migration `0135` — freed slots re-fill from the surviving tiers under their own provenance). Ingestion/extraction is launched from report feed item detail (see [UI Flows](ui-flows.md)); the matrix stays readable across the supported narrow window range (full panel height, since the detail moved into the popup).
 
 The Fundamentals panel also hosts the **report-over-report diff** entry ([ADR 0052](adr/0052-report-over-report-diff.md)): a stored financial statement offers **Compare with previous**, opening a section-aligned diff against the prior same-type statement (SSF↔SSF, JSF↔JSF) — aligned sections (unchanged/changed/only-in-one) with the changed-section text delta and a citation into each report, readable across the narrow window range (sections stack rather than clip). Extraction-pending and no-text-layer states are shown explicitly rather than as an empty diff; the narrative management report (MD&A) is not diffable.
@@ -250,26 +248,7 @@ Note work happens in the per-company Spółka **`notatnik`** tool (above); cross
 
 ## Transcripts Screen
 
-Purpose: manage YouTube transcription jobs across companies.
-
-Main regions:
-
-- submit job form: YouTube URL, optional target company
-- job list: queued, running, succeeded, failed
-- transcript segment review
-- note draft pane
-
-Rules:
-
-- Gemini is preferred only for YouTube transcription.
-- M10 requires a real Gemini run path for supported public YouTube URLs; offline sample output is not a production user workflow.
-- Transcript jobs use the app-wide expandable-row pattern: click a job row to show or hide inline details.
-- Transcript jobs are standalone records first; company binding is optional.
-- Transcript segment text is immutable source output in v1.
-- Completed jobs show transcript segments in chronological order with timestamp ranges when available.
-- Segment selection works on whole transcript segments; finer text-range selection can be revisited after the first workflow is usable.
-- User edits note drafts, not transcript source text.
-- Saved company notebook notes preserve transcript segment and YouTube origin.
+Retired ([ADR 0111](adr/0111-retire-video-transcription.md), #463): no Transcripts screen, nav entry or `Ctrl+6` binding (the key stays free); Settings has no Transcripts or Credentials tab.
 
 ## Events Screen
 
@@ -339,7 +318,7 @@ Purpose: inspect local module behavior while Developer mode is active without ex
 
 Main regions:
 
-- module filter: AI analysis, external AI, sources, scheduler, credentials, storage, transcripts, shortcuts, locale, packaging, and future modules
+- module filter: AI analysis, external AI, sources, scheduler, credentials, storage, shortcuts, locale, packaging, and future modules
 - severity filter: debug, info, warning, error
 - timeline list: newest meaningful diagnostic events first
 - event detail pane or inline expansion: redacted metadata, scope/entity ID, stage, timestamp, severity, and message
@@ -358,7 +337,6 @@ Rules:
 - Event details must clearly show that metadata is redacted and local-only.
 - Metrics are operational health signals, not product analytics. Process-lifetime counters must be presented as runtime-only signals that reset on app restart.
 - Runtime log viewing is available only from Diagnostics while Developer mode is active, even though log configuration is visible in Settings.
-- The first rich timeline is video-transcript job progress ([ADR 0084](adr/0084-retire-in-app-ai-layer.md) decision 3 — the only remaining AI job kind), including queued, running, provider resolved, credential checked, request sent, response received, parsed, stored, and failed.
 - Non-AI modules may show lightweight baseline events where useful, while detailed logs and metrics remain separate observability surfaces.
 - Raw diagnostic JSON/file export is outside M14 scope.
 
@@ -372,7 +350,6 @@ Sections:
 
 - Appearance: dark/light/system brightness mode, separate accent palette with `night-neon` and `midnight-horizon`, extensible locale setting with English default and Polish as the first additional language
 - Sources: polling interval, **backfill history depth** (clickable presets 1/3/5/10 years bound to a slider + numeric input, clamped 1–10, default 3; ADR 0077 §3), import/export status
-- AI providers: Gemini configuration for YouTube transcription — the only in-app AI capability ([ADR 0084](adr/0084-retire-in-app-ai-layer.md)) — selectable transcription model, credential configured/not-configured status, credential storage, secret kind
 - Credentials: credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls
 - Logs: local runtime log level and rotation limits, with a clear local-only/no-telemetry explanation
@@ -394,7 +371,6 @@ Global search (delivered in `v0.38.0`, see [ADR 0032](adr/0032-search-and-backup
 - watchlists
 - feed items
 - notebook entries
-- transcript segments
 - company events
 
 A global, keyboard-reachable search box lives in the top toolbar and queries the unified `search_index`. Results are ranked, grouped by content type, and show a snippet; selecting a result navigates to the owning screen/item. Copy is localized (en/pl).

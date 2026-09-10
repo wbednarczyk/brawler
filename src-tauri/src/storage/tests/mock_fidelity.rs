@@ -970,16 +970,6 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
         // Activity read model (ADR 0109, #133) — same composed-view helpers
         // the command wrappers offload to, so the corpus can never diverge
         // from real assembly.
-        "create_video_transcript_job" => {
-            let new: crate::storage::NewTranscriptJob =
-                serde_json::from_value(inner).expect("NewTranscriptJob");
-            serde_json::to_value(
-                state
-                    .create_transcript_job(new)
-                    .expect("create_video_transcript_job"),
-            )
-            .unwrap()
-        }
         "list_activity" => serde_json::to_value(
             crate::commands::activity::compute_activity(state).expect("list_activity"),
         )

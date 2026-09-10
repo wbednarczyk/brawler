@@ -1,6 +1,6 @@
 # ADR 0005: Company Notebooks and Transcripts
 
-Status: Accepted
+Status: Accepted — **amended 2026-09-10 by [ADR 0111](0111-retire-video-transcription.md)**: the transcripts leg (video transcript jobs, segments, Gemini) is retired; the notebooks leg stands.
 
 ## Context
 

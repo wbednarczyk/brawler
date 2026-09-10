@@ -16,7 +16,7 @@ Build an investor workspace for company news, official reports, and ticker-speci
 - pull GPW-focused official reports and selected public/RSS news sources
 - show a chronological feed with filters, unread state, source attribution, and company grouping
 - maintain a notebook for each ticker
-- create notes directly from feed items and transcripts
+- create notes directly from feed items and report documents
 - track management claims or promises across future quarters
 - run local ingestion while the desktop app is open
 - gather fundamentals through a deterministic substrate (layered structured-first extraction, validated or flagged — [ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md)); *planned — [ADR 0098](adr/0098-mcp-native-kpi-acquisition-lifecycle.md)*: the primary acquisition path becomes agent-first — an external LLM reads the issuer's report and proposes facts, Brawler validates and commits them atomically with full provenance

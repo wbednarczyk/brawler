@@ -93,7 +93,6 @@ pub(super) fn create_notebook_entry(
             origins.source_type.trim(),
             &[
                 "feed_item",
-                "transcript_segment",
                 "ai_analysis",
                 "manual",
                 "external_url",

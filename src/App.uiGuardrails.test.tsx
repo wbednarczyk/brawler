@@ -38,7 +38,6 @@ describe("normal user UI guardrails", () => {
       "Companies",
       "Watchlists",
       "Events",
-      "Transcripts",
       "Sources",
       "Settings",
     ] as const;

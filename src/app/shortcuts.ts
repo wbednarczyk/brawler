@@ -10,7 +10,6 @@ export type AppShortcutId =
   | "app.openAlerts"
   | "app.openEvents"
   | "app.openResearch"
-  | "app.openTranscripts"
   | "app.openSources"
   | "app.openSettings"
   | "app.commandPalette"
@@ -43,14 +42,14 @@ export type AppShortcutReferenceItem = ShortcutReferenceItem & {
 };
 
 // Ctrl+4 moved from the retired Notebooks-global screen (F4c S2) to Research
-// (F4c S3, contract § Decisions #4).
+// (F4c S3, contract § Decisions #4). Ctrl+6 (Transcripts) retired with video
+// transcription (ADR 0111) and stays free — do not rebind it.
 const navigationShortcuts = [
   ["app.openInbox", "Open Inbox", "1", "Inbox"],
   ["app.openCompanies", "Open Companies", "2", "Companies"],
   ["app.openWatchlists", "Open Watchlists", "3", "Watchlists"],
   ["app.openResearch", "Open Research", "4", "Research"],
   ["app.openEvents", "Open Events", "5", "Events"],
-  ["app.openTranscripts", "Open Transcripts", "6", "Transcripts"],
   ["app.openSources", "Open Sources", "7", "Sources"],
   ["app.openSettings", "Open Settings", "8", "Settings"],
   ["app.openAlerts", "Open Alerts", "9", "Alerts"],

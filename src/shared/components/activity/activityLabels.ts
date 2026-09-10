@@ -40,8 +40,6 @@ function familyCopy(family: ActivityFamily): string {
       return "Price quote history";
     case "kpiIngest":
       return "KPI collection (agent)";
-    case "transcript":
-      return "Transcript";
     case "corrupted":
       return "Unrecognized task";
     default: {
