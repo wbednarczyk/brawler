@@ -18,9 +18,9 @@
 //! Ceilings: literal-split fragments are invisible; the enclosing-fn lookup
 //! is a text heuristic (no brace-depth tracking); a comparator built from a
 //! `created_at` value bound to a local first (`let t = x.created_at; …
-//! .cmp(&t)`), a bare `a.created_at > b.created_at`, or a `created_at`
-//! merely read near an unrelated `.cmp(` (pinned as
-//! `NotRankedOnCreatedAt`) are the window scan's known blind spots.
+//! .cmp(&t)`) and a bare `a.created_at > b.created_at` are the scan's known
+//! blind spots; the window never crosses a `;`, so a `.cmp(` in the next
+//! statement cannot vouch for a plain read in this one.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -54,10 +54,6 @@ pub(super) enum Reason {
     /// offender must still carry its issue (never a bare allow).
     #[allow(dead_code)]
     Debt(&'static str),
-    /// Comparator scan only: the statement-sized window matched a comparator
-    /// that ranks on ANOTHER key while `created_at` is merely read nearby
-    /// (heuristic ceiling, reviewed by hand).
-    NotRankedOnCreatedAt,
 }
 
 /// Every leading-`created_at` `ORDER BY` site this guard finds today,
@@ -544,14 +540,6 @@ const ALLOWED_COMPARATORS: &[(&str, &str, u8, Reason)] = &[
         1,
         Reason::SharedPublicationEvent,
     ),
-    // `entries.sort_by_key(Reverse(modified))` ranks backup files by mtime;
-    // `entry.created_at` is only READ two lines later (window false positive).
-    (
-        "storage/backup.rs",
-        "collect_status",
-        1,
-        Reason::NotRankedOnCreatedAt,
-    ),
 ];
 
 /// How far (bytes) around a `.created_at` read a comparator marker still
@@ -594,11 +582,19 @@ fn created_at_comparator_offsets(content: &str) -> Vec<usize> {
     }
     let code = String::from_utf8(code).expect("blanking keeps ASCII/UTF-8 boundaries intact");
 
+    // A statement boundary (`;`) bounds both the marker window and the fold:
+    // two adjacent one-line comparators are two sites, and a `.cmp(` in the
+    // NEXT statement never vouches for a plain read in this one.
+    let statement_start = |from: usize| code[..from].rfind(';').map_or(0, |i| i + 1);
+    let statement_end = |from: usize| code[from..].find(';').map_or(code.len(), |i| from + i);
+
     let mut offsets: Vec<usize> = Vec::new();
     for m in created_at_read_marker().find_iter(&code) {
         let pos = m.start();
-        let lo = pos.saturating_sub(COMPARATOR_WINDOW);
-        let hi = (m.end() + COMPARATOR_WINDOW).min(code.len());
+        let lo = pos
+            .saturating_sub(COMPARATOR_WINDOW)
+            .max(statement_start(pos));
+        let hi = (m.end() + COMPARATOR_WINDOW).min(statement_end(m.end()));
         // Clamp to char boundaries (the window is a byte count).
         let lo = (lo..=pos)
             .find(|&i| code.is_char_boundary(i))
@@ -612,9 +608,9 @@ fn created_at_comparator_offsets(content: &str) -> Vec<usize> {
         }
         if offsets
             .last()
-            .is_some_and(|&prev| pos - prev <= COMPARATOR_WINDOW)
+            .is_some_and(|&prev| pos - prev <= COMPARATOR_WINDOW && statement_start(pos) <= prev)
         {
-            continue; // the same comparison reading the field again
+            continue; // the same comparison expression reading the field again
         }
         offsets.push(pos);
     }
@@ -735,12 +731,10 @@ mod comparator_scanner_tests {
 
     #[test]
     fn two_separate_comparisons_in_one_fn_count_as_two_sites() {
+        // Adjacent statements, no padding: each is its own comparison site.
         let source = concat!(
             "fn pick(c: &mut Vec<Doc>, d: &mut Vec<Doc>) {\n",
             "    c.sort_by_cached_key(|x| x.created_at.clone());\n",
-            "    let _ = c.len(); let _ = c.len(); let _ = c.len(); let _ = c.len();\n",
-            "    let _ = c.len(); let _ = c.len(); let _ = c.len(); let _ = c.len();\n",
-            "    let _ = c.len(); let _ = c.len(); let _ = c.len(); let _ = c.len();\n",
             "    d.sort_by_key(|x| std::cmp::Reverse(x.created_at.clone()));\n",
             "}\n",
         );
@@ -748,6 +742,18 @@ mod comparator_scanner_tests {
             comparator_sites_in_file("x.rs", source),
             vec![("x.rs".to_string(), "pick".to_string(), 2)]
         );
+    }
+
+    #[test]
+    fn a_comparator_in_the_next_statement_does_not_vouch_for_a_plain_read() {
+        let source = concat!(
+            "fn label(d: &Doc, v: &mut Vec<u8>) -> String {\n",
+            "    let t = format!(\"{}\", d.created_at);\n",
+            "    v.sort_by(|a, b| a.cmp(b));\n",
+            "    t\n",
+            "}\n",
+        );
+        assert!(comparator_sites_in_file("x.rs", source).is_empty());
     }
 
     #[test]
