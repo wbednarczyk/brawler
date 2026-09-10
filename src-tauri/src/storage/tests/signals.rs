@@ -456,7 +456,7 @@ fn ai_proposed_signal_confirm_and_reject_flow() {
 }
 
 #[test]
-fn confirmed_signals_surface_in_research_timeline_and_high_signal_creates_reminder() {
+fn confirmed_signals_surface_in_research_timeline_and_high_signal_creates_no_reminder() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
     let company = tracked_company(&state);
@@ -516,7 +516,7 @@ fn confirming_a_high_signal_proposed_signal_creates_no_reminder() {
     let company = tracked_company(&state);
 
     // An ambiguous filing the rules leave unknown; the AI fallback proposes a
-    // high-signal category (insider_transaction is one of HIGH_SIGNAL_CATEGORIES).
+    // high-signal category (insider_transaction used to raise a reminder — #465).
     let items = vec![espi_item(
         &company,
         "9000052",

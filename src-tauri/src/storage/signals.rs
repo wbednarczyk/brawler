@@ -850,7 +850,7 @@ pub(super) fn classify_filing(
     )?;
 
     // Post-insert hooks mirror the deterministic classifier: fire matching alert
-    // rules (freshness-gated) and refresh derived reminders/events. Best-effort —
+    // rules (freshness-gated) and derive calendar events. Best-effort —
     // a hook failure never rolls back the stored signal.
     if !super::attention::signal_is_stale(normalized_date.as_deref()) {
         if let Err(error) = super::attention::evaluate_signal_rules(

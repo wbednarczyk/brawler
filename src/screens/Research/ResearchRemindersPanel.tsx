@@ -40,12 +40,19 @@ export function ResearchRemindersPanel({
   // completed/dismissed rows live behind a History segment (the Today
   // Active | Archive pattern) so Reopen stays reachable without cluttering
   // the six visible slots. History lists newest-first by last change.
-  const [view, setView] = useState<"open" | "history">("open");
+  const [selectedView, setSelectedView] = useState<"open" | "history">("open");
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const openReminders = reminders.filter((reminder) => reminder.status === "open");
   const historyReminders = reminders
     .filter((reminder) => reminder.status !== "open")
     .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
-  const visibleReminders = (view === "open" ? openReminders : historyReminders).slice(0, 6);
+  // History exists only while a closed row exists: reopening or removing the
+  // last one falls back to the open queue instead of stranding the panel on
+  // an empty view with no way back.
+  const view = historyReminders.length > 0 ? selectedView : "open";
+  const visibleReminders =
+    view === "open" ? openReminders.slice(0, 6) : showAllHistory ? historyReminders : historyReminders.slice(0, 6);
+  const hiddenHistoryCount = view === "history" ? historyReminders.length - visibleReminders.length : 0;
   // After deleting a reminder, keep focus in the queue by landing on the next
   // row's leading action button (ADR 0076 D9); the row article is not focusable.
   const { listRef } = useFocusAfterRemove<HTMLDivElement>(
@@ -62,13 +69,17 @@ export function ResearchRemindersPanel({
   const viewToggle =
     historyReminders.length > 0 ? (
       <SegmentedControl ariaLabel={text("Reminder view")} className="research-reminder-view">
-        <SegmentedControlOption active={view === "open"} data-action-kind="control" onClick={() => setView("open")}>
+        <SegmentedControlOption
+          active={view === "open"}
+          data-action-kind="control"
+          onClick={() => setSelectedView("open")}
+        >
           {text("Open items")}
         </SegmentedControlOption>
         <SegmentedControlOption
           active={view === "history"}
           data-action-kind="control"
-          onClick={() => setView("history")}
+          onClick={() => setSelectedView("history")}
         >
           {text("History")}
         </SegmentedControlOption>
@@ -164,6 +175,11 @@ export function ResearchRemindersPanel({
         ) : null}
         {reminders.length > 0 && visibleReminders.length === 0 ? (
           <EmptyState kind="quiet" reason={text("No open reminders.")} />
+        ) : null}
+        {hiddenHistoryCount > 0 ? (
+          <ActionButton kind="control" variant="ghost" onClick={() => setShowAllHistory(true)}>
+            {text("Show older")} ({hiddenHistoryCount})
+          </ActionButton>
         ) : null}
       </div>
     </div>

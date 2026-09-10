@@ -60,7 +60,7 @@ Each category records its matching rules and whether it derives a calendar event
 
 ### 6. Surfacing
 
-Classified signals are surfaced where the investor already looks: type badges and type filters on feed items, and type-aware digest grouping (e.g. insider-activity grouping); the high-signal reminder hook is retired ([ADR 0025](0025-research-reminders-and-digest-boundaries.md) amendment 2026-09-10, #465). Surfacing details and copy (en/pl) are specified in [product-spec.md](../product-spec.md) and [ui-flows.md](../ui-flows.md).
+Classified signals are surfaced where the investor already looks: type badges and type filters on feed items, and type-aware digest grouping (e.g. insider-activity grouping). Surfacing details and copy (en/pl) are specified in [product-spec.md](../product-spec.md) and [ui-flows.md](../ui-flows.md).
 
 Research-workspace integration (the digest/reminder half of surfacing) plugs signals into the existing research-evidence boundary (ADR-tracked M24/M31 model) rather than adding a parallel path:
 

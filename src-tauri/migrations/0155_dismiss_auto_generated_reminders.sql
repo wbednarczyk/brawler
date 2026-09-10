@@ -9,7 +9,7 @@ SET status = 'dismissed',
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE status = 'open'
   AND (
-    (reminder_kind = 'event_review' AND id LIKE 'reminder_event_%')
+    (reminder_kind = 'event_review' AND id GLOB 'reminder_event_*')
     OR (reminder_kind = 'signal_review'
         AND source_type = 'company_signal'
         AND body LIKE 'High-signal disclosure classified as %')

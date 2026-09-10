@@ -6339,6 +6339,35 @@ fn migration_0155_dismisses_auto_generated_reminders() {
             'company_event', 'evt3', 'Completed event', '', 'completed',
             '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z'
         )",
+        // 8. NEAR MISS: an imported deliberate event review whose id matches the
+        //    automatic prefix under LIKE (`_` is a single-char wildcard) but not
+        //    under GLOB — must stay open.
+        "INSERT INTO research_reminders (
+            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
+            title, body, status
+        ) VALUES (
+            'reminderXeventYcustom', 'company', 'company_x', 'company_x', 'event_review',
+            'company_event', 'evt9', 'Imported event review', '', 'open'
+        )",
+        // 9. NEAR MISS: a deliberate signal review with the automatic source_type
+        //    but the investor's own body — must stay open.
+        "INSERT INTO research_reminders (
+            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
+            title, body, status
+        ) VALUES (
+            'research_reminder_company_x_003', 'company', 'company_x', 'company_x',
+            'signal_review', 'company_signal', 'signal_9', 'Insider sale', 'my own signal note', 'open'
+        )",
+        // 10. NEAR MISS: the classifier body without the automatic source_type —
+        //     must stay open.
+        "INSERT INTO research_reminders (
+            id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id,
+            title, body, status
+        ) VALUES (
+            'research_reminder_company_x_004', 'company', 'company_x', 'company_x',
+            'signal_review', NULL, NULL, 'Profit warning',
+            'High-signal disclosure classified as profit warning.', 'open'
+        )",
     ];
     for sql in seed_rows {
         connection.execute(sql, []).expect("seed reminder row");
@@ -6350,6 +6379,9 @@ fn migration_0155_dismisses_auto_generated_reminders() {
         "reminder_manual_1",
         "reminder_question_q1",
         "reminder_event_evt3",
+        "reminderXeventYcustom",
+        "research_reminder_company_x_003",
+        "research_reminder_company_x_004",
     ];
     let before: Vec<String> = untouched_ids
         .iter()

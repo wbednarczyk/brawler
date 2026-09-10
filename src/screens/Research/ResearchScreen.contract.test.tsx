@@ -474,4 +474,44 @@ describe("Research action inventory — dense state, accessible-name uniqueness 
     await userEvent.setup().click(within(region).getByRole("button", { name: openLabel }));
     expect(within(region).getByRole("button", { name: `${t.markAsDone}: ${reminderFixture.title}` })).toBeInTheDocument();
   });
+
+  // #465: a scope whose only reminders are closed — the queue is empty and
+  // quiet (count 0, no primary "Mark as reviewed"), History still reaches them.
+  it.each(LOCALES)("history-only scope: quiet open queue, reachable History (%s)", async (locale) => {
+    const region = await openResearch(locale, { reminders: [reminderFixtureClosed] });
+    const t = LABELS[locale];
+    expect(within(region).getByRole("button", { name: foldName(t.reviewQueueFold, 0) })).toBeInTheDocument();
+    expect(collectEmptyStates(region)).toContain("quiet");
+    expectSinglePrimary(region, 0);
+    await userEvent.setup().click(
+      within(region).getByRole("button", { name: locale === "pl" ? "Historia" : "History" }),
+    );
+    expect(
+      within(region).getByRole("button", { name: `${t.reopenQuestion}: ${reminderFixtureClosed.title}` }),
+    ).toBeInTheDocument();
+  });
+
+  // #465: History caps at six rows behind "Show older" (the Alerts dense-cap
+  // pattern) — the seventh closed reminder is reachable, never stranded.
+  it.each(LOCALES)("history beyond six rows is reachable through Show older (%s)", async (locale) => {
+    const closed: ResearchReminder[] = Array.from({ length: 7 }, (_, index) => ({
+      ...reminderFixtureClosed,
+      id: `reminder_sample_cdr_closed_${index}`,
+      title: `Closed follow-up ${index + 1} on ${cdr.name}`,
+      status: "dismissed",
+      updatedAt: `2026-01-0${index + 1}T00:00:00Z`,
+    }));
+    const region = await openResearch(locale, { reminders: [reminderFixture, ...closed] });
+    const t = LABELS[locale];
+    const user = userEvent.setup();
+    await user.click(within(region).getByRole("button", { name: locale === "pl" ? "Historia" : "History" }));
+    // Newest-first: the oldest (index 0) is the seventh row, hidden behind the cap.
+    expect(within(region).queryByRole("button", { name: `${t.reopenQuestion}: ${closed[0].title}` })).toBeNull();
+    await user.click(
+      within(region).getByRole("button", { name: locale === "pl" ? "Pokaż starsze (1)" : "Show older (1)" }),
+    );
+    expect(
+      within(region).getByRole("button", { name: `${t.reopenQuestion}: ${closed[0].title}` }),
+    ).toBeInTheDocument();
+  });
 });

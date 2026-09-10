@@ -389,6 +389,11 @@ describe("Research screen workflows", () => {
     await user.click(await screen.findByRole("button", { name: "History" }));
     await user.click(await screen.findByRole("button", { name: "Reopen: Review open claim follow-up" }));
 
+    // The reopened row is actionable again: History emptied, so the panel
+    // falls back to the open queue (no stranded empty view).
+    expect(await screen.findByRole("button", { name: "Mark as done: Review open claim follow-up" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "History" })).toBeNull();
+
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("update_research_reminder", {
         input: {
