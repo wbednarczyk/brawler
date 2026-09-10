@@ -18,7 +18,8 @@
 //! Ceilings: literal-split fragments are invisible; the enclosing-fn lookup
 //! is a text heuristic (no brace-depth tracking); a comparator built from a
 //! `created_at` value bound to a local first (`let t = x.created_at; …
-//! .cmp(&t)`) and a bare `a.created_at > b.created_at` are the scan's known
+//! .cmp(&t)`) and a bare scalar `a.created_at > b.created_at` (tuple
+//! comparisons `>= (` ARE markers) are the scan's known
 //! blind spots; the window never crosses a `;` at the read's own depth (a
 //! closure body's tail expression — `|d| {` or `|d| -> T {` — still belongs
 //! to the comparator that owns the closure; a block opened any other way is
@@ -561,7 +562,7 @@ fn comparator_marker() -> &'static regex::Regex {
     static MARKER: OnceLock<regex::Regex> = OnceLock::new();
     MARKER.get_or_init(|| {
         regex::Regex::new(
-            r"sort_by\(|sort_by_key\(|sort_by_cached_key\(|sort_unstable_by\(|sort_unstable_by_key\(|max_by\(|max_by_key\(|min_by\(|min_by_key\(|Reverse\(|\.cmp\(|partial_cmp\(",
+            r"sort_by\(|sort_by_key\(|sort_by_cached_key\(|sort_unstable_by\(|sort_unstable_by_key\(|max_by\(|max_by_key\(|min_by\(|min_by_key\(|Reverse\(|\.cmp\(|partial_cmp\(|[<>]=?\s*\(",
         )
         .expect("valid regex")
     })
@@ -857,6 +858,21 @@ mod comparator_scanner_tests {
         assert_eq!(
             comparator_sites_in_file("x.rs", source),
             vec![("x.rs".to_string(), "pick".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_tuple_comparison_on_created_at_is_a_site() {
+        // astra r6: `(len, &a.created_at) >= (len, &b.created_at)` ranks too.
+        let source = concat!(
+            "fn keep(existing: &Row, row: &Row) -> bool {\n",
+            "    (existing.name.len(), &existing.created_at)\n",
+            "        >= (row.name.len(), &row.created_at)\n",
+            "}\n",
+        );
+        assert_eq!(
+            comparator_sites_in_file("x.rs", source),
+            vec![("x.rs".to_string(), "keep".to_string(), 1)]
         );
     }
 

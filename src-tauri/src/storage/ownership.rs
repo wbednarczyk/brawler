@@ -441,8 +441,10 @@ pub(super) fn disclosed_reference_state(
 /// ("NN PTE" and "Nationale-Nederlanden PTE S.A." are one entity), else the
 /// parenthetical-stripped canonical key ("cyber_Folks S.A." vs "cyber_Folks S.A.
 /// (akcje własne)"). The most specific (longest) raw name represents the merged
-/// holder — it carries the richer type signal.
-fn dedup_stakes_by_identity(
+/// holder — it carries the richer type signal; on equal length the newer
+/// disclosure (`as_of`) wins, then the larger id — never `created_at`
+/// (data-model.md § Model principles, #496).
+pub(super) fn dedup_stakes_by_identity(
     connection: &Connection,
     rows: Vec<OwnershipStakeRow>,
 ) -> StorageResult<Vec<OwnershipStakeRow>> {
@@ -474,8 +476,11 @@ fn dedup_stakes_by_identity(
             });
         match by_identity.get(&key) {
             Some(existing)
-                if (existing.holder_name_raw.len(), &existing.created_at)
-                    >= (row.holder_name_raw.len(), &row.created_at) => {}
+                if (
+                    existing.holder_name_raw.len(),
+                    &existing.as_of,
+                    &existing.id,
+                ) >= (row.holder_name_raw.len(), &row.as_of, &row.id) => {}
             _ => {
                 by_identity.insert(key, row);
             }
