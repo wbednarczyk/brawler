@@ -28,52 +28,95 @@ describe("Settings screen workflows", () => {
 
     const settingsRegion = await screen.findByLabelText("Application settings");
 
-    expect(within(settingsRegion).getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("heading", { name: "Appearance" }),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Settings palette")).toHaveValue("night-neon");
-    expect(within(settingsRegion).getByRole("button", { name: "Sources" })).toBeInTheDocument();
-    expect(within(settingsRegion).getByRole("button", { name: "Import And Export" })).toBeInTheDocument();
-    expect(within(settingsRegion).getByRole("button", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("button", { name: "Sources" }),
+    ).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("button", { name: "Import And Export" }),
+    ).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("button", {
+        name: "Keyboard shortcuts",
+      }),
+    ).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText("Settings palette"), "midnight-horizon");
+    await user.selectOptions(
+      screen.getByLabelText("Settings palette"),
+      "midnight-horizon",
+    );
 
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: {
         accentPalette: "midnight-horizon",
       },
     });
-    expect(screen.getByLabelText("Settings palette")).toHaveValue("midnight-horizon");
+    expect(screen.getByLabelText("Settings palette")).toHaveValue(
+      "midnight-horizon",
+    );
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Sources" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", { name: "Sources" }),
+    );
 
     // Feed mass-delete removed (#329, owner decision 2026-08-05): the Sources tab
     // no longer exposes a cleanup/retention subsection, only poll and backfill.
-    expect(within(settingsRegion).getByRole("heading", { name: "Sources" })).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("heading", { name: "Sources" }),
+    ).toBeInTheDocument();
     expect(
       within(settingsRegion).queryByRole("heading", { name: "Feed Cleanup" }),
     ).not.toBeInTheDocument();
     expect(
-      within(settingsRegion).queryByRole("button", { name: "Clean up feed now" }),
+      within(settingsRegion).queryByRole("button", {
+        name: "Clean up feed now",
+      }),
     ).not.toBeInTheDocument();
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Keyboard shortcuts" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", {
+        name: "Keyboard shortcuts",
+      }),
+    );
 
-    expect(within(settingsRegion).getByRole("heading", { name: "Keyboard shortcuts" })).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Shortcuts are ignored while typing in fields and editors.")).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("heading", {
+        name: "Keyboard shortcuts",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByText(
+        "Shortcuts are ignored while typing in fields and editors.",
+      ),
+    ).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Open Inbox")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Open Inbox search")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Open command palette")).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByText("Open Inbox search"),
+    ).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByText("Open command palette"),
+    ).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Ctrl+1")).toBeInTheDocument();
     // The command palette now owns Ctrl+K; Focus Inbox search moved to Ctrl+F.
     expect(within(settingsRegion).getByText("Ctrl+K")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Ctrl+F")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("F9")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Shift+F9")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Open next inbox item")).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByText("Open next inbox item"),
+    ).toBeInTheDocument();
     // F4c S2 (ADR 0108 amendment): the Notebooks-global screen retired —
     // `app.openNotebooks`/`notebook.editSelected`/`notebook.saveCurrent` are
     // deleted outright (no ghost rows for a retired id, retiredKeys.test.ts).
-    expect(within(settingsRegion).queryByText(/^Open notebook entry editor$/)).not.toBeInTheDocument();
-    expect(within(settingsRegion).queryByText(/^Save notebook edit$/)).not.toBeInTheDocument();
+    expect(
+      within(settingsRegion).queryByText(/^Open notebook entry editor$/),
+    ).not.toBeInTheDocument();
+    expect(
+      within(settingsRegion).queryByText(/^Save notebook edit$/),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Shortcut key Open Inbox"), {
       target: { value: "I" },
@@ -93,7 +136,9 @@ describe("Settings screen workflows", () => {
     });
     expect(screen.getByLabelText("Shortcut key Open Inbox")).toHaveValue("I");
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Appearance" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", { name: "Appearance" }),
+    );
 
     await user.selectOptions(screen.getByLabelText("Settings theme"), "light");
 
@@ -112,40 +157,77 @@ describe("Settings screen workflows", () => {
       },
     });
     expect(screen.getByLabelText("Język ustawień")).toHaveValue("pl");
-    expect(await screen.findByRole("heading", { name: "Ustawienia" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Ustawienia" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Spółki" })).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Szukaj elementów kanału")).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText("Szukaj elementów kanału"),
+    ).not.toBeInTheDocument();
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Źródła" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", { name: "Źródła" }),
+    );
 
-    expect(within(settingsRegion).getByRole("heading", { name: "Źródła" })).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("heading", { name: "Źródła" }),
+    ).toBeInTheDocument();
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Import i eksport" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", { name: "Import i eksport" }),
+    );
 
-    expect(within(settingsRegion).getByRole("heading", { name: "Import i eksport" })).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Dane badawcze")).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("heading", { name: "Import i eksport" }),
+    ).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByText("Dane badawcze"),
+    ).toBeInTheDocument();
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Skróty klawiaturowe" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", {
+        name: "Skróty klawiaturowe",
+      }),
+    );
 
-    expect(within(settingsRegion).getByRole("heading", { name: "Skróty klawiaturowe" })).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Otwórz Inbox")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Otwórz wyszukiwanie inboxu")).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("heading", {
+        name: "Skróty klawiaturowe",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByText("Otwórz Inbox"),
+    ).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByText("Otwórz wyszukiwanie inboxu"),
+    ).toBeInTheDocument();
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Źródła" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", { name: "Źródła" }),
+    );
 
-    await user.selectOptions(screen.getByLabelText("Sprawdzanie źródeł w ustawieniach"), "1800");
+    await user.selectOptions(
+      screen.getByLabelText("Sprawdzanie źródeł w ustawieniach"),
+      "1800",
+    );
 
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: {
         pollIntervalSeconds: 1800,
       },
     });
-    expect(screen.getByLabelText("Sprawdzanie źródeł w ustawieniach")).toHaveValue("1800");
+    expect(
+      screen.getByLabelText("Sprawdzanie źródeł w ustawieniach"),
+    ).toHaveValue("1800");
 
     const primaryNavigation = screen.getByLabelText("Nawigacja główna");
 
-    await user.click(within(primaryNavigation).getByRole("button", { name: "Źródła" }));
-    expect(await screen.findByRole("heading", { name: "Źródła" })).toBeInTheDocument();
+    await user.click(
+      within(primaryNavigation).getByRole("button", { name: "Źródła" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Źródła" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Odśwież źródła")).toBeInTheDocument();
   }, 20_000);
 
@@ -159,14 +241,22 @@ describe("Settings screen workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const settingsRegion = await screen.findByLabelText("Application settings");
-    await user.click(within(settingsRegion).getByRole("button", { name: "Import And Export" }));
-    const researchPanel = within(settingsRegion).getByLabelText("Research data");
+    await user.click(
+      within(settingsRegion).getByRole("button", { name: "Import And Export" }),
+    );
+    const researchPanel =
+      within(settingsRegion).getByLabelText("Research data");
     const settingsPanel = within(settingsRegion).getByLabelText("Settings");
 
-    await user.click(within(researchPanel).getByRole("button", { name: "Export" }));
+    await user.click(
+      within(researchPanel).getByRole("button", { name: "Export" }),
+    );
 
     expect(invoke).toHaveBeenCalledWith("export_research_data");
-    expect(join).toHaveBeenCalledWith("/home/test/Downloads", "brawler-research-data-2026-06-05.json");
+    expect(join).toHaveBeenCalledWith(
+      "/home/test/Downloads",
+      "brawler-research-data-2026-06-05.json",
+    );
     expect(save).toHaveBeenCalledWith({
       title: "Export file",
       defaultPath: "/home/test/Downloads/brawler-research-data-2026-06-05.json",
@@ -178,7 +268,7 @@ describe("Settings screen workflows", () => {
     expect(invoke).toHaveBeenCalledWith("write_export_file", {
       input: {
         path: "/tmp/research-export",
-        contents: "{\"schemaVersion\":1}",
+        contents: '{"schemaVersion":1}',
         allowedExtensions: ["json"],
         defaultExtension: "json",
       },
@@ -186,41 +276,57 @@ describe("Settings screen workflows", () => {
 
     await user.upload(
       within(researchPanel).getByLabelText("Choose research data file"),
-      new File(["{\"schemaVersion\":1}"], "research.json", { type: "application/json" }),
+      new File(['{"schemaVersion":1}'], "research.json", {
+        type: "application/json",
+      }),
     );
-    expect(within(researchPanel).getByLabelText("Choose research data file")).toHaveAttribute(
-      "accept",
-      ".json",
-    );
+    expect(
+      within(researchPanel).getByLabelText("Choose research data file"),
+    ).toHaveAttribute("accept", ".json");
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("preview_research_import", {
         input: {
-          contents: "{\"schemaVersion\":1}",
+          contents: '{"schemaVersion":1}',
         },
       });
     });
-    expect(within(researchPanel).getByLabelText("Import preview")).toBeInTheDocument();
-    expect(within(researchPanel).getByText("Companies created")).toBeInTheDocument();
+    expect(
+      within(researchPanel).getByLabelText("Import preview"),
+    ).toBeInTheDocument();
+    expect(
+      within(researchPanel).getByText("Companies created"),
+    ).toBeInTheDocument();
 
-    await user.click(within(researchPanel).getByRole("button", { name: "Apply import" }));
+    await user.click(
+      within(researchPanel).getByRole("button", { name: "Apply import" }),
+    );
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("apply_research_import", {
         input: {
-          contents: "{\"schemaVersion\":1}",
+          contents: '{"schemaVersion":1}',
         },
       });
     });
-    expect(within(researchPanel).getByLabelText("Import result")).toBeInTheDocument();
+    expect(
+      within(researchPanel).getByLabelText("Import result"),
+    ).toBeInTheDocument();
     // v0.54 T6: applying an import raises a transient success toast in addition
     // to the (persistent) result summary grid.
-    expect(await screen.findByRole("status")).toHaveTextContent("Import applied");
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Import applied",
+    );
 
-    await user.click(within(settingsPanel).getByRole("button", { name: "Export" }));
+    await user.click(
+      within(settingsPanel).getByRole("button", { name: "Export" }),
+    );
 
     expect(invoke).toHaveBeenCalledWith("export_settings_data");
-    expect(join).toHaveBeenCalledWith("/home/test/Downloads", "brawler-settings-2026-06-05.yaml");
+    expect(join).toHaveBeenCalledWith(
+      "/home/test/Downloads",
+      "brawler-settings-2026-06-05.yaml",
+    );
     expect(save).toHaveBeenCalledWith({
       title: "Export file",
       defaultPath: "/home/test/Downloads/brawler-settings-2026-06-05.yaml",
@@ -238,14 +344,17 @@ describe("Settings screen workflows", () => {
 
     await user.upload(
       within(settingsPanel).getByLabelText("Choose settings file"),
-      new File(["schemaVersion: 1\nsettings:\n  theme: light\n"], "settings.yaml", {
-        type: "application/x-yaml",
-      }),
+      new File(
+        ["schemaVersion: 1\nsettings:\n  theme: light\n"],
+        "settings.yaml",
+        {
+          type: "application/x-yaml",
+        },
+      ),
     );
-    expect(within(settingsPanel).getByLabelText("Choose settings file")).toHaveAttribute(
-      "accept",
-      ".yaml,.yml",
-    );
+    expect(
+      within(settingsPanel).getByLabelText("Choose settings file"),
+    ).toHaveAttribute("accept", ".yaml,.yml");
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("preview_settings_import", {
@@ -255,7 +364,9 @@ describe("Settings screen workflows", () => {
       });
     });
 
-    await user.click(within(settingsPanel).getByRole("button", { name: "Apply import" }));
+    await user.click(
+      within(settingsPanel).getByRole("button", { name: "Apply import" }),
+    );
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("apply_settings_import", {
@@ -274,9 +385,13 @@ describe("Settings screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const settingsRegion = await screen.findByLabelText("Application settings");
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Data storage" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", { name: "Data storage" }),
+    );
 
-    expect(within(settingsRegion).getByRole("heading", { name: "Data storage" })).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("heading", { name: "Data storage" }),
+    ).toBeInTheDocument();
     expect(
       within(settingsRegion).getByText(
         "How hard the app works on your data at once. Applies after restart.",
@@ -293,24 +408,40 @@ describe("Settings screen workflows", () => {
       input: { dbBusyTimeoutMs: 30000 },
     });
 
-    const databaseSection = within(settingsRegion).getByRole("region", { name: "Data storage" });
+    const databaseSection = within(settingsRegion).getByRole("region", {
+      name: "Data storage",
+    });
 
     // sol fix1 item 2: option labels read as seconds ("1 s" … "60 s") while
     // the persisted/committed value stays the raw millisecond figure the
     // API expects — selecting the seconds-labelled option must still emit
     // the millisecond number, never the display string.
-    await user.selectOptions(within(databaseSection).getByLabelText("Wait when busy"), "1 s");
+    await user.selectOptions(
+      within(databaseSection).getByLabelText("Wait when busy"),
+      "1 s",
+    );
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { dbBusyTimeoutMs: 1000 },
     });
-    await user.selectOptions(within(databaseSection).getByLabelText("Wait to start"), "30 s");
+    await user.selectOptions(
+      within(databaseSection).getByLabelText("Wait to start"),
+      "30 s",
+    );
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { dbAcquireTimeoutMs: 30000 },
     });
 
-    await user.click(within(databaseSection).getByRole("button", { name: "Reset to defaults" }));
+    await user.click(
+      within(databaseSection).getByRole("button", {
+        name: "Reset to defaults",
+      }),
+    );
     expect(invoke).toHaveBeenCalledWith("update_settings", {
-      input: { dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 },
+      input: {
+        dbMaxConnections: 4,
+        dbBusyTimeoutMs: 5000,
+        dbAcquireTimeoutMs: 10000,
+      },
     });
   });
 
@@ -322,14 +453,21 @@ describe("Settings screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const settingsRegion = await screen.findByLabelText("Application settings");
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Data storage" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", { name: "Data storage" }),
+    );
 
-    const queueSection = within(settingsRegion).getByRole("region", { name: "Background work" });
+    const queueSection = within(settingsRegion).getByRole("region", {
+      name: "Background work",
+    });
     expect(
       within(queueSection).getByRole("heading", { name: "Background work" }),
     ).toBeInTheDocument();
 
-    await user.selectOptions(within(queueSection).getByLabelText("Autopilot tasks at once"), "6");
+    await user.selectOptions(
+      within(queueSection).getByLabelText("Autopilot tasks at once"),
+      "6",
+    );
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { autopilotWorkers: 6 },
     });
@@ -338,10 +476,14 @@ describe("Settings screen workflows", () => {
     // per-provider-concurrency control must not come back (its own worker
     // control is retired outright, pinned in retiredKeys.test.ts).
     expect(
-      within(queueSection).queryByLabelText("Max concurrent calls per AI provider"),
+      within(queueSection).queryByLabelText(
+        "Max concurrent calls per AI provider",
+      ),
     ).not.toBeInTheDocument();
 
-    await user.click(within(queueSection).getByRole("button", { name: "Reset to defaults" }));
+    await user.click(
+      within(queueSection).getByRole("button", { name: "Reset to defaults" }),
+    );
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { sourcesWorkers: 2, autopilotWorkers: 3 },
     });
@@ -358,7 +500,9 @@ describe("Settings screen workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const settingsRegion = await screen.findByLabelText("Application settings");
-    await user.click(within(settingsRegion).getByRole("button", { name: "Logs" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", { name: "Logs" }),
+    );
 
     await user.selectOptions(screen.getByLabelText("Detail level"), "debug");
 
@@ -377,7 +521,9 @@ describe("Settings screen workflows", () => {
     renderApp({ section: "Settings" });
 
     const settingsRegion = await screen.findByLabelText("Application settings");
-    await user.click(within(settingsRegion).getByRole("button", { name: "Sources" }));
+    await user.click(
+      within(settingsRegion).getByRole("button", { name: "Sources" }),
+    );
 
     // Defaults to 3 (the sample settings value), shown in the bound numeric input.
     const yearsInput = screen.getByLabelText("How far back to fetch (years)");
@@ -404,13 +550,17 @@ describe("Settings screen workflows", () => {
 
     const sectionSelect = await screen.findByLabelText("Settings section");
     expect(sectionSelect).toHaveValue("appearance");
-    expect(within(sectionSelect).getByRole("option", { name: "Sources" })).toBeInTheDocument();
+    expect(
+      within(sectionSelect).getByRole("option", { name: "Sources" }),
+    ).toBeInTheDocument();
 
     // Selecting a section through the collapsed control switches the panel, the
     // same effect as clicking the Subnav tab.
     await user.selectOptions(sectionSelect, "sources");
     const settingsRegion = screen.getByLabelText("Application settings");
-    expect(within(settingsRegion).getByRole("heading", { name: "Sources" })).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByRole("heading", { name: "Sources" }),
+    ).toBeInTheDocument();
   });
   // ADR 0084 (retire the in-app AI analysis layer) + ADR 0111 (retire video
   // transcription): Settings must expose NO model-backed capability at all —
@@ -419,15 +569,92 @@ describe("Settings screen workflows", () => {
   // fallback toggle, the tier-4 sweep budget, and the Claude/OpenAI/Mistral
   // key forms) and the transcript provider/Credentials tabs are both gone;
   // intelligence arrives over MCP only.
+  it("toggles, remodifies, blanks and resets a shortcut binding (controls beyond the key field)", async () => {
+    const user = userEvent.setup();
+
+    renderApp({ section: "Settings" });
+    const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(
+      within(settingsRegion).getByRole("button", {
+        name: "Keyboard shortcuts",
+      }),
+    );
+    const controls = within(settingsRegion).getByLabelText(
+      "Configure shortcut Open Inbox",
+    );
+
+    // Enabled off → the binding persists with `disabled: true`.
+    await user.click(within(controls).getByLabelText("Enabled"));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_settings", {
+        input: {
+          shortcutBindings: expect.objectContaining({
+            "app.openInbox": expect.objectContaining({ disabled: true }),
+          }),
+        },
+      });
+    });
+    await user.click(within(controls).getByLabelText("Enabled"));
+
+    // A modifier checkbox writes its own flag.
+    await user.click(within(controls).getByLabelText("shiftKey"));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_settings", {
+        input: {
+          shortcutBindings: expect.objectContaining({
+            "app.openInbox": expect.objectContaining({
+              shiftKey: true,
+              ctrlKey: true,
+            }),
+          }),
+        },
+      });
+    });
+
+    // A blanked key field falls back to the default key, never an empty binding.
+    fireEvent.change(screen.getByLabelText("Shortcut key Open Inbox"), {
+      target: { value: "" },
+    });
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_settings", {
+        input: {
+          shortcutBindings: expect.objectContaining({
+            "app.openInbox": expect.objectContaining({ key: "1" }),
+          }),
+        },
+      });
+    });
+
+    // Reset drops the custom binding entirely (the key is gone from the map).
+    const reset = within(controls).getByRole("button", { name: "Reset" });
+    await waitFor(() => expect(reset).toBeEnabled());
+    await user.click(reset);
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_settings", {
+        input: {
+          shortcutBindings: expect.not.objectContaining({
+            "app.openInbox": expect.anything(),
+          }),
+        },
+      });
+    });
+  });
+
   it("exposes no AI-analysis or transcript routing surface (ADR 0084, ADR 0111)", async () => {
     renderApp({ section: "Settings" });
 
     const settingsRegion = await screen.findByLabelText("Application settings");
 
     // No AI tab, no Transcripts tab, no Credentials tab.
-    expect(within(settingsRegion).queryByRole("button", { name: "AI" })).not.toBeInTheDocument();
-    expect(within(settingsRegion).queryByRole("button", { name: "Transcripts" })).not.toBeInTheDocument();
-    expect(within(settingsRegion).queryByRole("button", { name: "Credentials" })).not.toBeInTheDocument();
+    expect(
+      within(settingsRegion).queryByRole("button", { name: "AI" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(settingsRegion).queryByRole("button", { name: "Transcripts" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(settingsRegion).queryByRole("button", { name: "Credentials" }),
+    ).not.toBeInTheDocument();
 
     // Every analysis-routing control is gone.
     for (const label of [
@@ -443,13 +670,21 @@ describe("Settings screen workflows", () => {
       expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
     }
     expect(
-      within(settingsRegion).queryByRole("heading", { name: "AI capability routing" }),
+      within(settingsRegion).queryByRole("heading", {
+        name: "AI capability routing",
+      }),
     ).not.toBeInTheDocument();
-    expect(within(settingsRegion).queryByText("Claim extraction")).not.toBeInTheDocument();
-    expect(within(settingsRegion).queryByText("Vision extraction")).not.toBeInTheDocument();
+    expect(
+      within(settingsRegion).queryByText("Claim extraction"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(settingsRegion).queryByText("Vision extraction"),
+    ).not.toBeInTheDocument();
 
     // No analysis-provider or credential catalog is fetched any more.
-    const invokedCommands = vi.mocked(invoke).mock.calls.map(([command]) => command);
+    const invokedCommands = vi
+      .mocked(invoke)
+      .mock.calls.map(([command]) => command);
     expect(invokedCommands).not.toContain("list_ai_provider_catalog");
     expect(invokedCommands).not.toContain("get_provider_credential_status");
 
