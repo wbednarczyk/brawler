@@ -17,12 +17,19 @@ import {
   EmptyState,
   ErrorText,
   FilterToolbar,
+  Hint,
   SearchField,
   SectionHeader,
   SelectField,
   StatusChip,
   useToast,
 } from "../../ui";
+
+// Attachment-fetch failure reason (Rust-defined constant, #460): the ESPI/EBI
+// listing linked an attachment whose URL never resolved to bytes — a source
+// data gap, not a transient network failure, so the row gets a quiet
+// explanation instead of a bare "Failed fetch" chip.
+const FETCH_ERROR_ATTACHMENT_LINK_INCOMPLETE = "attachment_link_incomplete";
 
 // The doc_kind taxonomy (ADR 0077 §1) in display order. `null` (unclassified)
 // is not a taxonomy value — it is a filter option and renders no badge.
@@ -530,6 +537,9 @@ export function CompanyReportDocumentsPanel({
             <StatusChip tone={document.fetchStatus === "fetched" ? "ok" : "neutral"}>
               {statusLabel(document.fetchStatus)}
             </StatusChip>
+            {document.fetchError === FETCH_ERROR_ATTACHMENT_LINK_INCOMPLETE ? (
+              <Hint className="doc-fetch-error-hint">{text("Attachment link incomplete at the source")}</Hint>
+            ) : null}
           </span>
           <span className="doc-action">
             {isExtractEligible(document) ? (

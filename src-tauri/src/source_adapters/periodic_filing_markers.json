@@ -1,0 +1,39 @@
+{
+  "decisionOrder": [
+    "bodyCurrentReport→false",
+    "bodyPeriodicForm≥2→true",
+    "titleNegative→false",
+    "titleFormCode→true",
+    "titlePositive→true",
+    "else→false"
+  ],
+  "bodyPeriodicForm": ["1. STRONA TYTUŁOWA", "WYBRANE DANE FINANSOWE", "ZAWARTOŚĆ RAPORTU"],
+  "bodyCurrentReport": ["1. RAPORT BIEŻĄCY"],
+  "titleFormCode": "^\\s*(?:wyniki finansowe\\s+(?:SA-)?(?:R|RS|RR|SR|SRR|P|PS|PSr|Q|QS|QSr)\\b|(?:SA-)?(?:R|RS|RR|SR|SRR|P|PS|PSr|Q|QS|QSr)\\s*\\d*\\s*/\\s*20\\d\\d\\b)",
+  "titlePositive": [
+    "raport okresowy",
+    "raport kwartalny",
+    "raport półroczny",
+    "raport polroczny",
+    "raport roczny",
+    "skonsolidowany raport",
+    "jednostkowy raport",
+    "rozszerzony skonsolidowany raport",
+    "sprawozdanie finansowe",
+    "formularz raportu",
+    "formularz skonsolidowanego raportu"
+  ],
+  "titleNegative": [
+    "wstępn",
+    "szacunk",
+    "szacowan",
+    "prognoz",
+    "zmiana terminu",
+    "termin publikacji",
+    "terminach przekazywania",
+    "harmonogram publikacji",
+    "korekta",
+    "o którym mowa",
+    "w nawiązaniu"
+  ]
+}

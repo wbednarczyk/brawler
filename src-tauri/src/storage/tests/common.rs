@@ -74,6 +74,7 @@ pub(super) fn sample_bankier_company_items(company: &Company) -> Vec<BankierComp
             attachments: vec![BankierCompanyAttachment {
                 label: "report.xhtml".to_owned(),
                 url: "https://bonnier.pl/report.xhtml".to_owned(),
+                incomplete: false,
             }],
             detail_fetch_attempted: true,
         }]

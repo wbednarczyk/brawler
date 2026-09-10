@@ -18,8 +18,7 @@
     "src-tauri/src/mcp/reads.rs": 1017,
     "src-tauri/src/mcp/server.rs": 1083,
     "src-tauri/src/report_diff/classify.rs": 1141,
-    "src-tauri/src/source_adapters/bankier_company.rs": 1203,
-    "src-tauri/src/storage/attention.rs": 1248,
+    "src-tauri/src/storage/attention.rs": 1243,
     "src-tauri/src/storage/financials.rs": 3442,
     "src-tauri/src/storage/import_export/research_import.rs": 1190,
     "src-tauri/src/storage/kpi_extraction.rs": 3273,
@@ -28,11 +27,11 @@
     "src-tauri/src/storage/mod.rs": 1926,
     "src-tauri/src/storage/ownership.rs": 1798,
     "src-tauri/src/storage/quality_frameworks.rs": 1898,
-    "src-tauri/src/storage/red_flags.rs": 1011,
+    "src-tauri/src/storage/red_flags.rs": 1002,
     "src-tauri/src/storage/report_tagged_facts.rs": 1481,
     "src-tauri/src/storage/research.rs": 1098,
     "src-tauri/src/storage/signals.rs": 1049,
-    "src-tauri/src/storage/sources.rs": 1543,
+    "src-tauri/src/storage/sources.rs": 1541,
     "src/app/AppStateRoot.tsx": 1865
   }
 }

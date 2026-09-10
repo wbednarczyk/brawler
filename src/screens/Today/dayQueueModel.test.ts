@@ -446,6 +446,36 @@ describe("isReportDelaySignal / suppressCapturedNonArrivals (fix wave B finding 
     };
     expect(suppressCapturedNonArrivals([missed], [dismissed], rulesById)).toEqual([missed]);
   });
+
+  describe("evidenceDate exact matching (#427)", () => {
+    it("suppresses only the same-company nonArrival whose eventDate equals the flag's evidenceDate, keeping a later overdue event of the same company", () => {
+      const older = nonArrival({ companyId: "company_3", eventDate: "2026-03-31" });
+      const later = nonArrival({ companyId: "company_3", eventDate: "2026-06-30" });
+      const flag: AttentionEvent = {
+        ...makeAttentionEvent("attn_rd", reportDelayRule.id, "company_3"),
+        evidenceDate: "2026-03-31",
+      };
+      expect(suppressCapturedNonArrivals([older, later], [flag], rulesById)).toEqual([later]);
+    });
+
+    it("suppresses a nonArrival whose eventDate exactly equals the flag's evidenceDate", () => {
+      const missed = nonArrival({ companyId: "company_3", eventDate: "2026-08-20" });
+      const flag: AttentionEvent = {
+        ...makeAttentionEvent("attn_rd", reportDelayRule.id, "company_3"),
+        evidenceDate: "2026-08-20",
+      };
+      expect(suppressCapturedNonArrivals([missed], [flag], rulesById)).toEqual([]);
+    });
+
+    it("falls back to the date-bound rule when evidenceDate is null (existing behavior preserved)", () => {
+      const missed = nonArrival({ companyId: "company_3", eventDate: "2026-06-05" });
+      const flag: AttentionEvent = {
+        ...makeAttentionEvent("attn_rd", reportDelayRule.id, "company_3"),
+        evidenceDate: null,
+      };
+      expect(suppressCapturedNonArrivals([missed], [flag], rulesById)).toEqual([]);
+    });
+  });
 });
 
 describe("pickPrimary", () => {

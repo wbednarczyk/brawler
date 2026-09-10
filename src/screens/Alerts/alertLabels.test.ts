@@ -45,6 +45,7 @@ function attentionEvent(triggerType: AttentionEvent["triggerType"]): AttentionEv
     evidenceTitle: null,
     evidenceDetail: null,
     witnessUrl: null,
+    evidenceDate: null,
   };
 }
 

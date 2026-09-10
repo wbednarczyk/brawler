@@ -227,7 +227,7 @@ fn process_filing(
         .into_iter()
         .filter(|doc| {
             doc.source_type == "espi_attachment"
-                && !crate::source_adapters::bankier_company::is_signature_attachment_url(&doc.url)
+                && !crate::source_adapters::bankier_links::is_signature_attachment_url(&doc.url)
         })
         .collect();
     candidates.sort_by(|left, right| {
@@ -465,6 +465,7 @@ mod tests {
                 crate::source_adapters::bankier_company::BankierCompanyAttachment {
                     label: "Powiadomienie".to_owned(),
                     url: attachment_url.to_owned(),
+                    incomplete: false,
                 },
             ],
             detail_fetch_attempted: true,

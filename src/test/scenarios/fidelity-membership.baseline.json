@@ -12,7 +12,6 @@
   "confirm_company_signal",
   "confirm_derived_event",
   "create_backup",
-  "create_company_event",
   "create_evidence_link",
   "create_kpi_definition",
   "create_management_claim",

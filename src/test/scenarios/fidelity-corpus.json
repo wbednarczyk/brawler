@@ -1902,6 +1902,122 @@
           "expectField": {}
         }
       ]
+    },
+    {
+      "name": "Today non-arrival witness = a periodic-report filing (ADR 0083 §8, #427)",
+      "_comment": "The Today non-arrival row for a scheduled periodic_report event vanishes only once a REAL witnessing filing arrives — an unrelated Official report (a current report about a signed agreement, or a preliminary-results notice, both bodies carrying the numbered '1. RAPORT BIEŻĄCY' TOC heading) must NOT clear it, so two such seeds are asserted to leave the row in place before the genuine periodic-form filing (body with >=2 bodyPeriodicForm markers) clears it. eventDate 2026-06-01 is >=4 days before the mock's fixed 'today' (SAMPLE_NOW = 2026-06-08) and, being a fixed past date, is always <= the Rust side's real wall-clock today too. Feed items are seeded via the corpus-only `seed_official_report_for_fidelity` bridge (not a real command — see mock_fidelity.rs dispatch / runtime.ts) since there is no user command that mints a bare feed item for a fixture company.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "WTNS",
+              "displayName": "Witness Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "create_company_event",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "eventType": "periodic_report",
+              "title": "Raport okresowy za I kwartał 2026",
+              "eventDate": "2026-06-01",
+              "eventTime": null,
+              "status": "scheduled",
+              "sourceType": null,
+              "sourceAdapterId": null,
+              "sourceEventKey": null,
+              "sourceUrl": null,
+              "attribution": null,
+              "fetchedAt": null
+            }
+          }
+        },
+        {
+          "command": "get_today_view",
+          "input": { "dayLimit": 3 },
+          "expectContainsField": "items",
+          "expectContains": {
+            "kind": "nonArrival",
+            "companyId": "company_gpw_wtns",
+            "qualifiedTicker": "GPW:WTNS",
+            "eventDate": "2026-06-01"
+          }
+        },
+        {
+          "command": "seed_official_report_for_fidelity",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "title": "Zawarcie umowy znaczącej",
+              "bodyText": "Spis treści:1. RAPORT BIEŻĄCY2. Zarząd spółki informuje o zawarciu umowy znaczącej.",
+              "publishedAt": "2026-06-10T09:00:00Z"
+            }
+          }
+        },
+        {
+          "command": "get_today_view",
+          "input": { "dayLimit": 3 },
+          "expectContainsField": "items",
+          "expectContains": {
+            "kind": "nonArrival",
+            "companyId": "company_gpw_wtns",
+            "qualifiedTicker": "GPW:WTNS",
+            "eventDate": "2026-06-01"
+          }
+        },
+        {
+          "command": "seed_official_report_for_fidelity",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "title": "Wstępne wyniki finansowe za I półrocze 2026",
+              "bodyText": "Spis treści:1. RAPORT BIEŻĄCY2. Wstępne szacunkowe wyniki finansowe za I półrocze 2026.",
+              "publishedAt": "2026-06-11T09:00:00Z"
+            }
+          }
+        },
+        {
+          "command": "get_today_view",
+          "input": { "dayLimit": 3 },
+          "expectContainsField": "items",
+          "expectContains": {
+            "kind": "nonArrival",
+            "companyId": "company_gpw_wtns",
+            "qualifiedTicker": "GPW:WTNS",
+            "eventDate": "2026-06-01"
+          }
+        },
+        {
+          "command": "seed_official_report_for_fidelity",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "title": "Wyniki finansowe PSr /2026",
+              "bodyText": "Spis treści:1. STRONA TYTUŁOWA2. METADANE ESAP3. WYBRANE DANE FINANSOWE4. KOREKTA RAPORTU5. ZAWARTOŚĆ RAPORTU",
+              "publishedAt": "2026-06-12T09:00:00Z"
+            }
+          }
+        },
+        {
+          "command": "get_today_view",
+          "input": { "dayLimit": 3 },
+          "expectContainsField": "items",
+          "expectAbsent": {
+            "kind": "nonArrival",
+            "companyId": "company_gpw_wtns",
+            "qualifiedTicker": "GPW:WTNS",
+            "eventDate": "2026-06-01"
+          }
+        }
+      ]
     }
   ]
 }

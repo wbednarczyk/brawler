@@ -1196,6 +1196,7 @@ fn bankier_item_with_attachment(
         attachments: vec![BankierCompanyAttachment {
             label: label.to_owned(),
             url: url.to_owned(),
+            incomplete: false,
         }],
         detail_fetch_attempted: true,
     }]

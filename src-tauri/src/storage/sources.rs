@@ -2,6 +2,7 @@ use super::feed_matching::{
     find_companies_for_media_item, find_company_for_gpw_listing, list_media_match_companies,
     media_duplicate_signature, normalize_media_match_text,
 };
+use super::report_documents::{create_or_find_with_status, FETCH_ERROR_LINK_INCOMPLETE};
 use super::*;
 
 pub(super) fn ingest_gpw_report_listings(
@@ -758,12 +759,12 @@ pub(super) fn repair_misassociated_report_documents(
 
 /// Register a filing's ESPI/EBI attachment links as `report_documents`, linked to the
 /// originating feed item. Status is decided per attachment (ADR 0036, ADR 0061 decision 1b):
-/// a digital-signature file (`.xades`) always registers `metadata_only` (no data to fetch); a
+/// an incomplete source `href` (#460, `fetch_error = attachment_link_incomplete`) or a
+/// digital-signature file (`.xades`) always registers `metadata_only` (no data to fetch); a
 /// structured ESEF/iXBRL statement (`.xhtml`) always registers `pending`, since the
 /// periodic-report text classifier can miss an xhtml-only filing; everything else registers
-/// `pending` only when the filing itself classifies as a periodic report, else `metadata_only`
-/// (URL + attribution only, no bytes). Idempotent via the report-document `(company_id, url)`
-/// UNIQUE key.
+/// `pending` only when the filing itself classifies as a periodic report, else `metadata_only`.
+/// Idempotent via the report-document `(company_id, url)` UNIQUE key.
 fn register_bankier_company_attachments(
     connection: &Connection,
     item: &BankierCompanyItem,
@@ -789,10 +790,6 @@ fn register_bankier_company_attachments(
         // the target company onto every attachment. Drop an attachment that names
         // a DIFFERENT tracked issuer (and not the owner) — the CBF↔Vercom/Energa
         // contamination — before any row is created. Same predicate as the repair.
-        // Mis-association guard (T-A3, card 45fcece): tag-listing ingestion stamps
-        // the target company onto every attachment. Drop an attachment that names
-        // a DIFFERENT tracked issuer (and not the owner) — the CBF↔Vercom/Energa
-        // contamination — before any row is created. Same predicate as the repair.
         if let Some(owner) = owner {
             if names_foreign_issuer(&item.title, &title, &attachment.url, owner, issuers) {
                 log::warn!(
@@ -814,23 +811,24 @@ fn register_bankier_company_attachments(
             title: Some(title),
             attribution: Some(crate::source_adapters::bankier_company::ATTRIBUTION.to_owned()),
         };
-        let status = attachment_fetch_status(is_periodic, &attachment.url);
-        super::report_documents::create_or_find_with_status(connection, input, status)?;
+        let status = attachment_fetch_status(is_periodic, &attachment.url, attachment.incomplete);
+        let fetch_error = attachment.incomplete.then_some(FETCH_ERROR_LINK_INCOMPLETE);
+        create_or_find_with_status(connection, input, status, fetch_error)?;
     }
 
     Ok(())
 }
 
-/// Per-attachment fetch-status gate (ADR 0061 decision 1b). See
-/// [`register_bankier_company_attachments`] for the full rationale.
-fn attachment_fetch_status(is_periodic_report_item: bool, url: &str) -> &'static str {
-    use crate::source_adapters::bankier_company::{
+/// Per-attachment fetch-status gate (ADR 0061 decision 1b; `incomplete` per #460 —
+/// a source link never fetched from a guess). See [`register_bankier_company_attachments`].
+fn attachment_fetch_status(is_periodic: bool, url: &str, incomplete: bool) -> &'static str {
+    use crate::source_adapters::bankier_links::{
         is_signature_attachment_url, is_structured_attachment_url,
     };
 
-    if is_signature_attachment_url(url) {
+    if incomplete || is_signature_attachment_url(url) {
         "metadata_only"
-    } else if is_periodic_report_item || is_structured_attachment_url(url) {
+    } else if is_periodic || is_structured_attachment_url(url) {
         "pending"
     } else {
         "metadata_only"

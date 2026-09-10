@@ -589,6 +589,7 @@ mod tests {
             evidence_title: None,
             evidence_detail: None,
             witness_url: None,
+            evidence_date: None,
         }
     }
 

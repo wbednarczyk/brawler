@@ -317,34 +317,50 @@ export function isReportDelaySignal(event: AttentionEvent, rulesById: Map<string
  * `report_delay` attention event is dropped, regardless of fetch order
  * between `get_today_view` and the root-fed attention state — this guarantees
  * exactly one row (never zero, never two) independent of which of the two
- * independent fetches lands first or refreshes stale. The match key is
- * (companyId, `eventDate <= day(firedAt)`): `evidenceRef` is an opaque hashed
- * signal id with no frontend reconstruction, so per-eventKey matching is
- * unavailable — but a flag can only ever be ABOUT a calendar event that
+ * independent fetches lands first or refreshes stale.
+ *
+ * Two match strategies, precise-first (#427): when the event carries
+ * `evidenceDate` (the calendar event's own `event_date` the flag is ABOUT),
+ * suppression is exact — only the same-company `nonArrival` whose `eventDate`
+ * equals it is dropped. When `evidenceDate` is `null` (a legacy row fired
+ * before the backend stamped it), suppression falls back to the coarser date
+ * bound: (companyId, `eventDate <= day(firedAt)`) — `evidenceRef` is an opaque
+ * hashed signal id with no frontend reconstruction, so per-eventKey matching
+ * was unavailable, but a flag can only ever be ABOUT a calendar event that
  * predates its own firing, so the date bound stops an old, merely-seen flag
- * from swallowing a LATER quarter's fresh non-arrival (sol R3). Two
- * same-company events both overdue before one flag fires would still
- * cross-suppress — the genuinely-simultaneous case the V1 one-report-calendar
- * doesn't produce.
+ * from swallowing a LATER quarter's fresh non-arrival (sol R3). The residual
+ * false-positive: two same-company events both overdue before ANY flag has
+ * fired, with the evidence pruned (`evidenceDate: null`) — the coarse bound
+ * cannot tell them apart. UTC day, not local (sol R4): `eventDate` is a UTC
+ * bare date (plan decision 2's detection boundary), so the fallback's
+ * comparison day must be UTC too — a 23:30Z firing must not roll into the
+ * next local day and swallow a later UTC-date event.
  */
 export function suppressCapturedNonArrivals(
   items: TodayItem[],
   attentionEvents: AttentionEvent[],
   rulesById: Map<string, AlertRule>,
 ): TodayItem[] {
+  const capturedDatesByCompany = new Map<string, Set<string>>();
   const latestFiredDayByCompany = new Map<string, string>();
   for (const event of attentionEvents) {
     if (event.dismissed || !isReportDelaySignal(event, rulesById) || !event.companyId) continue;
-    // UTC day, not local (sol R4): `eventDate` is a UTC bare date (plan
-    // decision 2's detection boundary), so the comparison day must be UTC too
-    // — a 23:30Z firing must not roll into the next local day and swallow a
-    // later UTC-date event.
+    if (event.evidenceDate) {
+      let dates = capturedDatesByCompany.get(event.companyId);
+      if (!dates) {
+        dates = new Set();
+        capturedDatesByCompany.set(event.companyId, dates);
+      }
+      dates.add(event.evidenceDate);
+      continue;
+    }
     const firedDay = event.firedAt.slice(0, 10);
     const previous = latestFiredDayByCompany.get(event.companyId);
     if (!previous || firedDay > previous) latestFiredDayByCompany.set(event.companyId, firedDay);
   }
   return items.filter((item) => {
     if (item.kind !== "nonArrival") return true;
+    if (capturedDatesByCompany.get(item.companyId)?.has(item.eventDate)) return false;
     const firedDay = latestFiredDayByCompany.get(item.companyId);
     return !firedDay || item.eventDate > firedDay;
   });

@@ -22,8 +22,9 @@ Below the header, each day with anything in it gets its own section: a mono
 label (DZIŚ / WCZORAJ / the date), a count, and its rows. Rows are typed —
 report/filing (official, cyan provenance), media **clustered per company**
 (magenta, even a single article), `NIE WPŁYNĄŁ` (an announced periodic report
-past its date with no witnessing filing — disappears the moment the
-`report_delay` red flag takes over), claims to verify (a separate "DO
+past its date with no witnessing periodic-report filing — a preliminary
+results notice, publication-date change, or current-report correction never
+counts — disappears the moment the `report_delay` red flag takes over), claims to verify (a separate "DO
 WERYFIKACJI" section), autopilot runs, and fired alerts (attention events,
 root-fed — shared with the sidebar badge/Alerts). Every row action **names
 its destination and lands on the thing itself**: `Przeczytaj raport` → the

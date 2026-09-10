@@ -64,17 +64,25 @@ fn seed_periodic_event(state: &AppState, company_id: &str, date: &str) {
         .expect("event should create");
 }
 
-/// Insert an official-report feed item published on `published_at` for a company.
-fn seed_official_report(state: &AppState, company_id: &str, published_at: &str) {
+/// Insert an official-report feed item published on `published_at` for a
+/// company, with an explicit `title`/`body` — the witness classifier (issue
+/// #427) decides suppression from these, not merely from the item's type.
+fn seed_official_report(
+    state: &AppState,
+    company_id: &str,
+    published_at: &str,
+    title: &str,
+    body: Option<&str>,
+) {
     let connection = state.checkout().expect("connection");
     let id = format!("fi-official-{company_id}-{published_at}");
     connection
         .execute(
             "INSERT INTO feed_items (id, type, source_adapter_id, source_name, source_url,
-                 title, fetched_at, dedupe_key, published_at)
+                 title, body_text, fetched_at, dedupe_key, published_at)
              VALUES (?1, 'Official report', 'brawler-red-flags', 'ESPI', 'https://x',
-                 'Raport okresowy', '2026-01-01T00:00:00Z', ?1, ?2)",
-            params![id, published_at],
+                 ?3, ?4, '2026-01-01T00:00:00Z', ?1, ?2)",
+            params![id, published_at, title, body],
         )
         .expect("feed item insert");
     connection
@@ -85,6 +93,15 @@ fn seed_official_report(state: &AppState, company_id: &str, published_at: &str) 
         )
         .expect("feed item company link");
 }
+
+/// A current-report body shape (ESPI TOC starting `RAPORT BIEŻĄCY`) — real
+/// Bankier data: every current filing, incl. one with a periodic-looking
+/// title, carries this shape.
+const CURRENT_REPORT_BODY: &str =
+    "Spis treści:1. RAPORT BIEŻĄCY2. MESSAGE (ENGLISH VERSION)3. PODPISY";
+/// A periodic-report form body shape (ESPI TOC starting `STRONA TYTUŁOWA`).
+const PERIODIC_FORM_BODY: &str =
+    "Spis treści:1. STRONA TYTUŁOWA2. WYBRANE DANE FINANSOWE3. ZAWARTOŚĆ RAPORTU4. PODPISY";
 
 #[test]
 fn report_delay_fires_after_grace_and_raises_signal() {
@@ -135,7 +152,7 @@ fn report_delay_suppressed_when_report_arrived() {
     let (state, company) = setup();
     seed_periodic_event(&state, &company.id, "2026-07-01");
     // The official report was ingested on the expected date — no delay.
-    seed_official_report(&state, &company.id, "2026-07-02");
+    seed_official_report(&state, &company.id, "2026-07-02", "Raport okresowy", None);
 
     let raised = state
         .red_flags()
@@ -143,6 +160,102 @@ fn report_delay_suppressed_when_report_arrived() {
         .expect("detection runs");
     assert_eq!(raised, 0, "an ingested report suppresses the delay");
     assert_eq!(signals_of(&state, "report_delay"), 0);
+}
+
+// --- witness narrowing (issue #427, ADR 0083 §8 amendment) -------------------
+
+#[test]
+fn report_delay_unrelated_official_filing_no_longer_suppresses() {
+    let (state, company) = setup();
+    seed_periodic_event(&state, &company.id, "2026-07-01");
+    // An unrelated current report (e.g. a significant-agreement notice) is
+    // still an 'Official report' feed item, but it never witnesses the
+    // periodic filing — the bug this issue closes.
+    seed_official_report(
+        &state,
+        &company.id,
+        "2026-07-02",
+        "Zawarcie umowy znaczącej z kontrahentem",
+        Some(CURRENT_REPORT_BODY),
+    );
+
+    let raised = state
+        .red_flags()
+        .detect_report_delays()
+        .expect("detection runs");
+    assert_eq!(
+        raised, 1,
+        "an unrelated official filing must not suppress the delay"
+    );
+    assert_eq!(signals_of(&state, "report_delay"), 1);
+}
+
+#[test]
+fn report_delay_suppressed_by_periodic_form_body() {
+    let (state, company) = setup();
+    seed_periodic_event(&state, &company.id, "2026-07-01");
+    seed_official_report(
+        &state,
+        &company.id,
+        "2026-07-02",
+        "Wyniki finansowe PSr /2026",
+        Some(PERIODIC_FORM_BODY),
+    );
+
+    let raised = state
+        .red_flags()
+        .detect_report_delays()
+        .expect("detection runs");
+    assert_eq!(raised, 0, "a classified periodic form suppresses the delay");
+    assert_eq!(signals_of(&state, "report_delay"), 0);
+}
+
+#[test]
+fn report_delay_suppressed_by_title_only_form_code() {
+    let (state, company) = setup();
+    seed_periodic_event(&state, &company.id, "2026-07-01");
+    // No body yet (a fresh, not-yet-enriched arrival) — the title form code
+    // alone must still classify as periodic.
+    seed_official_report(
+        &state,
+        &company.id,
+        "2026-07-02",
+        "Wyniki finansowe PSr",
+        None,
+    );
+
+    let raised = state
+        .red_flags()
+        .detect_report_delays()
+        .expect("detection runs");
+    assert_eq!(
+        raised, 0,
+        "a title-only form-code filing suppresses the delay"
+    );
+    assert_eq!(signals_of(&state, "report_delay"), 0);
+}
+
+#[test]
+fn report_delay_not_suppressed_by_preliminary_results_filing() {
+    let (state, company) = setup();
+    seed_periodic_event(&state, &company.id, "2026-07-01");
+    seed_official_report(
+        &state,
+        &company.id,
+        "2026-07-02",
+        "Wstępne wyniki finansowe i operacyjne za I półrocze 2026 roku",
+        Some(CURRENT_REPORT_BODY),
+    );
+
+    let raised = state
+        .red_flags()
+        .detect_report_delays()
+        .expect("detection runs");
+    assert_eq!(
+        raised, 1,
+        "a preliminary-results filing must not suppress the delay"
+    );
+    assert_eq!(signals_of(&state, "report_delay"), 1);
 }
 
 #[test]
@@ -895,3 +1008,108 @@ fn view_composes_auditor_flag_at_read_without_raising() {
     // No synthetic red-flag feed item was written (compose-at-read only).
     assert_eq!(signals_of(&state, "auditor_red_flag"), 0);
 }
+
+// ---------------------------------------------------------------------------
+// Real-data check (issue #427) — deliberately #[ignore]d, needs owner data
+// ---------------------------------------------------------------------------
+
+/// Runs the narrowed witness classifier over every past-grace
+/// `periodic_report` event on a throwaway copy of the owner's database,
+/// printing witnessed/unwitnessed per company + date + (when witnessed) the
+/// witnessing filing's title. A diagnostic probe, not a CI gate — no hard
+/// assertion on the exact counts, which shift as the owner's data does.
+///
+/// ```text
+/// BRAWLER_WITNESS_PROBE_DB=$SCRATCH/owner-db-copy.sqlite3 \
+///   cargo test -p brawler --lib red_flags::witness_real_data_check \
+///   -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "witness real-data check; needs BRAWLER_WITNESS_PROBE_DB (a throwaway copy)"]
+fn witness_real_data_check() {
+    let Ok(db_path) = std::env::var("BRAWLER_WITNESS_PROBE_DB") else {
+        eprintln!(
+            "SKIP witness_real_data_check: set BRAWLER_WITNESS_PROBE_DB to a throwaway db copy"
+        );
+        return;
+    };
+    if !std::path::Path::new(&db_path).is_file() {
+        eprintln!("SKIP witness_real_data_check: no database at {db_path}");
+        return;
+    }
+    let file_name = std::path::Path::new(&db_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    assert!(
+        file_name != "brawler.sqlite3" && !db_path.starts_with("/mnt/d/"),
+        "refusing to run: {db_path} is the master snapshot or the live application database"
+    );
+
+    let connection = open_database_readonly(&db_path).expect("open probe db read-only");
+    let cutoff = (time::OffsetDateTime::now_utc() - time::Duration::days(REPORT_DELAY_GRACE_PROBE))
+        .format(&time::format_description::well_known::Iso8601::DATE)
+        .unwrap();
+
+    let mut events_stmt = connection
+        .prepare(
+            "SELECT ce.company_id, c.qualified_ticker, ce.event_date
+             FROM company_events ce JOIN companies c ON c.id = ce.company_id
+             WHERE ce.event_type = 'periodic_report' AND ce.event_date <= ?1
+             ORDER BY ce.event_date ASC, ce.id ASC",
+        )
+        .expect("prepare events");
+    let events: Vec<(String, String, String)> = events_stmt
+        .query_map(params![cutoff], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .expect("query events")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect events");
+
+    let mut witnessed_count = 0;
+    let mut unwitnessed = Vec::new();
+    for (company_id, ticker, event_date) in &events {
+        let mut items_stmt = connection
+            .prepare(
+                "SELECT fi.title, fi.body_text FROM feed_items fi
+                 JOIN feed_item_companies fic ON fic.feed_item_id = fi.id
+                 WHERE fic.company_id = ?1 AND fi.type = 'Official report'
+                   AND fi.published_at >= ?2",
+            )
+            .expect("prepare items");
+        let items: Vec<(String, Option<String>)> = items_stmt
+            .query_map(params![company_id, event_date], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .expect("query items")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect items");
+        let witness = items.iter().find(|(title, body)| {
+            crate::source_adapters::periodic_filing::is_periodic_report_filing(
+                title,
+                body.as_deref(),
+            )
+        });
+        match witness {
+            Some((title, _)) => {
+                witnessed_count += 1;
+                eprintln!("WITNESSED {ticker} {event_date} <- {title}");
+            }
+            None => {
+                unwitnessed.push(format!("{ticker} {event_date}"));
+                eprintln!("UNWITNESSED {ticker} {event_date}");
+            }
+        }
+    }
+    eprintln!(
+        "== witness real-data check == {witnessed_count}/{} witnessed",
+        events.len()
+    );
+    eprintln!("unwitnessed: {unwitnessed:?}");
+}
+
+/// Grace window used by [`witness_real_data_check`] — mirrors
+/// [`super::super::red_flags::REPORT_DELAY_GRACE_DAYS`], duplicated locally
+/// since that const is private to `red_flags.rs`.
+const REPORT_DELAY_GRACE_PROBE: i64 = 3;

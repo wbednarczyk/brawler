@@ -53,4 +53,10 @@ evidenceDetail: string | null,
  * (ADR 0069), so no feed navigation can reach it. `None` for every other
  * evidence type or when the ledger row is gone.
  */
-witnessUrl: string | null, };
+witnessUrl: string | null, 
+/**
+ * The calendar/signal date the evidence is about (issue #427): for a
+ * `company_signal` event, `company_signals.signal_date`; `null` for
+ * every other evidence type, or when the signal row is gone.
+ */
+evidenceDate: string | null, };

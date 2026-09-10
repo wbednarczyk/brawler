@@ -353,7 +353,64 @@ fn autopilot_completion_rule_fires_and_dedups() {
         .evaluate_autopilot_completion(&company.id, "run_abc")
         .expect("evaluate");
     assert_eq!(again, 0, "same run is deduped");
-    assert_eq!(events(&state).len(), 1);
+    let all = events(&state);
+    assert_eq!(all.len(), 1);
+    assert_eq!(
+        all[0].evidence_date, None,
+        "a non-`company_signal` event carries no evidence_date (issue #427)"
+    );
+}
+
+/// Issue #427: `evidenceDate` carries the `report_delay` flag's calendar
+/// event date (`company_signals.signal_date`), so the frontend can tell a
+/// missed-report event apart from an unrelated one without re-deriving it.
+#[test]
+fn report_delay_attention_event_carries_evidence_date() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    state
+        .attention()
+        .create_alert_rule(NewAlertRule {
+            trigger_type: "signal_category".to_owned(),
+            signal_category: Some("report_delay".to_owned()),
+            price_min: None,
+            price_max: None,
+            scope_type: "company".to_owned(),
+            scope_ref: company.id.clone(),
+        })
+        .expect("rule");
+    state
+        .create_company_event(NewCompanyEvent {
+            company_id: company.id.clone(),
+            event_type: "periodic_report".to_owned(),
+            title: "Raport roczny za 2025".to_owned(),
+            event_date: "2026-07-01".to_owned(),
+            event_time: None,
+            status: Some("scheduled".to_owned()),
+            source_type: Some("manual".to_owned()),
+            source_adapter_id: None,
+            source_event_key: None,
+            source_url: None,
+            attribution: None,
+            fetched_at: None,
+        })
+        .expect("event should create");
+
+    let raised = state
+        .red_flags()
+        .detect_report_delays()
+        .expect("detection runs");
+    assert_eq!(raised, 1);
+
+    let all = events(&state);
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].evidence_type, "company_signal");
+    assert_eq!(
+        all[0].evidence_date.as_deref(),
+        Some("2026-07-01"),
+        "the flag's event carries the calendar event date"
+    );
 }
 
 // --- price triggers ----------------------------------------------------------

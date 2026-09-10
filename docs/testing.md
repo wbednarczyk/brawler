@@ -708,6 +708,7 @@ following layers test that class. Policy: [ADR 0049](adr/0049-test-architecture-
 data-transform module (`path`, `why`, and whether it carries `proptest`/`insta`
 coverage today) and is enforced by
 `source_tree_guards::transform_modules_carry_their_property_and_golden_tests`:
+discovery reads production text only (inline test spans stripped, `tests.rs`/`tests/` skipped);
 every listed path must exist and a `true` claim must be backed by a real
 `proptest!`/`insta::` usage (the ratchet flips `false→true` only), and every
 module directory/file under `src/fundamentals/extraction/` or

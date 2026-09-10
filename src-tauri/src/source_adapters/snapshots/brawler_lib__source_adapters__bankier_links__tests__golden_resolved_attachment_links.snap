@@ -1,0 +1,96 @@
+---
+source: src/source_adapters/bankier_links.rs
+expression: attachment_cases
+---
+[
+    (
+        "_2410_x.pdf",
+        "https://www.bankier.pl/wiadomosc/Passus-SA-9141553.html",
+        ResolvedLink {
+            url: "https://www.bankier.pl/wiadomosc/_2410_x.pdf",
+            incomplete: true,
+            scheme_ok: true,
+        },
+    ),
+    (
+        "./x.pdf",
+        "https://www.bankier.pl/wiadomosc/Passus-SA-9141553.html",
+        ResolvedLink {
+            url: "https://www.bankier.pl/wiadomosc/x.pdf",
+            incomplete: true,
+            scheme_ok: true,
+        },
+    ),
+    (
+        "../x.pdf",
+        "https://www.bankier.pl/wiadomosc/Passus-SA-9141553.html",
+        ResolvedLink {
+            url: "https://www.bankier.pl/x.pdf",
+            incomplete: true,
+            scheme_ok: true,
+        },
+    ),
+    (
+        "dir/x.pdf",
+        "https://www.bankier.pl/wiadomosc/Passus-SA-9141553.html",
+        ResolvedLink {
+            url: "https://www.bankier.pl/wiadomosc/dir/x.pdf",
+            incomplete: true,
+            scheme_ok: true,
+        },
+    ),
+    (
+        "/static/att/emitent/2026-05/x.pdf",
+        "https://www.bankier.pl/wiadomosc/Passus-SA-9141553.html",
+        ResolvedLink {
+            url: "https://www.bankier.pl/static/att/emitent/2026-05/x.pdf",
+            incomplete: false,
+            scheme_ok: true,
+        },
+    ),
+    (
+        "https://bonnier.pl/x.pdf",
+        "https://www.bankier.pl/wiadomosc/Passus-SA-9141553.html",
+        ResolvedLink {
+            url: "https://bonnier.pl/x.pdf",
+            incomplete: false,
+            scheme_ok: true,
+        },
+    ),
+    (
+        "http://bonnier.pl/x.pdf",
+        "https://www.bankier.pl/wiadomosc/Passus-SA-9141553.html",
+        ResolvedLink {
+            url: "http://bonnier.pl/x.pdf",
+            incomplete: false,
+            scheme_ok: true,
+        },
+    ),
+    (
+        "//bonnier.pl/x.pdf",
+        "https://www.bankier.pl/wiadomosc/Passus-SA-9141553.html",
+        ResolvedLink {
+            url: "https://bonnier.pl/x.pdf",
+            incomplete: false,
+            scheme_ok: true,
+        },
+    ),
+    (
+        "x.pdf?v=1",
+        "https://www.bankier.pl/wiadomosc/Passus-SA-9141553.html",
+        ResolvedLink {
+            url: "https://www.bankier.pl/wiadomosc/x.pdf?v=1",
+            incomplete: true,
+            scheme_ok: true,
+        },
+    ),
+    (
+        "_2410_x.pdf",
+        "not a url",
+        ResolvedLink {
+            url: "_2410_x.pdf",
+            incomplete: true,
+            scheme_ok: false,
+        },
+    ),
+]

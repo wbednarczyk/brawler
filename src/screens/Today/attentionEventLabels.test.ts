@@ -23,6 +23,7 @@ function event(overrides: Partial<AttentionEvent>): AttentionEvent {
     evidenceTitle: null,
     evidenceDetail: null,
     witnessUrl: null,
+    evidenceDate: null,
     ...overrides,
   };
 }

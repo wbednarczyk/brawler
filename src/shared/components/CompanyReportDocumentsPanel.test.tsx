@@ -12,6 +12,7 @@ import type {
   ReportDocumentViewRow,
 } from "../../api/reportDocumentsTypes";
 import { ToastProvider } from "../../ui";
+import { LocaleContext, makeTextTranslator, makeTranslator } from "../locale";
 
 vi.mock("../../api/reportDocuments", () => ({
   getReportDocumentsView: vi.fn(),
@@ -29,6 +30,14 @@ const extractReportDocumentDataMock = vi.mocked(extractReportDocumentData);
 // The panel calls useToast(), so every render needs a ToastProvider ancestor.
 function renderPanel(node: ReactElement) {
   return render(<ToastProvider>{node}</ToastProvider>);
+}
+
+function renderPl(node: ReactElement) {
+  return render(
+    <LocaleContext.Provider value={{ locale: "pl", t: makeTranslator("pl"), text: makeTextTranslator("pl") }}>
+      <ToastProvider>{node}</ToastProvider>
+    </LocaleContext.Provider>,
+  );
 }
 
 function reportDocument(overrides: Partial<ReportDocument> = {}): ReportDocument {
@@ -163,6 +172,29 @@ describe("CompanyReportDocumentsPanel", () => {
     );
     await screen.findByRole("link");
     expect(container.querySelector(".doc-status")?.textContent).toContain("Link only");
+  });
+
+  // Attachment-link-incomplete hint (#460): a quiet explanation beside the
+  // status chip when the source's attachment link never resolved to bytes.
+  it("renders the attachment-link-incomplete hint beside the status chip", async () => {
+    mockView([viewRow({ fetchStatus: "failed", fetchError: "attachment_link_incomplete" })]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+    await screen.findByRole("link");
+    expect(screen.getByText("Attachment link incomplete at the source")).toBeInTheDocument();
+  });
+
+  it("renders the attachment-link-incomplete hint in Polish", async () => {
+    mockView([viewRow({ fetchStatus: "failed", fetchError: "attachment_link_incomplete" })]);
+    renderPl(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+    await screen.findByRole("link");
+    expect(screen.getByText("Niepełny link do załącznika u źródła")).toBeInTheDocument();
+  });
+
+  it("renders no attachment-link-incomplete hint for a document without that fetchError", async () => {
+    mockView([viewRow({ fetchStatus: "failed", fetchError: "http_404" })]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+    await screen.findByRole("link");
+    expect(screen.queryByText("Attachment link incomplete at the source")).not.toBeInTheDocument();
   });
 
   // Coverage-totals summary row (#174, epic #229 T3) — the roll-up's denominator.

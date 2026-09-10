@@ -1,0 +1,261 @@
+---
+source: src/source_adapters/periodic_filing.rs
+expression: rows
+---
+[
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wstępne wyniki za pierwsze półrocze 2026 roku (podstawowe dane finansowe)",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe QSr 1/2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe QSr 1/2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Korekta raportu rocznego za 2025 rok",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "Korekta skonsolidowanego raportu okresowego za I kwartał 2026 roku",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "P /2026: formularz raportu półrocznego",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PS /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe QSr 1/2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Zmiana terminu publikacji skonsolidowanego raportu za I półrocze 2026 roku",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe QSr 3/2025",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Zmiana terminu publikacji skonsolidowanego raportu półrocznego za I półrocze 2026 roku",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "Korekta raportu nr 1/2026 w sprawie informacji o terminach przekazywania raportów okresowych w 2026 r.",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Informacja o szacunkach wyników za I półroczne 2026 roku.",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "Informacja Zarządu dotycząca szacunkowych, wybranych danych finansowych za pierwsze półrocze 2026 roku. Inform",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wstępne wybrane skonsolidowane dane finansowe Grupy Kapitałowej MODIVO S.A. za II kwartał 2026 roku",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "P /2026: formularz raportu półrocznego",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Zawarcie umowy o współpracy z Polska Grupa Hutnicza S.A. oraz Grupa Virtus S.A.",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "Wyniki finansowe PS /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe QSr 3/2025",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Wstępne wyniki finansowe i operacyjne za I półrocze 2026 roku",
+        "Spis treści:1. RAPORT BIEŻĄCY2. META",
+        false,
+    ),
+    (
+        "Wyniki finansowe PSr /2026",
+        "Spis treści:1. STRONA TYTUŁOWA2. MET",
+        true,
+    ),
+    (
+        "Informacja o nakładach oraz wpłatach dotyczących portfeli wierzytelności",
+        "Spis treści:1. RAPORT BIEŻĄCY2. MESS",
+        false,
+    ),
+    (
+        "Uchwały podjęte na Zwyczajnym Walnym Zgromadzeniu Comp S.A. w dniu 30 czerwca 2026 r.",
+        "Spis treści:1. RAPORT BIEŻĄCY2. MESS",
+        false,
+    ),
+    (
+        "Wyniki finansowe SRR /2025",
+        "Spis treści:1. STRONA TYTUŁOWA2. WYB",
+        true,
+    ),
+    (
+        "Wyniki finansowe RR /2025",
+        "Spis treści:1. STRONA TYTUŁOWA2. WYB",
+        true,
+    ),
+    (
+        "Szacunkowe wyniki skonsolidowane za 2 kwartał 2026 r.",
+        "Spis treści:1. RAPORT BIEŻĄCY2. MESS",
+        false,
+    ),
+    (
+        "Wyniki finansowe PSr",
+        "Spis treści:1. STRONA TYTUŁOWA2. WYB",
+        true,
+    ),
+]
