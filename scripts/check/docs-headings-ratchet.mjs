@@ -28,14 +28,16 @@ export function headingsOf(markdown) {
   // ```` block that contains ``` (and a fake heading) stays one fence.
   let fence = null;
   for (const line of markdown.split("\n")) {
-    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    const f = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (f) {
-      const run = f[1];
+      const [, run, rest] = f;
       if (!fence) {
         fence = run;
         continue;
       }
-      if (run[0] === fence[0] && run.length >= fence.length) {
+      // A closing fence carries nothing but whitespace after the delimiter
+      // (CommonMark): ```not-a-close inside a block does not close it.
+      if (run[0] === fence[0] && run.length >= fence.length && /^[ \t]*$/.test(rest)) {
         fence = null;
         continue;
       }

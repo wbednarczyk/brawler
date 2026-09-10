@@ -7,6 +7,11 @@ test("headingsOf keeps ## and ### headings and ignores fenced code", () => {
   assert.deepEqual(headingsOf(md), ["## A", "### A.1", "## B", "## C#"]);
 });
 
+test("a fence line with a suffix does not close the block (review r3 finding 6)", () => {
+  const md = "## Real\n```\n```not-a-close\n## Origin Model\n```\n## After\n";
+  assert.deepEqual(headingsOf(md), ["## Real", "## After"]);
+});
+
 test("a longer fence containing a shorter one stays one fence (review r2 finding 4)", () => {
   const md = "## Real\n````md\n```\n## Origin Model\n```\n````\n~~~\n## tilde fenced\n~~~\n## After\n";
   assert.deepEqual(headingsOf(md), ["## Real", "## After"]);
