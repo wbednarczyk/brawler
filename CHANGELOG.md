@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.83.4 - 2026-09-10
+
+
+### Features
+
+- **gates**: audit closing wave — ts-export reminder, check-evidence stamps, recency guard, source-outcome coverage, gallery coverage; recommendations refresh records an all-empty sweep (#497)
+
 ## v0.83.3 - 2026-09-09
 
 
