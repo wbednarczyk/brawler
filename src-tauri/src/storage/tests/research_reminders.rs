@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn derives_and_completes_research_reminders_from_claims_events_and_questions() {
+fn derives_reminders_from_claims_and_questions_never_from_events() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
     let company = tracked_company(&state);

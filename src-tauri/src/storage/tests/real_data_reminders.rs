@@ -1,53 +1,92 @@
 //! Real-data probe for #465 (ADR 0025 amendment): migrating a throwaway copy
 //! of the maintainer's database closes every automatic event/signal reminder
-//! (dated) and leaves the investor's own follow-ups untouched — the Research
-//! review queue starts clean on real data, and later list calls (the lazy
-//! claim/question sync) create nothing.
+//! (dated, touching only status/dismissed_at/updated_at) and leaves every
+//! other row byte-identical — the Research review queue starts clean on real
+//! data, and later list calls (the lazy claim/question sync) change nothing.
 //!
 //! **Inert in CI** — skips unless `BRAWLER_REAL_DB_SCRATCH` points at a
 //! throwaway copy that MAY be migrated (never the live file, and never the
 //! read-only copy the other `real_data_*` probes open — `open_database`
-//! migrates on open).
+//! migrates on open). Owner snapshot 2026-09-10: 833 automatic open rows,
+//! 2 personal — the assertions below are generic invariants; the counts are
+//! printed as evidence.
 
 use crate::storage::{open_database, open_database_readonly, AppState, ResearchReminderListInput};
 use std::collections::BTreeMap;
 
-/// `id → (kind, status, dismissed_at)` for every reminder row.
-fn reminder_rows(
-    connection: &rusqlite::Connection,
-) -> BTreeMap<String, (String, String, Option<String>)> {
+/// Every column of `research_reminders`, in table order (all TEXT).
+const COLUMNS: &str = "id, scope_type, scope_id, company_id, reminder_kind, source_type, source_id, \
+     title, body, due_at, status, snoozed_until, completed_at, dismissed_at, created_at, updated_at";
+const IDX_STATUS: usize = 10;
+const IDX_DISMISSED_AT: usize = 13;
+const IDX_UPDATED_AT: usize = 15;
+/// The only fields migration 0155 may change on an automatic open row.
+const DISMISS_FIELDS: [usize; 3] = [IDX_STATUS, IDX_DISMISSED_AT, IDX_UPDATED_AT];
+
+type Row = Vec<Option<String>>;
+
+fn reminder_rows(connection: &rusqlite::Connection) -> BTreeMap<String, Row> {
     let mut statement = connection
-        .prepare("SELECT id, reminder_kind, status, dismissed_at FROM research_reminders")
+        .prepare(&format!("SELECT {COLUMNS} FROM research_reminders"))
         .expect("prepare");
-    let rows = statement
+    statement
         .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                (
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                ),
-            ))
+            let values = (0..16)
+                .map(|index| row.get::<_, Option<String>>(index))
+                .collect::<Result<Row, _>>()?;
+            Ok((values[0].clone().expect("id"), values))
         })
         .expect("query")
         .collect::<Result<BTreeMap<_, _>, _>>()
-        .expect("rows");
-    rows
+        .expect("rows")
 }
 
+/// Migration 0155's own signatures, evaluated per row; a NULL `source_type`
+/// makes the SQL predicate NULL, which is "not automatic".
 fn is_automatic(connection: &rusqlite::Connection, id: &str) -> bool {
-    // The migration's own signatures (0155), evaluated per row.
     connection
         .query_row(
-            "SELECT (reminder_kind = 'event_review' AND id GLOB 'reminder_event_*')
+            "SELECT COALESCE(
+                 (reminder_kind = 'event_review' AND id GLOB 'reminder_event_*')
                  OR (reminder_kind = 'signal_review' AND source_type = 'company_signal'
-                     AND body LIKE 'High-signal disclosure classified as %')
+                     AND body LIKE 'High-signal disclosure classified as %'),
+                 0)
              FROM research_reminders WHERE id = ?1",
             [id],
             |row| row.get::<_, bool>(0),
         )
         .expect("signature")
+}
+
+fn except_dismiss_fields(row: &Row) -> Row {
+    row.iter()
+        .enumerate()
+        .map(|(index, value)| {
+            if DISMISS_FIELDS.contains(&index) {
+                None
+            } else {
+                value.clone()
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn signature_classifier_treats_a_null_source_type_as_personal() {
+    // Hermetic: the near-miss row of the migration test (classifier body, no
+    // source_type) yields SQL NULL — must read as "not automatic", never panic.
+    let connection = crate::storage::open_in_memory_database().expect("db");
+    connection
+        .execute(
+            "INSERT INTO research_reminders (id, scope_type, scope_id, reminder_kind, source_type, title, body)
+             VALUES ('r_null', 'company', 'c', 'signal_review', NULL, 'Profit warning',
+                     'High-signal disclosure classified as profit warning.'),
+                    ('reminder_event_1', 'company', 'c', 'event_review', 'company_event', 'Event', '')",
+            [],
+        )
+        .expect("seed");
+    assert!(!is_automatic(&connection, "r_null"));
+    assert!(is_automatic(&connection, "reminder_event_1"));
 }
 
 #[test]
@@ -64,7 +103,7 @@ fn migration_0155_closes_every_automatic_reminder_on_the_owner_copy() {
         return;
     }
 
-    // Snapshot BEFORE the migration (read-only open never migrates).
+    // Snapshot BEFORE the migration (a read-only open never migrates).
     let readonly = open_database_readonly(&db_path).expect("open read-only");
     let before = reminder_rows(&readonly);
     let automatic_ids: Vec<String> = before
@@ -73,21 +112,22 @@ fn migration_0155_closes_every_automatic_reminder_on_the_owner_copy() {
         .cloned()
         .collect();
     drop(readonly);
+    let is_open = |row: &Row| row[IDX_STATUS].as_deref() == Some("open");
     let automatic_open_before = automatic_ids
         .iter()
-        .filter(|id| before[*id].1 == "open")
+        .filter(|id| is_open(&before[*id]))
         .count();
-    let personal_before: BTreeMap<_, _> = before
+    let personal_before: BTreeMap<&String, &Row> = before
         .iter()
         .filter(|(id, _)| !automatic_ids.contains(id))
-        .map(|(id, row)| (id.clone(), row.clone()))
         .collect();
+    let personal_open_before = personal_before.values().filter(|row| is_open(row)).count();
     assert!(
         automatic_open_before > 0,
-        "the copy carries no open automatic reminder — nothing to prove (owner snapshot 2026-09-10: 833)"
+        "the copy carries no open automatic reminder — nothing to prove"
     );
 
-    // Migrate (open_database applies 0155) and compare.
+    // Migrate (open_database applies 0155) and compare every column.
     let connection = open_database(&db_path).expect("open + migrate the scratch copy");
     let after = reminder_rows(&connection);
     assert_eq!(
@@ -96,38 +136,45 @@ fn migration_0155_closes_every_automatic_reminder_on_the_owner_copy() {
         "the migration neither adds nor deletes rows"
     );
     for id in &automatic_ids {
-        let (kind, status, dismissed_at) = &after[id];
-        assert!(
-            status != "open",
-            "{id} ({kind}) is still open after migration 0155"
-        );
-        if before[id].1 == "open" {
+        let (was, now) = (&before[id], &after[id]);
+        if is_open(was) {
             assert_eq!(
-                status, "dismissed",
-                "{id}: an open automatic row closes as dismissed"
+                now[IDX_STATUS].as_deref(),
+                Some("dismissed"),
+                "{id}: closes as dismissed"
             );
-            assert!(dismissed_at.is_some(), "{id}: dismissal is dated");
+            assert!(now[IDX_DISMISSED_AT].is_some(), "{id}: dismissal is dated");
+            assert_ne!(
+                now[IDX_UPDATED_AT], was[IDX_UPDATED_AT],
+                "{id}: updated_at moves"
+            );
+            assert_eq!(
+                except_dismiss_fields(now),
+                except_dismiss_fields(was),
+                "{id}: only status/dismissed_at/updated_at may change"
+            );
         } else {
             assert_eq!(
-                before[id], after[id],
-                "{id}: an already-closed row is untouched"
+                now, was,
+                "{id}: an already-closed automatic row is untouched"
             );
         }
     }
     for (id, row) in &personal_before {
         assert_eq!(
-            &after[id], row,
-            "{id}: a personal follow-up must be untouched"
+            &&after[*id], row,
+            "{id}: a personal follow-up is byte-identical"
         );
     }
+    let open_after = after.values().filter(|row| is_open(row)).count();
     let dismissed_after = after
         .values()
-        .filter(|(_, status, _)| status == "dismissed")
+        .filter(|row| row[IDX_STATUS].as_deref() == Some("dismissed"))
         .count();
-    let open_after = after
-        .values()
-        .filter(|(_, status, _)| status == "open")
-        .count();
+    assert_eq!(
+        open_after, personal_open_before,
+        "only personal rows stay open"
+    );
     eprintln!(
         "reminders probe: {} automatic rows ({automatic_open_before} were open) → dismissed {dismissed_after}, open {open_after} (personal {})",
         automatic_ids.len(),
@@ -135,10 +182,14 @@ fn migration_0155_closes_every_automatic_reminder_on_the_owner_copy() {
     );
 
     // Listing runs the lazy claim/question sync — twice per scope, on the three
-    // worst scopes of the audit: the row set must not change and the open
-    // queue must hold no automatic row.
+    // worst scopes of the audit: the open queue holds exactly the personal
+    // open rows of that scope, and the table is unchanged afterwards.
     let state = AppState::new(connection);
     for scope_id in ["company_gpw_dvl", "company_gpw_xtb", "company_gpw_kgh"] {
+        let expected_open = personal_before
+            .values()
+            .filter(|row| is_open(row) && row[2].as_deref() == Some(scope_id))
+            .count();
         for _ in 0..2 {
             let open_queue = state
                 .list_research_reminders(ResearchReminderListInput {
@@ -147,18 +198,16 @@ fn migration_0155_closes_every_automatic_reminder_on_the_owner_copy() {
                     status: Some("open".to_owned()),
                 })
                 .expect("list open reminders");
-            assert!(
-                open_queue
-                    .iter()
-                    .all(|reminder| !automatic_ids.contains(&reminder.id)),
-                "{scope_id}: an automatic reminder is in the open queue after migration"
+            assert_eq!(
+                open_queue.len(),
+                expected_open,
+                "{scope_id}: the open queue must hold exactly the personal open rows"
             );
             assert!(
                 open_queue
                     .iter()
-                    .all(|reminder| reminder.reminder_kind != "event_review"
-                        && reminder.reminder_kind != "signal_review"),
-                "{scope_id}: an event/signal reminder is in the open queue"
+                    .all(|reminder| !automatic_ids.contains(&reminder.id)),
+                "{scope_id}: an automatic reminder is in the open queue"
             );
             eprintln!(
                 "reminders probe: {scope_id} open queue = {} rows",
