@@ -10,7 +10,7 @@ import adjudicate as adj
 
 
 def _slot(concept, verification, value, event_id="iss_01/FY2025/pl/consolidated/v1", resolution_ref=None,
-          package_member=None, attribution="total", basis="consolidated", currency="PLN",
+          package_member=None, attribution="total", basis="consolidated", currency="PLN", unit="iso4217:PLN",
           fiscal_year=2025, period_type="FY"):
     return {
         "slot_id": adj.build_slot_id(event_id, package_member, concept, attribution, basis, "flow", "reported", fiscal_year, period_type, currency),
@@ -26,6 +26,7 @@ def _slot(concept, verification, value, event_id="iss_01/FY2025/pl/consolidated/
         "period_end": "2025-12-31",
         "period_start": "2025-01-01",
         "currency": currency,
+        "unit": unit,
         "value": value,
         "duration_months": 12,
         "verification": verification,
@@ -485,6 +486,108 @@ class AnswerValidationTests(unittest.TestCase):
             adj.prepare(out, seed=1)
             index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
             _seal_all(out, "reader_a", index, lambda tid, meta: _full_answer(slot, basis="combined"))
+            with self.assertRaises(adj.InvalidAnswerError):
+                adj.compare(out)
+
+
+class VerifyEverythingLockedTests(unittest.TestCase):
+    """Amendment AB / astra r3 finding 13: `compare` re-verifies EVERY task
+    file `tasks.lock` locked and every seal `seals.lock` registered --
+    `seals.lock`/`tasks.lock`, never a directory walk, are the source of
+    truth for what to read."""
+
+    def _prepared_and_sealed(self, out: Path, slot: dict):
+        _write_gt(out, [slot])
+        adj.prepare(out, seed=1)
+        index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+        _seal_all(out, "reader_a", index, lambda tid, meta: _full_answer(slot))
+        return index
+
+    def test_deleting_a_registered_seal_aborts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "42")
+            index = self._prepared_and_sealed(out, slot)
+            event_id = next(iter(index.values()))["event_id"]
+            sealed_path = out / "adjudication" / event_id / "reader_a.json"
+            self.assertTrue(sealed_path.exists())
+            sealed_path.unlink()  # seals.lock still names it -- directory no longer has it
+
+            with self.assertRaises(adj.SealHashMismatchError):
+                adj.compare(out)
+            self.assertFalse((out / "adjudication" / "resolutions.json").exists())
+
+    def test_corrupting_a_locked_task_file_aborts(self):
+        # Even a task file NO sealed answer references must still match its
+        # locked hash -- corruption here was previously undetectable by
+        # `compare` entirely (only answered tasks were ever re-checked).
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "42")
+            index = self._prepared_and_sealed(out, slot)
+            task_id = next(iter(index))
+            task_path = out / "adjudication" / "tasks" / f"{task_id}.json"
+            task_path.write_text(task_path.read_text() + "  ")  # tamper after prepare/seal
+
+            with self.assertRaises(adj.TaskHashMismatchError):
+                adj.compare(out)
+            self.assertFalse((out / "adjudication" / "resolutions.json").exists())
+
+    def test_an_unregistered_extra_seal_file_aborts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "42")
+            index = self._prepared_and_sealed(out, slot)
+            event_id = next(iter(index.values()))["event_id"]
+            # Hand-plant a seal-shaped file `seal()` never wrote and
+            # `seals.lock` never registered.
+            rogue = {"reader": "rogue", "event_id": event_id, "answers": {}, "sha256": "0" * 64}
+            (out / "adjudication" / event_id / "rogue.json").write_text(json.dumps(rogue), encoding="utf-8")
+
+            with self.assertRaises(adj.SealHashMismatchError):
+                adj.compare(out)
+            self.assertFalse((out / "adjudication" / "resolutions.json").exists())
+
+
+class UnitDependentCurrencyValidationTests(unittest.TestCase):
+    """Amendment AG / astra r3 finding 25: whether `currency` may be a code
+    at all depends on the TASK's own `unit`."""
+
+    def test_null_currency_accepted_on_a_non_monetary_shares_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("BasicEarningsLossPerShare", "machine", "1000", currency=None, unit="xbrli:shares")
+            _write_gt(out, [slot])
+            adj.prepare(out, seed=1)
+            task_id = json.loads((out / "adjudication" / "tasks.lock").read_text())["tasks"][0]["task_id"]
+            task = json.loads((out / "adjudication" / "tasks" / f"{task_id}.json").read_text())
+            self.assertEqual(task["unit"], "xbrli:shares")
+
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            _seal_all(out, "reader_a", index, lambda tid, meta: _full_answer(slot))  # currency defaults to None
+            adj.compare(out)  # must not raise
+            gt = json.loads((out / "ground_truth_v2.json").read_text())
+            self.assertEqual(gt["slots"][0]["verification"], "second_read")
+
+    def test_currency_code_rejected_on_a_non_monetary_shares_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("BasicEarningsLossPerShare", "machine", "1000", currency=None, unit="xbrli:shares")
+            _write_gt(out, [slot])
+            adj.prepare(out, seed=1)
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            _seal_all(out, "reader_a", index, lambda tid, meta: _full_answer(slot, currency="PLN"))
+            with self.assertRaises(adj.InvalidAnswerError):
+                adj.compare(out)
+
+    def test_null_currency_still_rejected_on_a_monetary_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "1000", currency="PLN", unit="iso4217:PLN")
+            _write_gt(out, [slot])
+            adj.prepare(out, seed=1)
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            _seal_all(out, "reader_a", index, lambda tid, meta: _full_answer(slot, currency=None))
             with self.assertRaises(adj.InvalidAnswerError):
                 adj.compare(out)
 

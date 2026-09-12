@@ -32,7 +32,7 @@
   "window_convention": { "instant": "point_in_time", "duration": "flow" },
   "normalization_version": 1,
   "contract_normalized": [
-    { "id": "cumulative_context_to_flow", "rule": "a cumulative (year-to-date) duration context is compared as measure_window 'flow' — the app has no cumulative window token" },
-    { "id": "cash_flow_outflow_sign", "rule": "a cash-flow outflow tagged with a negated iXBRL sign is compared as a negative decimal (sign applied on both sides)" }
+    { "id": "cumulative_context_to_flow", "scope": "interim_flow", "rule": "a cumulative (year-to-date) duration context (window flow, period_type not FY/unknown) is compared as measure_window 'flow' — the app has no cumulative window token" },
+    { "id": "cash_flow_outflow_sign", "concepts": ["CashFlowsFromUsedInOperatingActivities", "CashFlowsFromUsedInInvestingActivities", "CashFlowsFromUsedInFinancingActivities"], "rule": "a cash-flow outflow tagged with a negated iXBRL sign is compared as a negative decimal (sign applied on both sides)" }
   ]
 }

@@ -33,7 +33,7 @@ an event is disqualified for that event.
    answers are **sealed** (`adjudicate.py seal <reader> <answers.json>` — hashed, timestamped, refused
    once a compare has run). `reader.json` records identity/protocol version (human) or model id +
    prompt hash + input allow-list (agent).
-5. **Compare** — `adjudicate.py compare` first re-verifies the lock (task files + index + ground-truth/occurrence hashes) and every seal hash, validates each answer (finite decimal, three-letter currency, basis/attribution/period domains — an invalid answer fails the whole compare, nothing is written), then compares sealed answers with the machine slots mechanically:
+5. **Compare** — `adjudicate.py compare` first re-verifies the lock (every locked task file + index + ground-truth/occurrence hashes) and every seal registered in `seals.lock` (a missing, altered or unregistered seal aborts), validates each answer (finite decimal; a three-letter currency for a monetary task unit and `null` for a shares/pure unit; basis/attribution/period domains — an invalid answer fails the whole compare, nothing is written), then compares sealed answers with the machine slots mechanically:
    agree → `second_read`; disagree with filing evidence → `adjudicated` (the evidence anchor is the
    record, the app's value is never consulted); unsettled, or contradicted without filing evidence → `unverified` (a contradicted `machine` label never stays `machine`; excluded from every
    denominator, count pinned in the baseline).

@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import label_esef_v2 as lbl
-from ixbrl_fixtures import context, explicit_member, make_instance, non_fraction, segment, unit, zip_package
+from ixbrl_fixtures import context, divide_unit, explicit_member, make_instance, non_fraction, segment, unit, zip_package
 
 
 def _write_manifest(out: Path, event: dict, file_bytes: bytes) -> None:
@@ -558,6 +558,124 @@ class UnmappedConceptSlotTests(unittest.TestCase):
             _write_manifest(out, _event(), doc)
             result = lbl.label_esef_v2(str(out))
             self.assertEqual(result["ground_truth"]["slots"][0]["normalized_by"], [])
+
+    def test_normalized_by_the_three_amendment_ac_cases(self):
+        # Amendment AC / astra r3 finding 14, the exact three cases the
+        # contract names, driven by the key map's own scope fields (never a
+        # hard-coded concept set).
+        key_map = lbl.load_key_map(Path(__file__).resolve().parent.parent / "gt_key_map.json")
+        contract_normalized = key_map["contract_normalized"]
+
+        # operating cash-flow FY slot -> [cash_flow_outflow_sign]
+        self.assertEqual(
+            lbl.normalized_by_for_slot("CashFlowsFromUsedInOperatingActivities", "flow", "FY", contract_normalized),
+            ["cash_flow_outflow_sign"],
+        )
+        # interim revenue flow -> [cumulative_context_to_flow]
+        self.assertEqual(lbl.normalized_by_for_slot("Revenue", "flow", "H1", contract_normalized), ["cumulative_context_to_flow"])
+        # FY revenue -> []
+        self.assertEqual(lbl.normalized_by_for_slot("Revenue", "flow", "FY", contract_normalized), [])
+
+
+class KeyMapScopeTests(unittest.TestCase):
+    def test_contract_normalized_rules_carry_a_machine_readable_scope(self):
+        # Amendment AC: "one test that the key map scopes exist" -- the
+        # labeler's normalized_by derivation reads `scope`/`concepts` off
+        # each rule; if the orchestrator's key map edit ever regresses this
+        # silently produces empty normalized_by everywhere.
+        key_map = lbl.load_key_map(Path(__file__).resolve().parent.parent / "gt_key_map.json")
+        rules = {r["id"]: r for r in key_map["contract_normalized"]}
+        self.assertIn("cumulative_context_to_flow", rules)
+        self.assertIn("cash_flow_outflow_sign", rules)
+        self.assertEqual(rules["cumulative_context_to_flow"].get("scope"), "interim_flow")
+        cf_concepts = rules["cash_flow_outflow_sign"].get("concepts")
+        self.assertIsInstance(cf_concepts, list)
+        self.assertEqual(
+            set(cf_concepts),
+            {
+                "CashFlowsFromUsedInOperatingActivities",
+                "CashFlowsFromUsedInInvestingActivities",
+                "CashFlowsFromUsedInFinancingActivities",
+            },
+        )
+
+
+class UnknownMemberLanguageTests(unittest.TestCase):
+    def test_unresolvable_member_language_stays_unknown_never_the_event_language(self):
+        # Amendment AA / astra r3 finding 7: the OLD code fell back to the
+        # event's language whenever a member's OWN evidence resolved to
+        # unknown -- silently mislabeling population (floor vs
+        # twin_diagnostic) for a member that never evidenced anything.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1000"),
+            )
+            doc = doc.replace(b' xml:lang="pl"', b"")  # strip xml:lang
+            event = dict(_event())  # event language is "pl"
+            event["file"] = {"name": "zzz.zip", "sha256": "a" * 64, "bytes": 1, "package_member": "reports/member.xhtml"}
+            pkg = zip_package({"reports/member.xhtml": doc})  # filename carries no pl/en token either
+            _write_manifest(out, event, pkg)
+
+            result = lbl.label_esef_v2(str(out))
+            slot = result["ground_truth"]["slots"][0]
+            self.assertEqual(slot["language"], "unknown")
+
+            review_queue = json.loads((out / "review-queue.json").read_text())
+            entry = next(r for r in review_queue if r["package_member"] == "reports/member.xhtml")
+            self.assertIn("unknown_language", entry["reasons"])
+
+
+class SlotUnitTests(unittest.TestCase):
+    def test_shares_denominated_fact_gets_unit_and_null_currency(self):
+        # Amendment AG / astra r3 finding 25: every slot carries `unit`
+        # (evidence location); a unit with NO monetary numerator (a bare
+        # share count, not a per-share monetary ratio) means `currency`
+        # stays null rather than a fabricated code.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1", "xbrli:shares"),
+                facts=non_fraction("ifrs-full:BasicEarningsLossPerShare", "c1", "u1", "1000", scale="0", decimals="0"),
+            )
+            _write_manifest(out, _event(), doc)
+            result = lbl.label_esef_v2(str(out))
+            slot = result["ground_truth"]["slots"][0]
+            self.assertEqual(slot["unit"], "xbrli:shares")
+            self.assertIsNone(slot["currency"])
+
+    def test_per_share_monetary_ratio_still_resolves_a_currency(self):
+        # "iso4217:PLN/xbrli:shares" (a per-share EPS value) DOES have a
+        # monetary numerator -- PLN per share is still PLN.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=divide_unit("u1", "iso4217:PLN", "xbrli:shares"),
+                facts=non_fraction("ifrs-full:BasicEarningsLossPerShare", "c1", "u1", "1.5", scale="0", decimals="2"),
+            )
+            _write_manifest(out, _event(), doc)
+            result = lbl.label_esef_v2(str(out))
+            slot = result["ground_truth"]["slots"][0]
+            self.assertEqual(slot["unit"], "iso4217:PLN/xbrli:shares")
+            self.assertEqual(slot["currency"], "PLN")
+
+    def test_monetary_fact_gets_unit_and_currency(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1", "iso4217:PLN"),
+                facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1000"),
+            )
+            _write_manifest(out, _event(), doc)
+            result = lbl.label_esef_v2(str(out))
+            slot = result["ground_truth"]["slots"][0]
+            self.assertEqual(slot["unit"], "iso4217:PLN")
+            self.assertEqual(slot["currency"], "PLN")
 
 
 if __name__ == "__main__":

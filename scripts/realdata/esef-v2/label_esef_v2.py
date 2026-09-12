@@ -56,11 +56,36 @@ HERE = Path(__file__).resolve().parent
 # The 2024+ ESEF taxonomies publish under https://xbrl.ifrs.org (older under http://) — real-data run 2026-09-12.
 IFRS_NAMESPACE_RE = re.compile(r"^\{https?://xbrl\.ifrs\.org/taxonomy/[^/]+/ifrs-full\}")
 
-CASH_FLOW_CONCEPTS = {
-    "CashFlowsFromUsedInOperatingActivities",
-    "CashFlowsFromUsedInInvestingActivities",
-    "CashFlowsFromUsedInFinancingActivities",
-}
+# The full key set every slot dict carries -- import_v1.py's mapped rows must
+# match this exactly (amendment F/AF: a shared contract, not two hand-typed
+# schemas that can drift).
+SLOT_KEYS = frozenset(
+    {
+        "slot_id",
+        "event_id",
+        "package_member",
+        "concept_local",
+        "mapped",
+        "attribution",
+        "basis",
+        "window",
+        "variant",
+        "fiscal_year",
+        "period_type",
+        "period_end",
+        "period_start",
+        "currency",
+        "unit",
+        "value",
+        "duration_months",
+        "language",
+        "population",
+        "normalized_by",
+        "verification",
+        "contributing_occurrence_ids",
+        "resolution_ref",
+    }
+)
 
 
 def load_key_map(key_map_path: Path) -> dict:
@@ -177,10 +202,14 @@ def emit_occurrences(event: dict, parsed_occurrences: list[dict], language: str,
 
 
 def classify_member_evidence(event: dict, member_name: str | None, member_bytes: bytes, lang: str | None) -> dict:
-    """Per-member (basis, language, contradiction), amendment S/T: language
-    is always kept; a member basis that CONTRADICTS the event's headline
-    basis stays `unknown` and is flagged -- the headline is substituted only
-    when the member gave NO signal at all (not when it disagreed)."""
+    """Per-member (basis, language, contradiction), amendment S/T/AA:
+    language is always kept and NEVER falls back to the manifest event's
+    language (amendment AA / astra r3 finding 7: an event-level fallback let
+    a genuinely unresolvable member silently inherit a language it never
+    evidenced -- population tagging (floor vs twin_diagnostic) would then be
+    wrong). A member basis that CONTRADICTS the event's headline basis stays
+    `unknown` and is flagged -- the headline is substituted only when the
+    member gave NO signal at all (not when it disagreed)."""
     outer_hints = [event["document"].get("title") or "", event["file"]["name"]]
     cover_text = bf.cover_page_text(member_bytes)
     member_basis, contradiction_vs_outer = bf.classify_basis(member_name or "", outer_hints, cover_text)
@@ -196,25 +225,27 @@ def classify_member_evidence(event: dict, member_name: str | None, member_bytes:
         basis, contradiction = event["basis_scope"], False  # no member-level signal at all -- fall back
 
     language = bf.classify_language(lang, [member_name or "", event["file"]["name"]])
-    if language == "unknown":
-        language = event["language"]
-    return {"basis": basis, "language": language, "contradiction": contradiction}
+    return {"basis": basis, "language": language, "contradiction": contradiction, "unknown_language": language == "unknown"}
 
 
-def normalized_by_for_slot(concept_local: str, window: str, period_type: str, contract_normalized_ids: set[str]) -> list[str]:
-    """Amendment Q: `normalized_by` records which `contract_normalized`
-    rule(s) from `gt_key_map.json` apply to this slot, so the harness can
-    remove the convention-resolved population from both sides for the
-    sensitivity score. `cumulative_context_to_flow` applies to every interim
-    (non-FY) duration -- GPW interim filings are cumulative YTD by
-    convention; `cash_flow_outflow_sign` applies to the three cash-flow
-    concepts, whose sign convention is normalized regardless of the actual
-    sign of a given instance."""
+def normalized_by_for_slot(concept_local: str, window: str, period_type: str, contract_normalized: list[dict]) -> list[str]:
+    """Amendment Q/AC: `normalized_by` records which `contract_normalized`
+    rule(s) from `gt_key_map.json` apply to this slot, driven by the SAME
+    machine-readable scope the harness reads for a prediction -- never a
+    hard-coded concept set on either side (astra r3 finding 14: the labeler
+    and harness each had their own copy, free to drift). Two scope shapes
+    are recognized: `scope: "interim_flow"` (window `flow` AND period_type
+    not in {FY, unknown} -- GPW interim filings are cumulative YTD by
+    convention) and `concepts: [...]` (an explicit concept-local allowlist,
+    e.g. the three cash-flow concepts, normalized regardless of a given
+    instance's actual sign)."""
     ids = []
-    if "cumulative_context_to_flow" in contract_normalized_ids and window == "flow" and period_type not in ("FY", "unknown"):
-        ids.append("cumulative_context_to_flow")
-    if "cash_flow_outflow_sign" in contract_normalized_ids and concept_local in CASH_FLOW_CONCEPTS:
-        ids.append("cash_flow_outflow_sign")
+    for rule in contract_normalized:
+        if rule.get("scope") == "interim_flow":
+            if window == "flow" and period_type not in ("FY", "unknown"):
+                ids.append(rule["id"])
+        elif concept_local in rule.get("concepts", ()):
+            ids.append(rule["id"])
     return ids
 
 
@@ -224,7 +255,7 @@ def derive_slots(
     concept_info: dict[str, dict],
     member_basis: dict[str | None, str],
     pin_language: str,
-    contract_normalized_ids: set[str],
+    contract_normalized: list[dict],
 ) -> tuple[list[dict], int]:
     """Returns (slots, dimensional_occurrences) -- the latter counts
     occurrences excluded from slot derivation by amendment Z's dimension
@@ -255,7 +286,7 @@ def derive_slots(
         groups.setdefault(key, []).append(occ)
 
     slots = []
-    for (package_member, concept_local, attribution, _unit, currency, _period_key), occs in sorted(
+    for (package_member, concept_local, attribution, unit, currency, _period_key), occs in sorted(
         groups.items(), key=lambda kv: (kv[0][0] or "", kv[0][1], kv[0][2])
     ):
         # Normalized-Decimal value agreement, never a string compare
@@ -299,11 +330,12 @@ def derive_slots(
                 "period_end": period_end,
                 "period_start": period_start,
                 "currency": currency,
+                "unit": unit,  # amendment AG: the resolved iXBRL unit measure string, evidence not a value
                 "value": value,
                 "duration_months": duration_months,
                 "language": language,  # amendment S
                 "population": population,  # amendment S: floor vs within-package twin_diagnostic
-                "normalized_by": normalized_by_for_slot(concept_local, window, period_type, contract_normalized_ids),
+                "normalized_by": normalized_by_for_slot(concept_local, window, period_type, contract_normalized),
                 "verification": verification,
                 "contributing_occurrence_ids": occ_ids,
                 "resolution_ref": resolution_ref,
@@ -345,7 +377,7 @@ def label_esef_v2(esef_v2_dir: str, key_map_path: Path | None = None, pin_langua
     manifest = json.loads((out / "MANIFEST_v2.json").read_text(encoding="utf-8"))
     key_map = load_key_map(key_map_path or (HERE / "gt_key_map.json"))
     concept_info = {e["concept"]: e for e in key_map["entries"]}
-    contract_normalized_ids = {e["id"] for e in key_map.get("contract_normalized", [])}
+    contract_normalized = key_map.get("contract_normalized", [])
 
     all_occurrences: list[dict] = []
     all_slots: list[dict] = []
@@ -387,12 +419,23 @@ def label_esef_v2(esef_v2_dir: str, key_map_path: Path | None = None, pin_langua
                         "reasons": ["member basis contradicts the event's headline basis"],
                     }
                 )
+            if evidence["unknown_language"]:
+                # Amendment AA / astra r3 finding 7: queued, never silently
+                # defaulted to the event's language.
+                new_review_entries.append(
+                    {
+                        "issuer_id": event["issuer_id"],
+                        "event_id": event["event_id"],
+                        "package_member": member_name,
+                        "reasons": ["unknown_language"],
+                    }
+                )
             rows = emit_occurrences(event, parsed["occurrences"], evidence["language"], start_index=len(event_occurrences) + 1)
             event_occurrences.extend(rows)
 
         unresolved_occurrences += sum(1 for o in event_occurrences if o["parse_status"] != "ok")
         all_occurrences.extend(event_occurrences)
-        slots, dim_excluded = derive_slots(event, event_occurrences, concept_info, member_basis, pin_language, contract_normalized_ids)
+        slots, dim_excluded = derive_slots(event, event_occurrences, concept_info, member_basis, pin_language, contract_normalized)
         all_slots.extend(slots)
         dimensional_occurrences += dim_excluded
 

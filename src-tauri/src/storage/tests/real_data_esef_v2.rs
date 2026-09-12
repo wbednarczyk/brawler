@@ -158,8 +158,16 @@ struct GtSlot {
     period_end: String,
     /// `None` for a pure-number concept (share counts) — such a slot is
     /// labeled-capability only: the app never stores a currency-less fact
-    /// on the panel, so it neither matches nor counts as a miss.
+    /// on the panel, so it neither matches nor counts as a miss. Amendment
+    /// AG: a MAPPED panel slot with `currency: null` whose `unit` has a
+    /// monetary numerator is instead a typed parse failure — a real data
+    /// gap, not a legitimate non-monetary slot.
     currency: Option<String>,
+    /// The resolved iXBRL unit measure (`iso4217:PLN`, `xbrli:shares`,
+    /// `xbrli:pure`, or a per-share `iso4217:PLN/xbrli:shares`) — amendment
+    /// AG. `#[serde(default)]` since older/imported corpora may omit it.
+    #[serde(default)]
+    unit: Option<String>,
     value: String,
     /// `machine` | `second_read` | `adjudicated` | `unverified` | `machine_v1`.
     verification: String,
@@ -197,10 +205,18 @@ struct Occurrence {
     /// The EXPANDED concept identity, `{namespace-uri}LocalName` (amendment
     /// M) — matched against `report_tagged_facts`' own
     /// `concept_namespace_uri`/`concept_local_name` columns, never a bare
-    /// local-name suffix.
-    concept_qname: String,
-    period: OccurrencePeriod,
-    value: String,
+    /// local-name suffix. Amendment AE: `None` for an occurrence the labeler
+    /// could not parse — a real data gap the schema allows, never a panic.
+    #[serde(default)]
+    concept_qname: Option<String>,
+    #[serde(default)]
+    period: Option<OccurrencePeriod>,
+    #[serde(default)]
+    value: Option<String>,
+    /// Required (amendment AE) — `"ok"` for a fully parsed occurrence; any
+    /// other value (with the nullable fields above actually null) marks it
+    /// `unresolved_occurrences` instead of Layer 1 capture eligible.
+    parse_status: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -258,6 +274,10 @@ struct KeyMap {
     entries: Vec<KeyMapEntry>,
     panel: Vec<String>,
     stored_attribution_on_structured_writes: String,
+    /// The `contract_normalized` rule list (amendment AC) — each rule
+    /// carries a machine-readable scope, never just descriptive prose.
+    #[serde(default)]
+    contract_normalized: Vec<ContractNormalizedRule>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -273,17 +293,37 @@ struct KeyMapEntry {
     attribution: String,
 }
 
+/// One `contract_normalized` rule, with its machine-readable scope
+/// (amendment AC): `concepts` (e.g. `cash_flow_outflow_sign`) fires when the
+/// slot/prediction's own concept is in the list; `scope: "interim_flow"`
+/// (e.g. `cumulative_context_to_flow`) fires when `window == "flow"` AND
+/// `period_type` is neither `FY` nor `unknown`. A rule with neither never
+/// fires (defensive — a key map that adds a new scope shape some future
+/// harness version doesn't understand yet stays inert, never panics).
+#[derive(Debug, Deserialize)]
+struct ContractNormalizedRule {
+    id: String,
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
+    concepts: Option<Vec<String>>,
+}
+
 /// The public key map, resolved to the lookups scoring needs: the semantic
 /// `(concept, attribution)` PAIR -> `metric_key` (amendment E — never concept
 /// alone, so an unsupported attribution never silently maps to the total's
-/// key), the panel set (precision/current-recall scope), and the one
-/// attribution value every structured write stamps (ADR 0095) — a prediction
-/// whose stored attribution differs from this is `ATTRIBUTION_MISMATCH`
-/// BEFORE matching ever runs, independently of the semantic pair lookup.
+/// key), the REVERSE `metric_key` -> concepts (amendment AC, for the
+/// normalization predicate), the panel set (precision/current-recall scope),
+/// the one attribution value every structured write stamps (ADR 0095) — a
+/// prediction whose stored attribution differs from this is
+/// `ATTRIBUTION_MISMATCH` BEFORE matching ever runs — and the
+/// `contract_normalized` rules themselves.
 struct ResolvedKeyMap {
     pair_to_metric_key: BTreeMap<(String, String), String>,
+    metric_key_to_concepts: BTreeMap<String, Vec<String>>,
     panel: BTreeSet<String>,
     stored_attribution_on_structured_writes: String,
+    contract_normalized: Vec<ContractNormalizedRule>,
 }
 
 fn load_key_map(path: &Path) -> KeyMap {
@@ -298,6 +338,13 @@ fn resolve_key_map(map: &KeyMap, gt_key_map_version: i64) -> ResolvedKeyMap {
         "incomparable: ground_truth_v2.json key_map_version {} != gt_key_map.json key_map_version {}",
         gt_key_map_version, map.key_map_version
     );
+    let mut metric_key_to_concepts: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for entry in &map.entries {
+        metric_key_to_concepts
+            .entry(entry.metric_key.clone())
+            .or_default()
+            .push(entry.concept.clone());
+    }
     ResolvedKeyMap {
         pair_to_metric_key: map
             .entries
@@ -309,11 +356,52 @@ fn resolve_key_map(map: &KeyMap, gt_key_map_version: i64) -> ResolvedKeyMap {
                 )
             })
             .collect(),
+        metric_key_to_concepts,
         panel: map.panel.iter().cloned().collect(),
         stored_attribution_on_structured_writes: map
             .stored_attribution_on_structured_writes
             .clone(),
+        contract_normalized: map
+            .contract_normalized
+            .iter()
+            .map(|r| ContractNormalizedRule {
+                id: r.id.clone(),
+                scope: r.scope.clone(),
+                concepts: r.concepts.clone(),
+            })
+            .collect(),
     }
+}
+
+/// The `contract_normalized` rule ids a `(metric_key, window, period_type)`
+/// went through — the ONE predicate both the labeler (GT slots) and the
+/// harness (predictions) apply, evaluated here for a PREDICTION (amendment
+/// AC: "derive a prediction's `normalized_by` from the SAME scopes"). GT
+/// slots read their own `normalized_by` field directly (the labeler already
+/// ran this same predicate at label time) rather than recomputing it.
+fn normalized_by_for(
+    resolved_map: &ResolvedKeyMap,
+    metric_key: &str,
+    window: &str,
+    period_type: &str,
+) -> Vec<String> {
+    let concepts = resolved_map
+        .metric_key_to_concepts
+        .get(metric_key)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    resolved_map
+        .contract_normalized
+        .iter()
+        .filter(|rule| match (&rule.concepts, &rule.scope) {
+            (Some(rule_concepts), _) => concepts.iter().any(|c| rule_concepts.contains(c)),
+            (None, Some(scope)) if scope == "interim_flow" => {
+                window == "flow" && period_type != "FY" && period_type != "unknown"
+            }
+            _ => false,
+        })
+        .map(|rule| rule.id.clone())
+        .collect()
 }
 
 /// The three verification states scoring actually acts on (amendment C).
@@ -787,6 +875,9 @@ struct EventReport {
     /// carried here so [`build_issuer_counts`] can pool it per issuer without
     /// re-running [`resolve_event_slots`] a second time.
     unverified: usize,
+    /// This event's own `unresolved_language` slot count (amendment AA) —
+    /// same rationale as `unverified` above.
+    unresolved_language: usize,
 }
 
 /// One issuer's pooled counts across its floor events — the console's
@@ -802,6 +893,7 @@ struct IssuerCounts {
     false_positives: usize,
     mismatch_classes: BTreeMap<String, usize>,
     unverified: usize,
+    unresolved_language: usize,
 }
 
 /// Pools [`EventReport`]s by issuer, floor events only — the console's
@@ -824,6 +916,7 @@ fn build_issuer_counts(event_reports: &[EventReport]) -> BTreeMap<&str, IssuerCo
             .unwrap_or(0);
         counts.false_positives += report.false_positives;
         counts.unverified += report.unverified;
+        counts.unresolved_language += report.unresolved_language;
         for (class, n) in &report.mismatch_classes {
             if class != "WRONG_VALUE" {
                 *counts.mismatch_classes.entry(class.clone()).or_default() += n;
@@ -981,6 +1074,41 @@ struct ColdStartRun {
     /// synthesizes a `no_period_derived`/`no_outcome_recorded` label for the
     /// zero-output report in that case rather than leaving it unexplained.
     recorded_outcome: Option<(String, String)>,
+}
+
+/// Amendment AD: a run only "exercised" the pre-run production inputs
+/// (prior-period fact presence, quarantine history sufficiency) if it BOTH
+/// reached a persisted outcome AND did not itself error — a run that errored
+/// after production happened to still write an outcome row is not a clean
+/// exercise of the gate.
+fn replay_exercised(run: &ColdStartRun) -> bool {
+    run.run_error.is_none() && run.recorded_outcome.is_some()
+}
+
+#[test]
+fn replay_exercised_requires_no_run_error() {
+    fn run(run_error: Option<&str>, recorded_outcome: bool) -> ColdStartRun {
+        ColdStartRun {
+            predictions: Vec::new(),
+            derived: None,
+            run_error: run_error.map(str::to_owned),
+            layer1_facts: Vec::new(),
+            recorded_outcome: recorded_outcome.then(|| ("accepted".to_owned(), "ok".to_owned())),
+        }
+    }
+
+    assert!(
+        replay_exercised(&run(None, true)),
+        "clean run with a recorded outcome is exercised"
+    );
+    assert!(
+        !replay_exercised(&run(Some("boom"), true)),
+        "a run that errored is never counted as exercised, even if an outcome was recorded"
+    );
+    assert!(
+        !replay_exercised(&run(None, false)),
+        "no recorded outcome is never exercised"
+    );
 }
 
 /// Seeds a fresh company + report document for one manifest event and runs
@@ -1186,22 +1314,29 @@ fn prefilter_predictions(
 // twin-agreement and replay so all three apply IDENTICAL eligibility rules.
 // ===========================================================================
 
-/// One event's ground truth, split by scoring eligibility (amendments C/E/O/S/T):
-/// `current` = pinned-language, eligible-verification, mapped, THIS event's
-/// own labeled period; `comparative` = same but any OTHER period the same
-/// document tagged; `internal_twin` = OTHER-language, eligible, mapped,
-/// current-period slots living inside the SAME package event (amendment S) —
-/// excluded from `current`/`comparative` (never a floor denominator), scored
-/// separately and compared to `current` by semantic identity for
-/// `twin_agreement`. `unverified`/`machine_v1` = mapped but ineligible
-/// verification (or, for `unverified`, an unresolved `basis: unknown`
-/// contradiction — amendment T) — their attributable prediction is
-/// `OUT_OF_SCOPE`, never scored as an ordinary slot.
-/// `unverified_count`/`machine_v1_count` are the GT-file-truth totals
-/// (amendment O): incremented for EVERY raw slot in that verification state,
-/// independent of whether the `(concept, attribution)` pair is even mapped —
-/// `unmapped_eligible_count` is the separate, mapping-only exclusion
-/// (amendment E), labeled-capability-only, never scored at all.
+/// One event's ground truth, split by scoring eligibility (amendments
+/// C/E/O/S/T/AA/AC): `current` = pinned-language, eligible-verification,
+/// mapped, THIS event's own labeled period; `comparative` = same but any
+/// OTHER period the same document tagged; `internal_twin` = OTHER-language
+/// (never `unknown` on either side), eligible, mapped, current-period slots
+/// living inside the SAME package event (amendment S) — excluded from
+/// `current`/`comparative` (never a floor denominator), scored separately and
+/// compared to `current` by semantic identity for `twin_agreement`.
+/// `unverified`/`machine_v1` = mapped but ineligible verification (or, for
+/// `unverified`, an unresolved `basis: unknown` contradiction — amendment T)
+/// — their attributable prediction is `OUT_OF_SCOPE`, never scored as an
+/// ordinary slot. `unverified_count`/`machine_v1_count` are the GT-file-truth
+/// totals (amendment O): incremented for EVERY raw slot in that verification
+/// state, independent of whether the `(concept, attribution)` pair is even
+/// mapped. `unresolved_language_slot_ids` (amendment AA): a CURRENT-period,
+/// otherwise-eligible-and-mapped slot whose language (or the event's own) is
+/// `unknown` — a third bucket, excluded from EVERY floor denominator
+/// (recall, precision pairing, sensitivity, twin agreement) and never offered
+/// to ineligible-prediction attribution either; counted and named for the
+/// report only. `labeled_eligible_count` (amendment AC) is the
+/// labeled-capability denominator counted HERE, before any bucketing —
+/// EVERY eligible-verification raw slot, mapped or not, any language, any
+/// period.
 #[derive(Default)]
 struct ResolvedEvent {
     current: Vec<ResolvedSlot>,
@@ -1209,9 +1344,10 @@ struct ResolvedEvent {
     internal_twin: Vec<ResolvedSlot>,
     unverified: Vec<ResolvedSlot>,
     machine_v1: Vec<ResolvedSlot>,
-    unmapped_eligible_count: usize,
+    unresolved_language_slot_ids: Vec<String>,
     unverified_count: usize,
     machine_v1_count: usize,
+    labeled_eligible_count: usize,
 }
 
 fn resolve_event_slots(
@@ -1228,6 +1364,14 @@ fn resolve_event_slots(
         let is_unverified = class == VerificationClass::Unverified || slot.basis == "unknown";
         let is_machine_v1 = !is_unverified && class == VerificationClass::MachineV1;
 
+        // Amendment AC: labeled-capability's `eligible` denominator counts
+        // EVERY eligible-verification raw slot — counted HERE, before any
+        // mapping/currency/language/period bucketing decides where (or
+        // whether) the slot ends up scored.
+        if !is_unverified && !is_machine_v1 {
+            out.labeled_eligible_count += 1;
+        }
+
         // Amendment O: verification-state counts are the GT file's own
         // truth — independent of key-map mapping support.
         if is_unverified {
@@ -1237,22 +1381,29 @@ fn resolve_event_slots(
         }
 
         let pair = (slot.concept_local.clone(), slot.attribution.clone());
+        // Amendment E: an unsupported (concept, attribution) pair (e.g.
+        // `ProfitLoss`/`nci`) is labeled-capability only — NEVER falls back
+        // to the concept's usual (e.g. `total`) metric_key. `labeled_eligible_count`
+        // above already counted it; nothing further to do.
         let Some(metric_key) = resolved_map.pair_to_metric_key.get(&pair) else {
-            // Amendment E: an unsupported (concept, attribution) pair (e.g.
-            // `ProfitLoss`/`nci`) is labeled-capability only — NEVER falls
-            // back to the concept's usual (e.g. `total`) metric_key. Only an
-            // otherwise-eligible, otherwise-verified row counts here — an
-            // unverified/machine_v1 row was already counted above.
-            if !is_unverified && !is_machine_v1 {
-                out.unmapped_eligible_count += 1;
-            }
             continue;
         };
-        let Some(currency) = slot.currency.clone() else {
-            // A currency-less (pure-number) slot is labeled capability only.
-            if !is_unverified && !is_machine_v1 {
-                out.unmapped_eligible_count += 1;
+        // Amendment AG: a MAPPED panel slot with no currency whose `unit` has
+        // a monetary numerator is a real data gap, never a silent exclusion —
+        // a currency-less non-monetary slot (shares, pure ratios) is fine and
+        // stays labeled-capability only.
+        if resolved_map.panel.contains(metric_key.as_str()) && slot.currency.is_none() {
+            if let Some(unit) = &slot.unit {
+                assert!(
+                    !unit_has_monetary_numerator(unit),
+                    "incomparable: slot {} is a mapped panel slot with a monetary unit ({unit}) but no currency",
+                    slot.slot_id
+                );
             }
+        }
+        let Some(currency) = slot.currency.clone() else {
+            // A currency-less (pure-number) slot is labeled capability only —
+            // already counted above.
             continue;
         };
         let value = slot.value.parse::<Decimal>().unwrap_or_else(|e| {
@@ -1285,14 +1436,18 @@ fn resolve_event_slots(
             let is_current_period = slot.fiscal_year == labeled_period.fiscal_year
                 && slot.period_type == labeled_period.period_type
                 && slot.period_end == labeled_period.period_end;
-            // Amendment S: a slot whose own language disagrees with the
-            // event's pinned language is the internal twin-diagnostic
-            // population — `unknown` on either side is never treated as a
-            // disagreement (an untagged language is not evidence of a twin).
-            let is_pinned_language = slot.language == event_language
-                || slot.language == "unknown"
-                || event_language == "unknown";
-            match (is_current_period, is_pinned_language) {
+            // Amendment AA: `unknown` on EITHER side is never pinned-language
+            // (unlike a genuine twin) — it is a third, unresolved bucket,
+            // current-period only, excluded from every floor denominator and
+            // never offered to ineligible-prediction attribution.
+            if slot.language == "unknown" || event_language == "unknown" {
+                if is_current_period {
+                    out.unresolved_language_slot_ids
+                        .push(resolved.slot_id.clone());
+                }
+                continue;
+            }
+            match (is_current_period, slot.language == event_language) {
                 (true, true) => out.current.push(resolved),
                 (false, true) => out.comparative.push(resolved),
                 (true, false) => out.internal_twin.push(resolved),
@@ -1304,6 +1459,118 @@ fn resolve_event_slots(
         }
     }
     out
+}
+
+/// Whether an iXBRL unit measure string's NUMERATOR is a monetary
+/// (`iso4217:`) measure — `"iso4217:PLN"` (monetary), `"xbrli:shares"` /
+/// `"xbrli:pure"` (not), `"iso4217:PLN/xbrli:shares"` (a per-share ratio —
+/// STILL monetary, amendment AG: the numerator before any `/` decides).
+fn unit_has_monetary_numerator(unit: &str) -> bool {
+    unit.split('/')
+        .next()
+        .is_some_and(|numerator| numerator.trim().starts_with("iso4217:"))
+}
+
+/// Amendment AG: a MAPPED panel slot (here `Revenue`/`total` -> `revenue`,
+/// on the sample key map's panel) with `currency: null` but a monetary
+/// `unit` is a real data gap — a typed parse failure naming the slot id,
+/// never a silent labeled-capability-only exclusion (that silent path stays
+/// reserved for a genuinely non-monetary unit, e.g. `xbrli:shares`).
+/// Amendment AA: a current-period slot whose OWN language is `unknown` (or
+/// whose event's language is `unknown`) lands in `unresolved_language_slot_ids`
+/// alone — never `current`/`comparative`/`internal_twin`, so it is
+/// structurally excluded from every floor denominator those feed (recall,
+/// precision pairing, sensitivity, twin agreement), which all read
+/// exclusively from those three buckets. It still counts toward
+/// `labeled_eligible_count` (amendment AC: counted before bucketing).
+#[test]
+fn resolve_event_slots_buckets_unknown_language_as_unresolved() {
+    let resolved_map = sample_key_map();
+    let labeled_period = LabeledPeriod {
+        fiscal_year: 2025,
+        period_type: "FY".to_owned(),
+        period_end: "2025-12-31".to_owned(),
+    };
+    fn gt_slot(slot_id: &str, language: &str) -> GtSlot {
+        GtSlot {
+            slot_id: slot_id.to_owned(),
+            event_id: "evt".to_owned(),
+            package_member: None,
+            concept_local: "Revenue".to_owned(),
+            attribution: "total".to_owned(),
+            basis: "consolidated".to_owned(),
+            window: "flow".to_owned(),
+            variant: "reported".to_owned(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end: "2025-12-31".to_owned(),
+            currency: Some("PLN".to_owned()),
+            unit: Some("iso4217:PLN".to_owned()),
+            value: "100".to_owned(),
+            verification: "machine".to_owned(),
+            language: language.to_owned(),
+            mapped: true,
+            normalized_by: Vec::new(),
+        }
+    }
+
+    // Slot's own language unknown, event language known.
+    let raw = vec![gt_slot("slot-unknown-slot-lang", "unknown")];
+    let resolved = resolve_event_slots(&raw, &labeled_period, "pl", &resolved_map);
+    assert_eq!(
+        resolved.unresolved_language_slot_ids,
+        vec!["slot-unknown-slot-lang".to_owned()]
+    );
+    assert!(resolved.current.is_empty());
+    assert!(resolved.comparative.is_empty());
+    assert!(resolved.internal_twin.is_empty());
+    assert_eq!(resolved.labeled_eligible_count, 1);
+
+    // Slot's own language known (matches nothing special), event language unknown.
+    let raw = vec![gt_slot("slot-unknown-event-lang", "pl")];
+    let resolved = resolve_event_slots(&raw, &labeled_period, "unknown", &resolved_map);
+    assert_eq!(
+        resolved.unresolved_language_slot_ids,
+        vec!["slot-unknown-event-lang".to_owned()]
+    );
+    assert!(resolved.current.is_empty());
+    assert!(resolved.comparative.is_empty());
+    assert!(resolved.internal_twin.is_empty());
+    assert_eq!(resolved.labeled_eligible_count, 1);
+}
+
+#[test]
+#[should_panic(
+    expected = "incomparable: slot slot-monetary-no-currency is a mapped panel slot with a monetary unit (iso4217:PLN)"
+)]
+fn resolve_event_slots_panics_on_monetary_unit_without_currency() {
+    let resolved_map = sample_key_map();
+    let labeled_period = LabeledPeriod {
+        fiscal_year: 2025,
+        period_type: "FY".to_owned(),
+        period_end: "2025-12-31".to_owned(),
+    };
+    let raw = vec![GtSlot {
+        slot_id: "slot-monetary-no-currency".to_owned(),
+        event_id: "evt".to_owned(),
+        package_member: None,
+        concept_local: "Revenue".to_owned(),
+        attribution: "total".to_owned(),
+        basis: "consolidated".to_owned(),
+        window: "flow".to_owned(),
+        variant: "reported".to_owned(),
+        fiscal_year: 2025,
+        period_type: "FY".to_owned(),
+        period_end: "2025-12-31".to_owned(),
+        currency: None,
+        unit: Some("iso4217:PLN".to_owned()),
+        value: "100".to_owned(),
+        verification: "machine".to_owned(),
+        language: "pl".to_owned(),
+        mapped: true,
+        normalized_by: Vec::new(),
+    }];
+    resolve_event_slots(&raw, &labeled_period, "pl", &resolved_map);
 }
 
 // ===========================================================================
@@ -1439,6 +1706,10 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     let mut zero_output_events = 0usize;
     let mut unverified_total = 0usize;
     let mut machine_v1_total = 0usize;
+    // Amendment AA: current-period slots left unscored because their own (or
+    // their event's) language is `unknown` — a third bucket, excluded from
+    // every floor denominator.
+    let mut unresolved_language_total = 0usize;
     let mut labeled_eligible_total = 0usize; // amendment H: labeled-capability denominator (incl. unmapped)
                                              // amendment H(b): GT slots (all periods) with a stored Layer 2 slot.
     let mut availability_available = 0usize;
@@ -1447,6 +1718,10 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     let mut layer1_captured = 0usize;
     let mut layer1_eligible = 0usize;
     let mut layer1_value_correct = 0usize;
+    // Amendment AE: an occurrence the labeler couldn't fully parse (any of
+    // parse_status/concept_qname/period/value missing or not "ok") — never
+    // eligible for Layer 1 capture, never a panic, just visibly counted.
+    let mut unresolved_occurrences_total = 0usize;
     let mut derived_by_event: BTreeMap<String, (String, String)> = BTreeMap::new();
     // Amendment Q: sensitivity's convention-resolved exclusion sets — GT
     // side from the labeler's own `normalized_by` field (per slot_id),
@@ -1465,6 +1740,8 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     // floor-only (the primary recall/precision denominators).
     let mut all_slot_details: Vec<SlotDetail> = Vec::new();
     let mut event_reports: Vec<EventReport> = Vec::new();
+    // Amendment AA: named for the report (never just a count) — floor events only.
+    let mut unresolved_language_slots: Vec<String> = Vec::new();
 
     for event in &manifest.events {
         if event.role == "warmup" {
@@ -1494,13 +1771,13 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
         if event.role == "floor" {
             unverified_total += resolved.unverified_count;
             machine_v1_total += resolved.machine_v1_count;
-            // Amendment Q: labeled-capability's `eligible` denominator counts
-            // EVERY labeled IFRS slot with eligible verification — mapped
-            // (current/comparative/internal-twin) or not.
-            labeled_eligible_total += resolved.current.len()
-                + resolved.comparative.len()
-                + resolved.internal_twin.len()
-                + resolved.unmapped_eligible_count;
+            // Amendment AC: labeled-capability's `eligible` denominator is
+            // counted BEFORE bucketing (`ResolvedEvent::labeled_eligible_count`),
+            // never summed from the scored buckets — a slot that ends up
+            // unresolved-language or unmapped still counts here.
+            labeled_eligible_total += resolved.labeled_eligible_count;
+            unresolved_language_total += resolved.unresolved_language_slot_ids.len();
+            unresolved_language_slots.extend(resolved.unresolved_language_slot_ids.iter().cloned());
             // Amendment Q: sensitivity's convention-resolved population comes
             // from the labeler's OWN `normalized_by` field (every
             // `contract_normalized` rule id a slot's value/window actually
@@ -1547,21 +1824,36 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                 .get(event.event_id.as_str())
                 .unwrap_or(&empty_occurrences);
             for occurrence in event_occurrences {
-                let is_comparative = occurrence.period.end() != event.labeled_period.period_end;
+                // Amendment AE: a not-fully-parsed occurrence can never be
+                // classified comparative/current at all — count it separately
+                // rather than guessing its scope.
+                let (Some(concept_qname), Some(period), Some(value)) = (
+                    occurrence.concept_qname.as_ref(),
+                    occurrence.period.as_ref(),
+                    occurrence.value.as_ref(),
+                ) else {
+                    unresolved_occurrences_total += 1;
+                    continue;
+                };
+                if occurrence.parse_status != "ok" {
+                    unresolved_occurrences_total += 1;
+                    continue;
+                }
+                let is_comparative = period.end() != event.labeled_period.period_end;
                 if !is_comparative {
                     continue;
                 }
                 layer1_eligible += 1;
                 if let Some(fact) = run.layer1_facts.iter().find(|fact| {
-                    occurrence.concept_qname
+                    *concept_qname
                         == format!(
                             "{{{}}}{}",
                             fact.concept_namespace_uri, fact.concept_local_name
                         )
-                        && occurrence.period.matches_layer1(fact)
+                        && period.matches_layer1(fact)
                 }) {
                     layer1_captured += 1;
-                    let occurrence_value = occurrence.value.parse::<Decimal>().ok();
+                    let occurrence_value = value.parse::<Decimal>().ok();
                     if fact
                         .value_numeric
                         .as_deref()
@@ -1649,11 +1941,14 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                 .get(fact_id.as_str())
                 .expect("a scored prediction id must be in the eligible pool that was scored");
             let key = prediction_identity_key(&event.event_id, p);
-            // Amendment Q: the harness infers a PREDICTION's own
-            // `contract_normalized` membership from its `metric_key` (the
-            // same rule ids the labeler names) — the GT side reads
-            // `normalized_by` directly instead (see the main loop above).
-            if event.role == "floor" && SIGN_CONVENTION_METRIC_KEYS.contains(&p.metric_key.as_str())
+            // Amendment AC: the harness derives a PREDICTION's own
+            // `contract_normalized` membership from the SAME key-map scopes
+            // the labeler used for the GT side (concept via `metric_key`,
+            // window/period_type from the stored fact) — never a hard-coded
+            // metric-key list.
+            if event.role == "floor"
+                && !normalized_by_for(&resolved_map, &p.metric_key, &p.window, &p.period_type)
+                    .is_empty()
             {
                 sign_convention_prediction_keys.insert(key.clone());
             }
@@ -1742,6 +2037,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             mismatch_classes: event_mismatch_classes,
             run_error: run.run_error.clone(),
             unverified: resolved.unverified_count,
+            unresolved_language: resolved.unresolved_language_slot_ids.len(),
         });
         for slot in &resolved.current {
             let outcome = score
@@ -1963,6 +2259,8 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
         &aggregates,
         &lost,
         machine_v1_total,
+        unresolved_language_total,
+        unresolved_occurrences_total,
         precision_denominator,
         &event_reports,
         &by_issuer,
@@ -1989,6 +2287,8 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                     "concept": concept, "attribution": attribution, "count": count,
                 }))
                 .collect::<Vec<_>>(),
+            "unresolved_language_slots": unresolved_language_slots,
+            "unresolved_occurrences": unresolved_occurrences_total,
         }),
     );
     // The run's own nonce (never handed in — `make realdata-esef-check`'s
@@ -2021,14 +2321,6 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
 
     Some(aggregates)
 }
-
-/// Amendment H: sensitivity excludes GT slots for a metric_key subject to a
-/// `contract_normalized` convention in `gt_key_map.json` — specifically
-/// `cash_flow_outflow_sign` (a cash outflow is compared as a negated decimal
-/// on both sides). The key map lists conventions as prose rules, not a
-/// structured concept list, so the affected metric keys are pinned here,
-/// named against that rule id.
-const SIGN_CONVENTION_METRIC_KEYS: &[&str] = &["investing_cash_flow", "financing_cash_flow"];
 
 /// Amendment G: sha256 over the sorted per-file sha256 hex digests of every
 /// DISTINCT corpus file the manifest's events reference — recomputed from the
@@ -2261,10 +2553,10 @@ fn run_replay(
                     .any(|h| h.len() >= 2);
 
             let run = seed_and_run_event(&state, issuer, event, corpus_dir);
-            // Amendment R: only an extraction that actually ran to a
-            // persisted outcome (acceptance recorded) counts the pre-run
-            // inputs above as "exercised".
-            if run.recorded_outcome.is_some() {
+            // Amendment R/AD: only an extraction that actually ran to a
+            // persisted outcome (acceptance recorded) AND did not itself
+            // error counts the pre-run inputs above as "exercised".
+            if replay_exercised(&run) {
                 if prior_existed {
                     exercised_prior_check += 1;
                 }
@@ -2314,6 +2606,8 @@ fn print_console_report(
     aggregates: &Aggregates,
     lost: &[String],
     machine_v1_total: usize,
+    unresolved_language_total: usize,
+    unresolved_occurrences_total: usize,
     precision_denominator: usize,
     event_reports: &[EventReport],
     by_issuer: &BTreeMap<&str, IssuerCounts>,
@@ -2336,13 +2630,14 @@ fn print_console_report(
         aggregates.normalization_version
     );
     eprintln!(
-        "events={} floor_events={} issuers={} gt_slots={} unverified={} machine_v1={}",
+        "events={} floor_events={} issuers={} gt_slots={} unverified={} machine_v1={} unresolved_language={}",
         aggregates.events,
         aggregates.floor_events,
         aggregates.issuers,
         aggregates.gt_slots,
         aggregates.unverified,
-        machine_v1_total
+        machine_v1_total,
+        unresolved_language_total
     );
     eprintln!(
         "matched={} ({} of gt_slots)  false_positives={}  zero_output_events={}",
@@ -2370,12 +2665,13 @@ fn print_console_report(
         aggregates.twin_agreement.compared
     );
     eprintln!(
-        "availability_all_periods: {}/{}  layer1_capture: {}/{} (value_correct {})",
+        "availability_all_periods: {}/{}  layer1_capture: {}/{} (value_correct {})  unresolved_occurrences={}",
         aggregates.availability_all_periods.available,
         aggregates.availability_all_periods.eligible,
         aggregates.layer1_capture.captured,
         aggregates.layer1_capture.eligible,
-        aggregates.layer1_capture.value_correct
+        aggregates.layer1_capture.value_correct,
+        unresolved_occurrences_total
     );
     eprintln!(
         "replay: events={} prior_check_exercised={} quarantine_exercised={} replay_matched={}",
@@ -2395,12 +2691,20 @@ fn print_console_report(
     eprintln!();
     eprintln!("-- per issuer (floor events) --");
     eprintln!(
-        "{:<12} {:>6} {:>8} {:>7} {:>7} {:>4} {:>3} {:>11} mismatch_classes",
-        "issuer_id", "events", "gt_slots", "matched", "missing", "wrong", "fp", "unverified"
+        "{:<12} {:>6} {:>8} {:>7} {:>7} {:>4} {:>3} {:>11} {:>19} mismatch_classes",
+        "issuer_id",
+        "events",
+        "gt_slots",
+        "matched",
+        "missing",
+        "wrong",
+        "fp",
+        "unverified",
+        "unresolved_language"
     );
     for (issuer_id, counts) in by_issuer {
         eprintln!(
-            "{:<12} {:>6} {:>8} {:>7} {:>7} {:>4} {:>3} {:>11} {:?}",
+            "{:<12} {:>6} {:>8} {:>7} {:>7} {:>4} {:>3} {:>11} {:>19} {:?}",
             issuer_id,
             counts.events,
             counts.gt_slots,
@@ -2409,6 +2713,7 @@ fn print_console_report(
             counts.wrong,
             counts.false_positives,
             counts.unverified,
+            counts.unresolved_language,
             counts.mismatch_classes
         );
     }
@@ -2537,6 +2842,29 @@ fn sample_key_map() -> ResolvedKeyMap {
     resolve_key_map(&map, 1)
 }
 
+/// Amendment AC: `normalized_by_for` reads the SAME machine-readable
+/// `contract_normalized` scopes for a prediction that the labeler already
+/// applied to the GT slot — no hard-coded metric-key list.
+#[test]
+fn normalized_by_for_reads_contract_normalized_scopes() {
+    let resolved_map = sample_key_map();
+    // Operating cash flow, FY: the concepts-based `cash_flow_outflow_sign`
+    // rule fires (its concept list is now all three cash-flow concepts, not
+    // just investing/financing); the `interim_flow` rule never fires at FY.
+    assert_eq!(
+        normalized_by_for(&resolved_map, "operating_cash_flow", "flow", "FY"),
+        vec!["cash_flow_outflow_sign".to_owned()]
+    );
+    // Revenue, an interim (non-FY, non-unknown) flow window: only the
+    // scope-based `interim_flow` rule fires.
+    assert_eq!(
+        normalized_by_for(&resolved_map, "revenue", "flow", "Q3"),
+        vec!["cumulative_context_to_flow".to_owned()]
+    );
+    // Revenue, FY: neither rule fires.
+    assert!(normalized_by_for(&resolved_map, "revenue", "flow", "FY").is_empty());
+}
+
 #[allow(clippy::too_many_arguments)]
 fn slot(
     slot_id: &str,
@@ -2657,6 +2985,34 @@ fn sample_corpus_scores_and_metrics_carry_no_content() {
             "metrics JSON must carry no ticker/title/value/filename, found {needle:?}"
         );
     }
+}
+
+/// Amendment AE: the sample corpus's `occurrences_v2.json` carries one
+/// `parse_status: "unparsed"` row (period/value both null) alongside the 7
+/// well-formed ones. It must never panic, must not count toward Layer 1
+/// capture eligibility (unchanged from the well-formed-only baseline of 3),
+/// and must show up as exactly one `unresolved_occurrences`.
+#[test]
+fn sample_corpus_flags_one_unresolved_occurrence() {
+    let dir = materialize_sample_corpus();
+    let key_map_path = local_key_map_path();
+    let aggregates = run_measurement(MeasurementConfig {
+        corpus_dir: &dir,
+        key_map_path: &key_map_path,
+        metrics_out: None,
+        keyed_baseline: None,
+        required: false,
+    })
+    .expect("sample corpus must measure");
+
+    assert_eq!(aggregates.layer1_capture.eligible, 3);
+    assert_eq!(aggregates.layer1_capture.captured, 3);
+
+    let scoring_report: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("scoring-report-v2.json")).expect("scoring report"),
+    )
+    .expect("scoring report json");
+    assert_eq!(scoring_report["unresolved_occurrences"], 1);
 }
 
 /// Test 1b (amendment P, r2 f20) — a REAL, freshly-measured sample artifact
@@ -2893,6 +3249,7 @@ fn per_issuer_counts_pool_floor_events_only() {
         mismatch_classes: mismatch_classes_a,
         run_error: None,
         unverified: 2,
+        unresolved_language: 1,
     };
     let event_twin = EventReport {
         event_id: "e2".to_owned(),
@@ -2909,6 +3266,7 @@ fn per_issuer_counts_pool_floor_events_only() {
         false_positives: 0,
         mismatch_classes: BTreeMap::new(),
         unverified: 0,
+        unresolved_language: 0,
         ..event_a.clone()
     };
     let event_other_issuer = EventReport {
@@ -2936,6 +3294,7 @@ fn per_issuer_counts_pool_floor_events_only() {
     assert_eq!(iss1.wrong, 1);
     assert_eq!(iss1.false_positives, 1);
     assert_eq!(iss1.unverified, 2);
+    assert_eq!(iss1.unresolved_language, 1);
     assert_eq!(iss1.mismatch_classes.get("BASIS_MISMATCH"), Some(&2));
     assert_eq!(
         iss1.mismatch_classes.get("WRONG_VALUE"),

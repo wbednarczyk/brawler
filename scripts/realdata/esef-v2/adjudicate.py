@@ -53,7 +53,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from label_esef_v2 import build_slot_id
+from label_esef_v2 import build_slot_id, currency_from_unit
 
 AGREEMENT_SAMPLE_FRACTION = 0.10
 MIN_TASKS = 10
@@ -152,6 +152,7 @@ def prepare(esef_v2_dir: Path, seed: int) -> dict:
             "window": slot["window"],
             "fiscal_year": slot["fiscal_year"],
             "period_type": slot["period_type"],
+            "unit": slot.get("unit"),  # amendment AG: evidence location, never a value
         }
         task_bytes = json.dumps(task, indent=2, ensure_ascii=False, sort_keys=True).encode("utf-8") + b"\n"
         (tasks_dir / f"{task_id}.json").write_bytes(task_bytes)
@@ -248,7 +249,34 @@ def seal(esef_v2_dir: Path, reader: str, answers_path: Path) -> list[Path]:
     return sealed_paths
 
 
-def _iter_sealed_files(adjudication_dir: Path):
+def _verify_registered_seal(adjudication_dir: Path, identity: str, expected_hash: str) -> tuple[dict, Path]:
+    """Loads and verifies ONE seal registered in `seals.lock` -- the
+    registry entry is the source of truth (amendment AB / astra r3 finding
+    13): a missing file, unreadable/malformed JSON, or a hash that
+    disagrees with either the payload's own embedded `sha256` or the
+    registry's recorded hash all abort `compare`."""
+    event_id, reader = identity.rsplit("/", 1)
+    sealed_path = adjudication_dir / event_id / f"{reader}.json"
+    if not sealed_path.exists():
+        raise SealHashMismatchError(f"registered seal {identity} is missing its file {sealed_path}")
+    try:
+        payload = json.loads(sealed_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SealHashMismatchError(f"registered seal {identity} at {sealed_path} is not valid JSON: {exc}") from exc
+    if not (isinstance(payload, dict) and "answers" in payload and "reader" in payload):
+        raise SealHashMismatchError(f"registered seal {identity} at {sealed_path} is malformed")
+    body = {k: v for k, v in payload.items() if k != "sha256"}
+    recomputed = hashlib.sha256(json.dumps(body, indent=2, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    if recomputed != payload.get("sha256") or recomputed != expected_hash:
+        raise SealHashMismatchError(f"registered seal {identity} hash mismatch")
+    return payload, sealed_path
+
+
+def _find_unregistered_seals(adjudication_dir: Path, registered_paths: set[Path]) -> Path | None:
+    """A directory scan used ONLY to detect an EXTRA sealed file that
+    `seals.lock` never registered -- the registry (not the directory)
+    remains the source of truth for which seals to actually read (amendment
+    AB). Returns the first offending path, or `None`."""
     for path in adjudication_dir.rglob("*.json"):
         if path.parent == adjudication_dir or path.parent.name == "tasks":
             continue  # tasks.lock / tasks_index.json / seals.lock / resolutions.json / adjudication/tasks/*
@@ -256,21 +284,9 @@ def _iter_sealed_files(adjudication_dir: Path):
             payload = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
-        if isinstance(payload, dict) and "answers" in payload and "reader" in payload:
-            yield payload
-
-
-def _verify_seal_hash(payload: dict, seals_registry: dict) -> None:
-    """Recomputes the sealed payload's hash the same way `seal` did and
-    checks it against BOTH the payload's own embedded `sha256` and the
-    independent `seals.lock` registry (amendment W)."""
-    body = {k: v for k, v in payload.items() if k != "sha256"}
-    recomputed = hashlib.sha256(json.dumps(body, indent=2, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
-    identity = f"{payload.get('event_id')}/{payload.get('reader')}"
-    if recomputed != payload.get("sha256"):
-        raise SealHashMismatchError(f"sealed answers for {identity} have been modified since sealing")
-    if seals_registry.get(identity) != payload.get("sha256"):
-        raise SealHashMismatchError(f"seal hash for {identity} does not match adjudication/seals.lock")
+        if isinstance(payload, dict) and "answers" in payload and "reader" in payload and path.resolve() not in registered_paths:
+            return path
+    return None
 
 
 def _decimal_or_none(value) -> Decimal | None:
@@ -280,14 +296,21 @@ def _decimal_or_none(value) -> Decimal | None:
         return None
 
 
-def _validate_answer_fields(task_id: str, reader: str, answer: dict) -> None:
+def _validate_answer_fields(task_id: str, reader: str, answer: dict, task_unit: str | None) -> None:
     """Amendment W / astra r2 finding 22: an answer that isn't explicitly
     `unverified` must be a fully-formed, in-domain reading -- a decimal that
     parses but is NaN/Infinity, a non-3-letter currency, or an out-of-enum
     basis/attribution/period_type/fiscal_year used to sail through as an
     "incomplete answer" only when a whole FIELD was missing, letting a
     single garbage value (e.g. unparseable text) turn into the literal
-    string `"None"` written into ground_truth_v2.json."""
+    string `"None"` written into ground_truth_v2.json.
+
+    Amendment AG / astra r3 finding 25: whether `currency` may be a code AT
+    ALL depends on the TASK's own `unit` (evidence location): a monetary
+    unit (has a currency numerator) requires a 3-letter code; a non-monetary
+    unit (e.g. a bare share count, `xbrli:pure`) requires `currency: null`
+    -- a fabricated code on a non-monetary slot is itself an invalid
+    answer, not merely ignored."""
     if answer.get("unverified"):
         return
     identity = f"{task_id} ({reader})"
@@ -298,8 +321,12 @@ def _validate_answer_fields(task_id: str, reader: str, answer: dict) -> None:
     if value is None or not value.is_finite():
         raise InvalidAnswerError(f"{identity}: value {answer['value']!r} is not a finite decimal")
     currency = answer["currency"]
-    if not (isinstance(currency, str) and len(currency) == 3 and currency.isalpha() and currency.isupper()):
-        raise InvalidAnswerError(f"{identity}: currency {currency!r} is not a 3-letter code")
+    is_monetary_unit = currency_from_unit(task_unit) is not None
+    if is_monetary_unit:
+        if not (isinstance(currency, str) and len(currency) == 3 and currency.isalpha() and currency.isupper()):
+            raise InvalidAnswerError(f"{identity}: currency {currency!r} is not a 3-letter code (task unit {task_unit!r} is monetary)")
+    elif currency is not None:
+        raise InvalidAnswerError(f"{identity}: currency {currency!r} must be null -- task unit {task_unit!r} has no monetary numerator")
     if answer["basis"] not in VALID_BASES:
         raise InvalidAnswerError(f"{identity}: basis {answer['basis']!r} outside the known domain {sorted(VALID_BASES)}")
     if answer["attribution"] not in VALID_ATTRIBUTIONS:
@@ -343,6 +370,21 @@ def compare(esef_v2_dir: Path) -> dict:
     lock = json.loads((adjudication_dir / "tasks.lock").read_text(encoding="utf-8"))
     _verify_bindings(esef_v2_dir, adjudication_dir, lock)
 
+    # Amendment AB (1) / astra r3 finding 13: re-verify the sha256 of EVERY
+    # task file `tasks.lock` locked -- not just the ones a sealed answer
+    # happens to reference. Captures each task's `unit` for answer
+    # validation (amendment AG) while the file is already open.
+    task_units: dict[str, str | None] = {}
+    for entry in lock["tasks"]:
+        task_id = entry["task_id"]
+        task_path = adjudication_dir / "tasks" / f"{task_id}.json"
+        if not task_path.exists():
+            raise TaskHashMismatchError(f"{task_path} is missing (locked in tasks.lock)")
+        task_bytes = task_path.read_bytes()
+        if hashlib.sha256(task_bytes).hexdigest() != entry["sha256"]:
+            raise TaskHashMismatchError(f"{task_path} no longer matches tasks.lock")
+        task_units[task_id] = json.loads(task_bytes).get("unit")
+
     index = json.loads((adjudication_dir / "tasks_index.json").read_text(encoding="utf-8"))
     gt = json.loads((esef_v2_dir / "ground_truth_v2.json").read_text(encoding="utf-8"))
     slots_by_id = {s["slot_id"]: s for s in gt["slots"]}
@@ -350,11 +392,20 @@ def compare(esef_v2_dir: Path) -> dict:
     seals_path = adjudication_dir / "seals.lock"
     seals_registry = json.loads(seals_path.read_text(encoding="utf-8")) if seals_path.exists() else {}
 
+    # Amendment AB (2): `seals.lock` is the source of truth for WHICH seals
+    # to read -- never a directory walk. Every registered seal must exist
+    # and verify; a sealed file on disk that ISN'T registered aborts too.
     answers_by_task: dict[str, list[tuple[str, dict]]] = {}
-    for payload in _iter_sealed_files(adjudication_dir):
-        _verify_seal_hash(payload, seals_registry)
+    registered_paths: set[Path] = set()
+    for identity, expected_hash in seals_registry.items():
+        payload, sealed_path = _verify_registered_seal(adjudication_dir, identity, expected_hash)
+        registered_paths.add(sealed_path.resolve())
         for task_id, answer in payload["answers"].items():
             answers_by_task.setdefault(task_id, []).append((payload["reader"], answer))
+
+    unregistered = _find_unregistered_seals(adjudication_dir, registered_paths)
+    if unregistered is not None:
+        raise SealHashMismatchError(f"sealed file {unregistered} is not registered in adjudication/seals.lock (unregistered seal)")
 
     missing = sorted(task_id for task_id in index if task_id not in answers_by_task)
     if missing:
@@ -367,7 +418,7 @@ def compare(esef_v2_dir: Path) -> dict:
     # write (astra r2 finding 22).
     for task_id, readers in answers_by_task.items():
         for reader, answer in readers:
-            _validate_answer_fields(task_id, reader, answer)
+            _validate_answer_fields(task_id, reader, answer, task_units.get(task_id))
 
     resolutions = []
     for task_id, meta in sorted(index.items()):
@@ -499,7 +550,13 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "compare":
         try:
             result = compare(esef_v2_dir)
-        except (IncompleteAdjudicationError, BindingMismatchError, SealHashMismatchError, InvalidAnswerError) as exc:
+        except (
+            IncompleteAdjudicationError,
+            BindingMismatchError,
+            SealHashMismatchError,
+            InvalidAnswerError,
+            TaskHashMismatchError,
+        ) as exc:
             print(f"adjudicate compare: refused -- {exc}")
             return 1
         print(f"adjudicate compare: {result['resolutions']} resolutions")

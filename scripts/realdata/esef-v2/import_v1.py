@@ -30,7 +30,7 @@ import argparse
 import json
 from pathlib import Path
 
-from label_esef_v2 import build_slot_id
+from label_esef_v2 import SLOT_KEYS, build_slot_id, normalized_by_for_slot
 
 HERE = Path(__file__).resolve().parent
 
@@ -52,11 +52,15 @@ def load_key_map(key_map_path: Path) -> dict[str, dict]:
     return {e["metric_key"]: e for e in data["entries"]}
 
 
+def load_contract_normalized(key_map_path: Path) -> list[dict]:
+    return json.loads(key_map_path.read_text(encoding="utf-8")).get("contract_normalized", [])
+
+
 def build_issuer_map(manifest_v2: dict) -> dict[str, str]:
     return {issuer["ticker"]: issuer["issuer_id"] for issuer in manifest_v2["issuers"]}
 
 
-def _build_slot(rec: dict, issuer_id: str, entry: dict, event_id: str) -> dict:
+def _build_slot(rec: dict, issuer_id: str, entry: dict, event_id: str, contract_normalized: list[dict]) -> dict:
     window = "point_in_time" if entry["period_nature"] == "instant" else "flow"
     period_end = rec["period_end"]
     fiscal_year = int(period_end[:4]) if period_end else None
@@ -67,17 +71,22 @@ def _build_slot(rec: dict, issuer_id: str, entry: dict, event_id: str) -> dict:
     # Re-verification (adjudicate.py) assigns the real one.
     period_type = "v1_unclassified"
     currency = rec.get("currency")
+    # v1 carried no raw iXBRL unit measure string, only the derived
+    # currency code -- ISO 4217 is the only unit shape v1 ever represented
+    # (GPW/ESEF monetary facts); a currency-less v1 row has no unit either.
+    unit = f"iso4217:{currency}" if currency else None
     # v1 carried no package_member (it read the first ZIP instance only,
     # astra r1 finding 7); "-" is the amendment F template's explicit token
     # for "no member", same as a loose-file slot.
     slot_id = build_slot_id(
         event_id, None, entry["concept"], entry["attribution"], rec["statement_basis"], window, "reported", fiscal_year, period_type, currency
     )
-    return {
+    slot = {
         "slot_id": slot_id,
         "event_id": event_id,
         "package_member": None,
         "concept_local": entry["concept"],
+        "mapped": True,  # amendment AF: v1 only ever imports a row with a real key-map entry
         "attribution": entry["attribution"],
         "basis": rec["statement_basis"],
         "window": window,
@@ -87,12 +96,18 @@ def _build_slot(rec: dict, issuer_id: str, entry: dict, event_id: str) -> dict:
         "period_end": period_end,
         "period_start": rec.get("period_start"),
         "currency": currency,
+        "unit": unit,
         "value": rec["value"],
         "duration_months": None,
+        "language": "unknown",  # amendment AF: v1 had no member language
+        "population": "floor",  # v1 read the primary (pinned-language-equivalent) consolidated filing
+        "normalized_by": normalized_by_for_slot(entry["concept"], window, period_type, contract_normalized),
         "verification": "machine_v1",
         "contributing_occurrence_ids": [],
         "resolution_ref": None,
     }
+    assert set(slot.keys()) == SLOT_KEYS, f"import_v1 slot key set drifted from label_esef_v2.SLOT_KEYS: {set(slot.keys()) ^ SLOT_KEYS}"
+    return slot
 
 
 def import_slots(
@@ -100,6 +115,7 @@ def import_slots(
     issuer_map: dict[str, str],
     metric_key_to_entry: dict[str, dict],
     event_map: dict[str, str] | None = None,
+    contract_normalized: list[dict] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Returns (reference_slots, mapped_slots). `reference_slots` always use
     a synthetic `<issuer_id>/v1/<file stem>` event id and are written to
@@ -109,6 +125,7 @@ def import_slots(
     are the only slots `main()` merges into `ground_truth_v2.json`."""
     reference_slots: list[dict] = []
     mapped_slots: list[dict] = []
+    contract_normalized = contract_normalized or []
     for rec in v1_gt:
         if rec.get("tier") != "esef":
             continue
@@ -122,11 +139,11 @@ def import_slots(
             continue  # a v1 metric with no v2 key-map counterpart
 
         synthetic_event_id = f"{issuer_id}/v1/{Path(rec['file']).stem[:60]}"
-        reference_slots.append(_build_slot(rec, issuer_id, entry, synthetic_event_id))
+        reference_slots.append(_build_slot(rec, issuer_id, entry, synthetic_event_id, contract_normalized))
 
         mapped_event_id = (event_map or {}).get(rec["file"])
         if mapped_event_id:
-            mapped_slots.append(_build_slot(rec, issuer_id, entry, mapped_event_id))
+            mapped_slots.append(_build_slot(rec, issuer_id, entry, mapped_event_id, contract_normalized))
 
     return reference_slots, mapped_slots
 
@@ -165,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
     manifest_v2 = json.loads((esef_v2_dir / "MANIFEST_v2.json").read_text(encoding="utf-8"))
     issuer_map = build_issuer_map(manifest_v2)
     metric_key_to_entry = load_key_map(HERE / "gt_key_map.json")
+    contract_normalized = load_contract_normalized(HERE / "gt_key_map.json")
 
     event_map = json.loads(args.map_to_events.read_text(encoding="utf-8")) if args.map_to_events else None
     if event_map is not None:
@@ -176,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         if bad:
             raise ValueError(f"--map-to-events names event id(s) absent from MANIFEST_v2.json: {bad}")
 
-    reference_slots, mapped_slots = import_slots(v1_gt, issuer_map, metric_key_to_entry, event_map)
+    reference_slots, mapped_slots = import_slots(v1_gt, issuer_map, metric_key_to_entry, event_map, contract_normalized)
 
     ref_path = esef_v2_dir / "machine_v1_reference.json"
     ref_path.write_text(

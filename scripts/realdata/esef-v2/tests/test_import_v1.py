@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import import_v1 as iv
+from label_esef_v2 import SLOT_KEYS
 
 
 def _key_map():
@@ -231,6 +232,47 @@ class MergeTests(unittest.TestCase):
             merged = iv.merge_ground_truth(out, imported)
             self.assertEqual(len(merged["slots"]), 1)
             self.assertTrue((out / "ground_truth_v2.json").exists())
+
+
+class SlotKeySchemaTests(unittest.TestCase):
+    """Amendment AF / astra r3 finding 24: import_v1.py mapped rows must
+    carry every key the labeler emits -- the two schemas are typed via one
+    shared constant (`label_esef_v2.SLOT_KEYS`), never two hand-typed dicts
+    free to drift apart."""
+
+    def test_reference_and_mapped_rows_match_label_esef_v2_slot_keys(self):
+        import label_esef_v2 as lbl
+
+        self.assertEqual(SLOT_KEYS, lbl.SLOT_KEYS)  # the constant itself, imported not duplicated
+
+        v1_gt = [
+            {
+                "file": "doc_zzz_fy2025.zip", "ticker": "ZZZ", "tier": "esef", "mapped_key": "revenue",
+                "period_end": "2025-12-31", "period_start": "2025-01-01", "statement_basis": "consolidated",
+                "value": "1000", "currency": "PLN", "source": "ixbrl", "verification": "machine", "uncertain": False,
+            }
+        ]
+        issuer_map = {"ZZZ": "iss_01"}
+        metric_key_to_entry = _key_map()
+        contract_normalized = iv.load_contract_normalized(Path(__file__).resolve().parent.parent / "gt_key_map.json")
+        event_map = {"doc_zzz_fy2025.zip": "iss_01/FY2025/pl/consolidated/v1"}
+
+        reference, mapped = iv.import_slots(v1_gt, issuer_map, metric_key_to_entry, event_map, contract_normalized)
+        self.assertEqual(set(reference[0].keys()), SLOT_KEYS)
+        self.assertEqual(set(mapped[0].keys()), SLOT_KEYS)
+
+    def test_mapped_row_carries_unknown_language_and_floor_population(self):
+        v1_gt = [
+            {
+                "file": "doc_zzz_fy2025.zip", "ticker": "ZZZ", "tier": "esef", "mapped_key": "revenue",
+                "period_end": "2025-12-31", "period_start": "2025-01-01", "statement_basis": "consolidated",
+                "value": "1000", "currency": "PLN", "source": "ixbrl", "verification": "machine", "uncertain": False,
+            }
+        ]
+        reference, _mapped = iv.import_slots(v1_gt, {"ZZZ": "iss_01"}, _key_map())
+        self.assertEqual(reference[0]["language"], "unknown")
+        self.assertEqual(reference[0]["mapped"], True)
+        self.assertEqual(reference[0]["unit"], "iso4217:PLN")
 
 
 if __name__ == "__main__":

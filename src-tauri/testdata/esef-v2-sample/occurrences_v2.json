@@ -12,7 +12,8 @@
     },
     "value": "500000000",
     "raw_text": "500000000",
-    "verification": "machine"
+    "verification": "machine",
+    "parse_status": "ok"
   },
   {
     "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#2",
@@ -26,7 +27,8 @@
     },
     "value": "900000000",
     "raw_text": "900000000",
-    "verification": "machine"
+    "verification": "machine",
+    "parse_status": "ok"
   },
   {
     "occurrence_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1#1",
@@ -41,7 +43,8 @@
     },
     "value": "-30000000",
     "raw_text": "-30000000",
-    "verification": "machine"
+    "verification": "machine",
+    "parse_status": "ok"
   },
   {
     "occurrence_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1#2",
@@ -55,7 +58,8 @@
     },
     "value": "80000000",
     "raw_text": "80000000",
-    "verification": "machine"
+    "verification": "machine",
+    "parse_status": "ok"
   },
   {
     "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#3",
@@ -70,7 +74,8 @@
     },
     "value": "420000000",
     "raw_text": "420000000",
-    "verification": "machine"
+    "verification": "machine",
+    "parse_status": "ok"
   },
   {
     "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#4",
@@ -84,7 +89,8 @@
     },
     "value": "800000000",
     "raw_text": "800000000",
-    "verification": "machine"
+    "verification": "machine",
+    "parse_status": "ok"
   },
   {
     "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#5",
@@ -98,6 +104,20 @@
     },
     "value": "350000000",
     "raw_text": "350000000",
-    "verification": "machine"
+    "verification": "machine",
+    "parse_status": "ok"
+  },
+  {
+    "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#6",
+    "event_id": "iss_01/FY2025/pl/consolidated/v1",
+    "package_member": null,
+    "entity_identifier": "SMPL",
+    "concept_qname": "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}CurrentAssets",
+    "concept_local": "CurrentAssets",
+    "period": null,
+    "value": null,
+    "raw_text": "[unparseable context]",
+    "verification": "machine",
+    "parse_status": "unparsed"
   }
 ]
