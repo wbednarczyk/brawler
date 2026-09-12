@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Real-data ratchet (epic #40 S4; ADR 0091 decisions 4-5; #331 PR-A, ADR 0112
-// adds the `esef` profile). Sibling of `coverage-ratchet.mjs`, same mechanics:
-// a committed baseline, a tolerance for measurement noise, and raises that are
-// PRINTED, never written — the owner commits an improvement deliberately.
+// adds the `esef` profile, amendment 1 fixes astra r1 findings 5/17). Sibling
+// of `coverage-ratchet.mjs`, same mechanics: a committed baseline, a
+// tolerance for measurement noise, and raises that are PRINTED, never
+// written — the owner commits an improvement deliberately.
 //
 // `--profile honesty` (default) judges the aggregate metrics emitted by the
 // `#[ignore]` harness `src-tauri/src/storage/tests/real_data_honesty.rs` on
@@ -13,12 +14,17 @@
 //
 // `--profile esef` judges the aggregate metrics emitted by
 // `storage::tests::real_data_esef_v2` (ADR 0112) against
-// `realdata-esef-baseline.json`: equality fields that make two runs
-// comparable at all, a `matched` floor, and `previously_correct_slots_lost`/
-// `false_positives`/`zero_output_events` ceilings — every other numeric field
-// is informational (finite, non-negative, not ratcheted). Both profiles keep
-// separate baseline/metrics files and separate default paths; an unknown
-// profile is a hard failure, never a silent default.
+// `realdata-esef-baseline.json`: the FULL metrics schema is validated
+// (types, finiteness, non-negativity — no nulls/strings ever pass as a
+// number, amendment J), equality fields make two runs comparable at all,
+// `matched` is the one floor, `false_positives`/`zero_output_events` are
+// ceilings, and `previously_correct_slots_lost` is an ABSOLUTE hard zero —
+// never a movable baseline value (amendment J / astra r1 finding 17: the old
+// code compared it AGAINST the baseline, so baseline=1/run=1 passed). Every
+// other numeric field is informational (finite, non-negative, not
+// ratcheted). Both profiles keep separate baseline/metrics files and
+// separate default paths; an unknown profile is a hard failure, never a
+// silent default.
 //
 // Inputs (both overridable: `--baseline <path>` / `--metrics <path>`, used by
 // the self-test `scripts/check/check-realdata-ratchet.sh`):
@@ -27,13 +33,17 @@
 //
 // Exit codes:
 //   0  every metric holds at or beyond its committed bound
-//   1  REGRESSION — a metric moved the wrong way beyond tolerance
-//   2  the check could not conclude: inputs unreadable/malformed, an unknown
-//      profile, an esef baseline/metrics not yet `"status": "measured"`, an
-//      esef equality-field mismatch ("incomparable — rebaseline required"),
-//      OR the baseline is stale because the metric improved and was never
-//      committed (a silent raise makes the ratchet toothless — commit the
-//      new bound / promote deliberately)
+//   1  REGRESSION — a metric moved the wrong way beyond tolerance, or ANY
+//      previously-correct-slot loss (however small, however the baseline reads)
+//   2  the check could not conclude: inputs unreadable/malformed, schema
+//      violation (wrong type / missing field / non-finite or negative
+//      number), an unknown profile, an esef baseline/metrics not yet
+//      `"status": "measured"`, an esef equality-field mismatch
+//      ("incomparable — rebaseline required"), a baseline whose
+//      `previously_correct_slots_lost` isn't 0, OR the baseline is stale
+//      because a metric improved and was never committed (a silent raise
+//      makes the ratchet toothless — commit the new bound / promote
+//      deliberately)
 
 import { readFileSync } from "node:fs";
 
@@ -92,10 +102,49 @@ const HONESTY_METRICS = [
   },
 ];
 
-// ESEF measurement v2 (ADR 0112 decisions 6/9). Equality fields make two runs
-// comparable at all — any mismatch means the corpus/versions moved and the
-// baseline no longer describes the same population, never a pass/fail on
-// their own. `matched` is the one floor; the rest are ceilings.
+// ESEF measurement v2 full metrics schema (amendment H/J): every field the
+// harness must emit, with its type. Applied to BOTH baseline and metrics
+// once `status: "measured"` — a missing field, wrong type, null, string in a
+// numeric slot, or a negative/non-finite number is a schema violation
+// (exit 2), never silently ignored. `replay.replay_matched` (renamed from
+// the signed `delta_matched`, amendment H) is non-negative like every other
+// informational number — the contract no longer permits a signed exception.
+const ESEF_METRICS_SCHEMA = {
+  profile: "string",
+  measurement_version: "number",
+  gt_version: "string",
+  key_map_version: "number",
+  normalization_version: "number",
+  registry_hash: "string",
+  events: "number",
+  floor_events: "number",
+  issuers: "number",
+  gt_slots: "number",
+  unverified: "number",
+  matched: "number",
+  previously_correct_slots_lost: "number",
+  false_positives: "number",
+  zero_output_events: "number",
+  availability_all_periods: { available: "number", eligible: "number" },
+  layer1_capture: {
+    captured: "number",
+    eligible: "number",
+    value_correct: "number",
+  },
+  labeled_capability: { matched: "number", labeled: "number" },
+  sensitivity: { matched: "number", gt_slots: "number", excluded: "number" },
+  twin_agreement: { agree: "number", compared: "number" },
+  replay: {
+    events: "number",
+    exercised_prior_check: "number",
+    exercised_quarantine: "number",
+    replay_matched: "number",
+  },
+};
+
+// Equality fields make two runs comparable at all — any mismatch means the
+// corpus/versions moved and the baseline no longer describes the same
+// population, never a pass/fail on their own.
 const ESEF_EQUALITY_FIELDS = [
   "profile",
   "measurement_version",
@@ -110,6 +159,10 @@ const ESEF_EQUALITY_FIELDS = [
   "unverified",
 ];
 
+// `matched` is the one floor; `false_positives`/`zero_output_events` are
+// ceilings. `previously_correct_slots_lost` is NOT here — it is an absolute
+// hard zero handled separately (amendment J), never compared to a baseline
+// value the way an ordinary ceiling is.
 const ESEF_BOUNDS = [
   {
     key: "matched",
@@ -118,15 +171,6 @@ const ESEF_BOUNDS = [
     unit: " slots",
     tolerance: 0,
     raiseBy: 1,
-  },
-  {
-    key: "previously_correct_slots_lost",
-    bound: "ceiling",
-    label:
-      "previously-matched slots that regressed (individual-match zero loss)",
-    unit: " slots",
-    tolerance: 0,
-    raiseBy: null,
   },
   {
     key: "false_positives",
@@ -257,22 +301,36 @@ function isFiniteNonNegative(value) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-// Every informational (non-equality, non-bound) numeric leaf, however deeply
-// nested (e.g. `availability_all_periods.available`), must be finite and
-// non-negative — it is never ratcheted, but a NaN/negative/Infinity there
-// means the harness is broken, not that the metric is merely uninteresting.
-function collectInformationalErrors(value, path, errors) {
-  if (value === null || value === undefined) return;
-  if (typeof value === "number") {
-    if (!isFiniteNonNegative(value))
-      errors.push(
-        `${path}: ${JSON.stringify(value)} is not a finite, non-negative number`,
-      );
-    return;
-  }
-  if (typeof value === "object" && !Array.isArray(value)) {
-    for (const [key, nested] of Object.entries(value))
-      collectInformationalErrors(nested, `${path}.${key}`, errors);
+// Full declarative schema check (amendment J / astra r1 finding 17): every
+// field the schema names must be present with the right type; a numeric
+// field must be finite and non-negative -- null, a string, a missing field,
+// or a bare object where a number was expected are ALL violations, not just
+// "not currently ratcheted".
+function validateSchema(doc, schema, path, errors) {
+  for (const [key, expected] of Object.entries(schema)) {
+    const value = doc[key];
+    const fullPath = path ? `${path}.${key}` : key;
+    if (typeof expected === "object") {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        errors.push(
+          `${fullPath}: expected an object, got ${JSON.stringify(value)}`,
+        );
+        continue;
+      }
+      validateSchema(value, expected, fullPath, errors);
+    } else if (expected === "number") {
+      if (!isFiniteNonNegative(value)) {
+        errors.push(
+          `${fullPath}: expected a finite, non-negative number, got ${JSON.stringify(value)}`,
+        );
+      }
+    } else if (expected === "string") {
+      if (typeof value !== "string" || value.length === 0) {
+        errors.push(
+          `${fullPath}: expected a non-empty string, got ${JSON.stringify(value)}`,
+        );
+      }
+    }
   }
 }
 
@@ -294,15 +352,23 @@ function runEsefProfile() {
     }
   }
 
-  for (const field of ESEF_EQUALITY_FIELDS) {
-    const committed = baseline[field];
-    const now = metrics[field];
-    if (committed === undefined || now === undefined) {
+  for (const [label, doc, path] of [
+    ["baseline", baseline, baselinePath],
+    ["metrics", metrics, metricsPath],
+  ]) {
+    const errors = [];
+    validateSchema(doc, ESEF_METRICS_SCHEMA, "", errors);
+    if (errors.length > 0) {
       console.error(
-        `realdata-ratchet: equality field "${field}" missing from ${committed === undefined ? baselinePath : metricsPath}.`,
+        `realdata-ratchet: ${label} (${path}) fails the esef metrics schema:\n  ${errors.join("\n  ")}`,
       );
       process.exit(2);
     }
+  }
+
+  for (const field of ESEF_EQUALITY_FIELDS) {
+    const committed = baseline[field];
+    const now = metrics[field];
     if (committed !== now) {
       console.error(
         `realdata-ratchet: incomparable — rebaseline required. "${field}" differs: baseline ${JSON.stringify(committed)} vs run ${JSON.stringify(now)}.`,
@@ -315,16 +381,32 @@ function runEsefProfile() {
   const raises = [];
   let stale = false;
 
+  // Amendment J: previously_correct_slots_lost is an ABSOLUTE hard zero,
+  // never a movable ceiling. A baseline that itself isn't 0 is nonsensical
+  // (the ratchet would then tolerate loss) and is refused outright; any run
+  // above zero fails regardless of what the baseline says (astra r1 finding
+  // 17: the old ceiling check compared it AGAINST the baseline, so
+  // baseline=1/run=1 passed).
+  if (baseline.previously_correct_slots_lost !== 0) {
+    console.error(
+      `realdata-ratchet: ${baselinePath} must carry previously_correct_slots_lost: 0 (a movable "hard zero" is not a hard zero).`,
+    );
+    process.exit(2);
+  }
+  const lost = metrics.previously_correct_slots_lost;
+  console.log(
+    `  ${lost > 0 ? "FAIL" : "ok"} previously_correct_slots_lost ${lost} slots (hard ceiling 0 slots, absolute) — previously-matched slots that regressed`,
+  );
+  if (lost > 0) {
+    regressions.push(
+      `previously_correct_slots_lost: ${lost} slots (hard zero, absolute, never movable)`,
+    );
+  }
+
   for (const bound of ESEF_BOUNDS) {
     const { key, label, unit, tolerance, raiseBy } = bound;
     const now = metrics[key];
     const committed = baseline[key];
-    if (!isFiniteNonNegative(now) || !isFiniteNonNegative(committed)) {
-      console.error(
-        `realdata-ratchet: metric "${key}" must be a finite, non-negative number in both ${baselinePath} and ${metricsPath}.`,
-      );
-      process.exit(2);
-    }
 
     const regressed =
       bound.bound === "floor"
@@ -344,24 +426,6 @@ function runEsefProfile() {
       stale = true;
       raises.push(`${key}: ${committed} -> ${now}`);
     }
-  }
-
-  const boundKeys = new Set(ESEF_BOUNDS.map((b) => b.key));
-  const infoErrors = [];
-  for (const [key, value] of Object.entries(metrics)) {
-    if (
-      ESEF_EQUALITY_FIELDS.includes(key) ||
-      boundKeys.has(key) ||
-      key === "status"
-    )
-      continue;
-    collectInformationalErrors(value, key, infoErrors);
-  }
-  if (infoErrors.length > 0) {
-    console.error(
-      `realdata-ratchet: non-finite or negative informational metric(s):\n  ${infoErrors.join("\n  ")}`,
-    );
-    process.exit(2);
   }
 
   if (raises.length > 0) {

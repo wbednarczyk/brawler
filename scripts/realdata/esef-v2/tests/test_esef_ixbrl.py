@@ -42,6 +42,48 @@ class NamespaceResolutionTests(unittest.TestCase):
         self.assertEqual(local, "Revenue")
         self.assertFalse(resolved)
 
+    def test_expand_qname_uses_clark_notation(self):
+        doc = make_instance(
+            contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+            units=unit("u1"),
+            facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1234"),
+        )
+        nsmap = ix.namespace_map(doc)
+        expanded, resolved = ix.expand_qname("ifrs-full:Revenue", nsmap)
+        self.assertTrue(resolved)
+        self.assertEqual(expanded, "{http://xbrl.ifrs.org/taxonomy/2021-01-01/ifrs-full}Revenue")
+
+    def test_occurrence_concept_qname_is_expanded_not_lexical(self):
+        # Astra r1 finding 11: the lexical qname let an extension/unresolved
+        # prefix silently pass as whatever the local name spells.
+        doc = make_instance(
+            contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+            units=unit("u1"),
+            facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1234"),
+        )
+        occ = ix.parse_instance(doc)["occurrences"][0]
+        self.assertEqual(occ["concept_qname"], "{http://xbrl.ifrs.org/taxonomy/2021-01-01/ifrs-full}Revenue")
+
+    def test_unresolved_prefix_marks_occurrence_unparsed(self):
+        doc = make_instance(
+            contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+            units=unit("u1"),
+            facts=non_fraction("ghost:Revenue", "c1", "u1", "1234"),
+        )
+        occ = ix.parse_instance(doc)["occurrences"][0]
+        self.assertEqual(occ["parse_status"], "unparsed")
+        self.assertEqual(occ["concept_qname"], "ghost:Revenue")  # unresolved: lexical fallback, never mistaken for resolved
+
+    def test_unresolvable_unit_marks_occurrence_unparsed(self):
+        doc = make_instance(
+            contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+            units=unit("u1"),
+            facts=non_fraction("ifrs-full:Revenue", "c1", "missing-unit", "1234"),
+        )
+        occ = ix.parse_instance(doc)["occurrences"][0]
+        self.assertEqual(occ["parse_status"], "unparsed")
+        self.assertIsNone(occ["unit"])
+
 
 class ContextParsingTests(unittest.TestCase):
     def test_entity_segment_dimensions(self):

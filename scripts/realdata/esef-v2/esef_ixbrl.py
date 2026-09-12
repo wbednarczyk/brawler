@@ -77,6 +77,23 @@ def qname_local(qname_attr: str, nsmap: dict[str, str]) -> tuple[str, bool]:
     return local, prefix in nsmap
 
 
+def expand_qname(qname_attr: str, nsmap: dict[str, str]) -> tuple[str, bool]:
+    """(expanded_qname, resolved). Amendment M (#331 astra r1 finding 11): the
+    stored `concept_qname` must be the EXPANDED Clark-notation form
+    `{namespace-uri}Local`, never the lexical `prefix:Local` -- a lexical
+    qname lets an unresolved or extension-taxonomy prefix silently pass as
+    whatever the local name happens to spell (e.g. a company's own custom
+    `Revenue` concept reading as IFRS `Revenue`). When the prefix has no
+    bound namespace, `resolved` is False and the expanded form falls back to
+    the lexical qname (still returned, so the fact stays evidence, but never
+    mistaken for a resolved identity)."""
+    local, resolved = qname_local(qname_attr, nsmap)
+    if not resolved:
+        return qname_attr, False
+    prefix = qname_attr.split(":", 1)[0] if ":" in qname_attr else ""
+    return f"{{{nsmap[prefix]}}}{local}", True
+
+
 def _child(elem, tag):
     return next((c for c in elem if local_name(c.tag) == tag), None)
 
@@ -248,8 +265,10 @@ def parse_instance(data: bytes, package_member: str | None = None) -> dict:
         except ValueError:
             scale, scale_ok = 0, False
 
-        concept_local, _resolved = qname_local(name_attr, nsmap)
+        concept_local, prefix_resolved = qname_local(name_attr, nsmap)
+        expanded_qname, _expanded_resolved = expand_qname(name_attr, nsmap)
         ctx = contexts.get(context_id)
+        unit_resolved = unit_id is None or units.get(unit_id) is not None
         raw_text = "" if nil else collect_value_text(elem)
         decimal_value, _note = (Decimal(0), None) if nil else apply_transform(raw_text, format_attr)
 
@@ -258,13 +277,17 @@ def parse_instance(data: bytes, package_member: str | None = None) -> dict:
             signed = -decimal_value if sign_attr else decimal_value
             value = format(signed * (Decimal(10) ** scale), "f")
 
-        parse_status = "ok" if (ctx is not None and decimal_value is not None and scale_ok) else "unparsed"
+        parse_status = (
+            "ok"
+            if (ctx is not None and decimal_value is not None and scale_ok and prefix_resolved and unit_resolved)
+            else "unparsed"
+        )
 
         occurrences.append(
             {
                 "package_member": package_member,
                 "entity_identifier": ctx["entity_identifier"] if ctx else None,
-                "concept_qname": name_attr,
+                "concept_qname": expanded_qname,
                 "concept_local": concept_local,
                 "context_id": context_id,
                 "period": ctx["period"] if ctx else None,

@@ -1,11 +1,39 @@
 {
   "manifest_version": 1,
   "snapshot": { "source": "synthetic-sample", "taken_at": "2026-09-12" },
-  "registry_hash": "synthetic-sample-registry-hash-v1",
+  "registry_hash": "cfad85dec7889441698129c97f65f10825fcc639ecd9903728daa6e8f7a263cb",
   "issuers": [
     { "issuer_id": "iss_01", "ticker": "SMPL", "exchange": "GPW", "display_name": "Sample S.A." }
   ],
   "events": [
+    {
+      "event_id": "iss_01/FY2024/pl/consolidated/warmup/v1",
+      "issuer_id": "iss_01",
+      "role": "warmup",
+      "language": "pl",
+      "basis_scope": "consolidated",
+      "vintage": 1,
+      "labeled_period": {
+        "fiscal_year": 2024,
+        "period_type": "FY",
+        "period_end": "2024-12-31",
+        "period_start": "2024-01-01"
+      },
+      "file": {
+        "name": "warmup_fy2024.xhtml",
+        "sha256": "b6ba3cf0a9ef9cc28a1be69d724967d50c28262751f38eaa26bf2b6253baa995",
+        "bytes": 1568,
+        "package_member": null
+      },
+      "document": {
+        "id": "doc_warmup_fy2024",
+        "title": "Skonsolidowane sprawozdanie finansowe za 2024 (warmup)",
+        "url": "https://example.com/sample/warmup-fy2024.xhtml",
+        "content_type": "application/xhtml+xml",
+        "content_hash": null
+      },
+      "warmup_order": 0
+    },
     {
       "event_id": "iss_01/FY2025/pl/consolidated/v1",
       "issuer_id": "iss_01",
@@ -60,7 +88,7 @@
         "content_type": "application/xhtml+xml",
         "content_hash": null
       },
-      "warmup_order": 1
+      "warmup_order": 0
     },
     {
       "event_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1",
@@ -88,11 +116,11 @@
         "content_type": "application/octet-stream",
         "content_hash": null
       },
-      "warmup_order": 2
+      "warmup_order": 0
     }
   ],
   "honest_limitations": [
     "synthetic sample corpus (#331 PR-A): fabricated numbers for harness/fixture testing only, never real filing evidence",
-    "one issuer, one fiscal year — not representative of cross-issuer or cross-year variance"
+    "one issuer — not representative of cross-issuer variance"
   ]
 }

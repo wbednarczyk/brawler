@@ -5,33 +5,33 @@
   "gt_version": "1",
   "key_map_version": 1,
   "normalization_version": 1,
-  "registry_hash": "ca8e5c66bdabae74ab74f1198662b5beefde592c0795b1ad31545221ad267eb2",
+  "registry_hash": "cfad85dec7889441698129c97f65f10825fcc639ecd9903728daa6e8f7a263cb",
   "events": 3,
   "floor_events": 2,
   "issuers": 1,
-  "gt_slots": 36,
+  "gt_slots": 33,
   "unverified": 0,
   "matched": 32,
   "previously_correct_slots_lost": 0,
   "false_positives": 0,
   "zero_output_events": 0,
   "availability_all_periods": {
-    "available": 52,
-    "eligible": 52
+    "available": 31,
+    "eligible": 36
   },
   "layer1_capture": {
-    "captured": 52,
-    "eligible": 52,
-    "value_correct": 52
+    "captured": 3,
+    "eligible": 3,
+    "value_correct": 3
   },
   "labeled_capability": {
     "matched": 32,
     "eligible": 36
   },
   "sensitivity": {
-    "matched": 32,
-    "gt_slots": 33,
-    "excluded": 3
+    "matched": 28,
+    "gt_slots": 29,
+    "excluded": 4
   },
   "twin_agreement": {
     "agree": 16,
@@ -39,8 +39,8 @@
   },
   "replay": {
     "events": 3,
-    "exercised_prior_check": 0,
+    "exercised_prior_check": 2,
     "exercised_quarantine": 0,
-    "delta_matched": 0
+    "replay_matched": 32
   }
 }

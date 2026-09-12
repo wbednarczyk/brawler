@@ -1,14 +1,27 @@
 #!/usr/bin/env python3
-"""Frame builder for ESEF measurement v2 (#331 PR-A, ADR 0112). Stdlib only.
+"""Frame builder for ESEF measurement v2 (#331 PR-A, ADR 0112, amendment 1).
+Stdlib only.
 
 Inventories a pinned snapshot's fetched documents for a set of issuers BY
 BYTES (never by stored extraction outcome -- `financial_facts` and
-`report_tagged_facts` are never read, see `fetch_documents` below), classifies
-each eligible iXBRL instance from filing evidence only, selects the frozen
-panel (newest annual + newest interim per issuer/basis in the pinned
-language = `floor`; the other language of the same event = `twin_diagnostic`;
-earlier fiscal periods = `warmup`), copies the chosen files into
-`<out>/corpus/`, and writes `MANIFEST_v2.json` + `review-queue.json`.
+`report_tagged_facts` are never read, see `fetch_documents` below).
+
+Event boundary = the whole package or loose instance (amendment A): ONE
+candidate per manifest file, not per iXBRL member. Its headline
+classification (period/basis/language, used only for panel selection) comes
+from the file's PRIMARY member -- the one carrying the primary-statement
+duration evidence -- pooled across every member so a comparative-year
+context in one member can help classify a shorter current-period duration in
+another. The labeler (`label_esef_v2.py`) still emits occurrences/slots for
+EVERY member with its own per-member basis/language.
+
+Selects the frozen panel (newest annual + newest interim per issuer/basis in
+the pinned language = `floor`; the other language of the same fiscal period
+in a SEPARATE file = `twin_diagnostic`; earlier fiscal periods AND
+corrections sharing a period = `warmup`, up to 4), copies the chosen files
+into `<out>/corpus/`, and writes `MANIFEST_v2.json` + `review-queue.json`
+(every unresolved candidate is queued BEFORE selection, never dropped --
+amendment L / astra r1 finding 9).
 
 Usage:
     python3 build_frame.py --snapshot <sqlite path> --data-dir <report_documents dir> \\
@@ -22,6 +35,7 @@ import hashlib
 import json
 import re
 import sqlite3
+from collections import Counter
 from datetime import date
 from pathlib import Path
 
@@ -31,6 +45,9 @@ HERE = Path(__file__).resolve().parent
 CONSOLIDATED_TOKENS = ("skonsolidowan", "consolidated")
 STANDALONE_TOKENS = ("jednostkow", "standalone", "separate")
 _LANG_TOKEN_RE = re.compile(r"[_.\-]?(pl|en)[_.\-]")
+_TAG_RE = re.compile(rb"<[^>]+>")
+COVER_PAGE_BYTE_WINDOW = 8000  # generous raw-byte window read before stripping tags
+COVER_PAGE_TEXT_LIMIT = 2000  # amendment L: "first 2 KB of the instance body after tags stripped"
 
 
 # ---------------------------------------------------------------------------
@@ -68,14 +85,38 @@ def load_key_map_concepts(key_map_path: Path) -> tuple[set[str], set[str]]:
     return duration, instant
 
 
-def classify_basis(text_sources: list[str]) -> str:
-    for text in text_sources:
-        low = (text or "").lower()
-        if any(tok in low for tok in CONSOLIDATED_TOKENS):
-            return "consolidated"
-        if any(tok in low for tok in STANDALONE_TOKENS):
-            return "standalone"
+def _basis_from_text(text: str) -> str:
+    low = (text or "").lower()
+    if any(tok in low for tok in CONSOLIDATED_TOKENS):
+        return "consolidated"
+    if any(tok in low for tok in STANDALONE_TOKENS):
+        return "standalone"
     return "unknown"
+
+
+def cover_page_text(member_bytes: bytes) -> str:
+    """First ~2KB of the instance body with markup tags stripped (amendment
+    L basis precedence's last resort before `unknown`)."""
+    stripped = _TAG_RE.sub(b" ", member_bytes[:COVER_PAGE_BYTE_WINDOW])
+    return stripped.decode("utf-8", errors="ignore")[:COVER_PAGE_TEXT_LIMIT]
+
+
+def classify_basis(member_hint: str, outer_hints: list[str], cover_text: str) -> tuple[str, bool]:
+    """(basis_scope, contradiction). Amendment L precedence: member path ->
+    package/outer path+title -> cover-page text -> `unknown`. A contradiction
+    (member and outer evidence both resolve, and disagree) is never silently
+    resolved by precedence -- it becomes `unknown` and is flagged for the
+    review queue (astra r1 finding 8: a consolidated package title must not
+    override a clearly standalone member path)."""
+    member_basis = _basis_from_text(member_hint)
+    outer_basis = _basis_from_text(" ".join(outer_hints))
+    if member_basis != "unknown" and outer_basis != "unknown" and member_basis != outer_basis:
+        return "unknown", True
+    if member_basis != "unknown":
+        return member_basis, False
+    if outer_basis != "unknown":
+        return outer_basis, False
+    return _basis_from_text(cover_text), False
 
 
 def classify_language(xml_lang: str | None, text_sources: list[str]) -> str:
@@ -103,11 +144,13 @@ def months_between(start: str, end: str) -> int:
     return round(days / 30.4368)
 
 
-def classify_period_type(months: float, end_month: int) -> str:
-    # GPW interim ESEF/iXBRL filings are cumulative year-to-date (owner
-    # convention: the current-period column IS the YTD column), so a
-    # 9-month duration is always the Q3 cumulative filing -- never bucketed
-    # by end_month like the 3-month (standalone-quarter-length) band below.
+def classify_period_type(months: float, end_month: int, fiscal_start_month: int = 1) -> str:
+    """`fiscal_start_month` (1-12) is the fiscal year's own first month,
+    established from evidence elsewhere in the same filing (amendment L: "a
+    12-month duration ending in March is FY with a March year-end; quarters
+    counted from the fiscal-year start") -- defaults to January (calendar
+    year) when no other evidence is available, which reproduces the old
+    calendar-quarter behavior."""
     if 11 <= months <= 13:
         return "FY"
     if 8 <= months <= 10:
@@ -115,29 +158,45 @@ def classify_period_type(months: float, end_month: int) -> str:
     if 5 <= months <= 7:
         return "H1"
     if 2 <= months <= 4:
-        return "Q1" if end_month <= 3 else "Q2" if end_month <= 6 else "Q3" if end_month <= 9 else "Q4"
+        offset = (end_month - fiscal_start_month) % 12
+        return "Q1" if offset <= 3 else "Q2" if offset <= 6 else "Q3" if offset <= 9 else "Q4"
     return "unknown"
 
 
-def classify_instance(instance: dict, duration_concepts: set[str], doc_title: str, path_hint: str) -> dict:
-    """Classifies one parsed instance from filing evidence: primary-statement
-    period (longest current duration ending at the latest end date), basis
-    (package path/title tokens), language (xml:lang, then filename tokens)."""
-    occs = instance["occurrences"]
-    candidates = [
-        o
-        for o in occs
-        if o["concept_local"] in duration_concepts
-        and not o["dimensions"]
-        and o["period"]
-        and "start" in o["period"]
-        and "end" in o["period"]
+def classify_file(instances: list[dict], duration_concepts: set[str], doc_title: str, outer_path: str) -> dict:
+    """Classifies one FILE (amendment A: the event boundary is the whole
+    package) from filing evidence pooled across every member: primary period
+    (longest current duration ending at the latest end date, chosen from
+    every member's duration-concept occurrences), fiscal-year start (the
+    most common start month among ALL duration candidates in the file --
+    cumulative FY/H1/9M periods all start there), basis (member -> outer ->
+    cover-page precedence, astra r1 finding 8), language (xml:lang -> filename)."""
+    pooled: list[tuple[dict, dict]] = [
+        (instance, occ)
+        for instance in instances
+        for occ in instance["occurrences"]
+        if occ["concept_local"] in duration_concepts
+        and not occ["dimensions"]
+        and occ["period"]
+        and "start" in occ["period"]
+        and "end" in occ["period"]
     ]
-    text_sources = [doc_title, path_hint, instance.get("package_member") or ""]
-    basis_scope = classify_basis(text_sources)
-    language = classify_language(instance.get("lang"), text_sources)
 
-    if not candidates:
+    if not pooled:
+        primary_instance = instances[0]
+        text_sources = [doc_title, outer_path, primary_instance.get("package_member") or ""]
+        cover_text = cover_page_text(primary_instance.get("raw_bytes") or b"")
+        basis_scope, contradiction = classify_basis(
+            primary_instance.get("package_member") or "", [doc_title, outer_path], cover_text
+        )
+        language = classify_language(primary_instance.get("lang"), text_sources)
+        reasons = ["no primary-statement duration concept found in any package member"]
+        if basis_scope == "unknown":
+            reasons.append(
+                "basis contradicts between member and outer evidence" if contradiction else "basis not recoverable from path/title/cover page"
+            )
+        if language == "unknown":
+            reasons.append("language not recoverable from xml:lang/filename")
         return {
             "period_type": "unknown",
             "fiscal_year": None,
@@ -146,22 +205,31 @@ def classify_instance(instance: dict, duration_concepts: set[str], doc_title: st
             "duration_months": None,
             "basis_scope": basis_scope,
             "language": language,
-            "unknown_reasons": ["no primary-statement duration concept found"],
+            "primary_member": primary_instance.get("package_member"),
+            "unknown_reasons": reasons,
         }
 
-    latest_end = max(o["period"]["end"] for o in candidates)
-    at_latest = [o for o in candidates if o["period"]["end"] == latest_end]
-    chosen = max(at_latest, key=lambda o: months_between(o["period"]["start"], o["period"]["end"]))
+    latest_end = max(occ["period"]["end"] for _inst, occ in pooled)
+    at_latest = [(inst, occ) for inst, occ in pooled if occ["period"]["end"] == latest_end]
+    primary_instance, chosen = max(at_latest, key=lambda pair: months_between(pair[1]["period"]["start"], pair[1]["period"]["end"]))
     start, end = chosen["period"]["start"], chosen["period"]["end"]
     months = months_between(start, end)
-    period_type = classify_period_type(months, int(end.split("-")[1]))
+    fiscal_start_month = Counter(int(occ["period"]["start"].split("-")[1]) for _inst, occ in pooled).most_common(1)[0][0]
+    period_type = classify_period_type(months, int(end.split("-")[1]), fiscal_start_month)
     fiscal_year = int(end.split("-")[0])
+
+    text_sources = [doc_title, outer_path, primary_instance.get("package_member") or ""]
+    cover_text = cover_page_text(primary_instance.get("raw_bytes") or b"")
+    basis_scope, contradiction = classify_basis(primary_instance.get("package_member") or "", [doc_title, outer_path], cover_text)
+    language = classify_language(primary_instance.get("lang"), text_sources)
 
     unknown_reasons = []
     if period_type == "unknown":
         unknown_reasons.append(f"irregular duration ({months} months)")
     if basis_scope == "unknown":
-        unknown_reasons.append("basis not recoverable from path/title")
+        unknown_reasons.append(
+            "basis contradicts between member and outer evidence" if contradiction else "basis not recoverable from path/title/cover page"
+        )
     if language == "unknown":
         unknown_reasons.append("language not recoverable from xml:lang/filename")
 
@@ -173,6 +241,7 @@ def classify_instance(instance: dict, duration_concepts: set[str], doc_title: st
         "duration_months": months,
         "basis_scope": basis_scope,
         "language": language,
+        "primary_member": primary_instance.get("package_member"),
         "unknown_reasons": unknown_reasons,
     }
 
@@ -180,12 +249,14 @@ def classify_instance(instance: dict, duration_concepts: set[str], doc_title: st
 # ---------------------------------------------------------------------------
 # Selection (deterministic: newest annual + newest interim per issuer/basis
 # in the pinned language = floor; the other language of the same fiscal
-# period/basis = twin_diagnostic; earlier fiscal periods = warmup, up to 4)
+# period in a separate file = twin_diagnostic; earlier fiscal periods AND
+# corrections sharing a period = warmup, up to 4 -- astra r1 finding 10:
+# a correction must become a later vintage, never be discarded)
 # ---------------------------------------------------------------------------
 def _sort_key(c: dict) -> tuple:
-    # period_end desc, package-over-loose, then domain date, then sha256 --
-    # the pinned tie-break order (decision 10).
-    return (c["period_end"] or "", c["is_package"], c.get("fetched_at") or "", c["sha256"])
+    # Amendment L: domain date = the filing's own date (context period_end);
+    # `fetched_at` is only a tie-break, `is_package` after that, sha256 last.
+    return (c["period_end"] or "", c.get("fetched_at") or "", c["is_package"], c["sha256"])
 
 
 def select_events(candidates: list[dict], pin_language: str) -> list[dict]:
@@ -204,10 +275,11 @@ def select_events(candidates: list[dict], pin_language: str) -> list[dict]:
             annuals = sorted((c for c in pinned if c["period_type"] == "FY"), key=_sort_key, reverse=True)
             interims = sorted((c for c in pinned if c["period_type"] not in ("FY", "unknown")), key=_sort_key, reverse=True)
 
+            group_selected: list[dict] = []
             floor_events = ([annuals[0]] if annuals else []) + ([interims[0]] if interims else [])
             for f in floor_events:
                 f["role"] = "floor"
-                selected.append(f)
+                group_selected.append(f)
                 twins = [
                     c
                     for c in basis_items
@@ -219,14 +291,20 @@ def select_events(candidates: list[dict], pin_language: str) -> list[dict]:
                 if twins:
                     twin = sorted(twins, key=_sort_key, reverse=True)[0]
                     twin["role"] = "twin_diagnostic"
-                    selected.append(twin)
+                    group_selected.append(twin)
 
-            floor_keys = {(f["fiscal_year"], f["period_type"]) for f in floor_events}
-            remaining = [c for c in pinned if (c["fiscal_year"], c["period_type"]) not in floor_keys]
+            # Earlier fiscal periods AND corrections sharing the floor's own
+            # period (excluded only by object identity, never by period key
+            # -- a same-period correction must stay eligible as a warmup
+            # vintage) fill up to 4 warmup slots, newest-first.
+            already_selected_ids = {id(c) for c in group_selected}
+            remaining = [c for c in pinned if id(c) not in already_selected_ids]
             for order, c in enumerate(sorted(remaining, key=_sort_key, reverse=True)[:4]):
                 c["role"] = "warmup"
                 c["warmup_order"] = order
-                selected.append(c)
+                group_selected.append(c)
+
+            selected.extend(group_selected)
     return selected
 
 
@@ -280,6 +358,10 @@ def build_frame(
     candidates: list[dict] = []
     honest_limitations: list[str] = []
     zero_eligible_per_issuer = {t: True for t in issuer_ids}
+    # Astra r1 finding 9: every unresolved candidate is queued BEFORE
+    # selection -- keyed by sha256 so it survives regardless of whether
+    # selection later picks it as an event.
+    review_queue_index: dict[str, dict] = {}
 
     for row in rows:
         ticker = row["ticker"]
@@ -332,36 +414,55 @@ def build_frame(
                         "unknown_reasons": ["parse failure"],
                     }
                 )
+                review_queue_index[sha] = {
+                    "issuer_id": issuer_id,
+                    "sha256": sha,
+                    "package_member": None,
+                    "reasons": ["parse failure: no iXBRL instance found in an eligible-looking file"],
+                }
             else:
                 honest_limitations.append(f"{row['id']}: no iXBRL instance found (non-iXBRL markup)")
             continue
 
         zero_eligible_per_issuer[ticker] = False
-        for instance in parsed["instances"]:
-            classification = classify_instance(instance, duration_concepts, row["title"] or "", row["local_path"])
-            for reason in classification["unknown_reasons"]:
-                honest_limitations.append(f"{row['id']} ({instance.get('package_member') or '<raw>'}): {reason}")
-            candidates.append(
-                {
-                    "issuer_id": issuer_id,
-                    "language": classification["language"],
-                    "basis_scope": classification["basis_scope"],
-                    "period_type": classification["period_type"],
-                    "fiscal_year": classification["fiscal_year"],
-                    "period_start": classification["period_start"],
-                    "period_end": classification["period_end"],
-                    "duration_months": classification["duration_months"],
-                    "sha256": sha,
-                    "bytes": len(data),
-                    "package_member": instance.get("package_member"),
-                    "is_package": ix.is_zip(data),
-                    "fetched_at": row["fetched_at"],
-                    "document": row,
-                    "file_bytes": data,
-                    "original_name": Path(row["local_path"]).name,
-                    "unknown_reasons": classification["unknown_reasons"],
-                }
-            )
+        # Amendment A: event = the WHOLE FILE, not one candidate per member.
+        # `raw_bytes` lets classify_file read the cover page of whichever
+        # member turns out to be primary; it never leaves this function.
+        member_bytes_by_name = dict(ix.zip_members(data)) if ix.is_zip(data) else {None: data}
+        instances_with_bytes = list(parsed["instances"])
+        for inst in instances_with_bytes:
+            inst["raw_bytes"] = member_bytes_by_name.get(inst.get("package_member"))
+
+        classification = classify_file(instances_with_bytes, duration_concepts, row["title"] or "", row["local_path"])
+        for reason in classification["unknown_reasons"]:
+            honest_limitations.append(f"{row['id']} ({classification['primary_member'] or '<raw>'}): {reason}")
+        candidate = {
+            "issuer_id": issuer_id,
+            "language": classification["language"],
+            "basis_scope": classification["basis_scope"],
+            "period_type": classification["period_type"],
+            "fiscal_year": classification["fiscal_year"],
+            "period_start": classification["period_start"],
+            "period_end": classification["period_end"],
+            "duration_months": classification["duration_months"],
+            "sha256": sha,
+            "bytes": len(data),
+            "package_member": classification["primary_member"],
+            "is_package": ix.is_zip(data),
+            "fetched_at": row["fetched_at"],
+            "document": row,
+            "file_bytes": data,
+            "original_name": Path(row["local_path"]).name,
+            "unknown_reasons": classification["unknown_reasons"],
+        }
+        candidates.append(candidate)
+        if classification["unknown_reasons"]:
+            review_queue_index[sha] = {
+                "issuer_id": issuer_id,
+                "sha256": sha,
+                "package_member": classification["primary_member"],
+                "reasons": classification["unknown_reasons"],
+            }
 
     for ticker, was_zero in zero_eligible_per_issuer.items():
         if was_zero:
@@ -372,11 +473,17 @@ def build_frame(
     selected = select_events(selectable, pin_language) + parse_failures
 
     events = []
-    review_queue = []
     event_shas: list[str] = []
+    # Vintage numbering follows chronological (domain-date) order, not
+    # processing order -- astra r1 finding 10: "vintage 1 + count of EARLIER
+    # eligible instances" requires actual time order, and a same-period
+    # correction (kept as a warmup above, never discarded) must land at a
+    # HIGHER vintage than the event it corrects.
     vintage_counter: dict[tuple, int] = {}
-
-    for c in sorted(selected, key=lambda c: (c["issuer_id"], c["sha256"])):
+    for c in sorted(
+        selected,
+        key=lambda c: (c["issuer_id"], c["fiscal_year"] or 0, c["period_type"], c["language"], c["basis_scope"], _sort_key(c)),
+    ):
         key = (c["issuer_id"], c["fiscal_year"], c["period_type"], c["language"], c["basis_scope"])
         vintage = vintage_counter.get(key, 0) + 1
         vintage_counter[key] = vintage
@@ -393,6 +500,7 @@ def build_frame(
             "language": c["language"],
             "basis_scope": c["basis_scope"],
             "vintage": vintage,
+            "warmup_order": c.get("warmup_order", 0),  # astra r1 finding 6: present on every event
             "labeled_period": {
                 "fiscal_year": c["fiscal_year"],
                 "period_type": c["period_type"],
@@ -414,14 +522,13 @@ def build_frame(
                 "content_hash": c["document"]["content_hash"],
             },
         }
-        if c["role"] == "warmup":
-            event["warmup_order"] = c["warmup_order"]
         if c.get("labeling_note"):
             event["labeling_note"] = c["labeling_note"]
         events.append(event)
 
-        if c["unknown_reasons"]:
-            review_queue.append({"event_id": event_id, "reasons": c["unknown_reasons"]})
+        entry = review_queue_index.get(c["sha256"])
+        if entry is not None:
+            entry["event_id"] = event_id
 
     manifest = {
         "manifest_version": 1,
@@ -435,7 +542,7 @@ def build_frame(
     out.mkdir(parents=True, exist_ok=True)
     (out / "MANIFEST_v2.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     (out / "review-queue.json").write_text(
-        json.dumps(sorted(review_queue, key=lambda r: r["event_id"]), indent=2, ensure_ascii=False) + "\n",
+        json.dumps(sorted(review_queue_index.values(), key=lambda r: (r["issuer_id"], r["sha256"])), indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     return manifest

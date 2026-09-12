@@ -39,6 +39,24 @@ class OwnersSuffixMappingTests(unittest.TestCase):
         self.assertEqual(len(slots), 1)
         self.assertEqual(slots[0]["concept_local"], "ProfitLossAttributableToOwnersOfParent")
         self.assertEqual(slots[0]["attribution"], "owners_of_parent")
+
+    def test_slot_id_follows_the_shared_amendment_f_template(self):
+        # Astra r1 finding 5: import_v1.py used to build its own slot_id
+        # string by hand, independent of label_esef_v2.build_slot_id -- the
+        # two templates drifted the moment the shared one gained
+        # package_member/currency. A v1 slot has no package_member ("-").
+        v1_gt = [
+            {
+                "file": "doc_zzz_fy2025.zip", "ticker": "ZZZ", "tier": "esef", "mapped_key": "revenue",
+                "period_end": "2025-12-31", "period_start": "2025-01-01", "statement_basis": "consolidated",
+                "value": "1000", "currency": "PLN", "source": "ixbrl", "verification": "machine", "uncertain": False,
+            }
+        ]
+        slots = iv.import_slots(v1_gt, self.issuer_map, self.metric_key_to_entry)
+        self.assertEqual(
+            slots[0]["slot_id"],
+            f"iss_01/v1/doc_zzz_fy2025/-/{slots[0]['concept_local']}/total/consolidated/flow/reported/2025/v1_unclassified/PLN",
+        )
         self.assertEqual(slots[0]["verification"], "machine_v1")
 
     def test_collapsed_profitloss_suffix_maps_to_total(self):

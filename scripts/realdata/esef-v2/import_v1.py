@@ -21,6 +21,8 @@ import argparse
 import json
 from pathlib import Path
 
+from label_esef_v2 import build_slot_id
+
 HERE = Path(__file__).resolve().parent
 
 # v1's collapse/split mapped_key spellings -> the v2 key map's metric_key.
@@ -70,14 +72,18 @@ def import_slots(v1_gt: list[dict], issuer_map: dict[str, str], metric_key_to_en
         period_type = "v1_unclassified"
 
         event_id = f"{issuer_id}/v1/{Path(rec['file']).stem[:60]}"
-        slot_id = (
-            f"{event_id}/{entry['concept']}/{entry['attribution']}/{rec['statement_basis']}/"
-            f"{window}/reported/{fiscal_year}/{period_type}"
+        currency = rec.get("currency")
+        # v1 carried no package_member (it read the first ZIP instance
+        # only, astra r1 finding 7); "-" is the amendment F template's
+        # explicit token for "no member", same as a loose-file slot.
+        slot_id = build_slot_id(
+            event_id, None, entry["concept"], entry["attribution"], rec["statement_basis"], window, "reported", fiscal_year, period_type, currency
         )
         slots.append(
             {
                 "slot_id": slot_id,
                 "event_id": event_id,
+                "package_member": None,
                 "concept_local": entry["concept"],
                 "attribution": entry["attribution"],
                 "basis": rec["statement_basis"],
@@ -87,7 +93,7 @@ def import_slots(v1_gt: list[dict], issuer_map: dict[str, str], metric_key_to_en
                 "period_type": period_type,
                 "period_end": period_end,
                 "period_start": rec.get("period_start"),
-                "currency": rec.get("currency"),
+                "currency": currency,
                 "value": rec["value"],
                 "duration_months": None,
                 "verification": "machine_v1",

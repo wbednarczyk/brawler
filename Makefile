@@ -720,16 +720,20 @@ shape-inventory-scan:
 		printf "\n!! SKIP shape-inventory-scan: no real database at %s.\n!! The scan reads the maintainer's OWN data and runs on the maintainer's machine only (ADR 0091 dec. 4);\n!! the committed src/test/scenarios/shape-inventory.json is the public artefact. Refresh the snapshot per private/realdata/README.md to enable it.\n\n" "$(HONESTY_MASTER_DB)"; \
 	fi
 
-# ESEF measurement v2 (#331 PR-A, ADR 0112; docs/testing.md § ESEF measurement
-# v2): an owner-machine advisory ritual, never `make check` (ADR 0096 principle
-# 5 — real data never enters CI). `realdata-esef-score` is the diagnostic
-# harness run against the default private dirs; `realdata-esef-check` is the
-# reproducible gate: a fresh nonce metrics path, the harness with
-# BRAWLER_ESEF_REQUIRED=1 (SKIPs become panics) and --exact, an assertion the
-# nonce file actually landed (a zero-test filter or stale artifact fails
-# before the ratchet ever runs), then the ratchet against the committed
-# baseline. `realdata-esef-promote` pins a new baseline deliberately — never
-# automatic.
+# ESEF measurement v2 (#331 PR-A, ADR 0112, amendment 1 K; docs/testing.md §
+# ESEF measurement v2): an owner-machine advisory ritual, never `make check`
+# (ADR 0096 principle 5 — real data never enters CI). `realdata-esef-score`
+# is the diagnostic harness run against the default private dirs;
+# `realdata-esef-check` is the reproducible gate: `scripts/check/realdata-esef-run.sh`
+# reserves a FRESH run directory `$(ESEF_METRICS_DIR)/realdata-esef/<nonce>/`
+# (nonce = `date +%s%N` + `$$$$`, refusing outright if it already exists --
+# never a same-second timestamp race) and runs the harness with
+# BRAWLER_ESEF_REQUIRED=1 (SKIPs become panics) and libtest's `--exact` AFTER
+# `--` (astra r1 finding 16: `--exact` before `--` never reaches the harness
+# at all), asserting the metrics file actually landed (a zero-selected-test
+# filter exits 0 without ever writing it) before the ratchet judges it against
+# the committed baseline. `realdata-esef-promote` pins a new baseline
+# deliberately — never automatic.
 ESEF_V2_DIR ?= private/realdata/spikes/esef-v2
 ESEF_BASELINE ?= realdata-esef-baseline.json
 ESEF_METRICS_DIR ?= src-tauri/target
@@ -737,14 +741,9 @@ realdata-esef-score:
 	$(NIX) bash -c 'cd src-tauri && BRAWLER_ESEF_V2_DIR=$(abspath $(ESEF_V2_DIR)) cargo test esef_measurement_v2 -- --ignored --nocapture'
 
 realdata-esef-check:
-	@nonce="$$(date +%s%N)"; \
-	start="$$(date +%s)"; \
-	metrics_out="$(ESEF_METRICS_DIR)/realdata-esef-metrics.$$nonce.json"; \
-	$(NIX) bash -c "cd src-tauri && BRAWLER_ESEF_V2_DIR=$(abspath $(ESEF_V2_DIR)) BRAWLER_ESEF_REQUIRED=1 BRAWLER_ESEF_METRICS_OUT=$(abspath .)/$$metrics_out cargo test --exact storage::tests::real_data_esef_v2::esef_measurement_v2 -- --ignored --nocapture" && \
-	if [ ! -f "$$metrics_out" ] || [ "$$(stat -c %Y "$$metrics_out" 2>/dev/null || stat -f %m "$$metrics_out")" -lt "$$start" ]; then \
-		printf "realdata-esef-check: no fresh metrics — the harness did not run (%s missing or stale)\n" "$$metrics_out" >&2; \
-		exit 1; \
-	fi && \
+	@nonce="$$(date +%s%N)_$$$$"; \
+	run_dir="$(CURDIR)/$(ESEF_METRICS_DIR)/realdata-esef/$$nonce"; \
+	metrics_out="$$(BRAWLER_ESEF_V2_DIR=$(abspath $(ESEF_V2_DIR)) BRAWLER_ESEF_REQUIRED=1 bash scripts/check/realdata-esef-run.sh "$$run_dir" -- $(NIX) bash -c 'cd src-tauri && cargo test storage::tests::real_data_esef_v2::esef_measurement_v2 -- --exact --ignored --nocapture')" && \
 	$(NIX) node scripts/check/realdata-ratchet.mjs --profile esef --baseline $(ESEF_BASELINE) --metrics "$$metrics_out"
 
 realdata-esef-promote:

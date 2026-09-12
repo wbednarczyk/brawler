@@ -23,7 +23,25 @@ current-period column IS the YTD column), so 9 months is always Q3:
 
 `duration_months` is recorded on the manifest event's `labeled_period` and
 on every derived ground-truth slot. Window is `flow` for every duration
-(vs. `point_in_time` for an instant) regardless of `period_type`.
+(vs. `point_in_time` for an instant) regardless of `period_type`. The
+fiscal-year start used for the 3-month Q1-4 bucketing is inferred from every
+duration candidate pooled across the whole file (amendment 1 L) — not always
+calendar January.
+
+## Event boundary and slot identity (amendment 1 A/F)
+
+One event = one manifest FILE (the whole package, or a loose instance), not
+one event per member: `build_frame.py` picks a PRIMARY member (the one
+carrying the primary-statement duration evidence) to classify the file for
+panel selection, and `label_esef_v2.py` still parses and labels EVERY member
+of that file, each with its own basis/language (member path → outer
+path/title → cover-page text → the event's own headline classification).
+A ground-truth slot id is
+`<event_id>/<package_member or ->/<concept_local>/<attribution>/<basis>/<window>/<variant>/<fiscal_year>/<period_type>/<currency>`
+— unique per member/concept/attribution/basis/window/fiscal
+period/currency; a dimensioned occurrence whose dimension doesn't resolve to
+a known attribution (NCI/owners-of-parent) is never a slot, only occurrence
+evidence.
 
 ## Public vs private
 
@@ -60,13 +78,22 @@ python3 import_v1.py --v1-dir private/realdata/spikes/esef-positional-gt \
   --esef-v2-dir "$BRAWLER_ESEF_V2_DIR"
 
 # 4. Blinded adjudication (LABELING.md protocol): resolve machine conflicts
-#    and spot-check a frozen 10% agreement sample. `compare` matches a
-#    reader's value against the machine's: agree -> second_read, differs ->
-#    adjudicated (settles a conflict OR flags a contradicted agreement-sample
-#    slot as a systematic-error signal), unsettled -> stays unverified.
+#    and spot-check a frozen 10% agreement sample. `compare` matches the
+#    reader's FULL normalized answer (value, currency, basis, attribution,
+#    fiscal period) against the machine slot: agree -> second_read, differs
+#    WITH an evidence anchor -> adjudicated (settles a conflict OR flags a
+#    contradicted agreement-sample slot as a systematic-error signal,
+#    re-keying the slot id atomically if the correction changes its
+#    identity), differs with no evidence anchor -> refused, unsettled ->
+#    stays unverified. `compare` refuses unless every prepared task has a
+#    sealed answer.
 python3 adjudicate.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR" prepare --seed <int>
 #   hand adjudication/tasks/*.json to a reader; they answer blind (no value,
-#   no hint which task is a disagreement vs. an agreement check)
+#   no hint which task is a disagreement vs. an agreement check) with a full
+#   answer: {"value":.., "currency":.., "basis":.., "attribution":..,
+#   "fiscal_year":.., "period_type":.., "evidence_anchor":..} or
+#   {"unverified": true, "reason": ".."}. `prepare` refuses to re-run once a
+#   task set exists; `seal` refuses to reseal an existing reader.
 python3 adjudicate.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR" seal <reader> <answers.json>
 python3 adjudicate.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR" compare
 
@@ -89,7 +116,7 @@ make realdata-esef-promote RUN=<nonce>
 | `BRAWLER_ESEF_METRICS_OUT` | nonce metrics path (required in required mode) | — |
 | `BRAWLER_ESEF_REQUIRED=1` | turn harness SKIPs into panics | — |
 | `make realdata-esef-score` | diagnostic harness run, default dirs | |
-| `make realdata-esef-check` | reproducible gate: fresh nonce → harness → ratchet | |
+| `make realdata-esef-check` | reproducible gate: fresh run dir (`scripts/check/realdata-esef-run.sh`, refuses a pre-existing one) → harness → ratchet | |
 | `make realdata-esef-promote RUN=<nonce>` | pin a new private keyed baseline | |
 
 ## Tests
