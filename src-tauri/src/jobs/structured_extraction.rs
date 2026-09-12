@@ -1852,7 +1852,7 @@ mod tests {
     /// balanced iXBRL statement at `2025-12-31` — the shape of a real GPW `.xbri`
     /// annual filing, without shipping a real one. Includes a dimensional
     /// (`explicitMember`) Equity component that must be filtered out.
-    pub(super) fn esef_package_bytes() -> Vec<u8> {
+    fn esef_package_bytes() -> Vec<u8> {
         let instance = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
       xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
@@ -1881,7 +1881,7 @@ mod tests {
         ])
     }
 
-    pub(super) fn seed_esef_package() -> (AppState, String, String) {
+    fn seed_esef_package() -> (AppState, String, String) {
         let dir = unique_temp_dir("esef-pkg");
         std::fs::create_dir_all(&dir).expect("temp dir");
         let connection = open_in_memory_database().expect("db");
