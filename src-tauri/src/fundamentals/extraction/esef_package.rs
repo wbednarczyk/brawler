@@ -152,40 +152,132 @@ pub(crate) fn extract_all_instances_counted(bytes: &[u8]) -> (Vec<(String, Vec<u
     (out, skipped)
 }
 
-/// Role-family classification table (ADR 0100 decision 3): standard IFRS
-/// role numbers (checked against the URI's trailing `-NNNNNN` segment) plus
-/// the vendor-generated Polish role names several filers share verbatim. An
-/// unrecognised role classifies as `"other"` — explicitly, never by guess.
-///
-/// The 320000/410000/420000 family is split income vs. comprehensive income
-/// by the illustrative IFRS taxonomy's own convention (310000/320000 =
-/// statement of profit or loss, 410000/420000 = statement of comprehensive
-/// income); the ADR text groups them together prose-wise ("income /
-/// comprehensive income") without spelling out the split, so this is this
-/// slice's concrete reading of that decision, flagged for owner review.
-const ROLE_RULES: &[(&str, &str)] = &[
-    ("-210000", "balance"),
-    ("-220000", "balance"),
-    ("-320000", "income"),
-    ("-410000", "comprehensive_income"),
-    ("-420000", "comprehensive_income"),
-    ("-520000", "cash_flow"),
-    ("-610000", "equity_changes"),
-    ("SprawozdanieZSytuacjiFinansowej", "balance"),
-    ("WynikFinansowy", "income"),
-    ("SprawozdanieZCalkowitychDochodow", "comprehensive_income"),
-    ("SprawozdanieZPrzeplywowPienieznych", "cash_flow"),
-    ("SprawozdanieZeZmianWKapitaleWlasnym", "equity_changes"),
+/// Role-family classification (ADR 0100 dec. 3, amended 2026-09-12, #511):
+/// three bounded, evidenced rules over the role URI's TERMINAL segment
+/// (everything after the last `/`) — a numeric allowlist (`role-` + exactly
+/// six digits, matched exactly against the known family numbers), a set of
+/// vendor statement names (normalized: lowercased, trailing digits and an
+/// optional `skonsolidowane`/`jednostkowe` prefix stripped, then compared for
+/// EQUALITY), and an `rNN_token` abbreviation pattern. Anything else — or a
+/// segment satisfying more than one rule — classifies `"other"` explicitly,
+/// never by guess; ambiguity is not evidence.
+const NUMERIC_ROLES: &[(&str, &str)] = &[
+    ("210000", "balance"),
+    ("220000", "balance"),
+    ("310000", "income"),
+    ("315000", "income"),
+    ("320000", "income"),
+    ("410000", "comprehensive_income"),
+    ("415000", "comprehensive_income"),
+    ("420000", "comprehensive_income"),
+    ("425000", "comprehensive_income"),
+    ("510000", "cash_flow"),
+    ("520000", "cash_flow"),
+    ("610000", "equity_changes"),
 ];
 
-/// Classifies a presentation-linkbase role URI into its statement family
-/// (ADR 0100 decision 3). `"other"` for anything unrecognised.
-fn classify_role(role_uri: &str) -> &'static str {
-    ROLE_RULES
+const VENDOR_NAMES: &[(&str, &str)] = &[
+    ("sprawozdaniezsytuacjifinansowej", "balance"),
+    ("wynikfinansowy", "income"),
+    ("sprawozdaniezcalkowitychdochodow", "comprehensive_income"),
+    (
+        "sprawozdaniezzyskowlubstratiinnychcalkowitychdochodow",
+        "comprehensive_income",
+    ),
+    ("sprawozdaniezprzeplywowpienieznych", "cash_flow"),
+    ("sprawozdaniezezmianwkapitalewlasnym", "equity_changes"),
+    ("balancesheet", "balance"),
+    ("incomestatement", "income"),
+    ("comprehensiveincome", "comprehensive_income"),
+    ("cashflow", "cash_flow"),
+    ("changesinequity", "equity_changes"),
+];
+
+const ABBREVIATIONS: &[(&str, &str)] = &[
+    ("rzis", "income"),
+    ("oci", "comprehensive_income"),
+    ("bilans", "balance"),
+    ("kw", "equity_changes"),
+    ("cf", "cash_flow"),
+];
+
+/// The URI's terminal path segment — every rule matches on this alone, never
+/// an ancestor segment or the whole URI (decision 2/3: no substring match).
+fn terminal_segment(role_uri: &str) -> &str {
+    role_uri.rsplit('/').next().unwrap_or(role_uri)
+}
+
+/// Decision 1: terminal segment ends with `role-` + exactly six ASCII
+/// digits, nothing after them.
+fn classify_numeric(segment: &str) -> Option<&'static str> {
+    // Byte-wise on purpose: a role name may carry non-ASCII letters, and a
+    // `str::split_at` six bytes from the end would panic inside a multibyte
+    // character. Six ASCII digits are always a valid char boundary.
+    let bytes = segment.as_bytes();
+    if bytes.len() < "role-".len() + 6 {
+        return None;
+    }
+    let (prefix, digits) = bytes.split_at(bytes.len() - 6);
+    if !digits.iter().all(u8::is_ascii_digit) || !prefix.ends_with(b"role-") {
+        return None;
+    }
+    NUMERIC_ROLES
         .iter()
-        .find(|(needle, _)| role_uri.contains(needle))
+        .find(|(n, _)| n.as_bytes() == digits)
         .map(|(_, kind)| *kind)
-        .unwrap_or("other")
+}
+
+/// Decision 2: lowercase, strip trailing digits, strip one optional leading
+/// `skonsolidowane`/`jednostkowe`, then compare for equality.
+fn classify_vendor_name(segment: &str) -> Option<&'static str> {
+    let lower = segment.to_ascii_lowercase();
+    let trimmed = lower.trim_end_matches(|c: char| c.is_ascii_digit());
+    let normalized = ["skonsolidowane", "jednostkowe"]
+        .into_iter()
+        .find_map(|prefix| trimmed.strip_prefix(prefix))
+        .unwrap_or(trimmed);
+    VENDOR_NAMES
+        .iter()
+        .find(|(name, _)| *name == normalized)
+        .map(|(_, kind)| *kind)
+}
+
+/// Decision 3: the whole (lowercased) terminal segment matches `r` + two
+/// ASCII digits + `_` + a known token, nothing else.
+fn classify_abbreviation(segment: &str) -> Option<&'static str> {
+    let lower = segment.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    if bytes.len() < 4 || bytes[0] != b'r' || bytes[3] != b'_' {
+        return None;
+    }
+    if !bytes[1].is_ascii_digit() || !bytes[2].is_ascii_digit() {
+        return None;
+    }
+    let token = &lower[4..];
+    ABBREVIATIONS
+        .iter()
+        .find(|(t, _)| *t == token)
+        .map(|(_, kind)| *kind)
+}
+
+/// Classifies a presentation-linkbase role URI into its statement family
+/// (ADR 0100 decision 3, amended #511). `"other"` for anything unrecognised
+/// AND for a segment that satisfies more than one rule (ambiguity is not
+/// evidence, decision 4).
+fn classify_role(role_uri: &str) -> &'static str {
+    let segment = terminal_segment(role_uri);
+    let matches: Vec<&'static str> = [
+        classify_numeric(segment),
+        classify_vendor_name(segment),
+        classify_abbreviation(segment),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    match matches.as_slice() {
+        [kind] => kind,
+        _ => "other",
+    }
 }
 
 /// The taxonomy-schema element-id convention (`{prefix}_{LocalName}`, e.g.
@@ -627,6 +719,113 @@ mod tests {
     fn extract_presentation_roles_is_empty_without_a_pre_xml() {
         let pkg = build_package(&[("CBF-2025/reports/instance.xhtml", INSTANCE)]);
         assert!(extract_presentation_roles(&pkg).is_empty());
+    }
+
+    /// Test A (#511, ADR 0100 dec. 3 amendment): every evidenced role family
+    /// `classify_role` must recognise, plus the negatives that must stay
+    /// `other` — a substring/ancestor/malformed-number match must never leak
+    /// a classification the terminal segment does not carry.
+    #[test]
+    fn classify_role_matches_every_evidenced_family_and_rejects_everything_else() {
+        let cases: &[(&str, &str)] = &[
+            // -- numeric allowlist (decision 1) --------------------------------
+            ("http://www.example.com/role/ias_1_role-210000", "balance"),
+            ("http://www.example.com/role/ias_1_role-220000", "balance"),
+            ("http://www.example.com/role/ias_1_role-310000", "income"),
+            ("http://www.example.com/role/ias_1_role-315000", "income"),
+            ("http://www.example.com/role/ias_1_role-320000", "income"),
+            (
+                "http://www.example.com/role/ias_1_role-410000",
+                "comprehensive_income",
+            ),
+            (
+                "http://www.example.com/role/ias_1_role-415000",
+                "comprehensive_income",
+            ),
+            (
+                "http://www.example.com/role/ias_1_role-420000",
+                "comprehensive_income",
+            ),
+            (
+                "http://www.example.com/role/ias_1_role-425000",
+                "comprehensive_income",
+            ),
+            ("http://www.example.com/role/ias_7_role-510000", "cash_flow"),
+            ("http://www.example.com/role/ias_7_role-520000", "cash_flow"),
+            (
+                "http://www.example.com/role/ias_1_role-610000",
+                "equity_changes",
+            ),
+            // -- vendor Polish names, incl. numbered/uppercase/prefixed forms --
+            (
+                "http://xtb.pl/role/SprawozdanieZSytuacjiFinansowej",
+                "balance",
+            ),
+            ("http://xtb.pl/role/WynikFinansowy", "income"),
+            (
+                "http://xtb.pl/role/SprawozdanieZCalkowitychDochodow",
+                "comprehensive_income",
+            ),
+            (
+                "http://xtb.pl/role/SprawozdanieZZyskowLubStratIInnychCalkowitychDochodow",
+                "comprehensive_income",
+            ),
+            (
+                "http://xtb.pl/role/SprawozdanieZPrzeplywowPienieznych",
+                "cash_flow",
+            ),
+            (
+                "http://xtb.pl/role/SprawozdanieZeZmianWKapitaleWlasnym",
+                "equity_changes",
+            ),
+            (
+                "http://x.pl/role/SKONSOLIDOWANESPRAWOZDANIEZSYTUACJIFINANSOWEJ",
+                "balance",
+            ),
+            (
+                "http://x.pl/role/JEDNOSTKOWESPRAWOZDANIEZSYTUACJIFINANSOWEJ",
+                "balance",
+            ),
+            (
+                "http://xtb.pl/role/SprawozdanieZCalkowitychDochodow2",
+                "comprehensive_income",
+            ),
+            ("http://xtb.pl/role/WynikFinansowy1", "income"),
+            // -- vendor English names -------------------------------------------
+            ("http://x.pl/role/BalanceSheet", "balance"),
+            ("http://x.pl/role/IncomeStatement", "income"),
+            (
+                "http://x.pl/role/ComprehensiveIncome",
+                "comprehensive_income",
+            ),
+            ("http://x.pl/role/CashFlow", "cash_flow"),
+            ("http://x.pl/role/ChangesInEquity", "equity_changes"),
+            // -- abbreviations ----------------------------------------------------
+            ("http://x.pl/role/R01_RZiS", "income"),
+            ("http://x.pl/role/R02_OCI", "comprehensive_income"),
+            ("http://x.pl/role/R03_Bilans", "balance"),
+            ("http://x.pl/role/R04_KW", "equity_changes"),
+            ("http://x.pl/role/R10_CF", "cash_flow"),
+            // -- negatives: must stay `other` (contract #511 list) ---------------
+            ("http://x.pl/role/Anchoring", "other"),
+            ("http://x.pl/role_000010", "other"),
+            ("http://x.pl/role/NotesAndMandatoryItems", "other"),
+            ("http://x.pl/role/NotesToBalanceSheet", "other"),
+            ("http://x.pl/role/CashFlowDisclosures", "other"),
+            ("http://x.pl/role/Notes_CF", "other"),
+            ("http://x.pl/role/cf_notes", "other"),
+            ("http://x.pl/BalanceSheet/role/Notes", "other"),
+            ("http://x.pl/role/ias_1_role-310000x", "other"),
+            ("http://x.pl/role/ias_1_role-31000", "other"),
+            // Non-ASCII letters right before the end: a byte split six from the
+            // end would land inside `ł` — must classify `other`, never panic.
+            ("http://x.pl/role/Zestawienieł", "other"),
+            ("http://x.pl/role/Bilansłłła", "other"),
+            ("http://x.pl/role/ias_1_role-810000", "other"),
+        ];
+        for (uri, expected) in cases {
+            assert_eq!(classify_role(uri), *expected, "uri: {uri}");
+        }
     }
 
     const LAB_PL_XML: &str = r#"<?xml version="1.0"?>

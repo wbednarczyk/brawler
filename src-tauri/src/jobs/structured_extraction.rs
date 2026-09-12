@@ -789,12 +789,9 @@ pub(crate) fn route_document(bytes: &[u8]) -> DocumentRoute {
     }
 }
 
-/// Layer 1 tagged-fact extractor version (ADR 0100 decision 8): bumping this
-/// invalidates every stored generation and forces a rebuild on next run.
-/// Bumped 1 -> 2 for the no-linkbase-fallback regression fix (epic #398):
-/// every previously-captured generation is missing `no_linkbase_fallback_
-/// count` and must be rebuilt to report it.
-const TAGGED_FACT_EXTRACTOR_VERSION: i64 = 2;
+/// Layer 1 tagged-fact extractor version (ADR 0100 decision 8): a bump rebuilds
+/// every stored generation, roles included; 3 = the decision 3 role families.
+const TAGGED_FACT_EXTRACTOR_VERSION: i64 = 3;
 
 /// One document's Layer 1 generation, computed PURELY from bytes (ADR 0100
 /// decisions 1/3/9, epic #398) — no storage, no freshness check. Shared by
@@ -1508,6 +1505,8 @@ pub(crate) fn rerun_extraction_outcome(
 fn base_document_ref(slot_ref: &str) -> &str {
     slot_ref.split('#').next().unwrap_or(slot_ref)
 }
+#[cfg(test)]
+mod role_families_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
