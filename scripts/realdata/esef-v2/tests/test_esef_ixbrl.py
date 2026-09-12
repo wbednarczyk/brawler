@@ -84,6 +84,17 @@ class NamespaceResolutionTests(unittest.TestCase):
         self.assertEqual(occ["parse_status"], "unparsed")
         self.assertIsNone(occ["unit"])
 
+    def test_missing_unit_ref_attribute_marks_occurrence_unparsed(self):
+        # Astra r2 finding 11: a numeric fact with NO unitRef attribute at
+        # all (never merely an unresolvable one) used to read as "resolved"
+        # -- ix:nonFraction requires a unitRef per spec.
+        fact = non_fraction("ifrs-full:Revenue", "c1", "u1", "1234").replace(' unitRef="u1"', "")
+        self.assertNotIn("unitRef", fact)
+        doc = make_instance(contexts=context("c1", start="2025-01-01", end="2025-12-31"), units=unit("u1"), facts=fact)
+        occ = ix.parse_instance(doc)["occurrences"][0]
+        self.assertEqual(occ["parse_status"], "unparsed")
+        self.assertIsNone(occ["unit"])
+
 
 class ContextParsingTests(unittest.TestCase):
     def test_entity_segment_dimensions(self):

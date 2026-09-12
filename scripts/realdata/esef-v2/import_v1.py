@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
-"""Imports the v1 (#182) merged ESEF ground truth into the v2 slot shape
-(#331 PR-A, ADR 0112). Stdlib only.
+"""Imports the v1 (#182) merged ESEF ground truth as a REFERENCE artifact
+(#331 PR-A, ADR 0112, amendment 2 Y). Stdlib only.
 
 Reads the v1 spike's `ground_truth.json` (esef tier only) + `MANIFEST.json`
 (read-only reference: `private/realdata/spikes/esef-positional-gt/`, never
-edited here) and the v2 frame's `MANIFEST_v2.json` (for the ticker -> issuer_id
-map), and MERGES imported slots into `ground_truth_v2.json`, tagged
-`verification: "machine_v1"` -- a declared enum value the measurement harness
-excludes from floors until each row is independently re-verified. The
-`__owners`/`__equity`/`__profitloss` mapped-key suffixes v1 used to keep or
-collapse the owners-of-parent/whole-group variant pair map through
+edited here) and the v2 frame's `MANIFEST_v2.json` (for the ticker ->
+issuer_id map), and writes `machine_v1_reference.json` -- its OWN artifact,
+tagged `verification: "machine_v1"`. It NEVER merges into
+`ground_truth_v2.json` unless `--map-to-events <json>` explicitly binds a v1
+file to a FROZEN manifest event_id (astra r2 finding 21: the old code
+invented synthetic `/v1/...` event ids with no manifest counterpart, which
+the harness's orphan-event guard now rejects outright -- breaking
+measurement rather than merely leaving the v1 rows unverified). Unmapped
+rows stay reference-only and are reported as counts.
+
+The `__owners`/`__equity`/`__profitloss` mapped-key suffixes v1 used to keep
+or collapse the owners-of-parent/whole-group variant pair map through
 `gt_key_map.json` to (concept_local, attribution).
 
 Usage:
-    python3 import_v1.py --v1-dir <esef-positional-gt dir> --esef-v2-dir <dir>
+    python3 import_v1.py --v1-dir <esef-positional-gt dir> --esef-v2-dir <dir> \\
+        [--map-to-events <mapping.json>]
+
+`mapping.json` shape: `{"<v1 ground_truth.json 'file' value>": "<frozen manifest event_id>"}`.
 """
 from __future__ import annotations
 
@@ -47,8 +56,59 @@ def build_issuer_map(manifest_v2: dict) -> dict[str, str]:
     return {issuer["ticker"]: issuer["issuer_id"] for issuer in manifest_v2["issuers"]}
 
 
-def import_slots(v1_gt: list[dict], issuer_map: dict[str, str], metric_key_to_entry: dict[str, dict]) -> list[dict]:
-    slots = []
+def _build_slot(rec: dict, issuer_id: str, entry: dict, event_id: str) -> dict:
+    window = "point_in_time" if entry["period_nature"] == "instant" else "flow"
+    period_end = rec["period_end"]
+    fiscal_year = int(period_end[:4]) if period_end else None
+    # v1 recorded only period_end/period_start, not a period_type label;
+    # duration-based period_type classification needs both dates, which v1
+    # point-in-time (instant) records never carry -- so this import stamps a
+    # single free-form label rather than guessing FY/H1/Qn from one date.
+    # Re-verification (adjudicate.py) assigns the real one.
+    period_type = "v1_unclassified"
+    currency = rec.get("currency")
+    # v1 carried no package_member (it read the first ZIP instance only,
+    # astra r1 finding 7); "-" is the amendment F template's explicit token
+    # for "no member", same as a loose-file slot.
+    slot_id = build_slot_id(
+        event_id, None, entry["concept"], entry["attribution"], rec["statement_basis"], window, "reported", fiscal_year, period_type, currency
+    )
+    return {
+        "slot_id": slot_id,
+        "event_id": event_id,
+        "package_member": None,
+        "concept_local": entry["concept"],
+        "attribution": entry["attribution"],
+        "basis": rec["statement_basis"],
+        "window": window,
+        "variant": "reported",
+        "fiscal_year": fiscal_year,
+        "period_type": period_type,
+        "period_end": period_end,
+        "period_start": rec.get("period_start"),
+        "currency": currency,
+        "value": rec["value"],
+        "duration_months": None,
+        "verification": "machine_v1",
+        "contributing_occurrence_ids": [],
+        "resolution_ref": None,
+    }
+
+
+def import_slots(
+    v1_gt: list[dict],
+    issuer_map: dict[str, str],
+    metric_key_to_entry: dict[str, dict],
+    event_map: dict[str, str] | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Returns (reference_slots, mapped_slots). `reference_slots` always use
+    a synthetic `<issuer_id>/v1/<file stem>` event id and are written to
+    `machine_v1_reference.json` -- amendment Y: they are never eligible for
+    `ground_truth_v2.json` on their own. `mapped_slots` use the REAL frozen
+    manifest event_id from `event_map` (keyed by the v1 record's `file`) and
+    are the only slots `main()` merges into `ground_truth_v2.json`."""
+    reference_slots: list[dict] = []
+    mapped_slots: list[dict] = []
     for rec in v1_gt:
         if rec.get("tier") != "esef":
             continue
@@ -61,47 +121,14 @@ def import_slots(v1_gt: list[dict], issuer_map: dict[str, str], metric_key_to_en
         if entry is None:
             continue  # a v1 metric with no v2 key-map counterpart
 
-        window = "point_in_time" if entry["period_nature"] == "instant" else "flow"
-        period_end = rec["period_end"]
-        fiscal_year = int(period_end[:4]) if period_end else None
-        # v1 recorded only period_end/period_start, not a period_type label;
-        # duration-based period_type classification needs both dates, which
-        # v1 point-in-time (instant) records never carry -- so this import
-        # stamps a single free-form label rather than guessing FY/H1/Qn from
-        # one date. Re-verification (adjudicate.py) assigns the real one.
-        period_type = "v1_unclassified"
+        synthetic_event_id = f"{issuer_id}/v1/{Path(rec['file']).stem[:60]}"
+        reference_slots.append(_build_slot(rec, issuer_id, entry, synthetic_event_id))
 
-        event_id = f"{issuer_id}/v1/{Path(rec['file']).stem[:60]}"
-        currency = rec.get("currency")
-        # v1 carried no package_member (it read the first ZIP instance
-        # only, astra r1 finding 7); "-" is the amendment F template's
-        # explicit token for "no member", same as a loose-file slot.
-        slot_id = build_slot_id(
-            event_id, None, entry["concept"], entry["attribution"], rec["statement_basis"], window, "reported", fiscal_year, period_type, currency
-        )
-        slots.append(
-            {
-                "slot_id": slot_id,
-                "event_id": event_id,
-                "package_member": None,
-                "concept_local": entry["concept"],
-                "attribution": entry["attribution"],
-                "basis": rec["statement_basis"],
-                "window": window,
-                "variant": "reported",
-                "fiscal_year": fiscal_year,
-                "period_type": period_type,
-                "period_end": period_end,
-                "period_start": rec.get("period_start"),
-                "currency": currency,
-                "value": rec["value"],
-                "duration_months": None,
-                "verification": "machine_v1",
-                "contributing_occurrence_ids": [],
-                "resolution_ref": None,
-            }
-        )
-    return slots
+        mapped_event_id = (event_map or {}).get(rec["file"])
+        if mapped_event_id:
+            mapped_slots.append(_build_slot(rec, issuer_id, entry, mapped_event_id))
+
+    return reference_slots, mapped_slots
 
 
 def merge_ground_truth(esef_v2_dir: Path, imported_slots: list[dict]) -> dict:
@@ -120,9 +147,15 @@ def merge_ground_truth(esef_v2_dir: Path, imported_slots: list[dict]) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--v1-dir", required=True)
     parser.add_argument("--esef-v2-dir", required=True)
+    parser.add_argument(
+        "--map-to-events",
+        type=Path,
+        default=None,
+        help='JSON {"<v1 file>": "<frozen manifest event_id>"} -- binds explicit v1 rows into ground_truth_v2.json',
+    )
     args = parser.parse_args(argv)
 
     v1_dir = Path(args.v1_dir)
@@ -133,10 +166,32 @@ def main(argv: list[str] | None = None) -> int:
     issuer_map = build_issuer_map(manifest_v2)
     metric_key_to_entry = load_key_map(HERE / "gt_key_map.json")
 
-    imported = import_slots(v1_gt, issuer_map, metric_key_to_entry)
-    gt = merge_ground_truth(esef_v2_dir, imported)
-    v1_count = sum(1 for s in gt["slots"] if s["verification"] == "machine_v1")
-    print(f"import_v1: {len(imported)} v1 slots considered, {v1_count} machine_v1 slots now in ground_truth_v2.json")
+    event_map = json.loads(args.map_to_events.read_text(encoding="utf-8")) if args.map_to_events else None
+    if event_map is not None:
+        # Fail fast: binding to an event id absent from the frozen manifest
+        # is exactly the orphan-event defect amendment Y fixes -- never let
+        # it silently through to the harness's own guard.
+        valid_event_ids = {e["event_id"] for e in manifest_v2["events"]}
+        bad = {v1_file: event_id for v1_file, event_id in event_map.items() if event_id not in valid_event_ids}
+        if bad:
+            raise ValueError(f"--map-to-events names event id(s) absent from MANIFEST_v2.json: {bad}")
+
+    reference_slots, mapped_slots = import_slots(v1_gt, issuer_map, metric_key_to_entry, event_map)
+
+    ref_path = esef_v2_dir / "machine_v1_reference.json"
+    ref_path.write_text(
+        json.dumps({"slots": sorted(reference_slots, key=lambda s: s["slot_id"])}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    if mapped_slots:
+        merge_ground_truth(esef_v2_dir, mapped_slots)
+
+    print(
+        f"import_v1: {len(reference_slots)} v1 row(s) written to machine_v1_reference.json "
+        f"({len(mapped_slots)} explicitly mapped into ground_truth_v2.json via --map-to-events, "
+        f"{len(reference_slots) - len(mapped_slots)} unmapped, reference-only)"
+    )
     return 0
 
 

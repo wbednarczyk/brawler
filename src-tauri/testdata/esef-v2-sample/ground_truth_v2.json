@@ -20,6 +20,9 @@
       "value": "500000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#Revenue"
       ],
@@ -42,6 +45,9 @@
       "value": "200000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#GrossProfit"
       ],
@@ -64,6 +70,9 @@
       "value": "120000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#ProfitLossFromOperatingActivities"
       ],
@@ -86,6 +95,9 @@
       "value": "90000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#ProfitLoss"
       ],
@@ -108,6 +120,9 @@
       "value": "85000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#ProfitLossAttributableToOwnersOfParent"
       ],
@@ -130,6 +145,9 @@
       "value": "4.50",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#BasicEarningsLossPerShare"
       ],
@@ -152,6 +170,9 @@
       "value": "4.40",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#DilutedEarningsLossPerShare"
       ],
@@ -174,6 +195,9 @@
       "value": "110000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#CashFlowsFromUsedInOperatingActivities"
       ],
@@ -196,6 +220,11 @@
       "value": "-30000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [
+        "cash_flow_outflow_sign"
+      ],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#CashFlowsFromUsedInInvestingActivities"
       ],
@@ -218,6 +247,11 @@
       "value": "-40000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [
+        "cash_flow_outflow_sign"
+      ],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#CashFlowsFromUsedInFinancingActivities"
       ],
@@ -240,6 +274,9 @@
       "value": "900000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#Assets"
       ],
@@ -262,6 +299,9 @@
       "value": "350000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#CurrentAssets"
       ],
@@ -284,6 +324,9 @@
       "value": "500000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#Liabilities"
       ],
@@ -306,6 +349,9 @@
       "value": "400000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#Equity"
       ],
@@ -328,6 +374,9 @@
       "value": "380000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#EquityAttributableToOwnersOfParent"
       ],
@@ -350,6 +399,9 @@
       "value": "150000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#CashAndCashEquivalents"
       ],
@@ -372,6 +424,9 @@
       "value": "420000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#Revenue"
       ],
@@ -394,6 +449,9 @@
       "value": "800000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#Assets"
       ],
@@ -416,6 +474,9 @@
       "value": "350000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated/v1#Equity"
       ],
@@ -438,6 +499,9 @@
       "value": "500000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#Revenue"
       ],
@@ -460,6 +524,9 @@
       "value": "200000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#GrossProfit"
       ],
@@ -482,6 +549,9 @@
       "value": "120000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#ProfitLossFromOperatingActivities"
       ],
@@ -504,6 +574,9 @@
       "value": "90000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#ProfitLoss"
       ],
@@ -526,6 +599,9 @@
       "value": "85000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#ProfitLossAttributableToOwnersOfParent"
       ],
@@ -548,6 +624,9 @@
       "value": "4.50",
       "duration_months": 12,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#BasicEarningsLossPerShare"
       ],
@@ -570,6 +649,9 @@
       "value": "4.40",
       "duration_months": 12,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#DilutedEarningsLossPerShare"
       ],
@@ -592,6 +674,9 @@
       "value": "110000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#CashFlowsFromUsedInOperatingActivities"
       ],
@@ -614,6 +699,11 @@
       "value": "-30000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [
+        "cash_flow_outflow_sign"
+      ],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#CashFlowsFromUsedInInvestingActivities"
       ],
@@ -636,6 +726,11 @@
       "value": "-40000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [
+        "cash_flow_outflow_sign"
+      ],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#CashFlowsFromUsedInFinancingActivities"
       ],
@@ -658,6 +753,9 @@
       "value": "900000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#Assets"
       ],
@@ -680,6 +778,9 @@
       "value": "350000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#CurrentAssets"
       ],
@@ -702,6 +803,9 @@
       "value": "500000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#Liabilities"
       ],
@@ -724,6 +828,9 @@
       "value": "400000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#Equity"
       ],
@@ -746,6 +853,9 @@
       "value": "380000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#EquityAttributableToOwnersOfParent"
       ],
@@ -768,6 +878,9 @@
       "value": "150000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/en/consolidated/v1#CashAndCashEquivalents"
       ],
@@ -790,6 +903,9 @@
       "value": "500000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#Revenue"
       ],
@@ -812,6 +928,9 @@
       "value": "200000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#GrossProfit"
       ],
@@ -834,6 +953,9 @@
       "value": "120000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#ProfitLossFromOperatingActivities"
       ],
@@ -856,6 +978,9 @@
       "value": "90000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#ProfitLoss"
       ],
@@ -878,6 +1003,9 @@
       "value": "85000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#ProfitLossAttributableToOwnersOfParent"
       ],
@@ -900,6 +1028,9 @@
       "value": "4.50",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#BasicEarningsLossPerShare"
       ],
@@ -922,6 +1053,9 @@
       "value": "4.40",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#DilutedEarningsLossPerShare"
       ],
@@ -944,6 +1078,9 @@
       "value": "110000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#CashFlowsFromUsedInOperatingActivities"
       ],
@@ -966,6 +1103,11 @@
       "value": "-30000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [
+        "cash_flow_outflow_sign"
+      ],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#CashFlowsFromUsedInInvestingActivities"
       ],
@@ -988,6 +1130,11 @@
       "value": "-40000000",
       "duration_months": 12,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [
+        "cash_flow_outflow_sign"
+      ],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#CashFlowsFromUsedInFinancingActivities"
       ],
@@ -1010,6 +1157,9 @@
       "value": "900000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#Assets"
       ],
@@ -1032,6 +1182,9 @@
       "value": "350000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#CurrentAssets"
       ],
@@ -1054,6 +1207,9 @@
       "value": "500000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#Liabilities"
       ],
@@ -1076,6 +1232,9 @@
       "value": "400000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#Equity"
       ],
@@ -1098,6 +1257,9 @@
       "value": "380000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#EquityAttributableToOwnersOfParent"
       ],
@@ -1120,6 +1282,9 @@
       "value": "150000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#CashAndCashEquivalents"
       ],
@@ -1142,8 +1307,86 @@
       "value": "80000000",
       "duration_months": null,
       "verification": "machine",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
       "contributing_occurrence_ids": [
         "iss_01/FY2025/pl/consolidated_and_standalone/v1#CurrentLiabilities#standalone"
+      ],
+      "resolution_ref": null
+    },
+    {
+      "slot_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1/reports/standalone.xhtml/Liabilities/total/unknown/point_in_time/reported/2025/FY/PLN",
+      "event_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1",
+      "package_member": "reports/standalone.xhtml",
+      "concept_local": "Liabilities",
+      "attribution": "total",
+      "basis": "unknown",
+      "window": "point_in_time",
+      "variant": "reported",
+      "fiscal_year": 2025,
+      "period_type": "FY",
+      "period_end": "2025-12-31",
+      "period_start": null,
+      "currency": "PLN",
+      "value": "500000000",
+      "duration_months": null,
+      "verification": "unverified",
+      "language": "pl",
+      "mapped": true,
+      "normalized_by": [],
+      "contributing_occurrence_ids": [
+        "iss_01/FY2025/pl/consolidated_and_standalone/v1#Liabilities#contradicted-basis"
+      ],
+      "resolution_ref": null
+    },
+    {
+      "slot_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1/reports/consolidated_en.xhtml/Revenue/total/consolidated/flow/reported/2025/FY/PLN",
+      "event_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1",
+      "package_member": "reports/consolidated_en.xhtml",
+      "concept_local": "Revenue",
+      "attribution": "total",
+      "basis": "consolidated",
+      "window": "flow",
+      "variant": "reported",
+      "fiscal_year": 2025,
+      "period_type": "FY",
+      "period_end": "2025-12-31",
+      "period_start": "2025-01-01",
+      "currency": "PLN",
+      "value": "500000000",
+      "duration_months": 12,
+      "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
+      "contributing_occurrence_ids": [
+        "iss_01/FY2025/pl/consolidated_and_standalone/v1#Revenue"
+      ],
+      "resolution_ref": null
+    },
+    {
+      "slot_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1/reports/consolidated_en.xhtml/Assets/total/consolidated/point_in_time/reported/2025/FY/PLN",
+      "event_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1",
+      "package_member": "reports/consolidated_en.xhtml",
+      "concept_local": "Assets",
+      "attribution": "total",
+      "basis": "consolidated",
+      "window": "point_in_time",
+      "variant": "reported",
+      "fiscal_year": 2025,
+      "period_type": "FY",
+      "period_end": "2025-12-31",
+      "period_start": null,
+      "currency": "PLN",
+      "value": "900000000",
+      "duration_months": null,
+      "verification": "machine",
+      "language": "en",
+      "mapped": true,
+      "normalized_by": [],
+      "contributing_occurrence_ids": [
+        "iss_01/FY2025/pl/consolidated_and_standalone/v1#Assets"
       ],
       "resolution_ref": null
     }

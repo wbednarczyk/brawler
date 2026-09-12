@@ -5,13 +5,20 @@
 # the harness, and its timestamp-based freshness check accepted same-second
 # files with no uniqueness guarantee).
 #
-# Reserves a FRESH run directory (never reused -- refuses if it already
-# exists, covering the "pre-existing artifact" case) before running the
-# given harness command with BRAWLER_ESEF_METRICS_OUT pointed inside it, then
-# refuses to conclude without a metrics file the harness actually wrote
-# (covering the "zero-selected-test" case: a test filter matching nothing
-# still exits 0, it just never runs the harness body). Prints the metrics
-# path to stdout on success -- the only thing the caller should capture.
+# Reserves a FRESH run directory ATOMICALLY (bare `mkdir`, not `mkdir -p` --
+# the syscall itself fails with EEXIST if the directory is already there, no
+# separate check-then-act race) before running the given harness command
+# with BRAWLER_ESEF_METRICS_OUT pointed inside it, then refuses to conclude
+# without a metrics file the harness actually wrote (covering the
+# "zero-selected-test" case: a test filter matching nothing still exits 0,
+# it just never runs the harness body).
+#
+# Amendment X (astra r2 finding 16): stdout is reserved EXCLUSIVELY for the
+# final metrics path -- the wrapped command's own stdout is redirected to
+# stderr, never mixed in. The old version let ordinary libtest/cargo output
+# flow straight to the wrapper's stdout, so a caller capturing that stdout
+# (the Makefile does, via `$(...)`) got the harness's log text PLUS the
+# filename concatenated into one corrupted string.
 #
 # Usage: realdata-esef-run.sh <run-dir> -- <command...>
 # Testable standalone (scripts/check/check-realdata-ratchet.sh) by injecting
@@ -31,14 +38,14 @@ if [ "$1" != "--" ]; then
 fi
 shift
 
-if [ -d "$run_dir" ]; then
+mkdir -p "$(dirname "$run_dir")"
+if ! mkdir "$run_dir" 2>/dev/null; then
   printf "realdata-esef-run: run directory %s already exists -- refusing to reuse a stale/pre-existing artifact\n" "$run_dir" >&2
   exit 1
 fi
-mkdir -p "$run_dir"
 
 metrics_out="$run_dir/realdata-esef-metrics.json"
-BRAWLER_ESEF_METRICS_OUT="$metrics_out" "$@"
+BRAWLER_ESEF_METRICS_OUT="$metrics_out" "$@" 1>&2
 
 if [ ! -f "$metrics_out" ]; then
   printf "realdata-esef-run: no fresh metrics -- the harness did not run (%s missing; a zero-selected-test filter or a stale wrapper never wrote it)\n" "$metrics_out" >&2

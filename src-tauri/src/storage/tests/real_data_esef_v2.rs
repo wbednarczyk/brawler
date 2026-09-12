@@ -77,6 +77,10 @@ struct Event {
     issuer_id: String,
     /// `floor` | `twin_diagnostic` | `warmup`.
     role: String,
+    /// The event's PINNED language (`pl` | `en` | `unknown`, amendment S):
+    /// within a package event, a GT slot whose OWN `language` disagrees is
+    /// the internal twin-diagnostic population, never the floor one.
+    language: String,
     /// Filing vintage (a correction/restatement counter) — replay's
     /// chronological tie-break after `labeled_period.period_end` (amendment I).
     vintage: i64,
@@ -143,7 +147,8 @@ struct GtSlot {
     concept_local: String,
     /// `total` | `owners_of_parent` | `nci`.
     attribution: String,
-    /// `consolidated` | `standalone` | `unknown`.
+    /// `consolidated` | `standalone` | `unknown` — `unknown` is scored as
+    /// `UNVERIFIED` regardless of the slot's own `verification` (amendment T).
     basis: String,
     /// `flow` | `point_in_time`.
     window: String,
@@ -155,6 +160,93 @@ struct GtSlot {
     value: String,
     /// `machine` | `second_read` | `adjudicated` | `unverified` | `machine_v1`.
     verification: String,
+    /// The MEMBER's own language (`pl` | `en` | `unknown`, amendment S) — a
+    /// slot whose language disagrees with its event's pinned `language` is
+    /// the internal twin-diagnostic population, never the floor one.
+    #[serde(default = "unknown_language")]
+    language: String,
+    /// Whether the labeler's key map found a `(concept, attribution)` entry
+    /// for this row (amendment Q) — the harness resolves this INDEPENDENTLY
+    /// from its own key map copy (never trusts this flag for scoring), but a
+    /// generated corpus that omits it is still a typed parse failure so a
+    /// producer/consumer drift is caught immediately.
+    #[allow(dead_code)]
+    mapped: bool,
+    /// `contract_normalized` rule ids (from `gt_key_map.json`) whose
+    /// normalization this slot's value/window went through (amendment Q) —
+    /// removed from BOTH sides of `sensitivity`. Empty for an
+    /// unnormalized slot.
+    #[serde(default)]
+    normalized_by: Vec<String>,
+}
+
+fn unknown_language() -> String {
+    "unknown".to_owned()
+}
+
+/// One raw occurrence from `occurrences_v2.json` (a bare JSON array —
+/// immutable evidence, never a slot). Amendment Q's Layer 1 comparative
+/// capture reads this file directly rather than re-deriving occurrence-level
+/// evidence from the already-collapsed GT slots.
+#[derive(Debug, Deserialize)]
+struct Occurrence {
+    event_id: String,
+    /// The EXPANDED concept identity, `{namespace-uri}LocalName` (amendment
+    /// M) — matched against `report_tagged_facts`' own
+    /// `concept_namespace_uri`/`concept_local_name` columns, never a bare
+    /// local-name suffix.
+    concept_qname: String,
+    period: OccurrencePeriod,
+    value: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum OccurrencePeriod {
+    Instant { instant: String },
+    Duration { start: String, end: String },
+}
+
+impl OccurrencePeriod {
+    fn end(&self) -> &str {
+        match self {
+            OccurrencePeriod::Instant { instant } => instant,
+            OccurrencePeriod::Duration { end, .. } => end,
+        }
+    }
+
+    /// Whether a raw Layer 1 fact's own period is EXACTLY this occurrence's
+    /// full context period — instant-to-instant or start+end-to-start+end,
+    /// never a bare end-date/local-name-suffix comparison (amendment Q).
+    fn matches_layer1(&self, fact: &Layer1Fact) -> bool {
+        match self {
+            OccurrencePeriod::Instant { instant } => {
+                fact.period_type == "instant" && fact.period_end == *instant
+            }
+            OccurrencePeriod::Duration { start, end } => {
+                fact.period_type != "instant"
+                    && fact.period_start.as_deref() == Some(start.as_str())
+                    && fact.period_end == *end
+            }
+        }
+    }
+}
+
+/// `occurrences_v2.json` is immutable raw evidence (never required for
+/// scoring itself, only for amendment Q's comparative Layer 1 capture) — a
+/// corpus that omits it entirely (a tiny hand-built test fixture with no
+/// comparative-period evidence to carry) measures fine with zero occurrences;
+/// a PRESENT-but-malformed file is still a typed failure, never silently
+/// swallowed.
+fn load_occurrences(corpus_dir: &Path) -> Vec<Occurrence> {
+    let path = corpus_dir.join("occurrences_v2.json");
+    if !path.is_file() {
+        return Vec::new();
+    }
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("occurrences_v2.json unreadable at {}: {e}", path.display()));
+    serde_json::from_str(&raw)
+        .unwrap_or_else(|e| panic!("occurrences_v2.json malformed field: {e}"))
 }
 
 #[derive(Debug, Deserialize)]
@@ -316,6 +408,9 @@ pub(crate) struct ResolvedSlot {
     pub window: String,
     pub currency: String,
     pub value: Decimal,
+    /// `contract_normalized` rule ids this slot's value/window went through
+    /// (amendment Q) — a non-empty list excludes it from `sensitivity`.
+    pub normalized_by: Vec<String>,
 }
 
 /// A stored fact, resolved to the internal shape the matcher compares — one
@@ -510,13 +605,33 @@ pub(crate) fn score_event(
     score
 }
 
-/// Attributes each remaining (already attribution/data-quality-eligible)
-/// prediction to the closest INELIGIBLE GT slot it would otherwise have
-/// paired with (same metric_key + fiscal_year, fewest differing dimensions —
-/// the SAME candidate rule [`score_event`]'s pass 2 uses), marking it
-/// `OUT_OF_SCOPE` instead of leaving it to fall through to `FALSE_POSITIVE`
-/// (amendment C). Mutates `predictions` by removing claimed ones and returns
-/// the reason-tagged pairs for the caller's console/diagnostic use.
+/// Whether `p` and `gt` share the FULL identity (event implicit via the
+/// caller's own scoping, fiscal year, period type, concept via `metric_key`,
+/// basis, window, variant, currency) — amendment O's exclusion-specificity
+/// fix. Deliberately NOT `value`: an `unverified`/`machine_v1` slot's whole
+/// point is that its true value is unresolved, so requiring value agreement
+/// would be circular. Deliberately NOT the nearest-by-diff-count fuzzy match
+/// [`score_event`]'s pass 2 uses for ELIGIBLE mismatch pairing — an
+/// ineligible slot may only claim a prediction it is EXACTLY, structurally
+/// the same slot as.
+fn full_identity_matches(gt: &ResolvedSlot, p: &Prediction) -> bool {
+    p.metric_key == gt.metric_key
+        && p.fiscal_year == gt.fiscal_year
+        && p.period_type == gt.period_type
+        && p.basis == gt.basis
+        && p.variant == gt.variant
+        && p.window == gt.window
+        && p.currency.as_deref() == Some(gt.currency.as_str())
+}
+
+/// Attributes each STILL-UNMATCHED (after eligible scoring, amendment O)
+/// prediction to an INELIGIBLE GT slot it shares the FULL identity with —
+/// never a fuzzy nearest-match, and never before eligible matching has had
+/// first claim (an unverified H1 Revenue slot must not be able to steal an
+/// otherwise-exact eligible FY Revenue match). Marks it `OUT_OF_SCOPE`
+/// instead of leaving it `FALSE_POSITIVE`. Mutates `predictions` by removing
+/// claimed ones and returns the reason-tagged pairs for the caller's
+/// console/diagnostic use.
 fn attribute_ineligible_predictions(
     ineligible: &[&ResolvedSlot],
     predictions: &mut Vec<Prediction>,
@@ -526,10 +641,7 @@ fn attribute_ineligible_predictions(
     for gt in ineligible {
         let Some(idx) = predictions
             .iter()
-            .enumerate()
-            .filter(|(_, p)| p.metric_key == gt.metric_key && p.fiscal_year == gt.fiscal_year)
-            .min_by_key(|(_, p)| (diff_count(gt, p), p.id.clone()))
-            .map(|(idx, _)| idx)
+            .position(|p| full_identity_matches(gt, p))
         else {
             continue;
         };
@@ -567,6 +679,11 @@ pub(crate) struct Sensitivity {
     pub matched: usize,
     pub gt_slots: usize,
     pub excluded: usize,
+    /// Strict precision recomputed with convention-affected predictions ALSO
+    /// removed (amendment Q) — additive fields, never replacing the three
+    /// above (the ratchet schema only requires those to be present).
+    pub precision_matched: usize,
+    pub precision_denominator: usize,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -733,27 +850,6 @@ fn prediction_identity_key(event_id: &str, p: &Prediction) -> String {
     )
 }
 
-/// Inserts one prediction's outcome under its identity key, asserting
-/// uniqueness (finding 1): two DIFFERENT stored facts resolving to the SAME
-/// identity key inside one event would mean the storage layer's own slot
-/// uniqueness (company, period, definition, basis, attribution, variant,
-/// measure_window) has been violated — a real bug worth a loud panic, never
-/// a silent overwrite that would hide one of the two facts from the report.
-fn insert_prediction_outcome(
-    map: &mut BTreeMap<String, Outcome>,
-    event_id: &str,
-    p: &Prediction,
-    outcome: Outcome,
-) {
-    let key = prediction_identity_key(event_id, p);
-    if let Some(previous) = map.insert(key.clone(), outcome) {
-        panic!(
-            "incomparable: duplicate prediction identity key {key} (previous outcome {previous:?}, new outcome {outcome:?}) \
-             — two stored facts resolved to the same identity, which the storage layer's own slot uniqueness should prevent"
-        );
-    }
-}
-
 /// `previously_correct_slots_lost` (shared contract): a slot the promoted
 /// baseline recorded `MATCH` for that this run no longer matches. Pure —
 /// independently testable without any DB.
@@ -846,6 +942,20 @@ fn load_keyed_baseline(
 // Cold-start integration — the real production pipeline, per event
 // ===========================================================================
 
+/// One raw Layer 1 tagged fact, carrying its expanded concept identity and
+/// full context period — what amendment Q's comparative capture needs
+/// (`report_tagged_facts`' own columns, never a local-name-only shortcut).
+#[derive(Debug, Clone)]
+struct Layer1Fact {
+    concept_namespace_uri: String,
+    concept_local_name: String,
+    /// `"instant"` | duration otherwise.
+    period_type: String,
+    period_start: Option<String>,
+    period_end: String,
+    value_numeric: Option<String>,
+}
+
 /// The stored facts a fresh cold-start run produced for one event's company,
 /// resolved into [`Prediction`]s the matcher can compare — plus the derived
 /// period (for the "derivation passed through" test), whether the run itself
@@ -855,7 +965,11 @@ struct ColdStartRun {
     predictions: Vec<Prediction>,
     derived: Option<(i64, String, String)>,
     run_error: Option<String>,
-    layer1_facts: Vec<(String, String, Option<String>)>, // (concept_local, period_end, value_numeric)
+    /// Raw Layer 1 tagged facts (`report_tagged_facts`), enriched enough for
+    /// amendment Q's occurrence-level comparative capture: expanded concept
+    /// identity (namespace URI + local name) and the FULL context period
+    /// (instant, or start+end), never local-name-suffix-plus-end-date alone.
+    layer1_facts: Vec<Layer1Fact>,
     /// Production's OWN recorded verdict for this attempt
     /// (`fundamentals_provenance().get_extraction_outcome_for_slot`) —
     /// `(acceptance, reason_code)`. `None` when no period could even be
@@ -971,7 +1085,14 @@ fn seed_and_run_event(
         .facts(&document.id)
         .unwrap_or_default()
         .into_iter()
-        .map(|f| (f.concept_local_name, f.period_end, f.value_numeric))
+        .map(|f| Layer1Fact {
+            concept_namespace_uri: f.concept_namespace_uri,
+            concept_local_name: f.concept_local_name,
+            period_type: f.period_type,
+            period_start: f.period_start,
+            period_end: f.period_end,
+            value_numeric: f.value_numeric,
+        })
         .collect();
 
     ColdStartRun {
@@ -1062,37 +1183,64 @@ fn prefilter_predictions(
 // twin-agreement and replay so all three apply IDENTICAL eligibility rules.
 // ===========================================================================
 
-/// One event's ground truth, split by scoring eligibility (amendments C/E):
-/// `scorable` = eligible verification AND a mapped `(concept, attribution)`
-/// pair, further split into `current` (this event's own labeled period) and
-/// `comparative` (any other period the same document tagged); `unverified`/
-/// `machine_v1` = eligible-mapping but ineligible verification (leave every
-/// denominator, but their attributable prediction is `OUT_OF_SCOPE`);
-/// `unmapped_eligible_count` = eligible verification, NO key-map entry for
-/// the pair — labeled-capability-only (amendment E), never scored at all.
+/// One event's ground truth, split by scoring eligibility (amendments C/E/O/S/T):
+/// `current` = pinned-language, eligible-verification, mapped, THIS event's
+/// own labeled period; `comparative` = same but any OTHER period the same
+/// document tagged; `internal_twin` = OTHER-language, eligible, mapped,
+/// current-period slots living inside the SAME package event (amendment S) —
+/// excluded from `current`/`comparative` (never a floor denominator), scored
+/// separately and compared to `current` by semantic identity for
+/// `twin_agreement`. `unverified`/`machine_v1` = mapped but ineligible
+/// verification (or, for `unverified`, an unresolved `basis: unknown`
+/// contradiction — amendment T) — their attributable prediction is
+/// `OUT_OF_SCOPE`, never scored as an ordinary slot.
+/// `unverified_count`/`machine_v1_count` are the GT-file-truth totals
+/// (amendment O): incremented for EVERY raw slot in that verification state,
+/// independent of whether the `(concept, attribution)` pair is even mapped —
+/// `unmapped_eligible_count` is the separate, mapping-only exclusion
+/// (amendment E), labeled-capability-only, never scored at all.
 #[derive(Default)]
 struct ResolvedEvent {
     current: Vec<ResolvedSlot>,
     comparative: Vec<ResolvedSlot>,
+    internal_twin: Vec<ResolvedSlot>,
     unverified: Vec<ResolvedSlot>,
     machine_v1: Vec<ResolvedSlot>,
     unmapped_eligible_count: usize,
+    unverified_count: usize,
+    machine_v1_count: usize,
 }
 
 fn resolve_event_slots(
     raw_slots: &[GtSlot],
     labeled_period: &LabeledPeriod,
+    event_language: &str,
     resolved_map: &ResolvedKeyMap,
 ) -> ResolvedEvent {
     let mut out = ResolvedEvent::default();
     for slot in raw_slots {
         let class = verification_class(&slot.verification);
+        // Amendment T: an unresolved member-basis contradiction is UNVERIFIED
+        // regardless of the slot's own labeled verification state.
+        let is_unverified = class == VerificationClass::Unverified || slot.basis == "unknown";
+        let is_machine_v1 = !is_unverified && class == VerificationClass::MachineV1;
+
+        // Amendment O: verification-state counts are the GT file's own
+        // truth — independent of key-map mapping support.
+        if is_unverified {
+            out.unverified_count += 1;
+        } else if is_machine_v1 {
+            out.machine_v1_count += 1;
+        }
+
         let pair = (slot.concept_local.clone(), slot.attribution.clone());
         let Some(metric_key) = resolved_map.pair_to_metric_key.get(&pair) else {
             // Amendment E: an unsupported (concept, attribution) pair (e.g.
             // `ProfitLoss`/`nci`) is labeled-capability only — NEVER falls
-            // back to the concept's usual (e.g. `total`) metric_key.
-            if class == VerificationClass::Eligible {
+            // back to the concept's usual (e.g. `total`) metric_key. Only an
+            // otherwise-eligible, otherwise-verified row counts here — an
+            // unverified/machine_v1 row was already counted above.
+            if !is_unverified && !is_machine_v1 {
                 out.unmapped_eligible_count += 1;
             }
             continue;
@@ -1117,19 +1265,31 @@ fn resolve_event_slots(
             window: slot.window.clone(),
             currency: slot.currency.clone(),
             value,
+            normalized_by: slot.normalized_by.clone(),
         };
-        match class {
-            VerificationClass::Unverified => out.unverified.push(resolved),
-            VerificationClass::MachineV1 => out.machine_v1.push(resolved),
-            VerificationClass::Eligible => {
-                let is_current = slot.fiscal_year == labeled_period.fiscal_year
-                    && slot.period_type == labeled_period.period_type
-                    && slot.period_end == labeled_period.period_end;
-                if is_current {
-                    out.current.push(resolved);
-                } else {
-                    out.comparative.push(resolved);
-                }
+        if is_unverified {
+            out.unverified.push(resolved);
+        } else if is_machine_v1 {
+            out.machine_v1.push(resolved);
+        } else {
+            let is_current_period = slot.fiscal_year == labeled_period.fiscal_year
+                && slot.period_type == labeled_period.period_type
+                && slot.period_end == labeled_period.period_end;
+            // Amendment S: a slot whose own language disagrees with the
+            // event's pinned language is the internal twin-diagnostic
+            // population — `unknown` on either side is never treated as a
+            // disagreement (an untagged language is not evidence of a twin).
+            let is_pinned_language = slot.language == event_language
+                || slot.language == "unknown"
+                || event_language == "unknown";
+            match (is_current_period, is_pinned_language) {
+                (true, true) => out.current.push(resolved),
+                (false, true) => out.comparative.push(resolved),
+                (true, false) => out.internal_twin.push(resolved),
+                // A comparative-period, other-language slot fits no scored
+                // bucket (amendment S only defines the twin population for
+                // the CURRENT period) — evidence only, not tracked further.
+                (false, false) => {}
             }
         }
     }
@@ -1215,6 +1375,17 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
         .unwrap_or_else(|e| panic!("ground_truth_v2.json malformed field: {e}"));
     let resolved_map = resolve_key_map(&key_map, ground_truth.key_map_version);
 
+    // Amendment Q: Layer 1 comparative capture reads raw occurrences, never
+    // the already-collapsed GT slots.
+    let occurrences = load_occurrences(config.corpus_dir);
+    let mut occurrences_by_event: BTreeMap<&str, Vec<&Occurrence>> = BTreeMap::new();
+    for occurrence in &occurrences {
+        occurrences_by_event
+            .entry(occurrence.event_id.as_str())
+            .or_default()
+            .push(occurrence);
+    }
+
     // Amendment F: slot ids must be unique at every boundary.
     let mut seen_slot_ids: BTreeSet<&str> = BTreeSet::new();
     for slot in &ground_truth.slots {
@@ -1267,11 +1438,17 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     let mut layer1_eligible = 0usize;
     let mut layer1_value_correct = 0usize;
     let mut derived_by_event: BTreeMap<String, (String, String)> = BTreeMap::new();
-    // Amendment H: sensitivity's exclusion set, keyed by slot_id — populated
-    // from the RESOLVED slot's own `metric_key` (never a string search over
-    // the final slot_id, which carries the concept's IFRS local name, not its
-    // metric_key).
+    // Amendment Q: sensitivity's convention-resolved exclusion sets — GT
+    // side from the labeler's own `normalized_by` field (per slot_id),
+    // prediction side from the harness's own metric-key inference (per
+    // prediction identity key) — removed from BOTH recall and precision.
     let mut sign_convention_slot_ids: BTreeSet<String> = BTreeSet::new();
+    let mut sign_convention_prediction_keys: BTreeSet<String> = BTreeSet::new();
+    // Amendment S: within-package language-twin agreement, accumulated
+    // across every event that carries one — added to the loose-file twin
+    // totals ([`compute_twin_agreement`]) below.
+    let mut internal_twin_agree = 0usize;
+    let mut internal_twin_compared = 0usize;
     // Finding 2/3: the full per-event/per-slot evidence, structured (never
     // parsed back out of an id) — covers every cold-started event (floor AND
     // twin), while `all_slot_outcomes`/`all_prediction_outcomes` stay
@@ -1297,32 +1474,48 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
 
         let empty = Vec::new();
         let raw_slots = gt_by_event.get(event.event_id.as_str()).unwrap_or(&empty);
-        let resolved = resolve_event_slots(raw_slots, &event.labeled_period, &resolved_map);
+        let resolved = resolve_event_slots(
+            raw_slots,
+            &event.labeled_period,
+            &event.language,
+            &resolved_map,
+        );
 
         if event.role == "floor" {
-            unverified_total += resolved.unverified.len();
-            machine_v1_total += resolved.machine_v1.len();
+            unverified_total += resolved.unverified_count;
+            machine_v1_total += resolved.machine_v1_count;
+            // Amendment Q: labeled-capability's `eligible` denominator counts
+            // EVERY labeled IFRS slot with eligible verification — mapped
+            // (current/comparative/internal-twin) or not.
             labeled_eligible_total += resolved.current.len()
                 + resolved.comparative.len()
+                + resolved.internal_twin.len()
                 + resolved.unmapped_eligible_count;
+            // Amendment Q: sensitivity's convention-resolved population comes
+            // from the labeler's OWN `normalized_by` field (every
+            // `contract_normalized` rule id a slot's value/window actually
+            // went through), never a harness-guessed metric-key list.
             for slot in &resolved.current {
-                if SIGN_CONVENTION_METRIC_KEYS.contains(&slot.metric_key.as_str()) {
+                if !slot.normalized_by.is_empty() {
                     sign_convention_slot_ids.insert(slot.slot_id.clone());
                 }
             }
 
-            // Amendment H(b): availability = GT slots (ALL periods) with a
-            // stored Layer 2 slot for the SAME semantic identity (metric_key
-            // + basis + attribution + variant + window + currency) —
-            // production only ever writes the CURRENT period_end, so a
-            // comparative row's "available" evidence is "Layer 2 can and did
-            // produce this exact slot type" via its current-period sibling.
+            // Amendment Q: availability = a GT slot (ANY labeled period) with
+            // a stored Layer 2 prediction matching its FULL semantic identity
+            // — fiscal year and period type INCLUDED, so a current-period
+            // prediction can never "make available" a comparative slot it
+            // does not actually share a period with (a real bug the r2 diff
+            // review caught). Attribution is never compared against the raw
+            // stored column — the semantic mapping already lives entirely in
+            // `metric_key` via the key map's `(concept, attribution)` pair.
             for slot in resolved.current.iter().chain(resolved.comparative.iter()) {
                 availability_eligible += 1;
                 let available = run.predictions.iter().any(|p| {
                     p.metric_key == slot.metric_key
+                        && p.fiscal_year == slot.fiscal_year
+                        && p.period_type == slot.period_type
                         && p.basis == slot.basis
-                        && p.attribution == slot.attribution
                         && p.variant == slot.variant
                         && p.window == slot.window
                         && p.currency.as_deref() == Some(slot.currency.as_str())
@@ -1332,19 +1525,38 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                 }
             }
 
-            // Amendment H(c): Layer 1 capture is scoped to COMPARATIVE GT
-            // occurrences ONLY (current-period ones are already covered by
-            // primary recall) — structural presence by expanded concept +
-            // context period, value-correctness computed separately.
-            for slot in &resolved.comparative {
+            // Amendment Q: Layer 1 capture is over comparative-period GT
+            // OCCURRENCES (from `occurrences_v2.json`, raw evidence — never
+            // the already-collapsed GT slots): captured = a raw tagged fact
+            // with the SAME EXPANDED concept (namespace URI + local name) AND
+            // the SAME FULL context period (instant, or start+end) — never a
+            // local-name-suffix-plus-end-date shortcut. Value-correct is
+            // computed separately.
+            let empty_occurrences = Vec::new();
+            let event_occurrences = occurrences_by_event
+                .get(event.event_id.as_str())
+                .unwrap_or(&empty_occurrences);
+            for occurrence in event_occurrences {
+                let is_comparative = occurrence.period.end() != event.labeled_period.period_end;
+                if !is_comparative {
+                    continue;
+                }
                 layer1_eligible += 1;
-                if let Some((_, _, value)) =
-                    run.layer1_facts.iter().find(|(concept, period_end, _)| {
-                        concept.ends_with(&slot.concept_local) && period_end == &slot.period_end
-                    })
-                {
+                if let Some(fact) = run.layer1_facts.iter().find(|fact| {
+                    occurrence.concept_qname
+                        == format!(
+                            "{{{}}}{}",
+                            fact.concept_namespace_uri, fact.concept_local_name
+                        )
+                        && occurrence.period.matches_layer1(fact)
+                }) {
                     layer1_captured += 1;
-                    if value.as_deref().and_then(|v| v.parse::<Decimal>().ok()) == Some(slot.value)
+                    let occurrence_value = occurrence.value.parse::<Decimal>().ok();
+                    if fact
+                        .value_numeric
+                        .as_deref()
+                        .and_then(|v| v.parse::<Decimal>().ok())
+                        == occurrence_value
                     {
                         layer1_value_correct += 1;
                     }
@@ -1355,31 +1567,66 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
         let has_predictions = !run.predictions.is_empty();
         let prediction_count = run.predictions.len();
         let filtered = prefilter_predictions(run.predictions, &resolved_map);
-        let mut eligible_predictions = filtered.eligible;
+        let eligible_predictions = filtered.eligible;
 
-        // Amendment C: a prediction attributable to an ineligible GT slot is
-        // OUT_OF_SCOPE (never FALSE_POSITIVE) — claimed BEFORE the ordinary
-        // eligible-slot scoring pass sees the remaining pool.
-        let unverified_refs: Vec<&ResolvedSlot> = resolved.unverified.iter().collect();
-        let machine_v1_refs: Vec<&ResolvedSlot> = resolved.machine_v1.iter().collect();
-        let ineligible_claims_unverified = attribute_ineligible_predictions(
-            &unverified_refs,
-            &mut eligible_predictions,
-            "unverified",
-        );
-        let ineligible_claims_machine_v1 = attribute_ineligible_predictions(
-            &machine_v1_refs,
-            &mut eligible_predictions,
-            "machine_v1",
-        );
-
-        // Amendment H(a): only the event's OWN current-period slots feed
-        // primary recall/precision — comparative rows never enter the matcher.
+        // Amendment O: eligible slots get first claim — score them BEFORE any
+        // ineligible-slot attribution runs, so an unverified/machine_v1 slot
+        // can never steal a prediction an eligible slot would have exact-
+        // matched. Amendment H(a): only the event's OWN current-period slots
+        // feed primary recall/precision — comparative rows never enter the
+        // matcher.
         let score = score_event(
             &resolved.current,
             &eligible_predictions,
             &resolved_map.panel,
         );
+
+        // Amendment S: an internal (within-package) language twin population
+        // is scored against the SAME predictions (one document, one
+        // extraction run) and compared to the pinned-language `current`
+        // slots by semantic identity — no separate DB, unlike a loose-file
+        // twin event ([`compute_twin_agreement`] below).
+        if !resolved.internal_twin.is_empty() {
+            let twin_score = score_event(
+                &resolved.internal_twin,
+                &eligible_predictions,
+                &resolved_map.panel,
+            );
+            let identity_of = |s: &ResolvedSlot| {
+                format!(
+                    "{}/{}/{}/{}/{}/{}/{}",
+                    s.metric_key,
+                    s.attribution,
+                    s.basis,
+                    s.window,
+                    s.variant,
+                    s.fiscal_year,
+                    s.period_type
+                )
+            };
+            let current_by_identity: BTreeMap<String, Outcome> = resolved
+                .current
+                .iter()
+                .filter_map(|s| {
+                    score
+                        .slot_outcomes
+                        .get(&s.slot_id)
+                        .map(|o| (identity_of(s), *o))
+                })
+                .collect();
+            for slot in &resolved.internal_twin {
+                let Some(current_outcome) = current_by_identity.get(&identity_of(slot)) else {
+                    continue;
+                };
+                let Some(twin_outcome) = twin_score.slot_outcomes.get(&slot.slot_id) else {
+                    continue;
+                };
+                internal_twin_compared += 1;
+                if twin_outcome == current_outcome {
+                    internal_twin_agree += 1;
+                }
+            }
+        }
 
         // ---- structured per-event/per-slot evidence (finding 2/3) ---------
         let eligible_by_id: BTreeMap<&str, &Prediction> = eligible_predictions
@@ -1391,8 +1638,39 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             let p = eligible_by_id
                 .get(fact_id.as_str())
                 .expect("a scored prediction id must be in the eligible pool that was scored");
-            event_prediction_outcomes.insert(prediction_identity_key(&event.event_id, p), *outcome);
+            let key = prediction_identity_key(&event.event_id, p);
+            // Amendment Q: the harness infers a PREDICTION's own
+            // `contract_normalized` membership from its `metric_key` (the
+            // same rule ids the labeler names) — the GT side reads
+            // `normalized_by` directly instead (see the main loop above).
+            if event.role == "floor" && SIGN_CONVENTION_METRIC_KEYS.contains(&p.metric_key.as_str())
+            {
+                sign_convention_prediction_keys.insert(key.clone());
+            }
+            event_prediction_outcomes.insert(key, *outcome);
         }
+
+        // Amendment O: only NOW — after eligible matching has had first
+        // claim — do unverified/machine_v1 slots get to attribute the
+        // STILL-UNMATCHED (`FALSE_POSITIVE`) predictions, and only by the
+        // FULL identity (never metric+year alone, never a fuzzy nearest
+        // match).
+        let mut still_unmatched: Vec<Prediction> = eligible_predictions
+            .iter()
+            .filter(|p| {
+                event_prediction_outcomes
+                    .get(&prediction_identity_key(&event.event_id, p))
+                    .copied()
+                    == Some(Outcome::FalsePositive)
+            })
+            .cloned()
+            .collect();
+        let unverified_refs: Vec<&ResolvedSlot> = resolved.unverified.iter().collect();
+        let machine_v1_refs: Vec<&ResolvedSlot> = resolved.machine_v1.iter().collect();
+        let ineligible_claims_unverified =
+            attribute_ineligible_predictions(&unverified_refs, &mut still_unmatched, "unverified");
+        let ineligible_claims_machine_v1 =
+            attribute_ineligible_predictions(&machine_v1_refs, &mut still_unmatched, "machine_v1");
         for (p, _reason) in ineligible_claims_unverified
             .iter()
             .chain(&ineligible_claims_machine_v1)
@@ -1453,7 +1731,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             false_positives: event_false_positives,
             mismatch_classes: event_mismatch_classes,
             run_error: run.run_error.clone(),
-            unverified: resolved.unverified.len(),
+            unverified: resolved.unverified_count,
         });
         for slot in &resolved.current {
             let outcome = score
@@ -1483,35 +1761,22 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                 zero_output_events += 1;
             }
             all_slot_outcomes.extend(score.slot_outcomes.clone());
-            for (fact_id, outcome) in &score.prediction_outcomes {
-                let p = eligible_by_id
-                    .get(fact_id.as_str())
-                    .expect("a scored prediction id must be in the eligible pool that was scored");
-                insert_prediction_outcome(
-                    &mut all_prediction_outcomes,
-                    &event.event_id,
-                    p,
-                    *outcome,
-                );
-            }
-            for (p, outcome) in &filtered.excluded {
-                insert_prediction_outcome(
-                    &mut all_prediction_outcomes,
-                    &event.event_id,
-                    p,
-                    *outcome,
-                );
-            }
-            for (p, _reason) in ineligible_claims_unverified
-                .into_iter()
-                .chain(ineligible_claims_machine_v1)
-            {
-                insert_prediction_outcome(
-                    &mut all_prediction_outcomes,
-                    &event.event_id,
-                    &p,
-                    Outcome::OutOfScope,
-                );
+            // `event_prediction_outcomes` is already the FULLY resolved
+            // per-key outcome for this event (eligible scoring, THEN
+            // ineligible reattribution overwriting FALSE_POSITIVE with
+            // OUT_OF_SCOPE where it claimed one, THEN the pre-filtered
+            // exclusions) — merge it in directly rather than redoing the
+            // reattribution dance a second time, which would otherwise see
+            // the SAME key twice (once FALSE_POSITIVE, once its own
+            // legitimate OUT_OF_SCOPE overwrite) and misreport it as a
+            // genuine duplicate-identity collision.
+            for (key, outcome) in &event_prediction_outcomes {
+                if let Some(previous) = all_prediction_outcomes.insert(key.clone(), *outcome) {
+                    panic!(
+                        "incomparable: duplicate prediction identity key {key} (previous outcome {previous:?}, new outcome {outcome:?}) \
+                         — two stored facts resolved to the same identity, which the storage layer's own slot uniqueness should prevent"
+                    );
+                }
             }
         }
 
@@ -1539,13 +1804,18 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     }
 
     // ---- twin agreement -----------------------------------------------------
-    let (twin_agree, twin_compared) = compute_twin_agreement(
+    // Loose-file twins (compute_twin_agreement) + within-package language
+    // twins (accumulated in the main loop above, amendment S) — one combined
+    // `twin_agreement` metric.
+    let (loose_twin_agree, loose_twin_compared) = compute_twin_agreement(
         &manifest,
         &gt_by_event,
         config.corpus_dir,
         &issuer_by_id,
         &resolved_map,
     );
+    let twin_agree = loose_twin_agree + internal_twin_agree;
+    let twin_compared = loose_twin_compared + internal_twin_compared;
 
     // ---- replay (diagnostic; one shared DB per issuer) ----------------------
     let replay = run_replay(
@@ -1586,14 +1856,28 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     );
     let lost = previously_correct_slots_lost(&all_slot_outcomes, &baseline);
 
-    // ---- sensitivity: convention-normalized rows removed (amendment H),
-    // floor events' CURRENT-period population only (never comparatives, and
-    // never leaking in non-floor-event exclusions).
+    // ---- sensitivity (amendment Q): the convention-resolved population —
+    // every slot/prediction whose value/window went through ANY
+    // `contract_normalized` rule — removed from BOTH recall (GT slots, via
+    // the labeler's own `normalized_by`) and STRICT precision (predictions,
+    // via the harness's own metric-key inference), recomputed independently.
     let sensitivity_excluded = sign_convention_slot_ids.len();
     let sensitivity_gt_slots = all_slot_outcomes.len().saturating_sub(sensitivity_excluded);
     let sensitivity_matched = all_slot_outcomes
         .iter()
         .filter(|(id, o)| **o == Outcome::Match && !sign_convention_slot_ids.contains(id.as_str()))
+        .count();
+    let sensitivity_precision_matched = all_prediction_outcomes
+        .iter()
+        .filter(|(key, o)| {
+            **o == Outcome::Match && !sign_convention_prediction_keys.contains(key.as_str())
+        })
+        .count();
+    let sensitivity_precision_denominator = all_prediction_outcomes
+        .iter()
+        .filter(|(key, o)| {
+            **o != Outcome::OutOfScope && !sign_convention_prediction_keys.contains(key.as_str())
+        })
         .count();
 
     let gt_slots_total = all_slot_outcomes.len();
@@ -1636,6 +1920,8 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             matched: sensitivity_matched,
             gt_slots: sensitivity_gt_slots,
             excluded: sensitivity_excluded,
+            precision_matched: sensitivity_precision_matched,
+            precision_denominator: sensitivity_precision_denominator,
         },
         twin_agreement: TwinAgreement {
             agree: twin_agree,
@@ -1796,8 +2082,14 @@ fn compute_twin_agreement(
         let empty = Vec::new();
         let twin_raw = gt_by_event.get(twin.event_id.as_str()).unwrap_or(&empty);
         let floor_raw = gt_by_event.get(floor.event_id.as_str()).unwrap_or(&empty);
-        let twin_resolved = resolve_event_slots(twin_raw, &twin.labeled_period, resolved_map);
-        let floor_resolved = resolve_event_slots(floor_raw, &floor.labeled_period, resolved_map);
+        let twin_resolved =
+            resolve_event_slots(twin_raw, &twin.labeled_period, &twin.language, resolved_map);
+        let floor_resolved = resolve_event_slots(
+            floor_raw,
+            &floor.labeled_period,
+            &floor.language,
+            resolved_map,
+        );
 
         let twin_score = score_fresh(
             twin,
@@ -1917,7 +2209,10 @@ fn run_replay(
             events_replayed += 1;
             let company_id = event_company_id(&state, issuer);
 
-            let prior = state
+            // Amendment R: these are the PRE-run production inputs — only
+            // credited as "exercised" once the run below actually reaches a
+            // persisted outcome (never on a failed derivation/run error).
+            let prior_existed = state
                 .financials()
                 .stored_fact_set(
                     &company_id,
@@ -1925,22 +2220,25 @@ fn run_replay(
                     &event.labeled_period.period_type,
                 )
                 .ok()
-                .flatten();
-            if prior.is_some() {
-                exercised_prior_check += 1;
-            }
+                .flatten()
+                .is_some();
 
             let raw_slots = gt_by_event
                 .get(event.event_id.as_str())
                 .unwrap_or(&empty_raw);
-            let resolved = resolve_event_slots(raw_slots, &event.labeled_period, resolved_map);
+            let resolved = resolve_event_slots(
+                raw_slots,
+                &event.labeled_period,
+                &event.language,
+                resolved_map,
+            );
             let history_keys: BTreeSet<String> = resolved
                 .current
                 .iter()
                 .map(|s| s.metric_key.clone())
                 .collect();
-            if !history_keys.is_empty() {
-                let histories = state
+            let sufficient_history = !history_keys.is_empty()
+                && state
                     .financials()
                     .metric_histories(
                         &company_id,
@@ -1948,26 +2246,27 @@ fn run_replay(
                         event.labeled_period.fiscal_year,
                         &event.labeled_period.period_type,
                     )
-                    .unwrap_or_default();
-                if histories.values().any(|h| h.len() >= 2) {
+                    .unwrap_or_default()
+                    .values()
+                    .any(|h| h.len() >= 2);
+
+            let run = seed_and_run_event(&state, issuer, event, corpus_dir);
+            // Amendment R: only an extraction that actually ran to a
+            // persisted outcome (acceptance recorded) counts the pre-run
+            // inputs above as "exercised".
+            if run.recorded_outcome.is_some() {
+                if prior_existed {
+                    exercised_prior_check += 1;
+                }
+                if sufficient_history {
                     exercised_quarantine += 1;
                 }
             }
 
-            let run = seed_and_run_event(&state, issuer, event, corpus_dir);
-            let mut filtered = prefilter_predictions(run.predictions, resolved_map);
-            let unverified_refs: Vec<&ResolvedSlot> = resolved.unverified.iter().collect();
-            let machine_v1_refs: Vec<&ResolvedSlot> = resolved.machine_v1.iter().collect();
-            attribute_ineligible_predictions(
-                &unverified_refs,
-                &mut filtered.eligible,
-                "unverified",
-            );
-            attribute_ineligible_predictions(
-                &machine_v1_refs,
-                &mut filtered.eligible,
-                "machine_v1",
-            );
+            // Amendment O: eligible slots get first claim, same as the main
+            // cold-start pass — an ineligible slot may only attribute a
+            // prediction eligible scoring left as FALSE_POSITIVE.
+            let filtered = prefilter_predictions(run.predictions, resolved_map);
             let score = score_event(&resolved.current, &filtered.eligible, &resolved_map.panel);
             if event.role == "floor" {
                 replay_matched += score
@@ -2049,11 +2348,13 @@ fn print_console_report(
         precision_denominator
     );
     eprintln!(
-        "labeled_capability: {}/{}  sensitivity: {}/{} (excluded {})  twin_agreement: {}/{}",
+        "labeled_capability: {}/{}  sensitivity(recall): {}/{}  sensitivity(strict precision): {}/{} (excluded {})  twin_agreement: {}/{}",
         aggregates.labeled_capability.matched,
         aggregates.labeled_capability.eligible,
         aggregates.sensitivity.matched,
         aggregates.sensitivity.gt_slots,
+        aggregates.sensitivity.precision_matched,
+        aggregates.sensitivity.precision_denominator,
         aggregates.sensitivity.excluded,
         aggregates.twin_agreement.agree,
         aggregates.twin_agreement.compared
@@ -2257,6 +2558,7 @@ fn slot(
         window: window.to_owned(),
         currency: currency.to_owned(),
         value: value.parse().unwrap(),
+        normalized_by: Vec::new(),
     }
 }
 
@@ -2322,6 +2624,11 @@ fn sample_corpus_scores_and_metrics_carry_no_content() {
     assert_eq!(aggregates.gt_slots, 16 + 17);
     assert_eq!(aggregates.matched, 16 + 16);
     assert_eq!(aggregates.zero_output_events, 0);
+    // Amendment T: the contradicted-basis Liabilities/unknown slot is
+    // UNVERIFIED, pinned in its own count — and, amendment O, it never steals
+    // the real Liabilities/consolidated slot's exact match above (`matched`
+    // is unaffected by its presence).
+    assert_eq!(aggregates.unverified, 1);
     // Comparative FY2024 numbers are available in Layer 1 (raw capture) even
     // though production never writes a comparative-period fact.
     assert!(aggregates.layer1_capture.captured >= 3);
@@ -2342,8 +2649,61 @@ fn sample_corpus_scores_and_metrics_carry_no_content() {
     }
 }
 
+/// Test 1b (amendment P, r2 f20) — a REAL, freshly-measured sample artifact
+/// must validate against the ratchet's own JSON schema
+/// (`scripts/check/realdata-ratchet.mjs`'s `ESEF_METRICS_SCHEMA`) — the
+/// producer/schema field-name drift the r2 diff review caught (`eligible` vs
+/// `labeled`) can only be caught by actually running the real validator
+/// against real output, never by re-typing the schema's shape by hand in
+/// Rust. Skips (never fails) inside the cargo-mutants scratch sandbox, which
+/// copies only `src-tauri/` and has no `scripts/`/node runtime to reach.
+#[test]
+fn sample_corpus_metrics_validate_against_the_ratchet_schema() {
+    if crate::source_tree_guards::is_crate_only_sandbox() {
+        eprintln!("SKIP sample_corpus_metrics_validate_against_the_ratchet_schema: cargo-mutants sandbox has no scripts/ tree");
+        return;
+    }
+
+    let dir = materialize_sample_corpus();
+    let out = dir.join("metrics.json");
+    let key_map_path = local_key_map_path();
+    run_measurement(MeasurementConfig {
+        corpus_dir: &dir,
+        key_map_path: &key_map_path,
+        metrics_out: Some(&out),
+        keyed_baseline: None,
+        required: false,
+    })
+    .expect("sample corpus must measure");
+
+    // cross-tree-read-ok: amendment P — validates real output against the cross-language ratchet contract; the mutants sweep is exempted above via `is_crate_only_sandbox`.
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let ratchet_script = repo_root.join("scripts/check/realdata-ratchet.mjs");
+    let committed_baseline =
+        repo_root.join("src-tauri/testdata/esef-v2-sample/baseline/realdata-esef-baseline.json");
+
+    let output = std::process::Command::new("node")
+        .arg(&ratchet_script)
+        .arg("--profile")
+        .arg("esef")
+        .arg("--baseline")
+        .arg(&committed_baseline)
+        .arg("--metrics")
+        .arg(&out)
+        .output()
+        .expect("run node against the real ratchet script");
+    assert!(
+        output.status.success(),
+        "the ratchet must accept a real, freshly-measured sample artifact against the committed baseline:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// Test 2 — the language twins are two independent events whose per-slot
-/// outcomes agree wherever they share a semantic identity.
+/// outcomes agree wherever they share a semantic identity: the loose-file
+/// twin (`twin_en`, 16 concepts) PLUS the within-package twin (amendment S —
+/// two EN-tagged concepts living inside `floor_package` itself, 18 total).
 #[test]
 fn language_twins_are_two_events_with_agreement() {
     let dir = materialize_sample_corpus();
@@ -2357,11 +2717,38 @@ fn language_twins_are_two_events_with_agreement() {
     })
     .expect("sample corpus must measure");
 
-    assert_eq!(aggregates.twin_agreement.compared, 16);
+    assert_eq!(aggregates.twin_agreement.compared, 16 + 2);
     assert_eq!(
         aggregates.twin_agreement.agree,
         aggregates.twin_agreement.compared
     );
+}
+
+/// Test 2e (amendment S) — the within-package twin population is excluded
+/// from floor denominators: `floor_package`'s pinned-language (pl) slots
+/// alone drive `gt_slots`/`matched` (17, per test 1) even though the package
+/// also carries 2 EN-tagged internal-twin slots — those never widen the
+/// denominator, they only feed `twin_agreement` (test 2's `+2`).
+#[test]
+fn within_package_twin_slots_never_widen_floor_denominators() {
+    let dir = materialize_sample_corpus();
+    let key_map_path = local_key_map_path();
+    let aggregates = run_measurement(MeasurementConfig {
+        corpus_dir: &dir,
+        key_map_path: &key_map_path,
+        metrics_out: None,
+        keyed_baseline: None,
+        required: false,
+    })
+    .expect("sample corpus must measure");
+
+    // floor_pl (16) + floor_package (16 consolidated + 1 standalone) = 33 —
+    // NOT 35, which is what it would be if the 2 EN internal-twin slots had
+    // leaked into the floor population.
+    assert_eq!(aggregates.gt_slots, 33);
+    // But they DO count toward labeled-capability's eligible denominator
+    // (amendment Q): 36 (floor, all periods) + 2 (internal twin) = 38.
+    assert_eq!(aggregates.labeled_capability.eligible, 38);
 }
 
 /// Test 2b (fix wave 2, finding 1) — prediction identity keys are STABLE
@@ -2961,6 +3348,7 @@ fn duplicate_conflict_is_unverified_and_leaves_every_denominator() {
             attribution: "total",
             value: "500000000",
             verification: "unverified",
+            basis: "consolidated",
         }],
     );
 
@@ -2994,6 +3382,82 @@ fn duplicate_conflict_is_unverified_and_leaves_every_denominator() {
     assert!(
         predictions.values().any(|v| v == "OUT_OF_SCOPE"),
         "the revenue prediction attributable to the unverified slot must be OUT_OF_SCOPE: {predictions:?}"
+    );
+}
+
+/// Test 7b (amendment O, r2 f3) — the specific regression the diff review
+/// caught: an unverified slot sharing metric+fiscal_year with an ELIGIBLE
+/// slot must NEVER steal the eligible slot's exact match, even when a
+/// (buggy) implementation would attribute ineligible slots BEFORE eligible
+/// scoring runs. Proven at the pure-matcher level: eligible scoring claims
+/// the one real prediction first; the ineligible-attribution pass then sees
+/// an EMPTY remaining pool and claims nothing.
+#[test]
+fn unverified_slot_never_steals_an_exact_eligible_match() {
+    let panel: BTreeSet<String> = sample_key_map().panel;
+    let eligible_fy = slot(
+        "eligible",
+        "revenue",
+        2025,
+        "FY",
+        "2025-12-31",
+        "consolidated",
+        "total",
+        "reported",
+        "flow",
+        "PLN",
+        "500000000",
+    );
+    // The would-be unverified slot: SAME metric_key + fiscal_year (the
+    // narrow identity a buggy implementation used to match on), but the
+    // production pipeline only ever produced ONE prediction for this event.
+    let unverified_h1 = slot(
+        "unverified",
+        "revenue",
+        2025,
+        "H1",
+        "2025-06-30",
+        "consolidated",
+        "total",
+        "reported",
+        "flow",
+        "PLN",
+        "500000000",
+    );
+    let only_prediction = prediction(
+        "p1",
+        "revenue",
+        2025,
+        "FY",
+        "2025-12-31",
+        "consolidated",
+        "total",
+        "reported",
+        "flow",
+        Some("PLN"),
+        "500000000",
+    );
+
+    // The fixed order: eligible slots score first, against ALL predictions.
+    let score = score_event(
+        &[eligible_fy],
+        std::slice::from_ref(&only_prediction),
+        &panel,
+    );
+    assert_eq!(score.slot_outcomes["eligible"], Outcome::Match);
+    assert_eq!(score.prediction_outcomes["p1"], Outcome::Match);
+
+    // Only what eligible scoring left as FALSE_POSITIVE may be offered to
+    // ineligible attribution — here, nothing (the pool is empty).
+    let mut still_unmatched: Vec<Prediction> = vec![only_prediction]
+        .into_iter()
+        .filter(|p| score.prediction_outcomes.get(&p.id).copied() == Some(Outcome::FalsePositive))
+        .collect();
+    let claimed =
+        attribute_ineligible_predictions(&[&unverified_h1], &mut still_unmatched, "unverified");
+    assert!(
+        claimed.is_empty(),
+        "the unverified slot must not claim a prediction eligible scoring already matched: {claimed:?}"
     );
 }
 
@@ -3273,6 +3737,9 @@ fn orphan_ground_truth_event_id_is_a_typed_failure() {
         "value": "1",
         "duration_months": null,
         "verification": "machine",
+        "language": "pl",
+        "mapped": true,
+        "normalized_by": [],
         "contributing_occurrence_ids": [],
         "resolution_ref": null
     }));
@@ -3339,6 +3806,7 @@ struct GtSlotSpecVerified {
     attribution: &'static str,
     value: &'static str,
     verification: &'static str,
+    basis: &'static str,
 }
 
 /// Builds a minimal one-event manifest + ground truth in `dir` (tests 3b, 8,
@@ -3362,6 +3830,7 @@ fn write_manifest_and_gt(
             attribution: s.attribution,
             value: s.value,
             verification: "machine",
+            basis: "consolidated",
         })
         .collect();
     write_manifest_and_gt_with_verification(
@@ -3436,12 +3905,12 @@ fn write_manifest_and_gt_with_verification(
         .map(|s| {
             let window = concept_window(s.concept);
             serde_json::json!({
-                "slot_id": format!("{event_id}/-/{}/{}/consolidated/{window}/reported/{fiscal_year}/{period_type}/PLN", s.concept, s.attribution),
+                "slot_id": format!("{event_id}/-/{}/{}/{}/{window}/reported/{fiscal_year}/{period_type}/PLN", s.concept, s.attribution, s.basis),
                 "event_id": event_id,
                 "package_member": null,
                 "concept_local": s.concept,
                 "attribution": s.attribution,
-                "basis": "consolidated",
+                "basis": s.basis,
                 "window": window,
                 "variant": "reported",
                 "fiscal_year": fiscal_year,
@@ -3452,6 +3921,9 @@ fn write_manifest_and_gt_with_verification(
                 "value": s.value,
                 "duration_months": null,
                 "verification": s.verification,
+                "language": "pl",
+                "mapped": true,
+                "normalized_by": [],
                 "contributing_occurrence_ids": [],
                 "resolution_ref": null
             })

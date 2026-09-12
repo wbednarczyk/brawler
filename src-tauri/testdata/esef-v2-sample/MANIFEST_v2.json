@@ -1,9 +1,17 @@
 {
   "manifest_version": 1,
-  "snapshot": { "source": "synthetic-sample", "taken_at": "2026-09-12" },
-  "registry_hash": "cfad85dec7889441698129c97f65f10825fcc639ecd9903728daa6e8f7a263cb",
+  "snapshot": {
+    "source": "synthetic-sample",
+    "taken_at": "2026-09-12"
+  },
+  "registry_hash": "58a892265bf80e457414ccffff46b054b4f4c926b4ddb6085e106e01972e4320",
   "issuers": [
-    { "issuer_id": "iss_01", "ticker": "SMPL", "exchange": "GPW", "display_name": "Sample S.A." }
+    {
+      "issuer_id": "iss_01",
+      "ticker": "SMPL",
+      "exchange": "GPW",
+      "display_name": "Sample S.A."
+    }
   ],
   "events": [
     {
@@ -105,8 +113,8 @@
       },
       "file": {
         "name": "sample_package.zip",
-        "sha256": "3528a25e5d9554037f2a1989337c0f3d140a34f00769c4e36b3c006e945adeb4",
-        "bytes": 1870,
+        "sha256": "50682bed73a91be21bef342dc46e43c6a1c427a1dbc54e1dfe05a5ce33afad13",
+        "bytes": 2400,
         "package_member": "reports/consolidated.xhtml"
       },
       "document": {
@@ -121,6 +129,6 @@
   ],
   "honest_limitations": [
     "synthetic sample corpus (#331 PR-A): fabricated numbers for harness/fixture testing only, never real filing evidence",
-    "one issuer — not representative of cross-issuer variance"
+    "one issuer \u2014 not representative of cross-issuer variance"
   ]
 }

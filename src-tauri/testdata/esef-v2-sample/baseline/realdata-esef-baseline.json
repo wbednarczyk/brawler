@@ -5,18 +5,18 @@
   "gt_version": "1",
   "key_map_version": 1,
   "normalization_version": 1,
-  "registry_hash": "cfad85dec7889441698129c97f65f10825fcc639ecd9903728daa6e8f7a263cb",
+  "registry_hash": "58a892265bf80e457414ccffff46b054b4f4c926b4ddb6085e106e01972e4320",
   "events": 3,
   "floor_events": 2,
   "issuers": 1,
   "gt_slots": 33,
-  "unverified": 0,
+  "unverified": 1,
   "matched": 32,
   "previously_correct_slots_lost": 0,
   "false_positives": 0,
   "zero_output_events": 0,
   "availability_all_periods": {
-    "available": 31,
+    "available": 32,
     "eligible": 36
   },
   "layer1_capture": {
@@ -26,16 +26,18 @@
   },
   "labeled_capability": {
     "matched": 32,
-    "eligible": 36
+    "eligible": 38
   },
   "sensitivity": {
     "matched": 28,
     "gt_slots": 29,
-    "excluded": 4
+    "excluded": 4,
+    "precision_matched": 28,
+    "precision_denominator": 29
   },
   "twin_agreement": {
-    "agree": 16,
-    "compared": 16
+    "agree": 18,
+    "compared": 18
   },
   "replay": {
     "events": 3,

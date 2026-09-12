@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Blinded adjudication for ESEF measurement v2 (#331 PR-A, ADR 0112,
-`LABELING.md`, amendment 1 N). Stdlib only.
+`LABELING.md`, amendment 2 W). Stdlib only.
 
 Three subcommands:
   prepare  builds indistinguishable review tasks: every machine-flagged
@@ -9,25 +9,34 @@ Three subcommands:
            tasks total, or all of them if fewer exist. A task carries only
            the filing reference (event_id, package_member), concept and
            period -- never a candidate value or which selection rule
-           produced it. Refuses to overwrite an existing task set (amendment
-           N: task/index/GT bindings are frozen by hash once prepared).
+           produced it. `tasks.lock` binds the task file hashes TOGETHER
+           WITH the current hash of `tasks_index.json`, `ground_truth_v2.json`
+           and `occurrences_v2.json` (amendment W) -- refuses to overwrite an
+           existing task set.
   seal     stores one reader's answers for one event
            (`adjudication/<event_id>/<reader>.json`, hash + timestamp).
-           Refuses an existing reader seal for that event, refuses once
-           `compare` has run, and validates every answered task's hash
-           against `tasks.lock` (a task file that changed since `prepare`
-           is refused, never silently accepted).
-  compare  mechanically compares the FULL normalized answer (value as
-           Decimal, currency, basis, attribution, fiscal period) against
-           the machine slot -- not value alone. Refuses unless every
-           prepared task has a sealed answer. Outcomes: agree -> `second_read`;
-           differs, with an evidence anchor -> `adjudicated` (atomically
-           re-keyed if the correction changes the slot's identity, e.g. a
-           corrected attribution); differs with NO evidence anchor ->
-           refused (never silently applied); unsettled, or multiple readers
-           disagreeing -> stays/becomes `unverified`. The production app's
-           extraction is never consulted; the only values ever written are
-           the reader's own.
+           Re-verifies the FULL binding (index/GT/occurrences hashes, not
+           just the answered task files) before sealing, refuses once
+           `compare` has run, refuses an existing reader seal, and records
+           the seal's own hash in `adjudication/seals.lock` (a registry
+           `compare` re-checks independently of each file's self-reported
+           hash).
+  compare  re-verifies every binding and every seal hash first; then
+           validates EVERY sealed answer's domain (finite Decimal value,
+           3-letter currency, basis/attribution/period_type in the known
+           enum, integer fiscal_year) -- a single invalid answer anywhere
+           fails the WHOLE transaction with NO writes at all (amendment W).
+           Only once every answer is known-valid does it compare the FULL
+           normalized answer against the machine slot. Refuses unless every
+           prepared task has a sealed answer. Outcomes: agree ->
+           `second_read`; differs, with an evidence anchor -> `adjudicated`
+           (atomically re-keyed if the correction changes the slot's
+           identity); differs with NO evidence anchor -> `unverified`
+           (amendment W: a contradicted machine label never stays
+           `machine`), the disputed value never applied; unsettled, or
+           multiple readers disagreeing -> stays/becomes `unverified`. The
+           production app's extraction is never consulted; the only values
+           ever written are a reader's own, and only after validation.
 
 Usage:
     python3 adjudicate.py prepare --esef-v2-dir <dir> --seed <int>
@@ -50,6 +59,9 @@ AGREEMENT_SAMPLE_FRACTION = 0.10
 MIN_TASKS = 10
 PROTOCOL_VERSION = 1
 NORMALIZED_ANSWER_FIELDS = ("value", "currency", "basis", "attribution", "fiscal_year", "period_type")
+VALID_BASES = {"consolidated", "standalone", "unknown"}
+VALID_ATTRIBUTIONS = {"total", "owners_of_parent", "nci"}
+VALID_PERIOD_TYPES = {"FY", "H1", "Q1", "Q2", "Q3", "Q4", "unknown"}
 
 
 class SealingClosedError(RuntimeError):
@@ -68,12 +80,32 @@ class TaskHashMismatchError(RuntimeError):
     """Raised when a task file's current hash no longer matches tasks.lock."""
 
 
+class BindingMismatchError(RuntimeError):
+    """Raised when tasks_index.json / ground_truth_v2.json / occurrences_v2.json
+    no longer matches the hash `tasks.lock` bound them to at prepare time
+    (amendment W: the full binding, not just answered task files)."""
+
+
+class SealHashMismatchError(RuntimeError):
+    """Raised when a sealed answer file's content no longer matches its own
+    recorded hash, or that hash disagrees with `seals.lock`."""
+
+
 class IncompleteAdjudicationError(RuntimeError):
     """Raised when `compare` runs while a prepared task has no sealed answer."""
 
 
+class InvalidAnswerError(RuntimeError):
+    """Raised when a sealed answer fails domain validation -- amendment W:
+    the whole compare transaction fails, no partial writes."""
+
+
 def _adjudication_dir(esef_v2_dir: Path) -> Path:
     return esef_v2_dir / "adjudication"
+
+
+def _file_sha256_or_none(path: Path) -> str | None:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
 
 
 def prepare(esef_v2_dir: Path, seed: int) -> dict:
@@ -81,10 +113,11 @@ def prepare(esef_v2_dir: Path, seed: int) -> dict:
     if (adjudication_dir / "tasks.lock").exists():
         raise PrepareExistsError(
             f"{adjudication_dir / 'tasks.lock'} already exists -- task/index/GT bindings are frozen by hash "
-            "once prepared (amendment N); re-preparing would associate old sealed answers with new task ids."
+            "once prepared (amendment W); re-preparing would associate old sealed answers with new task ids."
         )
 
-    gt = json.loads((esef_v2_dir / "ground_truth_v2.json").read_text(encoding="utf-8"))
+    gt_path = esef_v2_dir / "ground_truth_v2.json"
+    gt = json.loads(gt_path.read_text(encoding="utf-8"))
     disagreements = [s for s in gt["slots"] if s["verification"] == "unverified"]
     agreements = [s for s in gt["slots"] if s["verification"] == "machine"]
 
@@ -106,7 +139,7 @@ def prepare(esef_v2_dir: Path, seed: int) -> dict:
     tasks_dir = adjudication_dir / "tasks"
     tasks_dir.mkdir(parents=True, exist_ok=True)
 
-    lock: list[dict] = []
+    lock_tasks: list[dict] = []
     index: dict[str, dict] = {}
     for i, (slot, kind) in enumerate(chosen, start=1):
         task_id = f"task_{i:04d}"
@@ -122,17 +155,38 @@ def prepare(esef_v2_dir: Path, seed: int) -> dict:
         }
         task_bytes = json.dumps(task, indent=2, ensure_ascii=False, sort_keys=True).encode("utf-8") + b"\n"
         (tasks_dir / f"{task_id}.json").write_bytes(task_bytes)
-        lock.append({"task_id": task_id, "sha256": hashlib.sha256(task_bytes).hexdigest()})
+        lock_tasks.append({"task_id": task_id, "sha256": hashlib.sha256(task_bytes).hexdigest()})
         index[task_id] = {"slot_id": slot["slot_id"], "event_id": slot["event_id"], "task_kind": kind}
 
+    index_path = adjudication_dir / "tasks_index.json"
+    index_path.write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
+
+    # Amendment W: the lock binds task files TOGETHER WITH the index and the
+    # GT/occurrences snapshot they were prepared against -- astra r2 finding
+    # 13: the old lock covered only task files, so a changed index or a
+    # re-run labeler between prepare and compare went undetected.
+    lock = {
+        "tasks": lock_tasks,
+        "index_sha256": _file_sha256_or_none(index_path),
+        "gt_sha256": _file_sha256_or_none(gt_path),
+        "occurrences_sha256": _file_sha256_or_none(esef_v2_dir / "occurrences_v2.json"),
+    }
     (adjudication_dir / "tasks.lock").write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
-    (adjudication_dir / "tasks_index.json").write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
     return {"tasks": len(chosen), "disagreements": len(disagreements), "agreement_sample": len(sample)}
 
 
-def _load_lock(adjudication_dir: Path) -> dict[str, str]:
-    lock = json.loads((adjudication_dir / "tasks.lock").read_text(encoding="utf-8"))
-    return {entry["task_id"]: entry["sha256"] for entry in lock}
+def _verify_bindings(esef_v2_dir: Path, adjudication_dir: Path, lock: dict) -> None:
+    """Re-verifies the FULL amendment-W binding: not just the task files a
+    reader happens to be answering, but the index and the GT/occurrences
+    snapshot the whole task set was prepared against."""
+    checks = (
+        (adjudication_dir / "tasks_index.json", lock.get("index_sha256")),
+        (esef_v2_dir / "ground_truth_v2.json", lock.get("gt_sha256")),
+        (esef_v2_dir / "occurrences_v2.json", lock.get("occurrences_sha256")),
+    )
+    for path, locked_hash in checks:
+        if _file_sha256_or_none(path) != locked_hash:
+            raise BindingMismatchError(f"{path} no longer matches the hash tasks.lock bound it to at prepare time")
 
 
 def seal(esef_v2_dir: Path, reader: str, answers_path: Path) -> list[Path]:
@@ -140,9 +194,12 @@ def seal(esef_v2_dir: Path, reader: str, answers_path: Path) -> list[Path]:
     if (adjudication_dir / "resolutions.json").exists():
         raise SealingClosedError("compare has already run for this corpus; sealing is closed")
 
+    lock = json.loads((adjudication_dir / "tasks.lock").read_text(encoding="utf-8"))
+    _verify_bindings(esef_v2_dir, adjudication_dir, lock)
+
     answers = json.loads(answers_path.read_text(encoding="utf-8"))
     index = json.loads((adjudication_dir / "tasks_index.json").read_text(encoding="utf-8"))
-    lock_by_task = _load_lock(adjudication_dir)
+    lock_by_task = {t["task_id"]: t["sha256"] for t in lock["tasks"]}
 
     by_event: dict[str, dict] = {}
     for task_id, answer in answers.get("answers", {}).items():
@@ -157,13 +214,16 @@ def seal(esef_v2_dir: Path, reader: str, answers_path: Path) -> list[Path]:
             )
         by_event.setdefault(meta["event_id"], {})[task_id] = answer
 
+    seals_path = adjudication_dir / "seals.lock"
+    seals_registry = json.loads(seals_path.read_text(encoding="utf-8")) if seals_path.exists() else {}
+
     timestamp = datetime.now(timezone.utc).isoformat()
     sealed_paths = []
     for event_id, event_answers in by_event.items():
         event_dir = adjudication_dir / event_id
         dest = event_dir / f"{reader}.json"
         if dest.exists():
-            raise ResealError(f"{dest} already sealed for reader {reader!r} -- resealing is refused (amendment N)")
+            raise ResealError(f"{dest} already sealed for reader {reader!r} -- resealing is refused (amendment W)")
         event_dir.mkdir(parents=True, exist_ok=True)
         payload = {
             "reader": reader,
@@ -174,16 +234,24 @@ def seal(esef_v2_dir: Path, reader: str, answers_path: Path) -> list[Path]:
             "answers": event_answers,
         }
         body = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        payload["sha256"] = hashlib.sha256(body).hexdigest()
+        seal_hash = hashlib.sha256(body).hexdigest()
+        payload["sha256"] = seal_hash
         dest.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        # Amendment W: the seal hash is ALSO recorded in a separate registry,
+        # independent of the sealed file's own self-reported hash, so
+        # `compare` has an external reference point to catch a file whose
+        # content AND embedded hash were both altered consistently.
+        seals_registry[f"{event_id}/{reader}"] = seal_hash
         sealed_paths.append(dest)
+
+    seals_path.write_text(json.dumps(seals_registry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return sealed_paths
 
 
 def _iter_sealed_files(adjudication_dir: Path):
     for path in adjudication_dir.rglob("*.json"):
         if path.parent == adjudication_dir or path.parent.name == "tasks":
-            continue  # tasks.lock / tasks_index.json / resolutions.json / adjudication/tasks/*
+            continue  # tasks.lock / tasks_index.json / seals.lock / resolutions.json / adjudication/tasks/*
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
@@ -192,11 +260,54 @@ def _iter_sealed_files(adjudication_dir: Path):
             yield payload
 
 
+def _verify_seal_hash(payload: dict, seals_registry: dict) -> None:
+    """Recomputes the sealed payload's hash the same way `seal` did and
+    checks it against BOTH the payload's own embedded `sha256` and the
+    independent `seals.lock` registry (amendment W)."""
+    body = {k: v for k, v in payload.items() if k != "sha256"}
+    recomputed = hashlib.sha256(json.dumps(body, indent=2, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    identity = f"{payload.get('event_id')}/{payload.get('reader')}"
+    if recomputed != payload.get("sha256"):
+        raise SealHashMismatchError(f"sealed answers for {identity} have been modified since sealing")
+    if seals_registry.get(identity) != payload.get("sha256"):
+        raise SealHashMismatchError(f"seal hash for {identity} does not match adjudication/seals.lock")
+
+
 def _decimal_or_none(value) -> Decimal | None:
     try:
         return Decimal(str(value))
     except (InvalidOperation, TypeError):
         return None
+
+
+def _validate_answer_fields(task_id: str, reader: str, answer: dict) -> None:
+    """Amendment W / astra r2 finding 22: an answer that isn't explicitly
+    `unverified` must be a fully-formed, in-domain reading -- a decimal that
+    parses but is NaN/Infinity, a non-3-letter currency, or an out-of-enum
+    basis/attribution/period_type/fiscal_year used to sail through as an
+    "incomplete answer" only when a whole FIELD was missing, letting a
+    single garbage value (e.g. unparseable text) turn into the literal
+    string `"None"` written into ground_truth_v2.json."""
+    if answer.get("unverified"):
+        return
+    identity = f"{task_id} ({reader})"
+    missing = [f for f in NORMALIZED_ANSWER_FIELDS if f not in answer]
+    if missing:
+        raise InvalidAnswerError(f"{identity}: answer missing field(s) {missing}")
+    value = _decimal_or_none(answer["value"])
+    if value is None or not value.is_finite():
+        raise InvalidAnswerError(f"{identity}: value {answer['value']!r} is not a finite decimal")
+    currency = answer["currency"]
+    if not (isinstance(currency, str) and len(currency) == 3 and currency.isalpha() and currency.isupper()):
+        raise InvalidAnswerError(f"{identity}: currency {currency!r} is not a 3-letter code")
+    if answer["basis"] not in VALID_BASES:
+        raise InvalidAnswerError(f"{identity}: basis {answer['basis']!r} outside the known domain {sorted(VALID_BASES)}")
+    if answer["attribution"] not in VALID_ATTRIBUTIONS:
+        raise InvalidAnswerError(f"{identity}: attribution {answer['attribution']!r} outside the known domain {sorted(VALID_ATTRIBUTIONS)}")
+    if answer["period_type"] not in VALID_PERIOD_TYPES:
+        raise InvalidAnswerError(f"{identity}: period_type {answer['period_type']!r} outside the known domain {sorted(VALID_PERIOD_TYPES)}")
+    if not isinstance(answer["fiscal_year"], int) or isinstance(answer["fiscal_year"], bool):
+        raise InvalidAnswerError(f"{identity}: fiscal_year {answer['fiscal_year']!r} is not an integer")
 
 
 def _slot_normalized_tuple(slot: dict) -> tuple:
@@ -211,15 +322,14 @@ def _slot_normalized_tuple(slot: dict) -> tuple:
 
 
 def _answer_normalized_tuple(answer: dict) -> tuple | None:
-    """The reader's own full, independently-derived reading -- amendment N /
-    astra r1 finding 12: comparing value alone let a same-number,
-    different-currency answer silently pass as `second_read`. Returns None
-    if any required field is missing (a malformed/incomplete definite
-    answer, never silently defaulted from the slot under test)."""
-    if any(field not in answer for field in NORMALIZED_ANSWER_FIELDS):
+    """The reader's own full, independently-derived reading. Returns `None`
+    for an explicitly `unverified` answer; every other answer reaching this
+    point has already passed `_validate_answer_fields`, so construction here
+    cannot fail."""
+    if answer.get("unverified"):
         return None
     return (
-        _decimal_or_none(answer["value"]),
+        Decimal(str(answer["value"])),
         answer["currency"],
         answer["basis"],
         answer["attribution"],
@@ -230,20 +340,34 @@ def _answer_normalized_tuple(answer: dict) -> tuple | None:
 
 def compare(esef_v2_dir: Path) -> dict:
     adjudication_dir = _adjudication_dir(esef_v2_dir)
+    lock = json.loads((adjudication_dir / "tasks.lock").read_text(encoding="utf-8"))
+    _verify_bindings(esef_v2_dir, adjudication_dir, lock)
+
     index = json.loads((adjudication_dir / "tasks_index.json").read_text(encoding="utf-8"))
     gt = json.loads((esef_v2_dir / "ground_truth_v2.json").read_text(encoding="utf-8"))
     slots_by_id = {s["slot_id"]: s for s in gt["slots"]}
 
+    seals_path = adjudication_dir / "seals.lock"
+    seals_registry = json.loads(seals_path.read_text(encoding="utf-8")) if seals_path.exists() else {}
+
     answers_by_task: dict[str, list[tuple[str, dict]]] = {}
     for payload in _iter_sealed_files(adjudication_dir):
+        _verify_seal_hash(payload, seals_registry)
         for task_id, answer in payload["answers"].items():
             answers_by_task.setdefault(task_id, []).append((payload["reader"], answer))
 
     missing = sorted(task_id for task_id in index if task_id not in answers_by_task)
     if missing:
         raise IncompleteAdjudicationError(
-            f"{len(missing)} prepared task(s) have no sealed answer yet (amendment N): {', '.join(missing)}"
+            f"{len(missing)} prepared task(s) have no sealed answer yet (amendment W): {', '.join(missing)}"
         )
+
+    # Amendment W: validate EVERY sealed answer before touching anything --
+    # a single invalid answer fails the whole transaction, never a partial
+    # write (astra r2 finding 22).
+    for task_id, readers in answers_by_task.items():
+        for reader, answer in readers:
+            _validate_answer_fields(task_id, reader, answer)
 
     resolutions = []
     for task_id, meta in sorted(index.items()):
@@ -259,14 +383,15 @@ def compare(esef_v2_dir: Path) -> dict:
 
         # Uniform outcomes regardless of why the task was picked (a
         # disagreement or an agreement-sample check are indistinguishable by
-        # design -- LABELING.md step 5): the reader could not settle it, an
-        # answer was malformed/incomplete, or multiple readers disagreed
-        # with each other -> unsettled; a single complete, matching read ->
-        # agree; a single complete, DIFFERING read WITH an evidence anchor ->
-        # adjudicated (settles a machine conflict or flags a contradicted
-        # agreement-sample slot as a systematic-error signal, LABELING.md
-        # step 6); a differing read with NO evidence anchor is refused, not
-        # silently applied (amendment N).
+        # design -- LABELING.md step 5): the reader could not settle it, or
+        # multiple readers disagreed with each other -> unsettled; a single
+        # complete, matching read -> agree; a single complete, DIFFERING
+        # read WITH an evidence anchor -> adjudicated (settles a machine
+        # conflict or flags a contradicted agreement-sample slot as a
+        # systematic-error signal, LABELING.md step 6); a differing read
+        # with NO evidence anchor becomes `unverified` -- amendment W: a
+        # contradicted machine label never stays `machine` -- without ever
+        # applying the disputed value.
         if any_unsettled or len(answer_tuples) != 1 or None in answer_tuples:
             outcome, new_verification = "unsettled", "unverified"
         else:
@@ -274,7 +399,7 @@ def compare(esef_v2_dir: Path) -> dict:
             if answer_tuple == slot_tuple:
                 outcome, new_verification = "agree", "second_read"
             elif evidence is None:
-                outcome, new_verification = "rejected_missing_evidence", slot["verification"]
+                outcome, new_verification = "rejected_missing_evidence", "unverified"
             else:
                 outcome, new_verification = "adjudicated", "adjudicated"
                 _apply_adjudicated_answer(slot, answer_tuple)
@@ -367,14 +492,14 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "seal":
         try:
             sealed = seal(esef_v2_dir, args.reader, args.answers)
-        except (SealingClosedError, ResealError, TaskHashMismatchError) as exc:
+        except (SealingClosedError, ResealError, TaskHashMismatchError, BindingMismatchError) as exc:
             print(f"adjudicate seal: refused -- {exc}")
             return 1
         print(f"adjudicate seal: sealed {len(sealed)} event file(s) for reader {args.reader!r}")
     elif args.command == "compare":
         try:
             result = compare(esef_v2_dir)
-        except IncompleteAdjudicationError as exc:
+        except (IncompleteAdjudicationError, BindingMismatchError, SealHashMismatchError, InvalidAnswerError) as exc:
             print(f"adjudicate compare: refused -- {exc}")
             return 1
         print(f"adjudicate compare: {result['resolutions']} resolutions")

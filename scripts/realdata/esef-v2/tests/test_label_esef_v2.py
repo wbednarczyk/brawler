@@ -26,7 +26,7 @@ def _write_manifest(out: Path, event: dict, file_bytes: bytes) -> None:
     (out / "MANIFEST_v2.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
-def _event(basis="consolidated") -> dict:
+def _event(basis="consolidated", fiscal_start_month=1) -> dict:
     return {
         "event_id": "iss_01/FY2025/pl/consolidated/v1",
         "issuer_id": "iss_01",
@@ -34,7 +34,13 @@ def _event(basis="consolidated") -> dict:
         "language": "pl",
         "basis_scope": basis,
         "vintage": 1,
-        "labeled_period": {"fiscal_year": 2025, "period_type": "FY", "period_end": "2025-12-31", "period_start": "2025-01-01"},
+        "labeled_period": {
+            "fiscal_year": 2025,
+            "period_type": "FY",
+            "period_end": "2025-12-31",
+            "period_start": "2025-01-01",
+            "fiscal_start_month": fiscal_start_month,
+        },
         "file": {"name": "zzz.xhtml", "sha256": "a" * 64, "bytes": 1, "package_member": None},
         "document": {"id": "doc1", "title": "t", "url": "u", "content_type": "application/xhtml+xml", "content_hash": None},
     }
@@ -293,10 +299,6 @@ class NamespaceMatchingTests(unittest.TestCase):
             self.assertTrue(occurrences[0]["concept_qname"].startswith("{https://zzz.example.com/"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class IfrsNamespaceGateTests(unittest.TestCase):
     """Real-data run 2026-09-12: the 2024-03-27 ESEF taxonomy publishes under
     https://xbrl.ifrs.org — the gate must accept both schemes and still refuse
@@ -309,3 +311,254 @@ class IfrsNamespaceGateTests(unittest.TestCase):
         self.assertTrue(lab.is_ifrs_concept("{http://xbrl.ifrs.org/taxonomy/2023-03-23/ifrs-full}Assets"))
         self.assertFalse(lab.is_ifrs_concept("{http://www.example.pl/xbrl/2025-12-31}Revenue"))
         self.assertFalse(lab.is_ifrs_concept(None))
+
+
+class DimensionExclusionTests(unittest.TestCase):
+    def test_nci_plus_geography_axis_is_not_a_slot(self):
+        # Astra r2 finding 5 / amendment Z: a Parent/NCI member ALONGSIDE any
+        # other axis (segment/geography/class) must NOT become a slot -- the
+        # old rule returned on the first NCI/Parent match and ignored the
+        # rest of the dimension set.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context(
+                    "c1",
+                    start="2025-01-01",
+                    end="2025-12-31",
+                    segment=segment(
+                        explicit_member("ifrs-full:ComponentsOfEquityAxis", "ifrs-full:NoncontrollingInterestsMember"),
+                        explicit_member("ifrs-full:GeographicalAreasAxis", "ifrs-full:PolandMember"),
+                    ),
+                ),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:ProfitLoss", "c1", "u1", "50"),
+            )
+            _write_manifest(out, _event(), doc)
+            result = lbl.label_esef_v2(str(out))
+            self.assertEqual(result["ground_truth"]["slots"], [])
+            self.assertEqual(result["dimensional_occurrences"], 1)
+
+    def test_bare_nci_member_alone_still_forms_a_slot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context(
+                    "c1",
+                    start="2025-01-01",
+                    end="2025-12-31",
+                    segment=segment(explicit_member("ifrs-full:ComponentsOfEquityAxis", "ifrs-full:NoncontrollingInterestsMember")),
+                ),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:ProfitLoss", "c1", "u1", "50"),
+            )
+            _write_manifest(out, _event(), doc)
+            result = lbl.label_esef_v2(str(out))
+            self.assertEqual(len(result["ground_truth"]["slots"]), 1)
+            self.assertEqual(result["ground_truth"]["slots"][0]["attribution"], "nci")
+            self.assertEqual(result["dimensional_occurrences"], 0)
+
+
+class MemberLanguageTests(unittest.TestCase):
+    def test_occurrence_and_slot_carry_member_language(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1000"),
+                lang="pl",
+            )
+            _write_manifest(out, _event(), doc)
+            result = lbl.label_esef_v2(str(out))
+            occurrences = json.loads((out / "occurrences_v2.json").read_text())
+            self.assertEqual(occurrences[0]["language"], "pl")
+            self.assertEqual(result["ground_truth"]["slots"][0]["language"], "pl")
+            self.assertEqual(result["ground_truth"]["slots"][0]["population"], "floor")
+
+    def test_other_language_member_is_twin_diagnostic_population_inside_the_same_event(self):
+        # Amendment S: a bilingual PACKAGE -- the EN member's slots are
+        # twin_diagnostic population INSIDE the same event, not a separate
+        # event and not silently merged into the floor population.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            pl = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1000"),
+                lang="pl",
+            )
+            en = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1000"),
+                lang="en",
+            )
+            pkg = zip_package({"reports/a_pl.xhtml": pl, "reports/b_en.xhtml": en})
+            event = dict(_event())
+            event["file"] = {"name": "zzz.zip", "sha256": "a" * 64, "bytes": 1, "package_member": "reports/a_pl.xhtml"}
+            _write_manifest(out, event, pkg)
+            result = lbl.label_esef_v2(str(out), pin_language="pl")
+            slots = result["ground_truth"]["slots"]
+            self.assertEqual(len(slots), 2)
+            by_lang = {s["language"]: s["population"] for s in slots}
+            self.assertEqual(by_lang, {"pl": "floor", "en": "twin_diagnostic"})
+
+
+class MemberBasisContradictionTests(unittest.TestCase):
+    def test_member_basis_contradicting_headline_stays_unknown_and_queued(self):
+        # Astra r2 finding 8 / amendment T: the OLD code discarded the
+        # contradiction flag and substituted the event's headline basis --
+        # a standalone member inside a nominally-consolidated package would
+        # silently read "consolidated".
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1000"),
+            )
+            event = dict(_event(basis="consolidated"))
+            event["file"] = {"name": "zzz.zip", "sha256": "a" * 64, "bytes": 1, "package_member": "reports/sprawozdanie_jednostkowe.xhtml"}
+            pkg = zip_package({"reports/sprawozdanie_jednostkowe.xhtml": doc})
+            _write_manifest(out, event, pkg)
+            result = lbl.label_esef_v2(str(out))
+            self.assertEqual(len(result["ground_truth"]["slots"]), 1)
+            self.assertEqual(result["ground_truth"]["slots"][0]["basis"], "unknown")
+
+            review_queue = json.loads((out / "review-queue.json").read_text())
+            entry = next(r for r in review_queue if r["package_member"] == "reports/sprawozdanie_jednostkowe.xhtml")
+            self.assertIn("member basis contradicts the event's headline basis", entry["reasons"])
+
+
+class MemberParseFailureTests(unittest.TestCase):
+    def test_member_parse_error_counted_and_queued(self):
+        # Astra r2 finding 9 / amendment U: a malformed member alongside a
+        # valid primary member used to disappear with zero unresolved
+        # occurrences to show for it.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            good = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1000"),
+            )
+            # sniff_ixbrl requires valid XML, so simulate a member that sniffs
+            # as iXBRL-shaped (has ix:/xbrli: tags) but is malformed enough
+            # to fail the SECOND (real) parse -- an unterminated CDATA/tag
+            # injected after a well-formed-looking prefix cannot happen with
+            # a single ET.fromstring pass, so this test drives the parse
+            # path directly instead of round-tripping through sniff.
+            broken = b"<html><body><ix:nonFraction>unterminated</body></html>"
+            event = dict(_event())
+            event["file"] = {"name": "zzz.zip", "sha256": "a" * 64, "bytes": 1, "package_member": "reports/good.xhtml"}
+            pkg = zip_package({"reports/good.xhtml": good, "reports/broken.xhtml": broken})
+            _write_manifest(out, event, pkg)
+
+            import esef_ixbrl as ix
+
+            # Confirm the fixture actually reproduces a parse error via the
+            # real code path label_esef_v2 uses (parse_instance, not sniff).
+            self.assertIsNotNone(ix.parse_instance(broken)["parse_error"])
+
+            result = lbl.label_esef_v2(str(out))
+            self.assertEqual(result["unresolved_members"], 1)
+            review_queue = json.loads((out / "review-queue.json").read_text())
+            entry = next(r for r in review_queue if r["package_member"] == "reports/broken.xhtml")
+            self.assertTrue(any("member parse error" in reason for reason in entry["reasons"]))
+
+
+class FiscalCalendarTests(unittest.TestCase):
+    def test_march_year_end_instant_classified_fy_not_q1_with_shifted_fiscal_start(self):
+        # Astra r2 finding 10 / amendment V: the frame's persisted
+        # fiscal_start_month must classify EVERY occurrence, instants
+        # included -- a March year-end balance sheet is FY when the fiscal
+        # year starts in April, never Q1 by raw calendar month.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", instant="2025-03-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Assets", "c1", "u1", "5000"),
+            )
+            _write_manifest(out, _event(fiscal_start_month=4), doc)
+            result = lbl.label_esef_v2(str(out))
+            slots = result["ground_truth"]["slots"]
+            self.assertEqual(len(slots), 1)
+            self.assertEqual(slots[0]["period_type"], "FY")
+
+    def test_calendar_year_instant_unaffected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", instant="2025-03-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Assets", "c1", "u1", "5000"),
+            )
+            _write_manifest(out, _event(fiscal_start_month=1), doc)
+            result = lbl.label_esef_v2(str(out))
+            self.assertEqual(result["ground_truth"]["slots"][0]["period_type"], "Q1")
+
+
+class UnmappedConceptSlotTests(unittest.TestCase):
+    def test_unmapped_ifrs_concept_still_gets_a_slot_flagged_unmapped(self):
+        # Amendment Q / astra r2 finding 14 (labeler half): EVERY IFRS
+        # concept gets a slot now, mapped through gt_key_map.json or not.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:ResearchAndDevelopmentExpense", "c1", "u1", "500"),
+            )
+            _write_manifest(out, _event(), doc)
+            result = lbl.label_esef_v2(str(out))
+            slots = result["ground_truth"]["slots"]
+            self.assertEqual(len(slots), 1)
+            self.assertFalse(slots[0]["mapped"])
+            self.assertEqual(slots[0]["attribution"], "total")
+
+    def test_mapped_concept_flagged_mapped_true(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1000"),
+            )
+            _write_manifest(out, _event(), doc)
+            result = lbl.label_esef_v2(str(out))
+            self.assertTrue(result["ground_truth"]["slots"][0]["mapped"])
+
+    def test_normalized_by_tags_interim_duration_and_cash_flow_concept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-06-30"),
+                units=unit("u1"),
+                facts=(
+                    non_fraction("ifrs-full:Revenue", "c1", "u1", "1000")
+                    + non_fraction("ifrs-full:CashFlowsFromUsedInOperatingActivities", "c1", "u1", "200")
+                ),
+            )
+            _write_manifest(out, _event(), doc)
+            result = lbl.label_esef_v2(str(out))
+            by_concept = {s["concept_local"]: s["normalized_by"] for s in result["ground_truth"]["slots"]}
+            self.assertEqual(by_concept["Revenue"], ["cumulative_context_to_flow"])
+            self.assertEqual(by_concept["CashFlowsFromUsedInOperatingActivities"], ["cumulative_context_to_flow", "cash_flow_outflow_sign"])
+
+    def test_normalized_by_empty_for_fy_non_cash_flow_slot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1000"),
+            )
+            _write_manifest(out, _event(), doc)
+            result = lbl.label_esef_v2(str(out))
+            self.assertEqual(result["ground_truth"]["slots"][0]["normalized_by"], [])
+
+
+if __name__ == "__main__":
+    unittest.main()

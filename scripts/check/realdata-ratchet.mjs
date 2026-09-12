@@ -131,7 +131,11 @@ const ESEF_METRICS_SCHEMA = {
     eligible: "number",
     value_correct: "number",
   },
-  labeled_capability: { matched: "number", labeled: "number" },
+  // Amendment P / astra r2 finding 20: the harness emits `eligible`
+  // (denominator = every labeled slot, mapped or not); the old schema key
+  // `labeled` never matched, so a genuine measured artifact failed schema
+  // validation with exit 2.
+  labeled_capability: { matched: "number", eligible: "number" },
   sensitivity: { matched: "number", gt_slots: "number", excluded: "number" },
   twin_agreement: { agree: "number", compared: "number" },
   replay: {

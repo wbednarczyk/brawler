@@ -260,6 +260,7 @@ def classify_file(instances: list[dict], duration_concepts: set[str], doc_title:
             "period_start": None,
             "period_end": None,
             "duration_months": None,
+            "fiscal_start_month": None,
             "basis_scope": basis_scope,
             "language": language,
             "primary_member": primary_instance.get("package_member"),
@@ -297,6 +298,7 @@ def classify_file(instances: list[dict], duration_concepts: set[str], doc_title:
         "period_start": start,
         "period_end": end,
         "duration_months": months,
+        "fiscal_start_month": fiscal_start_month,
         "basis_scope": basis_scope,
         "language": language,
         "primary_member": primary_instance.get("package_member"),
@@ -476,6 +478,7 @@ def build_frame(
                     "period_start": None,
                     "period_end": None,
                     "duration_months": None,
+                    "fiscal_start_month": None,
                     "sha256": sha,
                     "bytes": len(data),
                     "package_member": None,
@@ -533,6 +536,7 @@ def build_frame(
             "period_start": classification["period_start"],
             "period_end": classification["period_end"],
             "duration_months": classification["duration_months"],
+            "fiscal_start_month": classification["fiscal_start_month"],
             "sha256": sha,
             "bytes": len(data),
             "package_member": classification["primary_member"],
@@ -591,6 +595,11 @@ def build_frame(
                 "period_end": c["period_end"],
                 "period_start": c["period_start"],
                 "duration_months": c["duration_months"],
+                # Amendment V / astra r2 finding 10: persisted so the labeler
+                # classifies EVERY occurrence (including instants) against
+                # the SAME fiscal calendar the frame inferred, instead of
+                # re-deriving (or defaulting to January) per occurrence.
+                "fiscal_start_month": c["fiscal_start_month"],
             },
             "file": {
                 "name": dest_name,

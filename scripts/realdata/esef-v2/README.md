@@ -49,8 +49,8 @@ evidence.
 
 | Public (this repo) | Private (`$BRAWLER_ESEF_V2_DIR`, gitignored) |
 | --- | --- |
-| `esef_ixbrl.py`, `build_frame.py`, `label_esef_v2.py`, `import_v1.py`, `adjudicate.py` | `MANIFEST_v2.json`, `occurrences_v2.json`, `ground_truth_v2.json`, `review-queue.json` |
-| `gt_key_map.json` (content-free: concept names + version, no filing data) | `corpus/` (the actual filing bytes), `adjudication/` |
+| `esef_ixbrl.py`, `build_frame.py`, `label_esef_v2.py`, `import_v1.py`, `adjudicate.py` | `MANIFEST_v2.json`, `occurrences_v2.json`, `ground_truth_v2.json`, `review-queue.json`, `skipped-non-ixbrl.json` |
+| `gt_key_map.json` (content-free: concept names + version, no filing data) | `corpus/` (the actual filing bytes), `adjudication/`, `machine_v1_reference.json` |
 | `tests/` (synthetic `ZZZ` fixtures only) | `baseline/keyed-baseline.json`, `scoring-report-v2.json`, `keyed-outcomes.<run>.json` |
 | `realdata-esef-baseline.json` (repo root, aggregates only) | — |
 
@@ -74,10 +74,14 @@ python3 scripts/realdata/esef-v2/build_frame.py --snapshot <sqlite path> --data-
 #    (every concept, no panel filter) and derive ground_truth_v2.json slots.
 python3 scripts/realdata/esef-v2/label_esef_v2.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR"
 
-# 3. (Optional) Import the v1 (#182) merged ground truth as machine_v1
-#    reference slots, excluded from floors until independently re-verified.
+# 3. (Optional) Import the v1 (#182) merged ground truth. Always writes its
+#    OWN reference artifact, machine_v1_reference.json -- it never touches
+#    ground_truth_v2.json unless --map-to-events explicitly binds a v1 file
+#    to a FROZEN manifest event_id (amendment Y: an invented event id has no
+#    manifest counterpart and the harness's orphan-event guard rejects it).
 python3 scripts/realdata/esef-v2/import_v1.py --v1-dir private/realdata/spikes/esef-positional-gt \
-  --esef-v2-dir "$BRAWLER_ESEF_V2_DIR"
+  --esef-v2-dir "$BRAWLER_ESEF_V2_DIR" \
+  [--map-to-events mapping.json]   # {"<v1 file>": "<frozen manifest event_id>"}
 
 # 4. Blinded adjudication (LABELING.md protocol): resolve machine conflicts
 #    and spot-check a frozen 10% agreement sample. `compare` matches the

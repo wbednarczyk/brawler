@@ -265,8 +265,9 @@ class CompareTests(unittest.TestCase):
             self.assertEqual(gt["slots"][0]["value"], "999")
 
     def test_disagreement_without_evidence_anchor_is_refused_not_applied(self):
-        # Amendment N / astra r1 finding 12: an adjudicated change requires
-        # an evidence anchor -- never silently applied.
+        # Amendment W / astra r2 finding 22: the DISPUTED VALUE is never
+        # applied without evidence, but the contradicted machine label must
+        # never simply STAY `machine` either -- it becomes `unverified`.
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             slot = _slot("Revenue", "machine", "42")
@@ -277,8 +278,8 @@ class CompareTests(unittest.TestCase):
             adj.compare(out)
 
             gt = json.loads((out / "ground_truth_v2.json").read_text())
-            self.assertEqual(gt["slots"][0]["verification"], "machine")  # unchanged, refused
-            self.assertEqual(gt["slots"][0]["value"], "42")  # unchanged, refused
+            self.assertEqual(gt["slots"][0]["verification"], "unverified")  # never stays `machine`
+            self.assertEqual(gt["slots"][0]["value"], "42")  # the disputed value is never applied
             resolutions = json.loads((out / "adjudication" / "resolutions.json").read_text())
             self.assertEqual(resolutions[0]["outcome"], "rejected_missing_evidence")
 
@@ -350,6 +351,142 @@ class CompareTests(unittest.TestCase):
             gt = json.loads((out / "ground_truth_v2.json").read_text())
             self.assertEqual(gt["slots"][0]["verification"], "unverified")
             self.assertEqual(gt["slots"][0]["value"], "42")  # neither reader's value applied
+
+
+class BindingTests(unittest.TestCase):
+    """Amendment W / astra r2 finding 13: tasks.lock binds task files
+    TOGETHER WITH tasks_index.json and the GT/occurrences snapshot they were
+    prepared against."""
+
+    def test_lock_records_index_and_gt_hashes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            _write_gt(out, [_slot("Revenue", "machine", "42")])
+            adj.prepare(out, seed=1)
+            lock = json.loads((out / "adjudication" / "tasks.lock").read_text())
+            self.assertIn("index_sha256", lock)
+            self.assertIn("gt_sha256", lock)
+            self.assertIsNotNone(lock["index_sha256"])
+            self.assertIsNotNone(lock["gt_sha256"])
+
+    def test_seal_refuses_when_the_index_was_tampered_with(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            _write_gt(out, [_slot("Revenue", "machine", "42")])
+            adj.prepare(out, seed=1)
+            index_path = out / "adjudication" / "tasks_index.json"
+            index_path.write_text(index_path.read_text() + "  ")  # tamper after prepare
+
+            index = json.loads(index_path.read_text())
+            task_id = next(iter(index))
+            answers_path = out / "answers.json"
+            answers_path.write_text(json.dumps({"answers": {task_id: {"value": "42"}}}))
+            with self.assertRaises(adj.BindingMismatchError):
+                adj.seal(out, "reader_a", answers_path)
+
+    def test_seal_refuses_when_ground_truth_changed_since_prepare(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "42")
+            _write_gt(out, [slot])
+            adj.prepare(out, seed=1)
+            # Simulate a re-run of the labeler after tasks were prepared.
+            _write_gt(out, [_slot("Revenue", "machine", "43")])
+
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            task_id = next(iter(index))
+            answers_path = out / "answers.json"
+            answers_path.write_text(json.dumps({"answers": {task_id: {"value": "42"}}}))
+            with self.assertRaises(adj.BindingMismatchError):
+                adj.seal(out, "reader_a", answers_path)
+
+    def test_compare_refuses_when_a_sealed_file_is_tampered_with_after_sealing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "42")
+            _write_gt(out, [slot])
+            adj.prepare(out, seed=1)
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            _seal_all(out, "reader_a", index, lambda tid, meta: _full_answer(slot))
+
+            event_id = next(iter(index.values()))["event_id"]
+            sealed_path = out / "adjudication" / event_id / "reader_a.json"
+            payload = json.loads(sealed_path.read_text())
+            payload["answers"][next(iter(payload["answers"]))]["value"] = "999999"  # tamper post-seal
+            sealed_path.write_text(json.dumps(payload))
+
+            with self.assertRaises(adj.SealHashMismatchError):
+                adj.compare(out)
+
+    def test_compare_refuses_when_seals_registry_disagrees_with_a_sealed_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "42")
+            _write_gt(out, [slot])
+            adj.prepare(out, seed=1)
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            _seal_all(out, "reader_a", index, lambda tid, meta: _full_answer(slot))
+
+            registry_path = out / "adjudication" / "seals.lock"
+            registry = json.loads(registry_path.read_text())
+            for key in registry:
+                registry[key] = "0" * 64  # corrupt the independent registry
+            registry_path.write_text(json.dumps(registry))
+
+            with self.assertRaises(adj.SealHashMismatchError):
+                adj.compare(out)
+
+
+class AnswerValidationTests(unittest.TestCase):
+    """Amendment W / astra r2 finding 22: an invalid answer fails the WHOLE
+    compare transaction, no partial writes -- and never turns into the
+    literal string "None" written into ground_truth_v2.json."""
+
+    def test_unparseable_decimal_text_refuses_the_whole_compare_no_partial_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            good_slot = _slot("Revenue", "machine", "42", event_id="iss_01/FY2025/pl/consolidated/v1")
+            bad_slot = _slot("GrossProfit", "machine", "10", event_id="iss_01/FY2025/pl/consolidated/v1")
+            _write_gt(out, [good_slot, bad_slot])
+            adj.prepare(out, seed=1)
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+
+            def answer_for(tid, meta):
+                slot = good_slot if meta["slot_id"] == good_slot["slot_id"] else bad_slot
+                if slot is bad_slot:
+                    return _full_answer(slot, value="not-a-number")  # garbage decimal text
+                return _full_answer(slot)
+
+            _seal_all(out, "reader_a", index, answer_for)
+            with self.assertRaises(adj.InvalidAnswerError):
+                adj.compare(out)
+
+            # No partial writes: neither slot changed, resolutions.json never written.
+            gt = json.loads((out / "ground_truth_v2.json").read_text())
+            self.assertEqual({s["value"] for s in gt["slots"]}, {"42", "10"})
+            self.assertFalse((out / "adjudication" / "resolutions.json").exists())
+
+    def test_non_three_letter_currency_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "42")
+            _write_gt(out, [slot])
+            adj.prepare(out, seed=1)
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            _seal_all(out, "reader_a", index, lambda tid, meta: _full_answer(slot, currency="PL"))
+            with self.assertRaises(adj.InvalidAnswerError):
+                adj.compare(out)
+
+    def test_out_of_domain_basis_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "42")
+            _write_gt(out, [slot])
+            adj.prepare(out, seed=1)
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            _seal_all(out, "reader_a", index, lambda tid, meta: _full_answer(slot, basis="combined"))
+            with self.assertRaises(adj.InvalidAnswerError):
+                adj.compare(out)
 
 
 if __name__ == "__main__":

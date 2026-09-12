@@ -268,7 +268,12 @@ def parse_instance(data: bytes, package_member: str | None = None) -> dict:
         concept_local, prefix_resolved = qname_local(name_attr, nsmap)
         expanded_qname, _expanded_resolved = expand_qname(name_attr, nsmap)
         ctx = contexts.get(context_id)
-        unit_resolved = unit_id is None or units.get(unit_id) is not None
+        # Amendment U / astra r2 finding 11: a NUMERIC fact with NO unitRef
+        # at all is not "resolved" -- ix:nonFraction requires one per spec.
+        # The old check (`unit_id is None or ...`) treated a missing unitRef
+        # as trivially satisfied, letting a unitless fact read "ok" and land
+        # in a slot with a null currency.
+        unit_resolved = unit_id is not None and units.get(unit_id) is not None
         raw_text = "" if nil else collect_value_text(elem)
         decimal_value, _note = (Decimal(0), None) if nil else apply_transform(raw_text, format_attr)
 

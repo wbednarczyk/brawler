@@ -353,6 +353,9 @@ class EndToEndDeterminismTests(unittest.TestCase):
             self.assertEqual(m1["events"][0]["role"], "floor")
             self.assertEqual(m1["events"][0]["warmup_order"], 0)  # astra r1 finding 6: present on every event
             self.assertEqual(m1["events"][0]["labeled_period"]["duration_months"], 12)
+            # Amendment V / astra r2 finding 10: persisted on the event so
+            # the labeler uses the SAME fiscal calendar for every occurrence.
+            self.assertEqual(m1["events"][0]["labeled_period"]["fiscal_start_month"], 1)
             self.assertTrue((out1 / "corpus" / "zzz.zip").exists())
 
     def test_unselected_unknown_candidate_is_queued_not_dropped(self):

@@ -136,6 +136,16 @@ if [ "$out" != "$run_dir_22/realdata-esef-metrics.json" ]; then
   exit 1
 fi
 
+# 23. Amendment X / astra r2 finding 16: a NOISY harness (ordinary
+#     cargo/libtest chatter on stdout) must never corrupt the captured
+#     metrics path -- stdout is reserved exclusively for the final filename.
+run_dir_23="$work/run23"
+out="$(bash "$esef_run" "$run_dir_23" -- bash -c 'echo "running 42 tests"; echo "test foo ... ok"; echo "{}" > "$BRAWLER_ESEF_METRICS_OUT"')"
+if [ "$out" != "$run_dir_23/realdata-esef-metrics.json" ]; then
+  printf "realdata-esef-run self-test FAILED [noisy harness stdout must not corrupt the metrics path]: got %s\n" "$out" >&2
+  exit 1
+fi
+
 # --- esef profile (#331 PR-A, ADR 0112) --------------------------------------
 
 esef_baseline="$work/esef-baseline.json"
@@ -145,7 +155,7 @@ cat >"$esef_baseline" <<'JSON'
   "events": 10, "floor_events": 6, "issuers": 5, "gt_slots": 100, "unverified": 2,
   "matched": 80, "previously_correct_slots_lost": 0, "false_positives": 3, "zero_output_events": 1,
   "availability_all_periods": {"available": 150, "eligible": 200}, "layer1_capture": {"captured": 50, "eligible": 60, "value_correct": 48},
-  "labeled_capability": {"matched": 80, "labeled": 110}, "sensitivity": {"matched": 78, "gt_slots": 95, "excluded": 5}, "twin_agreement": {"agree": 20, "compared": 22},
+  "labeled_capability": {"matched": 80, "eligible": 110}, "sensitivity": {"matched": 78, "gt_slots": 95, "excluded": 5}, "twin_agreement": {"agree": 20, "compared": 22},
   "replay": {"events": 8, "exercised_prior_check": 4, "exercised_quarantine": 2, "replay_matched": 1} }
 JSON
 
@@ -167,7 +177,7 @@ cat >"$esef_metrics" <<'JSON'
   "events": 10, "floor_events": 6, "issuers": 5, "gt_slots": 100, "unverified": 2,
   "matched": 80, "previously_correct_slots_lost": 0, "false_positives": 3, "zero_output_events": 1,
   "availability_all_periods": {"available": 150, "eligible": 200}, "layer1_capture": {"captured": 50, "eligible": 60, "value_correct": 48},
-  "labeled_capability": {"matched": 80, "labeled": 110}, "sensitivity": {"matched": 78, "gt_slots": 95, "excluded": 5}, "twin_agreement": {"agree": 20, "compared": 22},
+  "labeled_capability": {"matched": 80, "eligible": 110}, "sensitivity": {"matched": 78, "gt_slots": 95, "excluded": 5}, "twin_agreement": {"agree": 20, "compared": 22},
   "replay": {"events": 8, "exercised_prior_check": 4, "exercised_quarantine": 2, "replay_matched": 1} }
 JSON
 expect_exit_esef 0 "esef holds at the committed bounds" --profile esef --baseline "$esef_baseline" --metrics "$esef_metrics"

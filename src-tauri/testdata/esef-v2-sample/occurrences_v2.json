@@ -4,93 +4,100 @@
     "event_id": "iss_01/FY2025/pl/consolidated/v1",
     "package_member": null,
     "entity_identifier": "SMPL",
-    "concept_qname": "ifrs-full:Revenue",
+    "concept_qname": "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Revenue",
     "concept_local": "Revenue",
-    "context_id": "d2025",
     "period": {
       "start": "2025-01-01",
       "end": "2025-12-31"
     },
-    "unit": "iso4217:PLN",
-    "decimals": "-3",
-    "scale": 3,
-    "sign": null,
-    "format": null,
-    "dimensions": [],
     "value": "500000000",
-    "raw_text": "500 000",
-    "parse_status": "ok",
-    "verification": "machine",
-    "resolution_ref": null
+    "raw_text": "500000000",
+    "verification": "machine"
   },
   {
     "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#2",
     "event_id": "iss_01/FY2025/pl/consolidated/v1",
     "package_member": null,
     "entity_identifier": "SMPL",
-    "concept_qname": "ifrs-full:Assets",
+    "concept_qname": "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Assets",
     "concept_local": "Assets",
-    "context_id": "i2025",
     "period": {
       "instant": "2025-12-31"
     },
-    "unit": "iso4217:PLN",
-    "decimals": "-3",
-    "scale": 3,
-    "sign": null,
-    "format": null,
-    "dimensions": [],
     "value": "900000000",
-    "raw_text": "900 000",
-    "parse_status": "ok",
-    "verification": "machine",
-    "resolution_ref": null
+    "raw_text": "900000000",
+    "verification": "machine"
+  },
+  {
+    "occurrence_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1#1",
+    "event_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1",
+    "package_member": null,
+    "entity_identifier": "SMPL",
+    "concept_qname": "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}CashFlowsFromUsedInInvestingActivities",
+    "concept_local": "CashFlowsFromUsedInInvestingActivities",
+    "period": {
+      "start": "2025-01-01",
+      "end": "2025-12-31"
+    },
+    "value": "-30000000",
+    "raw_text": "-30000000",
+    "verification": "machine"
+  },
+  {
+    "occurrence_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1#2",
+    "event_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1",
+    "package_member": "reports/standalone.xhtml",
+    "entity_identifier": "SMPL",
+    "concept_qname": "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}CurrentLiabilities",
+    "concept_local": "CurrentLiabilities",
+    "period": {
+      "instant": "2025-12-31"
+    },
+    "value": "80000000",
+    "raw_text": "80000000",
+    "verification": "machine"
   },
   {
     "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#3",
     "event_id": "iss_01/FY2025/pl/consolidated/v1",
     "package_member": null,
     "entity_identifier": "SMPL",
-    "concept_qname": "ifrs-full:CashFlowsFromUsedInInvestingActivities",
-    "concept_local": "CashFlowsFromUsedInInvestingActivities",
-    "context_id": "d2025",
+    "concept_qname": "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Revenue",
+    "concept_local": "Revenue",
     "period": {
-      "start": "2025-01-01",
-      "end": "2025-12-31"
+      "start": "2024-01-01",
+      "end": "2024-12-31"
     },
-    "unit": "iso4217:PLN",
-    "decimals": "-3",
-    "scale": 3,
-    "sign": "-",
-    "format": null,
-    "dimensions": [],
-    "value": "-30000000",
-    "raw_text": "30 000",
-    "parse_status": "ok",
-    "verification": "machine",
-    "resolution_ref": null
+    "value": "420000000",
+    "raw_text": "420000000",
+    "verification": "machine"
   },
   {
-    "occurrence_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1#1",
-    "event_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1",
-    "package_member": "reports/standalone.xhtml",
+    "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#4",
+    "event_id": "iss_01/FY2025/pl/consolidated/v1",
+    "package_member": null,
     "entity_identifier": "SMPL",
-    "concept_qname": "ifrs-full:CurrentLiabilities",
-    "concept_local": "CurrentLiabilities",
-    "context_id": "i2025",
+    "concept_qname": "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Assets",
+    "concept_local": "Assets",
     "period": {
-      "instant": "2025-12-31"
+      "instant": "2024-12-31"
     },
-    "unit": "iso4217:PLN",
-    "decimals": "-3",
-    "scale": 3,
-    "sign": null,
-    "format": null,
-    "dimensions": [],
-    "value": "80000000",
-    "raw_text": "80 000",
-    "parse_status": "ok",
-    "verification": "machine",
-    "resolution_ref": null
+    "value": "800000000",
+    "raw_text": "800000000",
+    "verification": "machine"
+  },
+  {
+    "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#5",
+    "event_id": "iss_01/FY2025/pl/consolidated/v1",
+    "package_member": null,
+    "entity_identifier": "SMPL",
+    "concept_qname": "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Equity",
+    "concept_local": "Equity",
+    "period": {
+      "instant": "2024-12-31"
+    },
+    "value": "350000000",
+    "raw_text": "350000000",
+    "verification": "machine"
   }
 ]

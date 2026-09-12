@@ -33,9 +33,9 @@ an event is disqualified for that event.
    answers are **sealed** (`adjudicate.py seal <reader> <answers.json>` — hashed, timestamped, refused
    once a compare has run). `reader.json` records identity/protocol version (human) or model id +
    prompt hash + input allow-list (agent).
-5. **Compare** — `adjudicate.py compare` compares sealed answers with the machine slots mechanically:
+5. **Compare** — `adjudicate.py compare` first re-verifies the lock (task files + index + ground-truth/occurrence hashes) and every seal hash, validates each answer (finite decimal, three-letter currency, basis/attribution/period domains — an invalid answer fails the whole compare, nothing is written), then compares sealed answers with the machine slots mechanically:
    agree → `second_read`; disagree with filing evidence → `adjudicated` (the evidence anchor is the
-   record, the app's value is never consulted); unsettled → `unverified` (excluded from every
+   record, the app's value is never consulted); unsettled, or contradicted without filing evidence → `unverified` (a contradicted `machine` label never stays `machine`; excluded from every
    denominator, count pinned in the baseline).
 6. **Systematic-error rule** — if the agreement sample reveals a labeling error class (a transform,
    a sign convention, a namespace), the whole affected class is re-read before any floor is pinned.
@@ -46,7 +46,8 @@ an event is disqualified for that event.
 ## Convention-resolved rows
 
 `gt_key_map.json` enumerates the only normalizations applied to BOTH sides (cumulative context →
-`flow`, cash-flow outflow sign). A basis, window, variant or period-date difference is **never**
+`flow`, cash-flow outflow sign); each slot records the rule ids it went through (`normalized_by`), and so
+does each prediction on the harness side. A basis, window, variant or period-date difference is **never**
 normalized — it is scored as a mismatch. The sensitivity score in every report recomputes
 recall/precision with the convention-resolved population removed from both sides.
 

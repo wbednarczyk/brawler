@@ -372,7 +372,9 @@ GT slots, matched, missing, wrong value, false positives, mismatch classes, unve
 counts; current-period recall / labeled-scope precision, all-period availability, Layer 1
 comparative capture ("not measurable" on a zero denominator); labeled-capability recall;
 sensitivity (convention-resolved rows removed); twin agreement; replay summary;
-`previously_correct_slots_lost` with the lost slot ids (console only — private).
+`previously_correct_slots_lost` with the lost slot ids (console only — private); per-event rows
+(labeled vs derived period, production's acceptance and reason code, counts, run error), the
+zero-output list with reasons and the per-concept MISSING breakdown.
 
 **Floors:** `realdata-esef-baseline.json` (aggregates only, [ADR 0091](adr/0091-failure-path-and-real-state-testing.md) dec. 4) pins the version/hash equality
 fields, the `matched` floor and the `previously_correct_slots_lost` (hard 0) /

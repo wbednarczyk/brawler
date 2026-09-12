@@ -742,7 +742,7 @@ realdata-esef-score:
 
 realdata-esef-check:
 	@nonce="$$(date +%s%N)_$$$$"; \
-	run_dir="$(CURDIR)/$(ESEF_METRICS_DIR)/realdata-esef/$$nonce"; \
+	run_dir="$(abspath $(ESEF_METRICS_DIR))/realdata-esef/$$nonce"; \
 	metrics_out="$$(BRAWLER_ESEF_V2_DIR=$(abspath $(ESEF_V2_DIR)) BRAWLER_ESEF_REQUIRED=1 bash scripts/check/realdata-esef-run.sh "$$run_dir" -- $(NIX) bash -c 'cd src-tauri && cargo test storage::tests::real_data_esef_v2::esef_measurement_v2 -- --exact --ignored --nocapture')" && \
 	$(NIX) node scripts/check/realdata-ratchet.mjs --profile esef --baseline $(ESEF_BASELINE) --metrics "$$metrics_out"
 
