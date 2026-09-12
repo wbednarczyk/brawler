@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.87.1 - 2026-09-12
+
+
+### Bug Fixes
+
+- **extraction**: ESEF presentation-role classifier recognises every evidenced role family — three annual packages and six issuers' income statements project again (#511, ADR 0100 dec. 3 amendment) (#513)
+
 ## v0.87.0 - 2026-09-10
 
 
