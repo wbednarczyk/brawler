@@ -385,7 +385,10 @@ required"; an improvement is a stale baseline until promoted). Self-tested by
 from the pinned snapshot by bytes and filing evidence, never from extraction results) →
 `label_esef_v2.py` (blind reference parser, occurrence-level) → `adjudicate.py prepare/seal/compare`
 (blinded second read) → `make realdata-esef-check` → `make realdata-esef-promote`. The synthetic
-sample under `src-tauri/testdata/esef-v2-sample/` drives the same harness hermetically in CI.
+sample under `src-tauri/testdata/esef-v2-sample/` drives the same harness hermetically in CI. On the
+owner's snapshot the frame is **annual-only** (GPW interims are PDFs, ESEF mandates iXBRL for annual
+reports only) — one package per acceptance issuer plus earlier annual warm-ups; the interim leg and
+the language-twin leg are recorded as empty per issuer in `honest_limitations`.
 
 ### Data-trust audit (epic #229 T1) — sizing a repair before writing it
 

@@ -181,6 +181,69 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(result["basis_scope"], "unknown")
         self.assertIn("basis contradicts between member and outer evidence", result["unknown_reasons"])
 
+    def test_cover_page_basis_survives_a_large_preamble(self):
+        # Real-data finding (owner DB, 2026-09-12): a real ESEF instance's
+        # hidden ix:header/context/fact preamble is mostly TAGS (stripped
+        # away) with only tiny text nodes between them, but it easily runs
+        # past 8000 raw bytes before any visible cover-page text begins --
+        # the old 8000-byte raw window cut the basis word off entirely,
+        # leaving basis "unknown" for every real ESEF package. This preamble
+        # is >8000 raw bytes but strips down to a few hundred characters, so
+        # it also proves the fix isn't just "a bigger text budget" -- the
+        # RAW window has to clear the tag-heavy preamble first.
+        preamble = b"<div>" + (b"<span>x</span>" * 700) + b"</div>"  # ~9.8KB raw, ~700 chars once stripped
+        inst = self._instance("2025-01-01", "2025-12-31", package_member="reports/primary.xhtml")
+        inst["raw_bytes"] = preamble + b"<body>Skonsolidowane sprawozdanie finansowe grupy kapitalowej</body>"
+        self.assertGreater(len(preamble), 8000)
+        result = bf.classify_file([inst], self.duration, "no hints", "no_hints_path.xhtml")
+        self.assertEqual(result["basis_scope"], "consolidated")
+
+    def test_cover_page_basis_survives_a_huge_inline_style_block(self):
+        # Real-data finding (owner DB, 2026-09-12): one real filing's
+        # <style> block alone was 8.5MB (of a 9.3MB file) -- plain
+        # tag-stripping leaves that raw CSS TEXT as "content" (style/script
+        # tags removed, their text kept), swamping any bounded window long
+        # before the real basis word. Style/script content must be excised
+        # wholesale, not just their tags.
+        style_block = b"<style>" + (b"body{color:#fff}\n" * 20000) + b"</style>"  # ~340KB of CSS text
+        inst = self._instance("2025-01-01", "2025-12-31", package_member="reports/primary.xhtml")
+        inst["raw_bytes"] = b"<head>" + style_block + b"</head><body>Skonsolidowane sprawozdanie</body>"
+        result = bf.classify_file([inst], self.duration, "no hints", "no_hints_path.xhtml")
+        self.assertEqual(result["basis_scope"], "consolidated")
+
+    def test_cover_page_basis_reachable_through_dense_tag_markup(self):
+        # Real-data finding (owner DB, 2026-09-12): real ix:header/context
+        # markup is so tag-dense that stripping tags from a modest raw
+        # window yields almost no text -- one real filing needed ~3MB of
+        # raw bytes (after style removal) to reach its first visible
+        # cover-page word. A few thousand short, attribute-heavy tags here
+        # simulate that density; the basis word must still be found.
+        dense_markup = b'<context id="c1" scheme="x"></context>' * 15000  # ~580KB raw, ~0 chars once stripped
+        inst = self._instance("2025-01-01", "2025-12-31", package_member="reports/primary.xhtml")
+        inst["raw_bytes"] = dense_markup + b"<body>Skonsolidowane sprawozdanie</body>"
+        self.assertGreater(len(dense_markup), 300_000)
+        result = bf.classify_file([inst], self.duration, "no hints", "no_hints_path.xhtml")
+        self.assertEqual(result["basis_scope"], "consolidated")
+
+    def test_language_from_esef_package_folder_name(self):
+        # Real-data finding: the folder-name language token sits right
+        # before a "/" (`ATR-2025-12-31-1-pl/reports/...`), which the old
+        # `_.-`-only boundary regex never matched.
+        lang, report_date = bf.esef_folder_info("ATR-2025-12-31-1-pl/reports/atr-2025-12-31-1-pl.xhtml")
+        self.assertEqual(lang, "pl")
+        self.assertEqual(report_date, "2025-12-31")
+
+    def test_language_falls_back_to_esef_folder_name_when_xml_lang_absent(self):
+        inst = self._instance("2025-01-01", "2025-12-31", package_member="ATR-2025-12-31-1-en/reports/x.xhtml")
+        import esef_ixbrl as ix
+
+        inst_bytes = inst["raw_bytes"].replace(b' xml:lang="pl"', b"")
+        inst = ix.parse_instance(inst_bytes, inst["package_member"])
+        inst["package_member"] = "ATR-2025-12-31-1-en/reports/x.xhtml"
+        inst["raw_bytes"] = inst_bytes
+        result = bf.classify_file([inst], self.duration, "no hints", "no_hints_path.xhtml")
+        self.assertEqual(result["language"], "en")
+
 
 class SelectionDeterminismTests(unittest.TestCase):
     def _candidate(self, issuer_id, period_type, fiscal_year, end, language="pl", basis="consolidated", sha="a" * 64,
@@ -336,8 +399,61 @@ class EndToEndDeterminismTests(unittest.TestCase):
             unknown_sha = bf.sha256_hex(unknown)
             entry = next((r for r in review_queue if r["sha256"] == unknown_sha), None)
             self.assertIsNotNone(entry, "the unselected unknown candidate must still be queued")
-            self.assertNotIn("event_id", entry)  # never selected -> no event exists for it
-            self.assertIn("no primary-statement duration concept found in any package member", entry["reasons"])
+
+    def test_non_ixbrl_file_never_becomes_an_event_and_corpus_holds_only_selected(self):
+        # Real-data fixes #1/#3 (owner DB, 2026-09-12): a board letter/opinion
+        # style .xhtml with NO iXBRL markup at all must never become an
+        # event (not even a "parse failure" one) -- it is skipped, listed in
+        # skipped-non-ixbrl.json, and never copied into corpus/. Only the
+        # genuine ESEF package becomes the (one) floor event.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            data_dir = tmp_path / "docs"
+            data_dir.mkdir()
+
+            real_package = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Revenue", "c1", "u1", "1000"),
+                lang="pl",
+            )
+            pkg = zip_package({"ZZZ-2025-12-31-1-pl/reports/zzz-2025-12-31-1-pl.xhtml": real_package})
+            (data_dir / "zzz.zip").write_bytes(pkg)
+
+            board_letter = b"<html><body><p>Dear shareholders, thank you for your continued trust.</p></body></html>"
+            (data_dir / "board_letter.xhtml").write_bytes(board_letter)
+
+            db_path = _make_db(tmp_path, with_financial_facts_row=False)
+            conn = sqlite3.connect(db_path)
+            conn.execute("UPDATE report_documents SET local_path='zzz.zip', title='ZZZ skonsolidowane' WHERE id='doc1'")
+            conn.execute(
+                "INSERT INTO report_documents VALUES ('doc2','c1','board_letter.xhtml','Letter to shareholders',"
+                "'http://example.org/zzz-letter','application/xhtml+xml',NULL,'fetched','2026-03-02T00:00:00Z')"
+            )
+            conn.commit()
+            conn.close()
+
+            out = tmp_path / "out"
+            manifest = bf.build_frame(str(db_path), str(data_dir), ["ZZZ"], str(out))
+
+            self.assertEqual(len(manifest["events"]), 1)
+            self.assertEqual(manifest["events"][0]["role"], "floor")
+
+            skipped = json.loads((out / "skipped-non-ixbrl.json").read_text())
+            self.assertEqual(len(skipped), 1)
+            self.assertEqual(skipped[0]["document_id"], "doc2")
+
+            review_queue = json.loads((out / "review-queue.json").read_text())
+            self.assertFalse(
+                any(r["sha256"] == bf.sha256_hex(board_letter) for r in review_queue),
+                "non-iXBRL markup must never reach the review queue",
+            )
+
+            corpus_files = sorted(p.name for p in (out / "corpus").iterdir())
+            self.assertEqual(corpus_files, ["zzz.zip"])  # never the board letter
+
+            summary = " ".join(manifest["honest_limitations"])
+            self.assertIn("1 non-iXBRL markup file(s) skipped", summary)
 
 
 if __name__ == "__main__":

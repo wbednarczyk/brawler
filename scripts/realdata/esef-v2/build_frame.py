@@ -44,10 +44,45 @@ import esef_ixbrl as ix
 HERE = Path(__file__).resolve().parent
 CONSOLIDATED_TOKENS = ("skonsolidowan", "consolidated")
 STANDALONE_TOKENS = ("jednostkow", "standalone", "separate")
-_LANG_TOKEN_RE = re.compile(r"[_.\-]?(pl|en)[_.\-]")
+# "/" included as a boundary char: an ESEF package folder name embeds the
+# language right before the path separator (`ATR-2025-12-31-1-pl/reports/..`),
+# which the original `_.-`-only boundary set never matched (real-data finding,
+# 2026-09-12 owner-DB run).
+_LANG_TOKEN_RE = re.compile(r"[_./\-]?(pl|en)[_./\-]")
+# ESEF package folder convention: `<prefix>-YYYY-MM-DD-<n>-<lang>/...` -- a
+# more specific, more reliable language (and incidentally report-date) source
+# than a generic substring scan.
+_ESEF_FOLDER_RE = re.compile(r"^[A-Za-z0-9]+-(\d{4}-\d{2}-\d{2})-\d+-([a-z]{2})(?:/|$)", re.IGNORECASE)
 _TAG_RE = re.compile(rb"<[^>]+>")
-COVER_PAGE_BYTE_WINDOW = 8000  # generous raw-byte window read before stripping tags
-COVER_PAGE_TEXT_LIMIT = 2000  # amendment L: "first 2 KB of the instance body after tags stripped"
+# Style/script ELEMENT CONTENT (not just their tags) has to go before
+# windowing/tag-stripping: a real ESEF/iXBRL viewer-rendered instance can
+# carry a multi-MEGABYTE inline <style> block ahead of any visible content
+# (observed on the owner's real snapshot: an 8.5MB style block in a 9.3MB
+# filing) -- plain tag-stripping leaves that raw CSS text as "content",
+# swamping any bounded window long before a real basis word ever appears.
+_STYLE_SCRIPT_RE = re.compile(rb"<(style|script)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
+# Real ESEF instances carry a large hidden `ix:header`/inline-CSS preamble
+# before any human-readable cover-page text -- the original 8000-byte/2000-char
+# window (sized for the synthetic test fixtures) yielded near-empty or
+# markup-fragment text on real filings, never a real basis word (real-data
+# finding, 2026-09-12 owner-DB run: basis stayed `unknown` for every real ESEF
+# package). Widened to comfortably clear that preamble on real filings.
+# A SAFETY CAP, not a tight budget: real ESEF ix:header/context/dimension
+# markup is so tag-dense that a modest raw window strips down to almost
+# nothing -- one real filing needed ~3MB of post-style raw bytes to reach its
+# first visible cover-page word (owner-DB run, 2026-09-12). 10MB comfortably
+# covers observed real filings (up to ~10MB) while still bounding a
+# pathological input; classify_file only calls this for the one primary
+# member of a candidate, so the cost is one full-file regex pass, not per
+# occurrence.
+COVER_PAGE_BYTE_WINDOW = 10_000_000
+# Amendment L's literal "~20 KB of stripped text" assumed light tag overhead;
+# real ix:header/context markup is tag-dense enough that EVERY tag substitutes
+# in as a space (see `cover_page_text`), so stripped length tracks tag COUNT
+# as much as real content -- one real filing's basis word landed at stripped
+# character 23,630, just past a 20,000 cutoff. Widened with headroom; a
+# substring search over a few hundred KB of text costs nothing measurable.
+COVER_PAGE_TEXT_LIMIT = 200_000
 
 
 # ---------------------------------------------------------------------------
@@ -95,9 +130,14 @@ def _basis_from_text(text: str) -> str:
 
 
 def cover_page_text(member_bytes: bytes) -> str:
-    """First ~2KB of the instance body with markup tags stripped (amendment
-    L basis precedence's last resort before `unknown`)."""
-    stripped = _TAG_RE.sub(b" ", member_bytes[:COVER_PAGE_BYTE_WINDOW])
+    """First ~20KB of the instance body with markup tags stripped (amendment
+    L basis precedence's last resort before `unknown`). Style/script element
+    CONTENT is removed over the FULL bytes first (real ESEF instances can
+    carry a multi-megabyte inline `<style>` block before any visible text --
+    a bounded window alone would just capture more CSS, never real content),
+    then a generous raw-byte window is tag-stripped for the target text."""
+    without_style_script = _STYLE_SCRIPT_RE.sub(b" ", member_bytes)
+    stripped = _TAG_RE.sub(b" ", without_style_script[:COVER_PAGE_BYTE_WINDOW])
     return stripped.decode("utf-8", errors="ignore")[:COVER_PAGE_TEXT_LIMIT]
 
 
@@ -119,11 +159,27 @@ def classify_basis(member_hint: str, outer_hints: list[str], cover_text: str) ->
     return _basis_from_text(cover_text), False
 
 
-def classify_language(xml_lang: str | None, text_sources: list[str]) -> str:
+def esef_folder_info(package_member: str | None) -> tuple[str | None, str | None]:
+    """(language, report_date) from the ESEF package folder convention
+    `<prefix>-YYYY-MM-DD-<n>-<lang>/...` -- e.g.
+    `ATR-2025-12-31-1-pl/reports/atr-2025-12-31-1-pl.xhtml`. More reliable
+    than a generic substring scan since it is a fixed, documented shape."""
+    if not package_member:
+        return None, None
+    match = _ESEF_FOLDER_RE.match(package_member)
+    if not match:
+        return None, None
+    report_date, lang = match.groups()
+    return lang.lower(), report_date
+
+
+def classify_language(xml_lang: str | None, text_sources: list[str], folder_hint: str | None = None) -> str:
     if xml_lang:
         code = xml_lang.split("-")[0].lower()
         if code in ("pl", "en"):
             return code
+    if folder_hint in ("pl", "en"):
+        return folder_hint
     for text in text_sources:
         low = f".{(text or '').lower()}."
         match = _LANG_TOKEN_RE.search(low)
@@ -189,7 +245,8 @@ def classify_file(instances: list[dict], duration_concepts: set[str], doc_title:
         basis_scope, contradiction = classify_basis(
             primary_instance.get("package_member") or "", [doc_title, outer_path], cover_text
         )
-        language = classify_language(primary_instance.get("lang"), text_sources)
+        folder_lang, _report_date = esef_folder_info(primary_instance.get("package_member"))
+        language = classify_language(primary_instance.get("lang"), text_sources, folder_lang)
         reasons = ["no primary-statement duration concept found in any package member"]
         if basis_scope == "unknown":
             reasons.append(
@@ -221,7 +278,8 @@ def classify_file(instances: list[dict], duration_concepts: set[str], doc_title:
     text_sources = [doc_title, outer_path, primary_instance.get("package_member") or ""]
     cover_text = cover_page_text(primary_instance.get("raw_bytes") or b"")
     basis_scope, contradiction = classify_basis(primary_instance.get("package_member") or "", [doc_title, outer_path], cover_text)
-    language = classify_language(primary_instance.get("lang"), text_sources)
+    folder_lang, _report_date = esef_folder_info(primary_instance.get("package_member"))
+    language = classify_language(primary_instance.get("lang"), text_sources, folder_lang)
 
     unknown_reasons = []
     if period_type == "unknown":
@@ -356,12 +414,18 @@ def build_frame(
         issuer_ids[ticker] = f"iss_{len(issuer_ids) + 1:02d}"
 
     candidates: list[dict] = []
-    honest_limitations: list[str] = []
     zero_eligible_per_issuer = {t: True for t in issuer_ids}
     # Astra r1 finding 9: every unresolved candidate is queued BEFORE
     # selection -- keyed by sha256 so it survives regardless of whether
     # selection later picks it as an event.
     review_queue_index: dict[str, dict] = {}
+    # Real-data finding (owner DB, 2026-09-12): honest_limitations used to be
+    # one line PER FILE (~1000 lines on the real snapshot, most of them
+    # "board letter/opinion/ESG report has no iXBRL", each carrying a
+    # document id). Aggregated to counts per class per issuer instead.
+    per_issuer_stats: dict[str, dict] = {iid: {"non_ixbrl_skipped": 0, "parse_failures": 0} for iid in issuer_ids.values()}
+    skipped_non_ixbrl: list[dict] = []
+    hard_failures: list[str] = []  # missing local_path / file not on disk -- rare, kept as-is
 
     for row in rows:
         ticker = row["ticker"]
@@ -373,55 +437,73 @@ def build_frame(
             "display_name": row["display_name"],
         }
         if not row["local_path"]:
-            honest_limitations.append(f"{row['id']}: fetched but no local_path recorded")
+            hard_failures.append(f"{row['id']}: fetched but no local_path recorded")
             continue
         file_path = data_root / row["local_path"]
         if not file_path.exists():
-            honest_limitations.append(f"{row['id']}: local_path {row['local_path']} missing on disk")
+            hard_failures.append(f"{row['id']}: local_path {row['local_path']} missing on disk")
             continue
 
         data = file_path.read_bytes()
         sha = sha256_hex(data)
-        parsed = ix.parse_document(data)
+        looks_eligible = ix.is_zip(data) or file_path.suffix.lower() in (".xhtml", ".html", ".zip")
+        try:
+            parsed = ix.parse_document(data)
+        except Exception as exc:  # noqa: BLE001 -- a broken container is evidence, not a crash
+            if not looks_eligible:
+                hard_failures.append(f"{row['id']}: unreadable and not eligible-looking ({exc})")
+                continue
+            # Real-data finding fix #1: eligibility is `sniff_ixbrl` success,
+            # never a filename/content-type guess -- but a CONTAINER that
+            # cannot even be opened (a corrupted ZIP entry, say) is neither
+            # "non-iXBRL markup" nor cleanly ineligible; it stays a floor
+            # event with a labeling_note so the harness scores it as the
+            # miss it is (ADR 0112 dec. 10 / the original contract).
+            per_issuer_stats[issuer_id]["parse_failures"] += 1
+            candidates.append(
+                {
+                    "issuer_id": issuer_id,
+                    "role": "floor",
+                    "language": "unknown",
+                    "basis_scope": "unknown",
+                    "period_type": "unknown",
+                    "fiscal_year": None,
+                    "period_start": None,
+                    "period_end": None,
+                    "duration_months": None,
+                    "sha256": sha,
+                    "bytes": len(data),
+                    "package_member": None,
+                    "is_package": ix.is_zip(data),
+                    "fetched_at": row["fetched_at"],
+                    "document": row,
+                    "file_bytes": data,
+                    "original_name": Path(row["local_path"]).name,
+                    "labeling_note": f"container parse failure: {exc}",
+                    "unknown_reasons": ["parse failure"],
+                }
+            )
+            review_queue_index[sha] = {
+                "issuer_id": issuer_id,
+                "sha256": sha,
+                "package_member": None,
+                "reasons": [f"container parse failure: {exc}"],
+            }
+            continue
 
         if not parsed["instances"]:
-            looks_eligible = (row["content_type"] or "").lower().find("xml") >= 0 or file_path.suffix.lower() in (
-                ".xhtml",
-                ".html",
-                ".zip",
+            # Non-iXBRL markup (board letters, auditor opinions, management
+            # reports, ESG reports, ...) is NEVER an event and NEVER queued
+            # -- it is aggregated per issuer and listed by file in
+            # `skipped-non-ixbrl.json`. Real-data finding fix #1: the old
+            # extension/content-type "looks_eligible" guess treated almost
+            # every `.xhtml` as an eligible-but-unparseable filing, turning
+            # hundreds of ordinary non-financial documents into bogus floor
+            # events (923 of 949 on the owner's real snapshot).
+            per_issuer_stats[issuer_id]["non_ixbrl_skipped"] += 1
+            skipped_non_ixbrl.append(
+                {"document_id": row["id"], "issuer_id": issuer_id, "sha256": sha, "local_path": row["local_path"]}
             )
-            if looks_eligible:
-                candidates.append(
-                    {
-                        "issuer_id": issuer_id,
-                        "role": "floor",
-                        "language": "unknown",
-                        "basis_scope": "unknown",
-                        "period_type": "unknown",
-                        "fiscal_year": None,
-                        "period_start": None,
-                        "period_end": None,
-                        "duration_months": None,
-                        "sha256": sha,
-                        "bytes": len(data),
-                        "package_member": None,
-                        "is_package": ix.is_zip(data),
-                        "fetched_at": row["fetched_at"],
-                        "document": row,
-                        "file_bytes": data,
-                        "original_name": Path(row["local_path"]).name,
-                        "labeling_note": "no iXBRL instance found in an eligible-looking file (parse failure)",
-                        "unknown_reasons": ["parse failure"],
-                    }
-                )
-                review_queue_index[sha] = {
-                    "issuer_id": issuer_id,
-                    "sha256": sha,
-                    "package_member": None,
-                    "reasons": ["parse failure: no iXBRL instance found in an eligible-looking file"],
-                }
-            else:
-                honest_limitations.append(f"{row['id']}: no iXBRL instance found (non-iXBRL markup)")
             continue
 
         zero_eligible_per_issuer[ticker] = False
@@ -435,7 +517,8 @@ def build_frame(
 
         classification = classify_file(instances_with_bytes, duration_concepts, row["title"] or "", row["local_path"])
         for reason in classification["unknown_reasons"]:
-            honest_limitations.append(f"{row['id']} ({classification['primary_member'] or '<raw>'}): {reason}")
+            bucket = "period_unknown" if "duration" in reason else "basis_unknown" if "basis" in reason else "language_unknown" if "language" in reason else "other_unknown"
+            per_issuer_stats[issuer_id][bucket] = per_issuer_stats[issuer_id].get(bucket, 0) + 1
         candidate = {
             "issuer_id": issuer_id,
             "language": classification["language"],
@@ -463,10 +546,6 @@ def build_frame(
                 "package_member": classification["primary_member"],
                 "reasons": classification["unknown_reasons"],
             }
-
-    for ticker, was_zero in zero_eligible_per_issuer.items():
-        if was_zero:
-            honest_limitations.append(f"{ticker}: zero eligible iXBRL instances in the fetched corpus")
 
     parse_failures = [c for c in candidates if c.get("labeling_note")]
     selectable = [c for c in candidates if not c.get("labeling_note")]
@@ -530,17 +609,59 @@ def build_frame(
         if entry is not None:
             entry["event_id"] = event_id
 
+    # Interim leg / twin leg status per issuer (real-data fix #3): computed
+    # from the FINAL selected events, one line per issuer per condition --
+    # never per file.
+    floor_events_by_issuer: dict[str, list[dict]] = {}
+    twin_by_issuer: dict[str, int] = {}
+    for e in events:
+        if e["role"] == "floor":
+            floor_events_by_issuer.setdefault(e["issuer_id"], []).append(e)
+        elif e["role"] == "twin_diagnostic":
+            twin_by_issuer[e["issuer_id"]] = twin_by_issuer.get(e["issuer_id"], 0) + 1
+
+    honest_limitations: list[str] = list(hard_failures)
+    for issuer_id in sorted(issuers_meta):
+        ticker = issuers_meta[issuer_id]["ticker"]
+        stats = per_issuer_stats.get(issuer_id, {})
+        if stats.get("non_ixbrl_skipped"):
+            honest_limitations.append(f"{ticker}: {stats['non_ixbrl_skipped']} non-iXBRL markup file(s) skipped (see skipped-non-ixbrl.json)")
+        if stats.get("parse_failures"):
+            honest_limitations.append(f"{ticker}: {stats['parse_failures']} eligible file(s) failed to parse (queued)")
+        if zero_eligible_per_issuer.get(ticker):
+            honest_limitations.append(f"{ticker}: zero eligible iXBRL instances in the fetched corpus")
+        for bucket, label in (
+            ("period_unknown", "unresolved period"),
+            ("basis_unknown", "unresolved basis"),
+            ("language_unknown", "unresolved language"),
+            ("other_unknown", "unresolved evidence"),
+        ):
+            if stats.get(bucket):
+                honest_limitations.append(f"{ticker}: {stats[bucket]} candidate(s) with {label} (queued)")
+
+        floors = floor_events_by_issuer.get(issuer_id, [])
+        if floors and not any(f["labeled_period"]["period_type"] not in ("FY", "unknown") for f in floors):
+            honest_limitations.append(f"{ticker}: interim leg empty for this issuer: no interim iXBRL filing in the snapshot")
+        twins = twin_by_issuer.get(issuer_id, 0)
+        honest_limitations.append(
+            f"{ticker}: twin leg present ({twins} event(s))" if twins else f"{ticker}: twin leg missing (no other-language instance for the floor period)"
+        )
+
     manifest = {
         "manifest_version": 1,
         "snapshot": {"source": Path(snapshot_path).name, "taken_at": date.today().isoformat()},
         "registry_hash": registry_hash(event_shas),
         "issuers": [issuers_meta[iid] for iid in sorted(issuers_meta)],
         "events": sorted(events, key=lambda e: e["event_id"]),
-        "honest_limitations": sorted(set(honest_limitations)),
+        "honest_limitations": honest_limitations,
     }
 
     out.mkdir(parents=True, exist_ok=True)
     (out / "MANIFEST_v2.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (out / "skipped-non-ixbrl.json").write_text(
+        json.dumps(sorted(skipped_non_ixbrl, key=lambda s: (s["issuer_id"], s["sha256"])), indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
     (out / "review-queue.json").write_text(
         json.dumps(sorted(review_queue_index.values(), key=lambda r: (r["issuer_id"], r["sha256"])), indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",

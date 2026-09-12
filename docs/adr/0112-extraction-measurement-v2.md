@@ -25,6 +25,7 @@ The #182 measurement (2026-08-05) found five real defects but the methodology au
 
 - Sound floors exist only after PR-B's measurement on the owner's machine; until then `realdata-esef-baseline.json` is `unmeasured` and the ratchet refuses to judge it.
 - The interim-as-FY derivation is a measured defect the first run will surface; it is carded, not hidden by the frame.
+- **The initial panel is annual-only** (first frame build on the 2026-09-10 snapshot): every ESEF filing of the acceptance issuers is an annual ZIP package (one per issuer, 23 issuers; ALE/CRI/CRQ have none, EXC is EBI-only); GPW interim reports are PDFs, never iXBRL, so the interim leg is empty by construction and the manifest says so per issuer. The ~920 loose `.xhtml` files fetched alongside (board letters, auditor opinions, management and ESG reports) carry no iXBRL and are never events — counted, not queued.
 - The v1 corpus remains a stored-state audit input; its rows enter v2 only as `machine_v1`.
 - Any change to the key map, the normalization list, the GT or the corpus bumps `measurement_version` and requires a deliberate rebaseline — the ratchet never silently accepts a moved denominator.
 
