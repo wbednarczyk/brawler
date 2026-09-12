@@ -77,6 +77,7 @@
             file
             git-cliff
             pkgsUnstable.nodejs_22
+            python3 # ESEF measurement v2 tooling unit checks (stdlib only, ADR 0112)
             pkg-config
             rpm
             rustToolchain

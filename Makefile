@@ -31,7 +31,7 @@ PLAYWRIGHT_VERSION := $(shell sed -n '/"node_modules\/@playwright\/test": {/{n;s
 PLAYWRIGHT_IMAGE := mcr.microsoft.com/playwright:v$(PLAYWRIGHT_VERSION)-noble
 VISUAL_DOCKER = docker run --rm --init --ipc=host --user "$$(id -u):$$(id -g)" -v $(CURDIR):/work -w /work -e HOME=/tmp -e SCREEN -e ALL -e REASON $(PLAYWRIGHT_IMAGE)
 
-.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-visual check-docs-gates check-commits check-tests-touched check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes smoke-keyring live-drive live-up live-cycle tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help package-release-linux package-release-windows
+.PHONY: commit help install dev frontend-preview build check check-local check-docs check-rust-lint check-rust-test check-frontend-static check-frontend-test check-frontend-build check-browser check-visual check-docs-gates check-commits check-tests-touched check-release-label live-smoke pr-binary sync-rad release-publish stamp-version disk-clean disk-clean-deep coverage coverage-frontend coverage-rust audit-bench audit-bench-ci live-drive-hints pr-live-cycle live-wait report-escaped-defects ux-contact-sheet visual-update audit-mutants types types-check realdata-honesty-check realdata-esef-score realdata-esef-check realdata-esef-promote shape-inventory-scan test ui-smoke ui-smoke-clickable ui-smoke-install typecheck rust-check install-git-hooks commit-msg-check version-check changelog-check release-notes smoke-keyring live-drive live-up live-cycle tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help package-release-linux package-release-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -55,6 +55,8 @@ help:
 	@printf "  make disk-clean-deep     disk-clean + cargo target dir (full rebuild next time) + full nix GC\n"
 	@printf "  make realdata-honesty-check\n"
 	@printf "                            Real-data honesty ratchet on the maintainer's own DB copy (ADR 0091); loud SKIP without it, never in \`make check\`\n"
+	@printf "  make realdata-esef-score / realdata-esef-check / realdata-esef-promote RUN=<nonce>\n"
+	@printf "                            ESEF measurement v2 (#331, ADR 0112): diagnostic run / reproducible ratchet gate / pin a new baseline — owner machine, never \`make check\`\n"
 	@printf "  make shape-inventory-scan\n"
 	@printf "                            Regenerate the anonymized shape inventory from the maintainer's DB copy (ADR 0091 dec. 4, epic #40 S6)\n"
 	@printf "  make report-escaped-defects\n"
@@ -212,6 +214,9 @@ check-docs-gates:
 	$(NIX) node scripts/check/file-size-ratchet.mjs
 	$(NIX) node scripts/check/docs-headings-ratchet.mjs
 	$(NIX) node --test "scripts/check/*.test.mjs" "scripts/ux/*.test.mjs"
+	# #331 PR-A (ADR 0112): esef-v2 python tooling unit checks (stdlib
+	# unittest, synthetic fixtures only — no real data, runs anywhere).
+	python3 -m unittest discover -s scripts/realdata/esef-v2/tests -p "test_*.py"
 	$(NIX) npm run release:version-check
 	$(NIX) npm run release:commit-msg-check
 	# G4 (ADR 0081 Q7 follow-up): a malformed escaped-defect table (wrong cell
@@ -714,6 +719,40 @@ shape-inventory-scan:
 	else \
 		printf "\n!! SKIP shape-inventory-scan: no real database at %s.\n!! The scan reads the maintainer's OWN data and runs on the maintainer's machine only (ADR 0091 dec. 4);\n!! the committed src/test/scenarios/shape-inventory.json is the public artefact. Refresh the snapshot per private/realdata/README.md to enable it.\n\n" "$(HONESTY_MASTER_DB)"; \
 	fi
+
+# ESEF measurement v2 (#331 PR-A, ADR 0112; docs/testing.md § ESEF measurement
+# v2): an owner-machine advisory ritual, never `make check` (ADR 0096 principle
+# 5 — real data never enters CI). `realdata-esef-score` is the diagnostic
+# harness run against the default private dirs; `realdata-esef-check` is the
+# reproducible gate: a fresh nonce metrics path, the harness with
+# BRAWLER_ESEF_REQUIRED=1 (SKIPs become panics) and --exact, an assertion the
+# nonce file actually landed (a zero-test filter or stale artifact fails
+# before the ratchet ever runs), then the ratchet against the committed
+# baseline. `realdata-esef-promote` pins a new baseline deliberately — never
+# automatic.
+ESEF_V2_DIR ?= private/realdata/spikes/esef-v2
+ESEF_BASELINE ?= realdata-esef-baseline.json
+ESEF_METRICS_DIR ?= src-tauri/target
+realdata-esef-score:
+	$(NIX) bash -c 'cd src-tauri && BRAWLER_ESEF_V2_DIR=$(abspath $(ESEF_V2_DIR)) cargo test esef_measurement_v2 -- --ignored --nocapture'
+
+realdata-esef-check:
+	@nonce="$$(date +%s%N)"; \
+	start="$$(date +%s)"; \
+	metrics_out="$(ESEF_METRICS_DIR)/realdata-esef-metrics.$$nonce.json"; \
+	$(NIX) bash -c "cd src-tauri && BRAWLER_ESEF_V2_DIR=$(abspath $(ESEF_V2_DIR)) BRAWLER_ESEF_REQUIRED=1 BRAWLER_ESEF_METRICS_OUT=$(abspath .)/$$metrics_out cargo test --exact storage::tests::real_data_esef_v2::esef_measurement_v2 -- --ignored --nocapture" && \
+	if [ ! -f "$$metrics_out" ] || [ "$$(stat -c %Y "$$metrics_out" 2>/dev/null || stat -f %m "$$metrics_out")" -lt "$$start" ]; then \
+		printf "realdata-esef-check: no fresh metrics — the harness did not run (%s missing or stale)\n" "$$metrics_out" >&2; \
+		exit 1; \
+	fi && \
+	$(NIX) node scripts/check/realdata-ratchet.mjs --profile esef --baseline $(ESEF_BASELINE) --metrics "$$metrics_out"
+
+realdata-esef-promote:
+	@test -n "$(RUN)" || { printf "Usage: make realdata-esef-promote RUN=<nonce>\n" >&2; exit 64; }
+	@mkdir -p $(ESEF_V2_DIR)/baseline
+	cp $(ESEF_V2_DIR)/keyed-outcomes.$(RUN).json $(ESEF_V2_DIR)/baseline/keyed-baseline.json
+	@printf "realdata-esef-promote: promoted run %s to %s/baseline/keyed-baseline.json\n" "$(RUN)" "$(ESEF_V2_DIR)"
+	@printf "!! realdata-esef-baseline.json (the public aggregates) is a separate, deliberate commit — update it by hand after reviewing the report.\n"
 
 # Advisory "worth a live-drive" hint (card #337, ADR 0096 principle 5): a dumb
 # path -> hint classifier over the PR's changed files, wired as the always-green

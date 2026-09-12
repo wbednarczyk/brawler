@@ -309,6 +309,8 @@ number it hopes for is worse than no harness.
 
 ### #182 ESEF / positional ground-truth scorer — DIAGNOSTIC (floors deferred to measurement v2)
 
+**This harness is the stored-state audit.** Sound floors live in the ESEF measurement v2 harness below ([ADR 0112](adr/0112-extraction-measurement-v2.md), #331); nothing here gates anything.
+
 **html_positional is RETIRED ([ADR 0095](adr/0095-retire-html-positional-tier.md)).** The positional
 arm of this scorer no longer measures precision/recall — it runs as a **stored-state auditor**: it
 asserts, unconditionally and DB-wide, that zero `pdf`-tier facts remain after every scoring run. No
@@ -456,6 +458,50 @@ CBF recall/precision ratchet — deleted along with its floors and `make realdat
 target ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) / [ADR 0095](adr/0095-retire-html-positional-tier.md)).
 THIS scorer itself currently carries no floor either, per the audit above — "successor" describes
 which harness supersedes the retired one, not that #182 is gating yet.
+
+### ESEF measurement v2 — fresh-extraction floors ([ADR 0112](adr/0112-extraction-measurement-v2.md), #331)
+
+`storage::tests::real_data_esef_v2::esef_measurement_v2` (`#[ignore]`) extracts every **floor
+event** of the owner's private v2 corpus alone into a fresh migrated database through the
+production path (`derive_report_period` → `run_structured_extraction`, autopilot mode) and scores
+the persisted facts against occurrence-level ground truth. Estimand, scoring key, exact-equality
+rule, the three denominators, the keyed zero-loss regression rule and the blinded labeling
+protocol are pinned in the ADR and in `scripts/realdata/esef-v2/LABELING.md`; the semantic key map is
+`scripts/realdata/esef-v2/gt_key_map.json`. Issuer replay (the issuer's events in domain-date order
+into one database) prints as a diagnostic next to it, never as a floor.
+
+**Env:** `BRAWLER_ESEF_V2_DIR` (default `private/realdata/spikes/esef-v2`, gitignored; absent →
+loud `SKIP`, never a CI failure), `BRAWLER_ESEF_KEYED_BASELINE` (the promoted private keyed
+baseline), `BRAWLER_ESEF_METRICS_OUT` (the aggregate metrics artifact), `BRAWLER_ESEF_REQUIRED=1`
+(owner-only required mode: every SKIP becomes a failure).
+
+**Run (owner machine, advisory ritual — never a required check, [ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)):**
+
+```bash
+make realdata-esef-score    # diagnostic report, no verdict
+make realdata-esef-check    # required mode → fresh nonce-named metrics → ratchet --profile esef
+make realdata-esef-promote RUN=<nonce>   # owner promotes a run's keyed outcomes as the new baseline
+```
+
+**Report anatomy:** header (estimand, versions, exact-equality rule); per-issuer counts (events,
+GT slots, matched, missing, wrong value, false positives, mismatch classes, unverified); pooled
+counts; current-period recall / labeled-scope precision, all-period availability, Layer 1
+comparative capture ("not measurable" on a zero denominator); labeled-capability recall;
+sensitivity (convention-resolved rows removed); twin agreement; replay summary;
+`previously_correct_slots_lost` with the lost slot ids (console only — private).
+
+**Floors:** `realdata-esef-baseline.json` (aggregates only, [ADR 0091](adr/0091-failure-path-and-real-state-testing.md) dec. 4) pins the version/hash equality
+fields, the `matched` floor and the `previously_correct_slots_lost` (hard 0) /
+`false_positives` / `zero_output_events` ceilings; `scripts/check/realdata-ratchet.mjs --profile esef`
+judges a run (`status: unmeasured` is refused; a version mismatch is "incomparable — rebaseline
+required"; an improvement is a stale baseline until promoted). Self-tested by
+`scripts/check/check-realdata-ratchet.sh`.
+
+**Corpus recipe (owner, private):** `scripts/realdata/esef-v2/README.md` — `build_frame.py` (frame
+from the pinned snapshot by bytes and filing evidence, never from extraction results) →
+`label_esef_v2.py` (blind reference parser, occurrence-level) → `adjudicate.py prepare/seal/compare`
+(blinded second read) → `make realdata-esef-check` → `make realdata-esef-promote`. The synthetic
+sample under `src-tauri/testdata/esef-v2-sample/` drives the same harness hermetically in CI.
 
 ### Data-trust audit (epic #229 T1) — sizing a repair before writing it
 

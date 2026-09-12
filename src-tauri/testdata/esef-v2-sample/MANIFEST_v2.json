@@ -1,0 +1,98 @@
+{
+  "manifest_version": 1,
+  "snapshot": { "source": "synthetic-sample", "taken_at": "2026-09-12" },
+  "registry_hash": "synthetic-sample-registry-hash-v1",
+  "issuers": [
+    { "issuer_id": "iss_01", "ticker": "SMPL", "exchange": "GPW", "display_name": "Sample S.A." }
+  ],
+  "events": [
+    {
+      "event_id": "iss_01/FY2025/pl/consolidated/v1",
+      "issuer_id": "iss_01",
+      "role": "floor",
+      "language": "pl",
+      "basis_scope": "consolidated",
+      "vintage": 1,
+      "labeled_period": {
+        "fiscal_year": 2025,
+        "period_type": "FY",
+        "period_end": "2025-12-31",
+        "period_start": "2025-01-01"
+      },
+      "file": {
+        "name": "sample_pl.xhtml",
+        "sha256": "750cd797f6daac59ebbfadb6764ed50bd07652b6a7225c02b401e1d9105b0f7b",
+        "bytes": 3327,
+        "package_member": null
+      },
+      "document": {
+        "id": "doc_floor_pl",
+        "title": "Skonsolidowane sprawozdanie finansowe za 2025",
+        "url": "https://example.com/sample/floor-pl.xhtml",
+        "content_type": "application/xhtml+xml",
+        "content_hash": null
+      },
+      "warmup_order": 0
+    },
+    {
+      "event_id": "iss_01/FY2025/en/consolidated/v1",
+      "issuer_id": "iss_01",
+      "role": "twin_diagnostic",
+      "language": "en",
+      "basis_scope": "consolidated",
+      "vintage": 1,
+      "labeled_period": {
+        "fiscal_year": 2025,
+        "period_type": "FY",
+        "period_end": "2025-12-31",
+        "period_start": "2025-01-01"
+      },
+      "file": {
+        "name": "sample_en.xhtml",
+        "sha256": "eb61764e2ec5356857815b402c8de64ac0f376dd9136a2eb88301b4022597e72",
+        "bytes": 3324,
+        "package_member": null
+      },
+      "document": {
+        "id": "doc_twin_en",
+        "title": "Consolidated financial statements for 2025",
+        "url": "https://example.com/sample/twin-en.xhtml",
+        "content_type": "application/xhtml+xml",
+        "content_hash": null
+      },
+      "warmup_order": 1
+    },
+    {
+      "event_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1",
+      "issuer_id": "iss_01",
+      "role": "floor",
+      "language": "pl",
+      "basis_scope": "consolidated",
+      "vintage": 1,
+      "labeled_period": {
+        "fiscal_year": 2025,
+        "period_type": "FY",
+        "period_end": "2025-12-31",
+        "period_start": "2025-01-01"
+      },
+      "file": {
+        "name": "sample_package.zip",
+        "sha256": "3528a25e5d9554037f2a1989337c0f3d140a34f00769c4e36b3c006e945adeb4",
+        "bytes": 1870,
+        "package_member": "reports/consolidated.xhtml"
+      },
+      "document": {
+        "id": "doc_floor_package",
+        "title": "Skonsolidowane i jednostkowe sprawozdanie finansowe za 2025 (pakiet)",
+        "url": "https://example.com/sample/floor-package.zip",
+        "content_type": "application/octet-stream",
+        "content_hash": null
+      },
+      "warmup_order": 2
+    }
+  ],
+  "honest_limitations": [
+    "synthetic sample corpus (#331 PR-A): fabricated numbers for harness/fixture testing only, never real filing evidence",
+    "one issuer, one fiscal year — not representative of cross-issuer or cross-year variance"
+  ]
+}

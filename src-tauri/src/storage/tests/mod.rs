@@ -32,6 +32,7 @@ mod mock_fidelity;
 mod notebooks;
 mod ownership;
 mod quality_frameworks;
+mod real_data_esef_v2;
 mod real_data_extraction;
 mod real_data_health_coverage;
 mod real_data_health_scores;

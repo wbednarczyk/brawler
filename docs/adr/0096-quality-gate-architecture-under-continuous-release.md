@@ -106,6 +106,9 @@ are untouched.
   `realdata-honesty-check`, `make live-cycle`) stay advisory, on-demand, never required checks.
 - The #182 ESEF/positional ground-truth scorer stays a diagnostic (no precision/recall floor)
   until measurement v2 (#331) narrows it to ESEF-only per [ADR 0095](0095-retire-html-positional-tier.md).
+  **Amendment (2026-09-12, [ADR 0112](0112-extraction-measurement-v2.md)):** measurement v2 lands as
+  the advisory `realdata-esef-check` ritual with a committed aggregate baseline — still never a
+  required check; the #182 scorer remains the stored-state audit.
 - Follow-on cards tracked separately: bench rework to a base-vs-head audit (#336), live-drive
   hints (#337), anti-archaeology sweep (#338).
 

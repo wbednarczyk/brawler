@@ -51,7 +51,8 @@ stamping) are open-ended — every new issuer layout is a new way to be wrong.
    read/MCP mappings for the `pdf` tier *value* only as long as historical snapshots
    require (raw `sourceTier` is an exposed surface).
 4. **Measurement v2 (#331) narrows to ESEF-only**, which dissolves its hardest audit
-   blockers (CDR concentration, PL/EN twin estimand) by construction.
+   blockers (CDR concentration, PL/EN twin estimand) by construction — designed in
+   [ADR 0112](0112-extraction-measurement-v2.md).
 
 ## Consequences
 

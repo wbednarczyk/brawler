@@ -1,0 +1,96 @@
+[
+  {
+    "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#1",
+    "event_id": "iss_01/FY2025/pl/consolidated/v1",
+    "package_member": null,
+    "entity_identifier": "SMPL",
+    "concept_qname": "ifrs-full:Revenue",
+    "concept_local": "Revenue",
+    "context_id": "d2025",
+    "period": {
+      "start": "2025-01-01",
+      "end": "2025-12-31"
+    },
+    "unit": "iso4217:PLN",
+    "decimals": "-3",
+    "scale": 3,
+    "sign": null,
+    "format": null,
+    "dimensions": [],
+    "value": "500000000",
+    "raw_text": "500 000",
+    "parse_status": "ok",
+    "verification": "machine",
+    "resolution_ref": null
+  },
+  {
+    "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#2",
+    "event_id": "iss_01/FY2025/pl/consolidated/v1",
+    "package_member": null,
+    "entity_identifier": "SMPL",
+    "concept_qname": "ifrs-full:Assets",
+    "concept_local": "Assets",
+    "context_id": "i2025",
+    "period": {
+      "instant": "2025-12-31"
+    },
+    "unit": "iso4217:PLN",
+    "decimals": "-3",
+    "scale": 3,
+    "sign": null,
+    "format": null,
+    "dimensions": [],
+    "value": "900000000",
+    "raw_text": "900 000",
+    "parse_status": "ok",
+    "verification": "machine",
+    "resolution_ref": null
+  },
+  {
+    "occurrence_id": "iss_01/FY2025/pl/consolidated/v1#3",
+    "event_id": "iss_01/FY2025/pl/consolidated/v1",
+    "package_member": null,
+    "entity_identifier": "SMPL",
+    "concept_qname": "ifrs-full:CashFlowsFromUsedInInvestingActivities",
+    "concept_local": "CashFlowsFromUsedInInvestingActivities",
+    "context_id": "d2025",
+    "period": {
+      "start": "2025-01-01",
+      "end": "2025-12-31"
+    },
+    "unit": "iso4217:PLN",
+    "decimals": "-3",
+    "scale": 3,
+    "sign": "-",
+    "format": null,
+    "dimensions": [],
+    "value": "-30000000",
+    "raw_text": "30 000",
+    "parse_status": "ok",
+    "verification": "machine",
+    "resolution_ref": null
+  },
+  {
+    "occurrence_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1#1",
+    "event_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1",
+    "package_member": "reports/standalone.xhtml",
+    "entity_identifier": "SMPL",
+    "concept_qname": "ifrs-full:CurrentLiabilities",
+    "concept_local": "CurrentLiabilities",
+    "context_id": "i2025",
+    "period": {
+      "instant": "2025-12-31"
+    },
+    "unit": "iso4217:PLN",
+    "decimals": "-3",
+    "scale": 3,
+    "sign": null,
+    "format": null,
+    "dimensions": [],
+    "value": "80000000",
+    "raw_text": "80 000",
+    "parse_status": "ok",
+    "verification": "machine",
+    "resolution_ref": null
+  }
+]

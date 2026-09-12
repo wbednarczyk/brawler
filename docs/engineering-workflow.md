@@ -32,15 +32,15 @@ Brawler uses Nix from the first scaffold: `flake.nix` is canonical, `nix develop
 
 ## CI Posture
 
-Public repo, free Actions minutes ([ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md)) — **the PR's required checks are the ONLY gate** ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)); nothing post-merge blocks shipping. One full gate, one workflow: **`full-check.yml`** on `pull_request` (required checks, per-PR cancellation) + `workflow_dispatch`; no "fast" mode in CI. Required alongside it: **`Frontend coverage ratchet`** and **`Rust coverage ratchet`** (floors in `coverage-baseline.json`; mechanics: [Testing § Coverage ratchet](testing.md)). A labeled merge skips the re-run (ADR 0090: up-to-date + green ⇒ master ≡ PR tree); `release.yml` builds at once, in parallel. Label gate: **`release-label.yml`** — sole `labeled`/`unlabeled` listener; ~4s, never the full gate. **Makefile everywhere:** every job runs one granular `make check-*` target in `nix develop`, except `visual` (plain runner, pinned Playwright image is the isolation, #448) — job↔target list: Command Reference; CI and local runs are identical; `gate-integrity` asserts every `run:` step matches `make <target>`. Windows is first-class on code PRs: `windows-build` + the real-.exe boot smoke `windows-boot-smoke` (#206).
+Public repo, free Actions minutes ([ADR 0090](adr/0090-github-canonical-forge-and-continuous-release.md)) — **the PR's required checks are the ONLY gate** ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)); nothing post-merge blocks shipping. One gate, one workflow: **`full-check.yml`** on `pull_request` (required checks, per-PR cancellation) + `workflow_dispatch`; no "fast" mode in CI. Required alongside it: the **Frontend** and **Rust coverage ratchets** (floors in `coverage-baseline.json`; [Testing § Coverage ratchet](testing.md)). A labeled merge skips the re-run (ADR 0090: up-to-date + green ⇒ master ≡ PR tree); `release.yml` builds at once. Label gate: **`release-label.yml`** — sole `labeled`/`unlabeled` listener; ~4s, never the full gate. **Makefile everywhere:** every job runs one `make check-*` target in `nix develop`, except `visual` (plain runner, the pinned Playwright image is the isolation, #448) — job↔target list: Command Reference; CI and local runs are identical; `gate-integrity` asserts every `run:` step matches `make <target>`. Windows is first-class on code PRs: `windows-build` + the real-.exe boot smoke `windows-boot-smoke` (#206).
 
-**Paths-filter:** a docs-only PR runs `check-docs-gates`+`check-commits` only (skipped jobs still satisfy required checks). Setup uses a ghcr.io devshell image (rebuilt on `flake.lock` change), `install-nix-action` the fallback; **`mutation-audit.yml`** (renamed from `mutants.yml`) auto-triggers on monitored-risk-path `master` pushes (ADR 0096 dec. 5) + manual dispatch — advisory, never blocking. Standard runners only; no macOS/scheduled; secret-free. **Master always green (server-side):** the ruleset requires the `full-check` jobs green **and** the branch up-to-date before merge (merge tree = tested tree); bisect merge history with `git bisect --first-parent`.
+**Paths-filter:** a docs-only PR runs `check-docs-gates`+`check-commits` only (skipped jobs still satisfy required checks). Setup uses a ghcr.io devshell image (rebuilt on `flake.lock` change), `install-nix-action` the fallback; **`mutation-audit.yml`** auto-triggers on monitored-risk-path `master` pushes (ADR 0096 dec. 5) + manual dispatch — advisory, never blocking. Standard runners only; no macOS/scheduled; secret-free. **Master always green (server-side):** the ruleset requires the `full-check` jobs green **and** the branch up-to-date before merge (merge tree = tested tree); bisect merge history with `git bisect --first-parent`.
 
 ## Local Developer Commands
 
 The Makefile is the preferred local command surface from WSL; targets stay thin wrappers around documented project commands.
 
-**Only the `commit-msg` hook remains** ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)) — `pre-commit`/`pre-push` are deleted (a local commit ships nothing under continuous release). Rules: Conventional Commits, single `[a-z0-9._-]+` scope, no subject-length limit (ADR 0090), no AI attribution. Local: `scripts/release/validate-commit-message.sh <file>`; CI `commit-lint` re-checks each message + PR body. `--no-verify` is WIP-only, never valid under "done". `git-boundaries` (G1) hook-denies master/force/no-verify/discards; launcher-only escape; Codex uses the written rule.
+**Only the `commit-msg` hook remains** ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)) — `pre-commit`/`pre-push` are deleted (a local commit ships nothing). Rules: Conventional Commits, single `[a-z0-9._-]+` scope, no subject-length limit (ADR 0090), no AI attribution. Local: `scripts/release/validate-commit-message.sh <file>`; CI `commit-lint` re-checks each message + PR body. `--no-verify` is WIP-only, never valid under "done". `git-boundaries` (G1) hook-denies master/force/no-verify/discards; launcher-only escape; Codex uses the written rule.
 
 **What runs where** (`make check-local`, renamed from `check-fast`, is the inner loop + pre-handover [DoD](#definition-of-done-the-handover-gate) step — invoked deliberately, never hook-triggered; docs-only uses `make check-docs`; multi-phase epics gate each phase on `check-local`, the matrix runs in the PR's CI):
 
@@ -48,7 +48,7 @@ The Makefile is the preferred local command surface from WSL; targets stay thin 
 | --- | --- | --- |
 | Every commit | `commit-msg` validation (ms) | Local hook |
 | Before handover / inner loop | `make check-local` | Local, on demand |
-| Data/extraction work (advisory) | `realdata-gt-score` / `realdata-extraction-check` / `realdata-honesty-check` / `make live-cycle` | Local, on demand |
+| Data/extraction work (advisory) | `realdata-esef-check` / `realdata-gt-score` / `realdata-extraction-check` / `realdata-honesty-check` / `make live-cycle` | Local, on demand |
 | Every PR (required checks) | `make check` composition + both coverage ratchets | CI only |
 | Risk-path pushes to `master` | mutation audit (advisory) | CI only |
 | Never locally | full gate, coverage, mutants, bench audit | CI only |
@@ -127,6 +127,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 
 ### §F — If code was removed or refactored
 - [ ] `rtk npm run knip` clean.
+- [ ] **ESEF path touched?** `make realdata-esef-check` ran ([ADR 0112](adr/0112-extraction-measurement-v2.md)) or why not.
 
 ### §G — Real-behavior verification (every functional change)
 - [ ] **The feature actually works end-to-end against the real runtime/data it names — not just compiles and passes tests.** Mocks/samples are not completion evidence (roadmap rule). Desktop behavior is verified through the packaged Windows `.exe` / hands-on path, not a WSL Linux build.

@@ -1,0 +1,38 @@
+{
+  "_comment": "ESEF measurement v2 semantic key map (ADR 0112). Frozen per key_map_version: translates a labeled iXBRL concept (expanded ifrs-full local name) and the app's stored (metric_key, attribution) pair into ONE semantic slot (concept, attribution). Structured writes stamp attribution 'total' on every key (ADR 0095/0100 reuse-before-mint), so the parent-attributed concepts live under their own metric keys — the map carries that. `panel` = the frozen scoring panel (app-claimable keys) for labeled-scope precision / current-period recall; labeled-capability recall uses every labeled concept regardless of the panel. Change = new key_map_version + rebaseline.",
+  "key_map_version": 1,
+  "entries": [
+    { "concept": "Revenue", "metric_key": "revenue", "attribution": "total", "period_nature": "duration" },
+    { "concept": "RevenueFromContractsWithCustomers", "metric_key": "revenue", "attribution": "total", "period_nature": "duration" },
+    { "concept": "GrossProfit", "metric_key": "gross_profit", "attribution": "total", "period_nature": "duration" },
+    { "concept": "ProfitLossFromOperatingActivities", "metric_key": "operating_profit", "attribution": "total", "period_nature": "duration" },
+    { "concept": "ProfitLoss", "metric_key": "net_profit", "attribution": "total", "period_nature": "duration" },
+    { "concept": "ProfitLossAttributableToOwnersOfParent", "metric_key": "wdf_net_profit_parent", "attribution": "owners_of_parent", "period_nature": "duration" },
+    { "concept": "BasicEarningsLossPerShare", "metric_key": "eps_basic", "attribution": "total", "period_nature": "duration" },
+    { "concept": "DilutedEarningsLossPerShare", "metric_key": "eps_diluted", "attribution": "total", "period_nature": "duration" },
+    { "concept": "CashFlowsFromUsedInOperatingActivities", "metric_key": "operating_cash_flow", "attribution": "total", "period_nature": "duration" },
+    { "concept": "CashFlowsFromUsedInInvestingActivities", "metric_key": "investing_cash_flow", "attribution": "total", "period_nature": "duration" },
+    { "concept": "CashFlowsFromUsedInFinancingActivities", "metric_key": "financing_cash_flow", "attribution": "total", "period_nature": "duration" },
+    { "concept": "Assets", "metric_key": "total_assets", "attribution": "total", "period_nature": "instant" },
+    { "concept": "CurrentAssets", "metric_key": "current_assets", "attribution": "total", "period_nature": "instant" },
+    { "concept": "CurrentLiabilities", "metric_key": "current_liabilities", "attribution": "total", "period_nature": "instant" },
+    { "concept": "Liabilities", "metric_key": "total_liabilities", "attribution": "total", "period_nature": "instant" },
+    { "concept": "Equity", "metric_key": "total_equity", "attribution": "total", "period_nature": "instant" },
+    { "concept": "EquityAttributableToOwnersOfParent", "metric_key": "wdf_equity_parent", "attribution": "owners_of_parent", "period_nature": "instant" },
+    { "concept": "CashAndCashEquivalents", "metric_key": "cash", "attribution": "total", "period_nature": "instant" }
+  ],
+  "panel": [
+    "revenue", "gross_profit", "operating_profit", "net_profit", "wdf_net_profit_parent",
+    "eps_basic", "eps_diluted",
+    "operating_cash_flow", "investing_cash_flow", "financing_cash_flow",
+    "total_assets", "current_assets", "current_liabilities", "total_liabilities",
+    "total_equity", "wdf_equity_parent", "cash"
+  ],
+  "stored_attribution_on_structured_writes": "total",
+  "window_convention": { "instant": "point_in_time", "duration": "flow" },
+  "normalization_version": 1,
+  "contract_normalized": [
+    { "id": "cumulative_context_to_flow", "rule": "a cumulative (year-to-date) duration context is compared as measure_window 'flow' — the app has no cumulative window token" },
+    { "id": "cash_flow_outflow_sign", "rule": "a cash-flow outflow tagged with a negated iXBRL sign is compared as a negative decimal (sign applied on both sides)" }
+  ]
+}

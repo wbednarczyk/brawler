@@ -1518,6 +1518,13 @@ mod tests {
         open_in_memory_database, CaptureReportDocumentInput, ListKpiDefinitionsInput, NewCompany,
         NewFinancialFact, NewFinancialPeriod, MODE_ASSIST, MODE_AUTOPILOT,
     };
+    // Shared test-only fixtures (moved out of this module, #331 PR-A): both this
+    // module's tests and the ESEF measurement-v2 harness build synthetic ZIP
+    // packages/documents the same way.
+    use crate::test_support::{
+        esef_presentation_linkbase_xml as presentation_linkbase_xml, minimal_zip,
+        seed_document_with_bytes, unique_temp_dir,
+    };
 
     /// The outcome row records the facts AT the slot, so a re-run that
     /// re-observed everything cannot overwrite a healthy count with `0` while
@@ -1537,52 +1544,6 @@ mod tests {
         assert_eq!(slot_fact_count(&produced, &reobserved), 5);
         // A genuinely empty slot still records zero — the honest zero.
         assert_eq!(slot_fact_count(&[], &[]), 0);
-    }
-
-    /// A minimal ZIP archive holding one named entry — enough for
-    /// [`detect_container`] to see the `PK\x03\x04` magic and for
-    /// `esef_package::extract_instance` to unpack it.
-    fn minimal_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        use std::io::Write;
-        use zip::write::SimpleFileOptions;
-        let mut buf = Vec::new();
-        {
-            let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-            for (name, body) in entries {
-                writer
-                    .start_file(*name, SimpleFileOptions::default())
-                    .unwrap();
-                writer.write_all(body).unwrap();
-            }
-            writer.finish().unwrap();
-        }
-        buf
-    }
-
-    /// Minimal presentation-linkbase XML classifying each `(concept, role URI
-    /// suffix)` pair (ADR 0100 decision 3) — the same shape
-    /// `esef_package.rs`'s own test fixture uses (`classify_role` matches on
-    /// the role URI's trailing segment, e.g. `-210000`). Every ESEF test
-    /// fixture below must ship one of these alongside its instance: a fact
-    /// with no role never survives Layer 2 projection (ADR 0100 epic #398).
-    fn presentation_linkbase_xml(mappings: &[(&str, &str)]) -> String {
-        let links: String = mappings
-            .iter()
-            .map(|(concept, role_suffix)| {
-                format!(
-                    r#"  <link:presentationLink xlink:type="extended" xlink:role="http://x/role/{role_suffix}">
-    <link:loc xlink:type="locator" xlink:href="ifrs-full-2023.xsd#ifrs-full_{concept}" xlink:label="loc_{concept}"/>
-  </link:presentationLink>"#
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!(
-            r#"<?xml version="1.0" encoding="UTF-8"?>
-<link:linkbase xmlns:link="http://www.xbrl.org/2003/linkbase" xmlns:xlink="http://www.w3.org/1999/xlink">
-{links}
-</link:linkbase>"#
-        )
     }
 
     /// The balance-sheet trio every fixture below tags — classified `balance`
@@ -1635,55 +1596,6 @@ mod tests {
             route_document(b"\x00\x01\x02 definitely not a document"),
             DocumentRoute::Unsupported(Container::Unknown)
         );
-    }
-
-    /// Seeds one fetched document whose stored file is `filename` holding exactly
-    /// `bytes` — used to prove the extraction entry routes on the BYTES, not the
-    /// `.pdf` in the name.
-    fn seed_document_with_bytes(
-        label: &str,
-        ticker: &str,
-        title: &str,
-        filename: &str,
-        bytes: &[u8],
-    ) -> (AppState, String, String) {
-        let dir = unique_temp_dir(label);
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let connection = open_in_memory_database().expect("db");
-        let state = AppState::with_data_dir(connection, dir.clone());
-        let company = state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: ticker.to_owned(),
-                display_name: format!("{ticker} S.A."),
-                isin: None,
-                cik: None,
-                lei: None,
-            })
-            .expect("company");
-        let document = state
-            .create_or_find_pending_report_document(CaptureReportDocumentInput {
-                company_id: company.id.clone(),
-                source_type: "user_url".to_owned(),
-                url: format!("https://example.com/{filename}"),
-                period_id: None,
-                origin_ref: None,
-                title: Some(title.to_owned()),
-                attribution: None,
-            })
-            .expect("document");
-        std::fs::write(dir.join(filename), bytes).expect("write bytes");
-        state
-            .mark_report_document_fetched(
-                &document.id,
-                Some(filename),
-                // The maintainer's real mislabeled files are all octet-stream.
-                Some("application/octet-stream"),
-                None,
-                Some(bytes.len() as i64),
-            )
-            .expect("mark fetched");
-        (state, company.id, document.id)
     }
 
     #[test]
@@ -1827,21 +1739,6 @@ mod tests {
             .as_bytes(),
         );
         buf
-    }
-
-    /// A per-call-unique scratch dir: `std::process::id()` alone collides
-    /// across parallel `#[test]` threads (and across loop iterations within
-    /// one test) sharing this file's data dir, which is a real flakiness class
-    /// — two tests racing to write/read the same `report.xhtml`/`annual.pdf`
-    /// path. A monotonic counter makes every call's dir distinct.
-    fn unique_temp_dir(label: &str) -> std::path::PathBuf {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "brawler-structured-{}-{label}-{n}",
-            std::process::id()
-        ))
     }
 
     const ESEF: &str = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"

@@ -31,6 +31,8 @@ expect_exit() {
   fi
 }
 
+# --- honesty profile (default, no --profile flag) ---------------------------
+
 # 1. Metrics on the committed bounds (and inside tolerance) — green.
 cat >"$metrics" <<'JSON'
 { "specificity_pct": 60.6, "orphaned_evidence": 27, "filename_as_statement": 0, "zero_effect_successes": 82, "silent_missing_metrics": 0 }
@@ -100,4 +102,73 @@ cat >"$metrics" <<'JSON'
 JSON
 expect_exit 2 "uncommitted zero-effect-success improvement"
 
-printf "realdata-ratchet self-test: regressions exit 1, stale baseline / unreadable input exit 2, healthy run exits 0.\n"
+# --- esef profile (#331 PR-A, ADR 0112) --------------------------------------
+
+esef_baseline="$work/esef-baseline.json"
+esef_metrics="$work/esef-metrics.json"
+cat >"$esef_baseline" <<'JSON'
+{ "profile": "esef", "status": "measured", "measurement_version": 1, "gt_version": "1", "key_map_version": 1, "normalization_version": 1, "registry_hash": "abc123",
+  "events": 10, "floor_events": 6, "issuers": 5, "gt_slots": 100, "unverified": 2,
+  "matched": 80, "previously_correct_slots_lost": 0, "false_positives": 3, "zero_output_events": 1,
+  "availability_all_periods": {"available": 150, "eligible": 200}, "layer1_capture": {"captured": 50, "eligible": 60, "value_correct": 48},
+  "labeled_capability": {"matched": 80, "labeled": 110}, "sensitivity": {"matched": 78, "gt_slots": 95, "excluded": 5}, "twin_agreement": {"agree": 20, "compared": 22},
+  "replay": {"events": 8, "exercised_prior_check": 4, "exercised_quarantine": 2, "delta_matched": 1} }
+JSON
+
+expect_exit_esef() {
+  local expected="$1" case_name="$2" actual=0
+  shift 2
+  node "$ratchet" "$@" >"$work/out.txt" 2>&1 || actual=$?
+  if [ "$actual" != "$expected" ]; then
+    printf "realdata-ratchet esef self-test FAILED [%s]: expected exit %s, got %s\n" \
+      "$case_name" "$expected" "$actual" >&2
+    cat "$work/out.txt" >&2
+    exit 1
+  fi
+}
+
+# 11. Metrics identical to the committed baseline — holds, exit 0.
+cat >"$esef_metrics" <<'JSON'
+{ "profile": "esef", "status": "measured", "measurement_version": 1, "gt_version": "1", "key_map_version": 1, "normalization_version": 1, "registry_hash": "abc123",
+  "events": 10, "floor_events": 6, "issuers": 5, "gt_slots": 100, "unverified": 2,
+  "matched": 80, "previously_correct_slots_lost": 0, "false_positives": 3, "zero_output_events": 1,
+  "availability_all_periods": {"available": 150, "eligible": 200}, "layer1_capture": {"captured": 50, "eligible": 60, "value_correct": 48},
+  "labeled_capability": {"matched": 80, "labeled": 110}, "sensitivity": {"matched": 78, "gt_slots": 95, "excluded": 5}, "twin_agreement": {"agree": 20, "compared": 22},
+  "replay": {"events": 8, "exercised_prior_check": 4, "exercised_quarantine": 2, "delta_matched": 1} }
+JSON
+expect_exit_esef 0 "esef holds at the committed bounds" --profile esef --baseline "$esef_baseline" --metrics "$esef_metrics"
+
+# 12. A previously-matched slot regressed — the hard zero-loss ceiling, exit 1.
+sed 's/"previously_correct_slots_lost": 0/"previously_correct_slots_lost": 1/' "$esef_metrics" > "$work/m12.json"
+expect_exit_esef 1 "esef lost a previously-correct slot" --profile esef --baseline "$esef_baseline" --metrics "$work/m12.json"
+
+# 13. False positives above the committed ceiling — exit 1.
+sed 's/"false_positives": 3/"false_positives": 4/' "$esef_metrics" > "$work/m13.json"
+expect_exit_esef 1 "esef false positives above the ceiling" --profile esef --baseline "$esef_baseline" --metrics "$work/m13.json"
+
+# 14. Matched fell below the committed floor — exit 1.
+sed 's/"matched": 80/"matched": 79/' "$esef_metrics" > "$work/m14.json"
+expect_exit_esef 1 "esef matched fell below the floor" --profile esef --baseline "$esef_baseline" --metrics "$work/m14.json"
+
+# 15. An equality field (key_map_version) differs — incomparable, exit 2.
+sed 's/"key_map_version": 1/"key_map_version": 2/' "$esef_metrics" > "$work/m15.json"
+expect_exit_esef 2 "esef equality-field mismatch (rebaseline required)" --profile esef --baseline "$esef_baseline" --metrics "$work/m15.json"
+
+# 16. The baseline is still the unmeasured placeholder — exit 2.
+printf '{ "profile": "esef", "status": "unmeasured" }' > "$work/unmeasured-baseline.json"
+expect_exit_esef 2 "esef unmeasured baseline is refused" --profile esef --baseline "$work/unmeasured-baseline.json" --metrics "$esef_metrics"
+
+# 17. Matched improved beyond the raise threshold but the baseline was never
+#     promoted — a silent raise would let a looser (stale) baseline stand.
+sed 's/"matched": 80/"matched": 81/' "$esef_metrics" > "$work/m17.json"
+expect_exit_esef 2 "esef improvement pending promotion" --profile esef --baseline "$esef_baseline" --metrics "$work/m17.json"
+
+# 18. An unknown profile name is a hard failure, never a silent default.
+expect_exit_esef 2 "esef unknown profile name" --profile bogus --baseline "$esef_baseline" --metrics "$esef_metrics"
+
+# 19. A negative informational metric (never ratcheted, but must still be a
+#     finite, non-negative number) — exit 2.
+sed 's/"available": 150/"available": -1/' "$esef_metrics" > "$work/m19.json"
+expect_exit_esef 2 "esef negative informational metric" --profile esef --baseline "$esef_baseline" --metrics "$work/m19.json"
+
+printf "realdata-ratchet self-test: regressions exit 1, stale baseline / unreadable input exit 2, healthy run exits 0 (honesty + esef profiles).\n"
