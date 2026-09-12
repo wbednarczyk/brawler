@@ -1328,12 +1328,14 @@ fn prefilter_predictions(
 /// ordinary slot. `unverified_count`/`machine_v1_count` are the GT-file-truth
 /// totals (amendment O): incremented for EVERY raw slot in that verification
 /// state, independent of whether the `(concept, attribution)` pair is even
-/// mapped. `unresolved_language_slot_ids` (amendment AA): a CURRENT-period,
+/// mapped. `unresolved_language` (amendment AA, AH): a CURRENT-period,
 /// otherwise-eligible-and-mapped slot whose language (or the event's own) is
 /// `unknown` — a third bucket, excluded from EVERY floor denominator
-/// (recall, precision pairing, sensitivity, twin agreement) and never offered
-/// to ineligible-prediction attribution either; counted and named for the
-/// report only. `labeled_eligible_count` (amendment AC) is the
+/// (recall, precision pairing, sensitivity, twin agreement); its attributable
+/// prediction IS still offered ineligible-prediction attribution (amendment
+/// AH — `OUT_OF_SCOPE`/`unresolved_language`, never a false positive), same
+/// as `unverified`/`machine_v1`. Counted and named for the report too.
+/// `labeled_eligible_count` (amendment AC) is the
 /// labeled-capability denominator counted HERE, before any bucketing —
 /// EVERY eligible-verification raw slot, mapped or not, any language, any
 /// period.
@@ -1344,7 +1346,12 @@ struct ResolvedEvent {
     internal_twin: Vec<ResolvedSlot>,
     unverified: Vec<ResolvedSlot>,
     machine_v1: Vec<ResolvedSlot>,
-    unresolved_language_slot_ids: Vec<String>,
+    /// Amendment AH: kept as full [`ResolvedSlot`]s (never just ids) so a
+    /// still-unmatched prediction can claim one by FULL identity, the same
+    /// treatment `unverified`/`machine_v1` already get — an unresolved-
+    /// language slot's own semantic identity is real, it just can't be
+    /// scored against the wrong-language pinned population.
+    unresolved_language: Vec<ResolvedSlot>,
     unverified_count: usize,
     machine_v1_count: usize,
     labeled_eligible_count: usize,
@@ -1436,14 +1443,15 @@ fn resolve_event_slots(
             let is_current_period = slot.fiscal_year == labeled_period.fiscal_year
                 && slot.period_type == labeled_period.period_type
                 && slot.period_end == labeled_period.period_end;
-            // Amendment AA: `unknown` on EITHER side is never pinned-language
-            // (unlike a genuine twin) — it is a third, unresolved bucket,
-            // current-period only, excluded from every floor denominator and
-            // never offered to ineligible-prediction attribution.
+            // Amendment AA/AH: `unknown` on EITHER side is never pinned-
+            // language (unlike a genuine twin) — it is a third, unresolved
+            // bucket, current-period only, excluded from every floor
+            // denominator BUT its full semantic identity is kept (amendment
+            // AH) so its attributable prediction can still be claimed
+            // `OUT_OF_SCOPE` instead of drifting into `FALSE_POSITIVE`.
             if slot.language == "unknown" || event_language == "unknown" {
                 if is_current_period {
-                    out.unresolved_language_slot_ids
-                        .push(resolved.slot_id.clone());
+                    out.unresolved_language.push(resolved);
                 }
                 continue;
             }
@@ -1477,7 +1485,7 @@ fn unit_has_monetary_numerator(unit: &str) -> bool {
 /// never a silent labeled-capability-only exclusion (that silent path stays
 /// reserved for a genuinely non-monetary unit, e.g. `xbrli:shares`).
 /// Amendment AA: a current-period slot whose OWN language is `unknown` (or
-/// whose event's language is `unknown`) lands in `unresolved_language_slot_ids`
+/// whose event's language is `unknown`) lands in `unresolved_language`
 /// alone — never `current`/`comparative`/`internal_twin`, so it is
 /// structurally excluded from every floor denominator those feed (recall,
 /// precision pairing, sensitivity, twin agreement), which all read
@@ -1518,7 +1526,11 @@ fn resolve_event_slots_buckets_unknown_language_as_unresolved() {
     let raw = vec![gt_slot("slot-unknown-slot-lang", "unknown")];
     let resolved = resolve_event_slots(&raw, &labeled_period, "pl", &resolved_map);
     assert_eq!(
-        resolved.unresolved_language_slot_ids,
+        resolved
+            .unresolved_language
+            .iter()
+            .map(|s| s.slot_id.clone())
+            .collect::<Vec<_>>(),
         vec!["slot-unknown-slot-lang".to_owned()]
     );
     assert!(resolved.current.is_empty());
@@ -1530,7 +1542,11 @@ fn resolve_event_slots_buckets_unknown_language_as_unresolved() {
     let raw = vec![gt_slot("slot-unknown-event-lang", "pl")];
     let resolved = resolve_event_slots(&raw, &labeled_period, "unknown", &resolved_map);
     assert_eq!(
-        resolved.unresolved_language_slot_ids,
+        resolved
+            .unresolved_language
+            .iter()
+            .map(|s| s.slot_id.clone())
+            .collect::<Vec<_>>(),
         vec!["slot-unknown-event-lang".to_owned()]
     );
     assert!(resolved.current.is_empty());
@@ -1776,8 +1792,13 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             // never summed from the scored buckets — a slot that ends up
             // unresolved-language or unmapped still counts here.
             labeled_eligible_total += resolved.labeled_eligible_count;
-            unresolved_language_total += resolved.unresolved_language_slot_ids.len();
-            unresolved_language_slots.extend(resolved.unresolved_language_slot_ids.iter().cloned());
+            unresolved_language_total += resolved.unresolved_language.len();
+            unresolved_language_slots.extend(
+                resolved
+                    .unresolved_language
+                    .iter()
+                    .map(|s| s.slot_id.clone()),
+            );
             // Amendment Q: sensitivity's convention-resolved population comes
             // from the labeler's OWN `normalized_by` field (every
             // `contract_normalized` rule id a slot's value/window actually
@@ -1972,13 +1993,26 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             .collect();
         let unverified_refs: Vec<&ResolvedSlot> = resolved.unverified.iter().collect();
         let machine_v1_refs: Vec<&ResolvedSlot> = resolved.machine_v1.iter().collect();
+        // Amendment AH: an unresolved-language slot's full semantic identity
+        // is real (it just can't be scored against the pinned population) —
+        // same treatment as unverified/machine_v1, so its attributable
+        // prediction is claimed OUT_OF_SCOPE here rather than left to drift
+        // into FALSE_POSITIVE.
+        let unresolved_language_refs: Vec<&ResolvedSlot> =
+            resolved.unresolved_language.iter().collect();
         let ineligible_claims_unverified =
             attribute_ineligible_predictions(&unverified_refs, &mut still_unmatched, "unverified");
         let ineligible_claims_machine_v1 =
             attribute_ineligible_predictions(&machine_v1_refs, &mut still_unmatched, "machine_v1");
+        let ineligible_claims_unresolved_language = attribute_ineligible_predictions(
+            &unresolved_language_refs,
+            &mut still_unmatched,
+            "unresolved_language",
+        );
         for (p, _reason) in ineligible_claims_unverified
             .iter()
             .chain(&ineligible_claims_machine_v1)
+            .chain(&ineligible_claims_unresolved_language)
         {
             event_prediction_outcomes.insert(
                 prediction_identity_key(&event.event_id, p),
@@ -1986,7 +2020,20 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             );
         }
         for (p, outcome) in &filtered.excluded {
-            event_prediction_outcomes.insert(prediction_identity_key(&event.event_id, p), *outcome);
+            let key = prediction_identity_key(&event.event_id, p);
+            // Amendment AI: a prefiltered (attribution-mismatch) prediction
+            // still goes through the SAME normalization-membership check as
+            // every scored prediction — it stays ATTRIBUTION_MISMATCH in
+            // ordinary precision (unaffected below), but leaves the strict
+            // (sensitivity) precision population when its own concept/
+            // window/period fall under a `contract_normalized` rule.
+            if event.role == "floor"
+                && !normalized_by_for(&resolved_map, &p.metric_key, &p.window, &p.period_type)
+                    .is_empty()
+            {
+                sign_convention_prediction_keys.insert(key.clone());
+            }
+            event_prediction_outcomes.insert(key, *outcome);
         }
         let event_matched = score
             .slot_outcomes
@@ -2037,7 +2084,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             mismatch_classes: event_mismatch_classes,
             run_error: run.run_error.clone(),
             unverified: resolved.unverified_count,
-            unresolved_language: resolved.unresolved_language_slot_ids.len(),
+            unresolved_language: resolved.unresolved_language.len(),
         });
         for slot in &resolved.current {
             let outcome = score
@@ -2930,6 +2977,62 @@ fn prediction(
     }
 }
 
+/// Amendment AI (r4 on f14) — a prefiltered ATTRIBUTION_MISMATCH prediction
+/// gets the SAME `normalized_by` membership check as a scored one: an
+/// operating-cash-flow prediction with the wrong stored attribution is
+/// classified `ATTRIBUTION_MISMATCH` by [`prefilter_predictions`] (so it
+/// still counts in ordinary precision, unaffected by sign-convention
+/// exclusion — `precision_denominator` = matched + false_positives +
+/// mismatch_predictions counts every non-`OUT_OF_SCOPE` outcome), while its
+/// own concept/window/period fall under the `cash_flow_outflow_sign` rule —
+/// exactly the membership the harness must also apply when removing it from
+/// `sensitivity.precision_denominator`.
+///
+/// Production's ESEF extraction has no code path that stores a non-`total`
+/// attribution (`ADR 0095`/`0100` stamp `total` on every structured write —
+/// confirmed by inspection, no `attribution` assignment exists in
+/// `fundamentals/extraction/`), so this scenario cannot be manufactured
+/// through a real cold-start corpus; it is tested at the same pure-function
+/// level [`normalized_by_for`] and [`prefilter_predictions`] already are,
+/// composing the two REAL functions the `run_measurement` loop calls rather
+/// than re-deriving the classification by hand.
+#[test]
+fn attribution_mismatch_prediction_is_normalized_for_sensitivity() {
+    let resolved_map = sample_key_map();
+    let p = prediction(
+        "p1",
+        "operating_cash_flow",
+        2025,
+        "FY",
+        "2025-12-31",
+        "consolidated",
+        "owners_of_parent", // wrong: the key map's stored_attribution_on_structured_writes is "total"
+        "reported",
+        "flow",
+        Some("PLN"),
+        "100",
+    );
+    let filtered = prefilter_predictions(vec![p], &resolved_map);
+    assert!(filtered.eligible.is_empty());
+    assert_eq!(filtered.excluded.len(), 1);
+    let (excluded_prediction, outcome) = &filtered.excluded[0];
+    assert_eq!(
+        *outcome,
+        Outcome::AttributionMismatch,
+        "stays in ordinary precision (matched + false_positives + mismatch_predictions)"
+    );
+    assert_eq!(
+        normalized_by_for(
+            &resolved_map,
+            &excluded_prediction.metric_key,
+            &excluded_prediction.window,
+            &excluded_prediction.period_type
+        ),
+        vec!["cash_flow_outflow_sign".to_owned()],
+        "the SAME scopes the harness uses to exclude a scored prediction from sensitivity.precision_denominator"
+    );
+}
+
 /// Test 1 — the full harness path on the committed synthetic sample: every
 /// current-period panel concept the consolidated instances tag MATCHes, the
 /// standalone-only concept is scored, comparative FY2024 feeds
@@ -3718,6 +3821,7 @@ fn duplicate_conflict_is_unverified_and_leaves_every_denominator() {
             value: "500000000",
             verification: "unverified",
             basis: "consolidated",
+            language: "pl",
         }],
     );
 
@@ -3751,6 +3855,81 @@ fn duplicate_conflict_is_unverified_and_leaves_every_denominator() {
     assert!(
         predictions.values().any(|v| v == "OUT_OF_SCOPE"),
         "the revenue prediction attributable to the unverified slot must be OUT_OF_SCOPE: {predictions:?}"
+    );
+}
+
+/// Amendment AH (r4 on f7) — an unresolved-language slot keeps its full
+/// semantic identity: its attributable production prediction is claimed
+/// `OUT_OF_SCOPE`, never left to drift into `FALSE_POSITIVE` and the
+/// ordinary precision denominator, exactly like `unverified`/`machine_v1`.
+#[test]
+fn unresolved_language_slot_attributes_its_prediction_out_of_scope() {
+    let dir = unique_temp_dir("esef-v2-unresolved-language");
+    std::fs::create_dir_all(dir.join("corpus")).expect("dir");
+    let instance = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
+      <xbrli:context id="d"><xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period></xbrli:context>
+      <xbrli:unit id="pln"><xbrli:measure>iso4217:PLN</xbrli:measure></xbrli:unit>
+      <ix:nonFraction name="ifrs-full:Revenue" contextRef="d" unitRef="pln" scale="3">500 000</ix:nonFraction>
+    </html>"#;
+    std::fs::write(dir.join("corpus/revenue.xhtml"), instance).expect("write");
+    write_manifest_and_gt_with_verification(
+        &dir,
+        "revenue.xhtml",
+        "application/xhtml+xml",
+        2025,
+        "FY",
+        "2025-12-31",
+        &[GtSlotSpecVerified {
+            concept: "Revenue",
+            attribution: "total",
+            value: "500000000",
+            verification: "machine",
+            basis: "consolidated",
+            language: "unknown",
+        }],
+    );
+
+    let key_map_path = local_key_map_path();
+    let aggregates = run_measurement(MeasurementConfig {
+        corpus_dir: &dir,
+        key_map_path: &key_map_path,
+        metrics_out: None,
+        keyed_baseline: None,
+        required: false,
+    })
+    .expect("tiny corpus must measure");
+
+    assert_eq!(
+        aggregates.gt_slots, 0,
+        "an unresolved-language slot leaves the recall denominator entirely"
+    );
+    assert_eq!(aggregates.matched, 0);
+    assert_eq!(
+        aggregates.false_positives, 0,
+        "the attributable prediction must never be FALSE_POSITIVE"
+    );
+
+    let report_raw =
+        std::fs::read_to_string(dir.join("scoring-report-v2.json")).expect("scoring report");
+    let report: serde_json::Value = serde_json::from_str(&report_raw).expect("scoring report json");
+    let predictions = report["prediction_outcomes"]
+        .as_object()
+        .expect("predictions object");
+    assert!(
+        predictions.values().any(|v| v == "OUT_OF_SCOPE"),
+        "the revenue prediction attributable to the unresolved-language slot must be OUT_OF_SCOPE: {predictions:?}"
+    );
+    let event = &report["events"][0];
+    assert_eq!(event["unresolved_language"], 1);
+    assert_eq!(event["matched"], 0);
+    assert_eq!(event["false_positives"], 0);
+    assert_eq!(
+        event["mismatch_classes"].as_object().expect("mismatch_classes object").len(),
+        0,
+        "an OUT_OF_SCOPE prediction is never a mismatch class either — the ordinary precision denominator for this event is 0"
     );
 }
 
@@ -4176,6 +4355,7 @@ struct GtSlotSpecVerified {
     value: &'static str,
     verification: &'static str,
     basis: &'static str,
+    language: &'static str,
 }
 
 /// Builds a minimal one-event manifest + ground truth in `dir` (tests 3b, 8,
@@ -4200,6 +4380,7 @@ fn write_manifest_and_gt(
             value: s.value,
             verification: "machine",
             basis: "consolidated",
+            language: "pl",
         })
         .collect();
     write_manifest_and_gt_with_verification(
@@ -4290,7 +4471,7 @@ fn write_manifest_and_gt_with_verification(
                 "value": s.value,
                 "duration_months": null,
                 "verification": s.verification,
-                "language": "pl",
+                "language": s.language,
                 "mapped": true,
                 "normalized_by": [],
                 "contributing_occurrence_ids": [],

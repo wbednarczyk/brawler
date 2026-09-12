@@ -32,8 +32,8 @@
     "matched": 28,
     "gt_slots": 29,
     "excluded": 4,
-    "precision_matched": 28,
-    "precision_denominator": 29
+    "precision_matched": 26,
+    "precision_denominator": 27
   },
   "twin_agreement": {
     "agree": 18,
