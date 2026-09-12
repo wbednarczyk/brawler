@@ -134,12 +134,11 @@ struct GtSlot {
     event_id: String,
     /// The package member this occurrence's evidence came from, `None` for a
     /// loose (non-package) instance (amendment A/F) — part of the slot's own
-    /// identity (folded into `slot_id`'s own shape by the labeler), since one
-    /// package event can carry conflicting-basis members. Deserialized for
-    /// schema completeness; scoring reads the identity through `slot_id`
-    /// itself rather than re-deriving it from this field.
+    /// identity (also folded into `slot_id`'s own shape by the labeler), since
+    /// one package event can carry conflicting-basis members. Carried through
+    /// into [`ResolvedSlot`] as a structured field so the report/console never
+    /// need to parse `slot_id` to recover it.
     #[serde(default)]
-    #[allow(dead_code)]
     package_member: Option<String>,
     concept_local: String,
     /// `total` | `owners_of_parent` | `nci`.
@@ -301,6 +300,12 @@ impl Outcome {
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedSlot {
     pub slot_id: String,
+    /// The package member this occurrence's evidence came from, `None` for a
+    /// loose (non-package) instance — carried as a structured field (not
+    /// re-derived by splitting `slot_id`) so the report/console never parse
+    /// the id.
+    pub package_member: Option<String>,
+    pub concept_local: String,
     pub metric_key: String,
     pub fiscal_year: i64,
     pub period_type: String,
@@ -516,7 +521,7 @@ fn attribute_ineligible_predictions(
     ineligible: &[&ResolvedSlot],
     predictions: &mut Vec<Prediction>,
     reason: &'static str,
-) -> Vec<(String, &'static str)> {
+) -> Vec<(Prediction, &'static str)> {
     let mut claimed = Vec::new();
     for gt in ineligible {
         let Some(idx) = predictions
@@ -529,7 +534,7 @@ fn attribute_ineligible_predictions(
             continue;
         };
         let p = predictions.remove(idx);
-        claimed.push((p.id, reason));
+        claimed.push((p, reason));
     }
     claimed
 }
@@ -611,6 +616,142 @@ pub(crate) struct Aggregates {
     pub sensitivity: Sensitivity,
     pub twin_agreement: TwinAgreement,
     pub replay: Replay,
+}
+
+// ===========================================================================
+// Structured evidence (finding 2/3, PR-A fix wave 2): the private
+// `scoring-report-v2.json` carries every field the console/per-issuer table
+// needs as its OWN typed field — never a string the reader has to split.
+// ===========================================================================
+
+/// One GT slot's outcome, as structured fields (never a `slot_id` the reader
+/// has to parse back apart).
+#[derive(Debug, Clone, Serialize)]
+struct SlotDetail {
+    slot_id: String,
+    event_id: String,
+    member: Option<String>,
+    concept: String,
+    attribution: String,
+    basis: String,
+    window: String,
+    variant: String,
+    fiscal_year: i64,
+    period_type: String,
+    currency: String,
+    outcome: &'static str,
+}
+
+/// One event's cold-start evidence: production's own recorded verdict next
+/// to what the matcher concluded — the per-event section finding 2 asks for.
+#[derive(Debug, Clone, Serialize)]
+struct EventReport {
+    event_id: String,
+    role: String,
+    issuer_id: String,
+    labeled_period: String,
+    derived_period: String,
+    /// Production's own `fundamentals_provenance` verdict for this attempt —
+    /// `None` when no period could be derived at all (no attempt was made).
+    acceptance: Option<String>,
+    reason_code: Option<String>,
+    prediction_count: usize,
+    matched: usize,
+    missing: usize,
+    false_positives: usize,
+    /// Every OTHER prediction outcome class this event produced, by name
+    /// (`WRONG_VALUE`, `BASIS_MISMATCH`, …) -> count.
+    mismatch_classes: BTreeMap<String, usize>,
+    run_error: Option<String>,
+    /// This event's own ineligible-verification GT row count (amendment C) —
+    /// carried here so [`build_issuer_counts`] can pool it per issuer without
+    /// re-running [`resolve_event_slots`] a second time.
+    unverified: usize,
+}
+
+/// One issuer's pooled counts across its floor events — the console's
+/// per-issuer table (finding 2), built from [`EventReport`]s rather than
+/// re-deriving anything from the id strings.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct IssuerCounts {
+    events: usize,
+    gt_slots: usize,
+    matched: usize,
+    missing: usize,
+    wrong: usize,
+    false_positives: usize,
+    mismatch_classes: BTreeMap<String, usize>,
+    unverified: usize,
+}
+
+/// Pools [`EventReport`]s by issuer, floor events only — the console's
+/// per-issuer table (finding 2). Pure: independently testable without a DB.
+fn build_issuer_counts(event_reports: &[EventReport]) -> BTreeMap<&str, IssuerCounts> {
+    let mut by_issuer: BTreeMap<&str, IssuerCounts> = BTreeMap::new();
+    for report in event_reports {
+        if report.role != "floor" {
+            continue;
+        }
+        let counts = by_issuer.entry(report.issuer_id.as_str()).or_default();
+        counts.events += 1;
+        counts.gt_slots += report.matched + report.missing;
+        counts.matched += report.matched;
+        counts.missing += report.missing;
+        counts.wrong += report
+            .mismatch_classes
+            .get("WRONG_VALUE")
+            .copied()
+            .unwrap_or(0);
+        counts.false_positives += report.false_positives;
+        counts.unverified += report.unverified;
+        for (class, n) in &report.mismatch_classes {
+            if class != "WRONG_VALUE" {
+                *counts.mismatch_classes.entry(class.clone()).or_default() += n;
+            }
+        }
+    }
+    by_issuer
+}
+
+/// The shared contract's prediction identity key (finding 1): a fresh
+/// cold-start DB mints a new `fact_finper_…` row id on every run, so keying
+/// `predictions` by that id makes cross-run comparison (the whole point of
+/// `keyed-outcomes.json`) impossible. This key is stable across runs of the
+/// SAME corpus because it is built entirely from the slot's own identity
+/// dimensions, never a generated id.
+fn prediction_identity_key(event_id: &str, p: &Prediction) -> String {
+    format!(
+        "{event_id}/{}/{}/{}/{}/{}/{}/{}/{}",
+        p.metric_key,
+        p.fiscal_year,
+        p.period_type,
+        p.basis,
+        p.attribution,
+        p.variant,
+        p.window,
+        p.currency.as_deref().unwrap_or("-")
+    )
+}
+
+/// Inserts one prediction's outcome under its identity key, asserting
+/// uniqueness (finding 1): two DIFFERENT stored facts resolving to the SAME
+/// identity key inside one event would mean the storage layer's own slot
+/// uniqueness (company, period, definition, basis, attribution, variant,
+/// measure_window) has been violated — a real bug worth a loud panic, never
+/// a silent overwrite that would hide one of the two facts from the report.
+fn insert_prediction_outcome(
+    map: &mut BTreeMap<String, Outcome>,
+    event_id: &str,
+    p: &Prediction,
+    outcome: Outcome,
+) {
+    let key = prediction_identity_key(event_id, p);
+    if let Some(previous) = map.insert(key.clone(), outcome) {
+        panic!(
+            "incomparable: duplicate prediction identity key {key} (previous outcome {previous:?}, new outcome {outcome:?}) \
+             — two stored facts resolved to the same identity, which the storage layer's own slot uniqueness should prevent"
+        );
+    }
 }
 
 /// `previously_correct_slots_lost` (shared contract): a slot the promoted
@@ -715,6 +856,14 @@ struct ColdStartRun {
     derived: Option<(i64, String, String)>,
     run_error: Option<String>,
     layer1_facts: Vec<(String, String, Option<String>)>, // (concept_local, period_end, value_numeric)
+    /// Production's OWN recorded verdict for this attempt
+    /// (`fundamentals_provenance().get_extraction_outcome_for_slot`) —
+    /// `(acceptance, reason_code)`. `None` when no period could even be
+    /// derived (no extraction was attempted, so no outcome row exists) or the
+    /// outcome row itself is missing for some other reason; the caller
+    /// synthesizes a `no_period_derived`/`no_outcome_recorded` label for the
+    /// zero-output report in that case rather than leaving it unexplained.
+    recorded_outcome: Option<(String, String)>,
 }
 
 /// Seeds a fresh company + report document for one manifest event and runs
@@ -791,6 +940,7 @@ fn seed_and_run_event(
         derive_report_period(state, &document).map(|(fy, pt, pe)| (fy, pt.to_owned(), pe));
 
     let mut run_error = None;
+    let mut recorded_outcome = None;
     if let Some((fy, pt, pe)) = &derived {
         if let Err(err) = run_structured_extraction(
             state,
@@ -803,6 +953,16 @@ fn seed_and_run_event(
         ) {
             run_error = Some(err);
         }
+        // Read back what production itself concluded about this attempt —
+        // never re-derive or guess a reason; a run that errored before
+        // recording an outcome row leaves this `None`, which is itself
+        // informative (paired with `run_error` in the report).
+        recorded_outcome = state
+            .fundamentals_provenance()
+            .get_extraction_outcome_for_slot(&company.id, &document.id, *fy, pt, pe)
+            .ok()
+            .flatten()
+            .map(|o| (o.acceptance, o.reason_code));
     }
 
     let predictions = read_predictions(state, &company.id);
@@ -819,6 +979,7 @@ fn seed_and_run_event(
         derived,
         run_error,
         layer1_facts,
+        recorded_outcome,
     }
 }
 
@@ -944,6 +1105,8 @@ fn resolve_event_slots(
         });
         let resolved = ResolvedSlot {
             slot_id: slot.slot_id.clone(),
+            package_member: slot.package_member.clone(),
+            concept_local: slot.concept_local.clone(),
             metric_key: metric_key.clone(),
             fiscal_year: slot.fiscal_year,
             period_type: slot.period_type.clone(),
@@ -1109,6 +1272,12 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     // the final slot_id, which carries the concept's IFRS local name, not its
     // metric_key).
     let mut sign_convention_slot_ids: BTreeSet<String> = BTreeSet::new();
+    // Finding 2/3: the full per-event/per-slot evidence, structured (never
+    // parsed back out of an id) — covers every cold-started event (floor AND
+    // twin), while `all_slot_outcomes`/`all_prediction_outcomes` stay
+    // floor-only (the primary recall/precision denominators).
+    let mut all_slot_details: Vec<SlotDetail> = Vec::new();
+    let mut event_reports: Vec<EventReport> = Vec::new();
 
     for event in &manifest.events {
         if event.role == "warmup" {
@@ -1171,8 +1340,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                 layer1_eligible += 1;
                 if let Some((_, _, value)) =
                     run.layer1_facts.iter().find(|(concept, period_end, _)| {
-                        concept.ends_with(&slot_concept_local(slot))
-                            && period_end == &slot.period_end
+                        concept.ends_with(&slot.concept_local) && period_end == &slot.period_end
                     })
                 {
                     layer1_captured += 1;
@@ -1185,6 +1353,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
         }
 
         let has_predictions = !run.predictions.is_empty();
+        let prediction_count = run.predictions.len();
         let filtered = prefilter_predictions(run.predictions, &resolved_map);
         let mut eligible_predictions = filtered.eligible;
 
@@ -1212,21 +1381,137 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             &resolved_map.panel,
         );
 
+        // ---- structured per-event/per-slot evidence (finding 2/3) ---------
+        let eligible_by_id: BTreeMap<&str, &Prediction> = eligible_predictions
+            .iter()
+            .map(|p| (p.id.as_str(), p))
+            .collect();
+        let mut event_prediction_outcomes: BTreeMap<String, Outcome> = BTreeMap::new();
+        for (fact_id, outcome) in &score.prediction_outcomes {
+            let p = eligible_by_id
+                .get(fact_id.as_str())
+                .expect("a scored prediction id must be in the eligible pool that was scored");
+            event_prediction_outcomes.insert(prediction_identity_key(&event.event_id, p), *outcome);
+        }
+        for (p, _reason) in ineligible_claims_unverified
+            .iter()
+            .chain(&ineligible_claims_machine_v1)
+        {
+            event_prediction_outcomes.insert(
+                prediction_identity_key(&event.event_id, p),
+                Outcome::OutOfScope,
+            );
+        }
+        for (p, outcome) in &filtered.excluded {
+            event_prediction_outcomes.insert(prediction_identity_key(&event.event_id, p), *outcome);
+        }
+        let event_matched = score
+            .slot_outcomes
+            .values()
+            .filter(|o| **o == Outcome::Match)
+            .count();
+        let event_missing = score
+            .slot_outcomes
+            .values()
+            .filter(|o| **o == Outcome::Missing)
+            .count();
+        let event_false_positives = event_prediction_outcomes
+            .values()
+            .filter(|o| **o == Outcome::FalsePositive)
+            .count();
+        let mut event_mismatch_classes: BTreeMap<String, usize> = BTreeMap::new();
+        for outcome in event_prediction_outcomes.values() {
+            if !matches!(
+                outcome,
+                Outcome::Match | Outcome::OutOfScope | Outcome::FalsePositive
+            ) {
+                *event_mismatch_classes
+                    .entry(outcome.as_str().to_owned())
+                    .or_default() += 1;
+            }
+        }
+        event_reports.push(EventReport {
+            event_id: event.event_id.clone(),
+            role: event.role.clone(),
+            issuer_id: event.issuer_id.clone(),
+            labeled_period: format!(
+                "{}/{}/{}",
+                event.labeled_period.fiscal_year,
+                event.labeled_period.period_type,
+                event.labeled_period.period_end
+            ),
+            derived_period: run
+                .derived
+                .as_ref()
+                .map(|(fy, pt, pe)| format!("{fy}/{pt}/{pe}"))
+                .unwrap_or_else(|| "none".to_owned()),
+            acceptance: run.recorded_outcome.as_ref().map(|(a, _)| a.clone()),
+            reason_code: run.recorded_outcome.as_ref().map(|(_, r)| r.clone()),
+            prediction_count,
+            matched: event_matched,
+            missing: event_missing,
+            false_positives: event_false_positives,
+            mismatch_classes: event_mismatch_classes,
+            run_error: run.run_error.clone(),
+            unverified: resolved.unverified.len(),
+        });
+        for slot in &resolved.current {
+            let outcome = score
+                .slot_outcomes
+                .get(&slot.slot_id)
+                .copied()
+                .unwrap_or(Outcome::Missing);
+            all_slot_details.push(SlotDetail {
+                slot_id: slot.slot_id.clone(),
+                event_id: event.event_id.clone(),
+                member: slot.package_member.clone(),
+                concept: slot.concept_local.clone(),
+                attribution: slot.attribution.clone(),
+                basis: slot.basis.clone(),
+                window: slot.window.clone(),
+                variant: slot.variant.clone(),
+                fiscal_year: slot.fiscal_year,
+                period_type: slot.period_type.clone(),
+                currency: slot.currency.clone(),
+                outcome: outcome.as_str(),
+            });
+        }
+
         if event.role == "floor" {
             floor_events += 1;
             if !has_predictions {
                 zero_output_events += 1;
             }
             all_slot_outcomes.extend(score.slot_outcomes.clone());
-            all_prediction_outcomes.extend(score.prediction_outcomes.clone());
-            for (p, outcome) in &filtered.excluded {
-                all_prediction_outcomes.insert(p.id.clone(), *outcome);
+            for (fact_id, outcome) in &score.prediction_outcomes {
+                let p = eligible_by_id
+                    .get(fact_id.as_str())
+                    .expect("a scored prediction id must be in the eligible pool that was scored");
+                insert_prediction_outcome(
+                    &mut all_prediction_outcomes,
+                    &event.event_id,
+                    p,
+                    *outcome,
+                );
             }
-            for (id, _reason) in ineligible_claims_unverified
+            for (p, outcome) in &filtered.excluded {
+                insert_prediction_outcome(
+                    &mut all_prediction_outcomes,
+                    &event.event_id,
+                    p,
+                    *outcome,
+                );
+            }
+            for (p, _reason) in ineligible_claims_unverified
                 .into_iter()
                 .chain(ineligible_claims_machine_v1)
             {
-                all_prediction_outcomes.insert(id, Outcome::OutOfScope);
+                insert_prediction_outcome(
+                    &mut all_prediction_outcomes,
+                    &event.event_id,
+                    &p,
+                    Outcome::OutOfScope,
+                );
             }
         }
 
@@ -1359,7 +1644,34 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
         replay,
     };
 
-    print_console_report(&aggregates, &lost, machine_v1_total, precision_denominator);
+    // Finding 3: the per-concept MISSING breakdown (floor events' current-
+    // period slots only, matching `gt_slots`/`matched`'s own scope) —
+    // computed from `all_slot_details`' OWN structured fields, never by
+    // splitting `slot_id`.
+    let mut missing_by_concept: BTreeMap<(String, String), usize> = BTreeMap::new();
+    for detail in &all_slot_details {
+        let is_floor = event_by_id
+            .get(detail.event_id.as_str())
+            .is_some_and(|e| e.role == "floor");
+        if is_floor && detail.outcome == "MISSING" {
+            *missing_by_concept
+                .entry((detail.concept.clone(), detail.attribution.clone()))
+                .or_default() += 1;
+        }
+    }
+
+    // Finding 2: per-issuer counts (floor events only) — printed as a table.
+    let by_issuer = build_issuer_counts(&event_reports);
+
+    print_console_report(
+        &aggregates,
+        &lost,
+        machine_v1_total,
+        precision_denominator,
+        &event_reports,
+        &by_issuer,
+        &missing_by_concept,
+    );
 
     if let Some(out) = config.metrics_out {
         write_atomic_json(out, &aggregates);
@@ -1373,6 +1685,14 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             "slot_outcomes": all_slot_outcomes.iter().map(|(k, v)| (k.clone(), v.as_str())).collect::<BTreeMap<_,_>>(),
             "prediction_outcomes": all_prediction_outcomes.iter().map(|(k, v)| (k.clone(), v.as_str())).collect::<BTreeMap<_,_>>(),
             "derived_vs_labeled_period": derived_by_event,
+            "slots": all_slot_details,
+            "events": event_reports,
+            "missing_by_concept": missing_by_concept
+                .iter()
+                .map(|((concept, attribution), count)| serde_json::json!({
+                    "concept": concept, "attribution": attribution, "count": count,
+                }))
+                .collect::<Vec<_>>(),
         }),
     );
     // The run's own nonce (never handed in — `make realdata-esef-check`'s
@@ -1404,21 +1724,6 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     );
 
     Some(aggregates)
-}
-
-/// The trailing `/concept_local` segment of a resolved slot's own id — used
-/// only for the Layer 1 comparative-capture lookup, which matches by
-/// EXPANDED concept local name against the raw tagged fact's own local name
-/// (amendment H(c)). `ResolvedSlot` drops `concept_local` once resolved (the
-/// matcher never needs it again), so this recovers it from the slot id it was
-/// built from — see [`GtSlot::slot_id`]'s documented shape (amendment F).
-fn slot_concept_local(slot: &ResolvedSlot) -> String {
-    // slot_id = <event_id>/<package_member|->/<concept_local>/<attribution>/…
-    // event_id itself may contain '/', so index from the END instead: the
-    // last 8 segments are fixed-shape (concept .. currency); concept_local is
-    // 8th-from-last.
-    let parts: Vec<&str> = slot.slot_id.rsplit('/').collect();
-    parts.get(7).map(|s| (*s).to_owned()).unwrap_or_default()
 }
 
 /// Amendment H: sensitivity excludes GT slots for a metric_key subject to a
@@ -1695,11 +2000,15 @@ fn event_company_id(state: &AppState, issuer: &Issuer) -> String {
         .unwrap_or_default()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn print_console_report(
     aggregates: &Aggregates,
     lost: &[String],
     machine_v1_total: usize,
     precision_denominator: usize,
+    event_reports: &[EventReport],
+    by_issuer: &BTreeMap<&str, IssuerCounts>,
+    missing_by_concept: &BTreeMap<(String, String), usize>,
 ) {
     let pct = |n: usize, d: usize| {
         if d == 0 {
@@ -1768,6 +2077,63 @@ fn print_console_report(
         "previously_correct_slots_lost={} {:?}",
         aggregates.previously_correct_slots_lost, lost
     );
+
+    // Finding 2: the per-issuer counts table — the contract's console
+    // anatomy, built entirely from structured [`IssuerCounts`], never a
+    // string split.
+    eprintln!();
+    eprintln!("-- per issuer (floor events) --");
+    eprintln!(
+        "{:<12} {:>6} {:>8} {:>7} {:>7} {:>4} {:>3} {:>11} mismatch_classes",
+        "issuer_id", "events", "gt_slots", "matched", "missing", "wrong", "fp", "unverified"
+    );
+    for (issuer_id, counts) in by_issuer {
+        eprintln!(
+            "{:<12} {:>6} {:>8} {:>7} {:>7} {:>4} {:>3} {:>11} {:?}",
+            issuer_id,
+            counts.events,
+            counts.gt_slots,
+            counts.matched,
+            counts.missing,
+            counts.wrong,
+            counts.false_positives,
+            counts.unverified,
+            counts.mismatch_classes
+        );
+    }
+
+    // Finding 3: a zero-output event never gets a mute row — the console
+    // names WHY (a run error, or production's own recorded acceptance/reason)
+    // so a real-corpus run doesn't have to reopen the JSON to diagnose it.
+    let zero_output: Vec<&EventReport> = event_reports
+        .iter()
+        .filter(|r| r.role == "floor" && r.prediction_count == 0)
+        .collect();
+    if !zero_output.is_empty() {
+        eprintln!();
+        eprintln!("-- zero-output floor events (0 predictions) --");
+        for report in &zero_output {
+            let reason = if let Some(error) = &report.run_error {
+                format!("RUN ERROR: {error}")
+            } else {
+                match (&report.acceptance, &report.reason_code) {
+                    (Some(a), Some(r)) => format!("acceptance={a} reason={r}"),
+                    _ => "no period derived — no extraction was attempted".to_owned(),
+                }
+            };
+            eprintln!("  {} : {reason}", report.event_id);
+        }
+    }
+
+    // Finding 3: the per-concept MISSING breakdown (floor events, current
+    // period) — so PR-B can target the concept map directly.
+    if !missing_by_concept.is_empty() {
+        eprintln!();
+        eprintln!("-- MISSING by concept (floor events, current period) --");
+        for ((concept, attribution), count) in missing_by_concept {
+            eprintln!("  {concept}/{attribution}: {count}");
+        }
+    }
 }
 
 // ===========================================================================
@@ -1876,6 +2242,11 @@ fn slot(
 ) -> ResolvedSlot {
     ResolvedSlot {
         slot_id: slot_id.to_owned(),
+        package_member: None,
+        // The pure-matcher tests below never assert on `concept_local` (only
+        // `metric_key` drives matching) — reusing it here avoids an unused
+        // parameter without widening every call site.
+        concept_local: metric_key.to_owned(),
         metric_key: metric_key.to_owned(),
         fiscal_year,
         period_type: period_type.to_owned(),
@@ -1991,6 +2362,192 @@ fn language_twins_are_two_events_with_agreement() {
         aggregates.twin_agreement.agree,
         aggregates.twin_agreement.compared
     );
+}
+
+/// Test 2b (fix wave 2, finding 1) — prediction identity keys are STABLE
+/// across two independent runs of the same corpus: a fresh cold-start DB
+/// mints a new `fact_finper_…` row id every run, so if the report were still
+/// keyed by that id (the bug this fix corrects), the two runs' key SETS would
+/// never agree. They must, because the key is built entirely from the slot's
+/// own identity dimensions.
+#[test]
+fn prediction_identity_keys_are_stable_across_two_runs() {
+    let key_map_path = local_key_map_path();
+
+    let dir_a = materialize_sample_corpus();
+    run_measurement(MeasurementConfig {
+        corpus_dir: &dir_a,
+        key_map_path: &key_map_path,
+        metrics_out: None,
+        keyed_baseline: None,
+        required: false,
+    })
+    .expect("first run must measure");
+    let report_a: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir_a.join("scoring-report-v2.json")).unwrap(),
+    )
+    .unwrap();
+    let keys_a: BTreeSet<String> = report_a["prediction_outcomes"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+
+    let dir_b = materialize_sample_corpus();
+    run_measurement(MeasurementConfig {
+        corpus_dir: &dir_b,
+        key_map_path: &key_map_path,
+        metrics_out: None,
+        keyed_baseline: None,
+        required: false,
+    })
+    .expect("second run must measure");
+    let report_b: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir_b.join("scoring-report-v2.json")).unwrap(),
+    )
+    .unwrap();
+    let keys_b: BTreeSet<String> = report_b["prediction_outcomes"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+
+    assert!(
+        !keys_a.is_empty(),
+        "the sample corpus must produce at least one prediction"
+    );
+    assert_eq!(
+        keys_a, keys_b,
+        "prediction identity keys must be identical across two fresh-DB runs of the same corpus"
+    );
+    // Never a DB-generated fact id (the bug this fix corrects) — every key
+    // must carry the identity shape instead.
+    for key in &keys_a {
+        assert!(
+            !key.contains("fact_finper"),
+            "a prediction key must never be a DB fact id: {key}"
+        );
+    }
+}
+
+/// Test 2c (fix wave 2, finding 2) — `scoring-report-v2.json` carries a
+/// per-event section with production's own recorded acceptance/reason,
+/// derived-vs-labeled period, and per-event outcome counts.
+#[test]
+fn per_event_section_is_present_in_the_report() {
+    let dir = materialize_sample_corpus();
+    let key_map_path = local_key_map_path();
+    run_measurement(MeasurementConfig {
+        corpus_dir: &dir,
+        key_map_path: &key_map_path,
+        metrics_out: None,
+        keyed_baseline: None,
+        required: false,
+    })
+    .expect("sample corpus must measure");
+
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("scoring-report-v2.json")).unwrap())
+            .unwrap();
+    let events = report["events"]
+        .as_array()
+        .expect("events must be an array");
+    // floor_pl, twin_en, floor_package — every cold-started (non-warmup) event.
+    assert_eq!(events.len(), 3);
+
+    let floor_pl = events
+        .iter()
+        .find(|e| e["event_id"] == "iss_01/FY2025/pl/consolidated/v1")
+        .expect("floor_pl event must be present");
+    assert_eq!(floor_pl["role"], "floor");
+    assert_eq!(floor_pl["issuer_id"], "iss_01");
+    assert_eq!(floor_pl["labeled_period"], "2025/FY/2025-12-31");
+    assert_eq!(floor_pl["derived_period"], "2025/FY/2025-12-31");
+    assert_eq!(floor_pl["acceptance"], "accepted");
+    assert_eq!(floor_pl["matched"], 16);
+    assert_eq!(floor_pl["missing"], 0);
+    assert!(floor_pl["prediction_count"].as_u64().unwrap() > 0);
+    assert!(floor_pl["run_error"].is_null());
+}
+
+/// Test 2d (fix wave 2, finding 2) — the per-issuer console table's own
+/// aggregation ([`build_issuer_counts`]) pools floor events correctly: two
+/// events for the same issuer sum their counts, a twin event is excluded, and
+/// mismatch classes/unverified/wrong are tallied separately.
+#[test]
+fn per_issuer_counts_pool_floor_events_only() {
+    let mut mismatch_classes_a = BTreeMap::new();
+    mismatch_classes_a.insert("WRONG_VALUE".to_owned(), 1);
+    mismatch_classes_a.insert("BASIS_MISMATCH".to_owned(), 2);
+    let event_a = EventReport {
+        event_id: "e1".to_owned(),
+        role: "floor".to_owned(),
+        issuer_id: "iss_1".to_owned(),
+        labeled_period: "2025/FY/2025-12-31".to_owned(),
+        derived_period: "2025/FY/2025-12-31".to_owned(),
+        acceptance: Some("accepted".to_owned()),
+        reason_code: Some("emitted".to_owned()),
+        prediction_count: 10,
+        matched: 7,
+        missing: 3,
+        false_positives: 1,
+        mismatch_classes: mismatch_classes_a,
+        run_error: None,
+        unverified: 2,
+    };
+    let event_twin = EventReport {
+        event_id: "e2".to_owned(),
+        role: "twin_diagnostic".to_owned(),
+        issuer_id: "iss_1".to_owned(),
+        ..event_a.clone()
+    };
+    let event_b = EventReport {
+        event_id: "e3".to_owned(),
+        role: "floor".to_owned(),
+        issuer_id: "iss_1".to_owned(),
+        matched: 5,
+        missing: 1,
+        false_positives: 0,
+        mismatch_classes: BTreeMap::new(),
+        unverified: 0,
+        ..event_a.clone()
+    };
+    let event_other_issuer = EventReport {
+        event_id: "e4".to_owned(),
+        issuer_id: "iss_2".to_owned(),
+        ..event_b.clone()
+    };
+
+    let events = [event_a, event_twin, event_b, event_other_issuer];
+    let by_issuer = build_issuer_counts(&events);
+
+    assert_eq!(
+        by_issuer.len(),
+        2,
+        "twin_diagnostic contributes no new issuer row on its own"
+    );
+    let iss1 = &by_issuer["iss_1"];
+    assert_eq!(
+        iss1.events, 2,
+        "the twin event must be excluded from the floor pool"
+    );
+    assert_eq!(iss1.gt_slots, (7 + 3) + (5 + 1));
+    assert_eq!(iss1.matched, 7 + 5);
+    assert_eq!(iss1.missing, 3 + 1);
+    assert_eq!(iss1.wrong, 1);
+    assert_eq!(iss1.false_positives, 1);
+    assert_eq!(iss1.unverified, 2);
+    assert_eq!(iss1.mismatch_classes.get("BASIS_MISMATCH"), Some(&2));
+    assert_eq!(
+        iss1.mismatch_classes.get("WRONG_VALUE"),
+        None,
+        "WRONG_VALUE is its own `wrong` column, not a mismatch class"
+    );
+
+    let iss2 = &by_issuer["iss_2"];
+    assert_eq!(iss2.events, 1);
 }
 
 /// Test 3 — `owners_of_parent` GT concepts map to their dedicated `wdf_*`
