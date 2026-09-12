@@ -156,7 +156,10 @@ struct GtSlot {
     fiscal_year: i64,
     period_type: String,
     period_end: String,
-    currency: String,
+    /// `None` for a pure-number concept (share counts) — such a slot is
+    /// labeled-capability only: the app never stores a currency-less fact
+    /// on the panel, so it neither matches nor counts as a miss.
+    currency: Option<String>,
     value: String,
     /// `machine` | `second_read` | `adjudicated` | `unverified` | `machine_v1`.
     verification: String,
@@ -1245,6 +1248,13 @@ fn resolve_event_slots(
             }
             continue;
         };
+        let Some(currency) = slot.currency.clone() else {
+            // A currency-less (pure-number) slot is labeled capability only.
+            if !is_unverified && !is_machine_v1 {
+                out.unmapped_eligible_count += 1;
+            }
+            continue;
+        };
         let value = slot.value.parse::<Decimal>().unwrap_or_else(|e| {
             panic!(
                 "incomparable: slot {} value '{}': {e}",
@@ -1263,7 +1273,7 @@ fn resolve_event_slots(
             attribution: slot.attribution.clone(),
             variant: slot.variant.clone(),
             window: slot.window.clone(),
-            currency: slot.currency.clone(),
+            currency,
             value,
             normalized_by: slot.normalized_by.clone(),
         };
