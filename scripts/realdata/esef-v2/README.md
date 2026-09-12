@@ -6,6 +6,8 @@ and feeds the `storage::tests::real_data_esef_v2` harness. Data contract:
 see ADR 0112 and `docs/testing.md` § ESEF measurement v2 (canonical; this
 file is usage only).
 
+> Run every command below from the repository root (`/home/wojtas/projects/brawler`); paths are repo-root-relative.
+
 ## Duration → period_type
 
 `build_frame.py`/`label_esef_v2.py` classify a duration context by its
@@ -63,18 +65,18 @@ export BRAWLER_ESEF_V2_DIR=private/realdata/spikes/esef-v2   # default shown
 
 # 1. Build the frame: inventory the pinned snapshot's fetched documents by
 #    bytes, classify each iXBRL instance, select the floor/twin/warmup panel.
-python3 build_frame.py --snapshot <sqlite path> --data-dir <report_documents dir> \
+python3 scripts/realdata/esef-v2/build_frame.py --snapshot <sqlite path> --data-dir <report_documents dir> \
   --issuers <tickers.csv|acceptance-list-file> --out "$BRAWLER_ESEF_V2_DIR" \
   [--select newest-annual-interim] [--pin-language pl]
 # Review review-queue.json for anything classified "unknown" before proceeding.
 
 # 2. Label: parse every selected event's file, emit occurrences_v2.json
 #    (every concept, no panel filter) and derive ground_truth_v2.json slots.
-python3 label_esef_v2.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR"
+python3 scripts/realdata/esef-v2/label_esef_v2.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR"
 
 # 3. (Optional) Import the v1 (#182) merged ground truth as machine_v1
 #    reference slots, excluded from floors until independently re-verified.
-python3 import_v1.py --v1-dir private/realdata/spikes/esef-positional-gt \
+python3 scripts/realdata/esef-v2/import_v1.py --v1-dir private/realdata/spikes/esef-positional-gt \
   --esef-v2-dir "$BRAWLER_ESEF_V2_DIR"
 
 # 4. Blinded adjudication (LABELING.md protocol): resolve machine conflicts
@@ -87,15 +89,15 @@ python3 import_v1.py --v1-dir private/realdata/spikes/esef-positional-gt \
 #    identity), differs with no evidence anchor -> refused, unsettled ->
 #    stays unverified. `compare` refuses unless every prepared task has a
 #    sealed answer.
-python3 adjudicate.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR" prepare --seed <int>
+python3 scripts/realdata/esef-v2/adjudicate.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR" prepare --seed <int>
 #   hand adjudication/tasks/*.json to a reader; they answer blind (no value,
 #   no hint which task is a disagreement vs. an agreement check) with a full
 #   answer: {"value":.., "currency":.., "basis":.., "attribution":..,
 #   "fiscal_year":.., "period_type":.., "evidence_anchor":..} or
 #   {"unverified": true, "reason": ".."}. `prepare` refuses to re-run once a
 #   task set exists; `seal` refuses to reseal an existing reader.
-python3 adjudicate.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR" seal <reader> <answers.json>
-python3 adjudicate.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR" compare
+python3 scripts/realdata/esef-v2/adjudicate.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR" seal <reader> <answers.json>
+python3 scripts/realdata/esef-v2/adjudicate.py --esef-v2-dir "$BRAWLER_ESEF_V2_DIR" compare
 
 # 5. Measure: runs the Rust harness against this corpus and judges it
 #    against the committed baseline (never `make check` — owner machine only).
