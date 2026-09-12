@@ -1,0 +1,23 @@
+<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+      xml:lang="pl">
+<head><title>Skonsolidowane sprawozdanie finansowe za 2024 (warmup)</title></head>
+<body>
+  <xbrli:context id="i2024"><xbrli:period><xbrli:instant>2024-12-31</xbrli:instant></xbrli:period></xbrli:context>
+  <xbrli:context id="d2024"><xbrli:period><xbrli:startDate>2024-01-01</xbrli:startDate><xbrli:endDate>2024-12-31</xbrli:endDate></xbrli:period></xbrli:context>
+  <xbrli:unit id="pln"><xbrli:measure>iso4217:PLN</xbrli:measure></xbrli:unit>
+
+  <!-- These values MUST agree with sample_pl.xhtml / sample_en.xhtml's own
+       FY2024 comparative column (d2024/i2024 contexts there): the FY2025
+       floor events' comparative cross-check reads THIS warmup's stored
+       FY2024 facts as the "already known" prior period, and a disagreement
+       fails the whole FY2025 fact set (Acceptance::Flagged), not just the
+       comparative slot. -->
+  <ix:nonFraction name="ifrs-full:Revenue" contextRef="d2024" unitRef="pln" scale="3">420 000</ix:nonFraction>
+  <ix:nonFraction name="ifrs-full:Assets" contextRef="i2024" unitRef="pln" scale="3">800 000</ix:nonFraction>
+  <ix:nonFraction name="ifrs-full:Liabilities" contextRef="i2024" unitRef="pln" scale="3">450 000</ix:nonFraction>
+  <ix:nonFraction name="ifrs-full:Equity" contextRef="i2024" unitRef="pln" scale="3">350 000</ix:nonFraction>
+</body>
+</html>

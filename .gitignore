@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 
+# Python bytecode cache (scripts/realdata/esef-v2 tooling, #331)
+__pycache__/
+*.pyc
+
 # Stray compiler default output (e.g. `cc foo.c` → a.out) — never a repo artifact
 a.out
 

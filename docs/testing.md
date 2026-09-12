@@ -309,153 +309,88 @@ number it hopes for is worse than no harness.
 
 ### #182 ESEF / positional ground-truth scorer — DIAGNOSTIC (floors deferred to measurement v2)
 
-**html_positional is RETIRED ([ADR 0095](adr/0095-retire-html-positional-tier.md)).** The positional
-arm of this scorer no longer measures precision/recall — it runs as a **stored-state auditor**: it
-asserts, unconditionally and DB-wide, that zero `pdf`-tier facts remain after every scoring run. No
-new positional labeling.
+**This harness is the stored-state audit** — sound floors live in the ESEF measurement v2 harness
+below ([ADR 0112](adr/0112-extraction-measurement-v2.md), #331); nothing here gates anything.
 
 `storage::tests::real_data_extraction::esef_positional_ground_truth_scores` (`#[ignore]`) scores
-facts **already stored** in a throwaway DB copy against the hand-merged #182 corpus
-(`private/realdata/spikes/esef-positional-gt/`, gitignored, owner-only — see its `HANDOVER.md`):
-32 real report documents (15 ESEF, 17 `html_positional`) against 1035 ground-truth rows, all
-`machine`-verified (`ground_truth.json`: `file`/`ticker`/`tier`/`mapped_key`/`period_end`/
-`period_start`/`statement_basis`/`value`/`currency`/`source`/`verification`/`uncertain`). Unlike the
-harnesses above it never runs the pipeline — it reads `financial_facts` +
-`financial_fact_provenance` through the real store APIs, because the question is "how good is what's
-on the owner's database today", not "what would a fresh run produce". `html_aggregator` is a third
-extraction tier in this app but **the corpus does not cover it** — this harness scores `esef` and
-`html_positional` only; `html_aggregator` stays unmeasured here.
+facts **already stored** in a throwaway copy of the owner's #182 corpus snapshot
+(`private/realdata/spikes/esef-positional-gt/db-snapshot.sqlite3`, copied to `scoring-worktest.sqlite3`
+and opened through the normal `open_database` path so pending migrations apply to the copy) against
+the hand-merged `ground_truth.json` (1035 `machine`-verified rows over 32 real filings: 15 ESEF,
+17 retired `html_positional`). It never runs the pipeline: it answers "how good is what is on the
+owner's database today", which is why it can carry no floor — a parser change does not move it
+(the 2026-08-05 methodology audit; the v1 corpus was also selected from documents the pipeline had
+already extracted). Its one unconditional assertion: **zero `pdf`-tier facts remain DB-wide**
+([ADR 0095](adr/0095-retire-html-positional-tier.md)). `html_aggregator` is not covered.
 
-**Status (2026-08-05 methodology audit): this is a DIAGNOSTIC, not a regression ratchet — it
-carries NO precision/recall floor.** The audit found floors premature for what this harness
-actually measures:
+**Matching (current behavior):** key `(document, metric_key, period_end, statement_basis)`; a
+`MATCH` requires value equality within the pipeline `Tolerance` **and** the same currency
+(`CURRENCY_MISSING` / `CURRENCY_MISMATCH` otherwise, counted in both denominators, never in
+`MATCH`); `WRONG_VALUE`, `MISSING`, `SPURIOUS`, `UNVERIFIED` (`needs_owner`/`uncertain` rows leave
+both denominators). Scope refinements: only the 15 `GT182_COVERED_BASE_KEYS` are scored
+(other app keys tally `out_of_gt_scope`); `net_profit__profitloss` / `total_equity__equity` map to
+the bare app keys while the `__owners` rows are not app-claimable in this audit (v2 maps them to
+`wdf_*_parent` — see below); current-period slots only, comparative periods tallied separately. The
+report prints a per-ticker breakdown so the CD Projekt concentration of the retired positional tier
+never hides.
 
-- **stored-state, not pipeline behavior** — it grades a point-in-time DB snapshot, never a fresh
-  extraction run. A parser change does not move these numbers; only re-running extraction and
-  re-snapshotting would. Pinning a regression floor on stored state would gate the wrong thing.
-- **output-conditioned corpus** — ground-truth rows exist only for facts/periods visible in
-  documents the pipeline had ALREADY extracted, which biases recall upward for whatever it already
-  covers; the corpus cannot see what the pipeline never touched.
-- **currency-blind matching** (fixed in this change — see below) — a value-equal app fact used to
-  count as `MATCH` even when its currency was missing or disagreed with the ground truth.
-- **CDR concentration** — 12 of the positional tier's 17 documents are CD Projekt, so a tier-wide
-  number is mostly CDR's number; every report now prints a per-ticker breakdown so this doesn't
-  hide.
-- **document-level vs single-slot estimand** — precision/recall are computed per (document, metric,
-  period, basis) SLOT, not per document, so a handful of chatty documents can dominate a tier.
+**Env / run:** `BRAWLER_GT_DIR` (default the corpus dir above; absent → SKIP, never a CI failure —
+the private corpus never enters CI, [ADR 0091](adr/0091-failure-path-and-real-state-testing.md));
+`BRAWLER_GT_REQUIRED=1` turns the SKIPs, the zero-GT-rows-at-current-period manifest guard and a
+zero-denominator tier into hard panics (owner-only, never a required check,
+[ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)). `make realdata-gt-score`,
+or `cargo test esef_positional_ground_truth_scores -- --ignored --nocapture`. It writes
+`scoring-report.json` next to the corpus. Corpus history (labeling passes, the DNP period repair,
+the currency-aware matching change) lives in the corpus `HANDOVER.md` and the #182 PR.
 
-Floors return with measurement v2 once these are addressed by a v2 corpus/scoring design, not by
-tightening this harness further. Until then it prints/writes diagnostics only.
+### ESEF measurement v2 — fresh-extraction floors ([ADR 0112](adr/0112-extraction-measurement-v2.md), #331)
 
-**Currency-aware matching (fixed this change, audit blocker):** a `MATCH` now additionally requires
-the app fact's currency to agree with the ground truth's. A value-equal app fact with `NULL`
-currency is `CURRENCY_MISSING`; a value-equal app fact whose currency disagrees is
-`CURRENCY_MISMATCH` — both counted in the precision/recall denominators (a value-only match is not
-a full match) but never in `MATCH` itself. This surfaced a real, previously invisible gap: the
-`html_positional` extractor mostly does not persist `currency` on the facts it emits — see the
-measurement below, where currency-blind matching had been inflating the positional tier's apparent
-match rate.
+`storage::tests::real_data_esef_v2::esef_measurement_v2` (`#[ignore]`) extracts every **floor
+event** of the owner's private v2 corpus alone into a fresh migrated database through the
+production path (`derive_report_period` → `run_structured_extraction`, autopilot mode) and scores
+the persisted facts against occurrence-level ground truth. Estimand, scoring key, exact-equality
+rule, the three denominators, the keyed zero-loss regression rule and the blinded labeling
+protocol are pinned in the ADR and in `scripts/realdata/esef-v2/LABELING.md`; the semantic key map is
+`scripts/realdata/esef-v2/gt_key_map.json`. Issuer replay (the issuer's events in domain-date order
+into one database) prints as a diagnostic next to it, never as a floor.
 
-**DNP manifest period fix (fixed this change, audit blocker):** `MANIFEST.json`'s DNP entry carried
-`period_end: 2026-12-31` — a year-shift bug (migration 0135 repaired the same bug in the DB, but the
-manifest was left uncorrected, flagged only). Every one of DNP's 28 ground-truth rows was therefore
-silently landing in the comparative bucket instead of scoring against the current period. Corrected
-to `2025-12-31` (the document's true period). A new guard catches a repeat: a manifest document with
-ZERO ground-truth rows at its declared current period is a hard failure under
-`BRAWLER_GT_REQUIRED=1`, a loud warning otherwise.
+**Env:** `BRAWLER_ESEF_V2_DIR` (default `private/realdata/spikes/esef-v2`, gitignored; absent →
+loud `SKIP`, never a CI failure), `BRAWLER_ESEF_KEYED_BASELINE` (the promoted private keyed
+baseline), `BRAWLER_ESEF_METRICS_OUT` (the aggregate metrics artifact), `BRAWLER_ESEF_REQUIRED=1`
+(owner-only required mode: every SKIP becomes a failure).
 
-**Env:** `BRAWLER_GT_DIR` (default `private/realdata/spikes/esef-positional-gt`) — absent dir,
-missing `ground_truth.json`, or missing `db-snapshot.sqlite3` → SKIP, never fails CI. **The private
-corpus never enters CI** (ADR 0091): this harness is inert there by construction, not by an env
-flag CI happens to leave unset. `BRAWLER_GT_REQUIRED=1` flips every one of those SKIPs, the
-zero-GT-rows-at-current-period manifest guard, and a zero-denominator tier into a hard panic
-instead — an owner-only, on-demand diagnostic mode, never a required check ([ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)).
-Neither mode asserts a floor — both simply confirm the diagnostic runs cleanly against the corpus.
+**Run (owner machine, advisory ritual — never a required check, [ADR 0096](adr/0096-quality-gate-architecture-under-continuous-release.md)):**
 
-**Run:** `make realdata-gt-score` (diagnostic report; prefix `BRAWLER_GT_REQUIRED=1` for the strict
-mode above), or directly:
-
-```text
-BRAWLER_GT_DIR=private/realdata/spikes/esef-positional-gt \
-  cargo test esef_positional_ground_truth_scores -- --ignored --nocapture
+```bash
+make realdata-esef-score    # diagnostic report, no verdict
+make realdata-esef-check    # required mode → fresh nonce-named metrics → ratchet --profile esef
+make realdata-esef-promote RUN=<nonce>   # owner promotes a run's keyed outcomes as the new baseline
 ```
 
-It copies `db-snapshot.sqlite3` (+ `-wal`/`-shm`) to a throwaway `scoring-worktest.sqlite3` and
-opens **only** the copy through the normal `open_database` path, so every pending migration
-applies to the copy and the snapshot stays a clean reference. Matches on `(document, metric_key,
-period_end, statement_basis)` — basis is part of the key because several corpus filings (DBC x2,
-CAR, DNP, CDR's "for_2024") are standalone, not consolidated.
+**Report anatomy:** header (estimand, versions, exact-equality rule); per-issuer counts (events,
+GT slots, matched, missing, wrong value, false positives, mismatch classes, unverified); pooled
+counts; current-period recall / labeled-scope precision, all-period availability, Layer 1
+comparative capture ("not measurable" on a zero denominator); labeled-capability recall;
+sensitivity (convention-resolved rows removed); twin agreement; replay summary;
+`previously_correct_slots_lost` with the lost slot ids (console only — private); per-event rows
+(labeled vs derived period, production's acceptance and reason code, counts, run error), the
+zero-output list with reasons and the per-concept MISSING breakdown.
 
-**Scope, refined (three metric-design artifacts the raw first pass conflated with real pipeline
-gaps — a first-pass measurement is otherwise deflated by things that are not extraction failures):**
+**Floors:** `realdata-esef-baseline.json` (aggregates only, [ADR 0091](adr/0091-failure-path-and-real-state-testing.md) dec. 4) pins the version/hash equality
+fields, the `matched` floor and the `previously_correct_slots_lost` (hard 0) /
+`false_positives` / `zero_output_events` ceilings; `scripts/check/realdata-ratchet.mjs --profile esef`
+judges a run (`status: unmeasured` is refused; a version mismatch is "incomparable — rebaseline
+required"; an improvement is a stale baseline until promoted). Self-tested by
+`scripts/check/check-realdata-ratchet.sh`.
 
-1. **Key scope** — only metric keys in `GT182_COVERED_BASE_KEYS` (the 15 concepts the GT labeler
-   covers: `revenue`, `gross_profit`, `operating_profit`, `net_profit`, `eps_basic`, `eps_diluted`,
-   the three cash-flow lines, `total_assets`, `current_assets`, `current_liabilities`,
-   `total_liabilities`, `total_equity`, `cash`) are scored. An app fact for a key outside that set
-   (e.g. `long_term_debt`, which the corpus never labels) is excluded entirely and tallied
-   `out_of_gt_scope` — never `SPURIOUS`.
-2. **Variant translation** (`gt182_app_comparable_key`) — `label_esef.py` deliberately keeps
-   `ifrs-full:ProfitLoss` / `ifrs-full:Equity` as `net_profit__profitloss` / `total_equity__equity`
-   GT rows rather than collapsing them at label time; the app's ESEF extractor
-   (`fundamentals/extraction/esef.rs`) maps the SAME bare concepts to `net_profit` / `total_equity`,
-   so those two variants translate to the app's keys at score time. `net_profit__owners` /
-   `total_equity__owners` (`…AttributableToOwnersOfParent`) have no app-side counterpart at all —
-   the app has no NCI-split KPI — so they are NOT app-claimable: tallied `app_has_no_concept`,
-   excluded from both denominators (never `MISSING`).
-3. **Period scope** — the precision/recall denominator is the document's CURRENT period only
-   (`MANIFEST.json`'s own `period_end` for that document, i.e. the period the pipeline was asked to
-   extract). A GT row at a comparative period (the prior-year/prior-quarter column the same
-   statement also carries) goes to a `comparative_coverage` observation bucket per tier instead —
-   `machine`-verified rows only, split stored-vs-not (existence, not a value check) — since whether
-   the app ALSO retains the comparative column is a different question from whether it read the
-   current filing correctly. `SPURIOUS` is scoped the same way: an app fact only counts against
-   precision when its OWN period is the document's current period. In practice both tiers measure
-   0 comparatives stored — the app never retains a filing's prior-period comparative column at all,
-   a gap distinct from current-period accuracy.
-
-Verdicts within scope: `MATCH` (value AND currency agree) / `CURRENCY_MISSING` (value agrees, app
-currency is `NULL`) / `CURRENCY_MISMATCH` (value agrees, app currency disagrees) / `WRONG_VALUE`
-(value disagrees; exact decimal equality, tolerance 0; a `< 0.5%` relative diff is flagged `(near)`
-for evidence only) / `MISSING` (a `machine`-verified, current-period, in-scope GT row with no app
-fact — recall hit) / `SPURIOUS` (a current-period, in-scope app fact with no GT row at all —
-precision hit) / `UNVERIFIED` (`needs_owner`/`uncertain` — excluded from both denominators, listed
-for owner arbitration) / `APP_HAS_NO_CONCEPT` / `COMPARATIVE` (the two observation-bucket verdicts
-above). `CURRENCY_MISSING`/`CURRENCY_MISMATCH` count in BOTH the precision and recall denominators
-(same as `WRONG_VALUE`) but never in `MATCH` — a value-only match is not a full match. Prints the
-full evidence table (never truncated, sorted tier → ticker → metric → period, with app/GT currency
-columns) plus per-tier aggregates, a per-ticker breakdown, AND the three observation buckets, and
-writes the same data as `scoring-report.json` next to the corpus (`Gt182TierAggregate` carries
-`out_of_gt_scope_count` / `app_has_no_concept_count` / `comparative_total` / `comparative_stored` /
-`comparative_missing` / `precision_denominator` / `recall_denominator` / `ticker_counts` alongside
-the seven verdict counts and precision/recall — every ratio ships its numerator/denominator, never
-a bare percentage).
-
-**Policy:** asserts harness sanity only (ground truth non-empty, both tiers scored, scoring report
-written) — **no precision/recall floor** (see "Status" above). `BRAWLER_GT_REQUIRED=1` additionally
-asserts the manifest period-agreement guard and non-zero denominators.
-
-**Positional tier is now uniformly `MISSING`** — the app side is permanently empty by design, so
-precision has no denominator (informational `n/a`, never a required-mode failure for this tier
-specifically) and recall is a flat 0.0%. This IS the expected, correct steady state — not a
-regression to chase. `esef` is untouched by the retirement (its route/writer never named `pdf`).
-Historical pre-retirement measurement evidence: [ADR 0095](adr/0095-retire-html-positional-tier.md).
-
-**Observation buckets (informational, off both denominators):** `esef` — `out_of_gt_scope`=25,
-`app_has_no_concept`=51 (the `__owners` NCI-split variants the app has no KPI for at all),
-comparative_total=232 / stored=0 / missing=232; `positional` — `out_of_gt_scope`=9,
-`app_has_no_concept`=0, comparative_total=304 / stored=0 / missing=304.
-
-`html_aggregator` remains unmeasured by this harness — the corpus has no `html_aggregator` ground
-truth to score against. The private corpus never enters CI or the public repo (ADR 0091); this
-measurement is reproduced locally via `make realdata-gt-score` on the maintainer's machine only —
-an on-demand DIAGNOSTIC (no floor to fail).
-
-**Successor-ratchet note:** this scorer supersedes `storage::tests::extraction_metrics`'s retired
-CBF recall/precision ratchet — deleted along with its floors and `make realdata-extraction-metrics`
-target ([ADR 0086](adr/0086-aggregator-primary-fundamentals.md) / [ADR 0095](adr/0095-retire-html-positional-tier.md)).
-THIS scorer itself currently carries no floor either, per the audit above — "successor" describes
-which harness supersedes the retired one, not that #182 is gating yet.
+**Corpus recipe (owner, private):** `scripts/realdata/esef-v2/README.md` — `build_frame.py` (frame
+from the pinned snapshot by bytes and filing evidence, never from extraction results) →
+`label_esef_v2.py` (blind reference parser, occurrence-level) → `adjudicate.py prepare/seal/compare`
+(blinded second read) → `make realdata-esef-check` → `make realdata-esef-promote`. The synthetic
+sample under `src-tauri/testdata/esef-v2-sample/` drives the same harness hermetically in CI. On the
+owner's snapshot the frame is **annual-only** (GPW interims are PDFs, ESEF mandates iXBRL for annual
+reports only) — one package per acceptance issuer plus earlier annual warm-ups; the interim leg and
+the language-twin leg are recorded as empty per issuer in `honest_limitations`.
 
 ### Data-trust audit (epic #229 T1) — sizing a repair before writing it
 

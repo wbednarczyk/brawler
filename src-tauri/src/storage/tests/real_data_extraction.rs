@@ -1748,10 +1748,14 @@ fn gt182_score_tier(
     (rows, agg)
 }
 
-/// **#182 B2 — the ground-truth scorer, a DIAGNOSTIC, not a ratchet.** See
-/// the module doc comment above for the full contract. **Inert in CI** —
-/// skips (loudly) unless the corpus dir, `ground_truth.json`, and
-/// `db-snapshot.sqlite3` are present.
+/// **#182 B2 — the ground-truth scorer: a STORED-STATE AUDIT, not a
+/// ratchet.** It grades facts already committed to a DB snapshot, never runs
+/// the pipeline — "how good is what's on the owner's database today", not
+/// "what would a fresh run produce" (v2's cold-start measurement, which DOES
+/// run the pipeline, lives in `real_data_esef_v2.rs`). See the module doc
+/// comment above for the full contract. **Inert in CI** — skips (loudly)
+/// unless the corpus dir, `ground_truth.json`, and `db-snapshot.sqlite3` are
+/// present.
 ///
 /// Run it manually from `src-tauri/`, or via `make realdata-gt-score`:
 ///

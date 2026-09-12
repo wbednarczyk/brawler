@@ -1,0 +1,134 @@
+{
+  "manifest_version": 1,
+  "snapshot": {
+    "source": "synthetic-sample",
+    "taken_at": "2026-09-12"
+  },
+  "registry_hash": "58a892265bf80e457414ccffff46b054b4f4c926b4ddb6085e106e01972e4320",
+  "issuers": [
+    {
+      "issuer_id": "iss_01",
+      "ticker": "SMPL",
+      "exchange": "GPW",
+      "display_name": "Sample S.A."
+    }
+  ],
+  "events": [
+    {
+      "event_id": "iss_01/FY2024/pl/consolidated/warmup/v1",
+      "issuer_id": "iss_01",
+      "role": "warmup",
+      "language": "pl",
+      "basis_scope": "consolidated",
+      "vintage": 1,
+      "labeled_period": {
+        "fiscal_year": 2024,
+        "period_type": "FY",
+        "period_end": "2024-12-31",
+        "period_start": "2024-01-01"
+      },
+      "file": {
+        "name": "warmup_fy2024.xhtml",
+        "sha256": "b6ba3cf0a9ef9cc28a1be69d724967d50c28262751f38eaa26bf2b6253baa995",
+        "bytes": 1568,
+        "package_member": null
+      },
+      "document": {
+        "id": "doc_warmup_fy2024",
+        "title": "Skonsolidowane sprawozdanie finansowe za 2024 (warmup)",
+        "url": "https://example.com/sample/warmup-fy2024.xhtml",
+        "content_type": "application/xhtml+xml",
+        "content_hash": null
+      },
+      "warmup_order": 0
+    },
+    {
+      "event_id": "iss_01/FY2025/pl/consolidated/v1",
+      "issuer_id": "iss_01",
+      "role": "floor",
+      "language": "pl",
+      "basis_scope": "consolidated",
+      "vintage": 1,
+      "labeled_period": {
+        "fiscal_year": 2025,
+        "period_type": "FY",
+        "period_end": "2025-12-31",
+        "period_start": "2025-01-01"
+      },
+      "file": {
+        "name": "sample_pl.xhtml",
+        "sha256": "750cd797f6daac59ebbfadb6764ed50bd07652b6a7225c02b401e1d9105b0f7b",
+        "bytes": 3327,
+        "package_member": null
+      },
+      "document": {
+        "id": "doc_floor_pl",
+        "title": "Skonsolidowane sprawozdanie finansowe za 2025",
+        "url": "https://example.com/sample/floor-pl.xhtml",
+        "content_type": "application/xhtml+xml",
+        "content_hash": null
+      },
+      "warmup_order": 0
+    },
+    {
+      "event_id": "iss_01/FY2025/en/consolidated/v1",
+      "issuer_id": "iss_01",
+      "role": "twin_diagnostic",
+      "language": "en",
+      "basis_scope": "consolidated",
+      "vintage": 1,
+      "labeled_period": {
+        "fiscal_year": 2025,
+        "period_type": "FY",
+        "period_end": "2025-12-31",
+        "period_start": "2025-01-01"
+      },
+      "file": {
+        "name": "sample_en.xhtml",
+        "sha256": "eb61764e2ec5356857815b402c8de64ac0f376dd9136a2eb88301b4022597e72",
+        "bytes": 3324,
+        "package_member": null
+      },
+      "document": {
+        "id": "doc_twin_en",
+        "title": "Consolidated financial statements for 2025",
+        "url": "https://example.com/sample/twin-en.xhtml",
+        "content_type": "application/xhtml+xml",
+        "content_hash": null
+      },
+      "warmup_order": 0
+    },
+    {
+      "event_id": "iss_01/FY2025/pl/consolidated_and_standalone/v1",
+      "issuer_id": "iss_01",
+      "role": "floor",
+      "language": "pl",
+      "basis_scope": "consolidated",
+      "vintage": 1,
+      "labeled_period": {
+        "fiscal_year": 2025,
+        "period_type": "FY",
+        "period_end": "2025-12-31",
+        "period_start": "2025-01-01"
+      },
+      "file": {
+        "name": "sample_package.zip",
+        "sha256": "50682bed73a91be21bef342dc46e43c6a1c427a1dbc54e1dfe05a5ce33afad13",
+        "bytes": 2400,
+        "package_member": "reports/consolidated.xhtml"
+      },
+      "document": {
+        "id": "doc_floor_package",
+        "title": "Skonsolidowane i jednostkowe sprawozdanie finansowe za 2025 (pakiet)",
+        "url": "https://example.com/sample/floor-package.zip",
+        "content_type": "application/octet-stream",
+        "content_hash": null
+      },
+      "warmup_order": 0
+    }
+  ],
+  "honest_limitations": [
+    "synthetic sample corpus (#331 PR-A): fabricated numbers for harness/fixture testing only, never real filing evidence",
+    "one issuer \u2014 not representative of cross-issuer variance"
+  ]
+}

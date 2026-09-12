@@ -1,0 +1,5 @@
+{
+  "_comment": "ESEF measurement v2 ratchet baseline (ADR 0112, #331). Aggregate NUMBERS ONLY — never a ticker, title, id, filename or value (ADR 0091 dec. 4). Measured by src-tauri/src/storage/tests/real_data_esef_v2.rs on the owner's private corpus, judged by scripts/check/realdata-ratchet.mjs --profile esef, run on demand via `make realdata-esef-check` (advisory ritual, never a required check). `status: unmeasured` = PR-A placeholder: the ratchet refuses to judge it; PR-B replaces it with the first measured run (measurement_version 1) and the private keyed baseline is promoted with `make realdata-esef-promote`.",
+  "profile": "esef",
+  "status": "unmeasured"
+}

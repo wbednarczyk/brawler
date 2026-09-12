@@ -42,6 +42,7 @@ Closing an epic is a **post-delivery audit**, never a gate a merge waits on ([AD
 - **Closure artifacts presented inline in chat** before sign-off — the retrospective (both domains — app + dev loop — × went-well / went-wrong / stop / improve, each item marked closed or still-open honestly), the guardrail-harvest list, the ADR-audit verdicts, and any decisions the owner must make. A committed file the owner never saw does not count.
 - **ADR spec-conformance audit**: for every decision in the epic's ADR(s), verify a live-path invocation exists (`repoctx callers` from the real job/command/UI entry, not only unit tests); verdict per decision (conforms / partial / deviates / not built).
 - **Guardrail harvest**: every flagged defect's class closed in-branch or carded — none silently dropped.
+- **Measurement rituals ran** where the epic touched extraction: the ESEF measurement v2 verdict (`make realdata-esef-check`, [ADR 0112](adr/0112-extraction-measurement-v2.md)) and the honesty ratchet are quoted as counts in the closure artifacts, or their non-applicability is stated.
 - **Every sub-issue closed, re-parented, or explicitly dropped** before closing the epic — an epic never closes with open children (`sub_issues_summary` verified complete; a closed epic with open children is reopened on sight).
 - Board `Status` stays the only home of state (never a `state:*` label).
 - A **reopened epic** gets a delta-retro (what changed since the first closure), not a full repeat.
