@@ -574,9 +574,27 @@ mod tests {
             .contains("SomeCompanyExtensionConceptNotInTheCrosswalk"));
     }
 
+    /// Test B4 (#511, preservation): `equity_changes` is not one of
+    /// `is_primary_statement`'s four matched kinds, so an `equity_changes`-only
+    /// fact is excluded exactly like an unrecognised role — already true on
+    /// master, pinned here as part of the ADR 0100 dec. 3 amendment's test set.
     #[test]
     fn a_row_with_no_primary_statement_role_is_never_projected_and_is_counted() {
         let facts = vec![duration_fact("Assets", "eq1", "10", &["equity_changes"])];
+        let projected = project_period(&facts, "2025-12-31", true);
+
+        assert!(projected.facts.is_empty());
+        assert_eq!(projected.non_primary_statement_skipped, 1);
+    }
+
+    /// Test B3 (#511, preservation): a role that parses but classifies
+    /// `other` (ADR 0100 decision 3 amendment) must never be treated as a
+    /// primary-statement role — `is_primary_statement` only matches the four
+    /// primary kinds, so this is the same rejection as no role data at all,
+    /// already true on master.
+    #[test]
+    fn a_row_whose_only_role_classifies_other_is_never_projected_and_is_counted() {
+        let facts = vec![duration_fact("Assets", "note1", "10", &["other"])];
         let projected = project_period(&facts, "2025-12-31", true);
 
         assert!(projected.facts.is_empty());

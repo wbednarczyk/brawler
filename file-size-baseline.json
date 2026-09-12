@@ -11,7 +11,7 @@
     "src-tauri/src/fundamentals/metrics.rs": 1507,
     "src-tauri/src/fundamentals/ownership/parse.rs": 1195,
     "src-tauri/src/jobs/autopilot.rs": 1053,
-    "src-tauri/src/jobs/structured_extraction.rs": 3790,
+    "src-tauri/src/jobs/structured_extraction.rs": 3789,
     "src-tauri/src/mcp/acts.rs": 1038,
     "src-tauri/src/mcp/kpi_ingest.rs": 1574,
     "src-tauri/src/mcp/kpi_ingest_submit.rs": 2467,

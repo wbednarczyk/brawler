@@ -789,12 +789,9 @@ pub(crate) fn route_document(bytes: &[u8]) -> DocumentRoute {
     }
 }
 
-/// Layer 1 tagged-fact extractor version (ADR 0100 decision 8): bumping this
-/// invalidates every stored generation and forces a rebuild on next run.
-/// Bumped 1 -> 2 for the no-linkbase-fallback regression fix (epic #398):
-/// every previously-captured generation is missing `no_linkbase_fallback_
-/// count` and must be rebuilt to report it.
-const TAGGED_FACT_EXTRACTOR_VERSION: i64 = 2;
+/// Layer 1 tagged-fact extractor version (ADR 0100 decision 8): a bump rebuilds
+/// every stored generation, roles included; 3 = the decision 3 role families.
+const TAGGED_FACT_EXTRACTOR_VERSION: i64 = 3;
 
 /// One document's Layer 1 generation, computed PURELY from bytes (ADR 0100
 /// decisions 1/3/9, epic #398) — no storage, no freshness check. Shared by
@@ -1509,6 +1506,8 @@ fn base_document_ref(slot_ref: &str) -> &str {
     slot_ref.split('#').next().unwrap_or(slot_ref)
 }
 #[cfg(test)]
+mod role_families_tests;
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::app_state::AppState;
@@ -1853,7 +1852,7 @@ mod tests {
     /// balanced iXBRL statement at `2025-12-31` — the shape of a real GPW `.xbri`
     /// annual filing, without shipping a real one. Includes a dimensional
     /// (`explicitMember`) Equity component that must be filtered out.
-    fn esef_package_bytes() -> Vec<u8> {
+    pub(super) fn esef_package_bytes() -> Vec<u8> {
         let instance = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
       xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full"
       xmlns:xbrli="http://www.xbrl.org/2003/instance"
@@ -1882,7 +1881,7 @@ mod tests {
         ])
     }
 
-    fn seed_esef_package() -> (AppState, String, String) {
+    pub(super) fn seed_esef_package() -> (AppState, String, String) {
         let dir = unique_temp_dir("esef-pkg");
         std::fs::create_dir_all(&dir).expect("temp dir");
         let connection = open_in_memory_database().expect("db");
