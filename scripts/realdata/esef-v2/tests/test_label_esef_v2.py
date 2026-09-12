@@ -295,3 +295,17 @@ class NamespaceMatchingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IfrsNamespaceGateTests(unittest.TestCase):
+    """Real-data run 2026-09-12: the 2024-03-27 ESEF taxonomy publishes under
+    https://xbrl.ifrs.org — the gate must accept both schemes and still refuse
+    an issuer extension namespace."""
+
+    def test_https_and_http_ifrs_namespaces_are_accepted_extensions_refused(self):
+        import label_esef_v2 as lab
+
+        self.assertTrue(lab.is_ifrs_concept("{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Revenue"))
+        self.assertTrue(lab.is_ifrs_concept("{http://xbrl.ifrs.org/taxonomy/2023-03-23/ifrs-full}Assets"))
+        self.assertFalse(lab.is_ifrs_concept("{http://www.example.pl/xbrl/2025-12-31}Revenue"))
+        self.assertFalse(lab.is_ifrs_concept(None))

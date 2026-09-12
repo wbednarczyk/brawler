@@ -40,7 +40,8 @@ import esef_ixbrl as ix
 
 HERE = Path(__file__).resolve().parent
 
-IFRS_NAMESPACE_RE = re.compile(r"^\{http://xbrl\.ifrs\.org/taxonomy/[^/]+/ifrs-full\}")
+# The 2024+ ESEF taxonomies publish under https://xbrl.ifrs.org (older under http://) — real-data run 2026-09-12.
+IFRS_NAMESPACE_RE = re.compile(r"^\{https?://xbrl\.ifrs\.org/taxonomy/[^/]+/ifrs-full\}")
 
 
 def load_key_map(key_map_path: Path) -> dict:
