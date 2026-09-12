@@ -385,7 +385,12 @@ def copy_into_corpus(corpus_dir: Path, original_name: str, data: bytes, sha256: 
 
 
 def registry_hash(event_shas: list[str]) -> str:
-    return hashlib.sha256("\n".join(sorted(event_shas)).encode("utf-8")).hexdigest()
+    """Corpus registry identity (ADR 0112 dec. 6): sha256 over the SORTED,
+    DEDUPLICATED lowercase-hex sha256 digests of every event file, joined with
+    no separator — the exact formula the Rust harness recomputes from the
+    files on disk (`recompute_registry_hash`); the first real run found the
+    two sides joined differently."""
+    return hashlib.sha256("".join(sorted(set(event_shas))).encode("ascii")).hexdigest()
 
 
 def build_frame(

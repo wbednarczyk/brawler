@@ -458,3 +458,18 @@ class EndToEndDeterminismTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RegistryHashFormulaTests(unittest.TestCase):
+    """The registry hash is the cross-language corpus identity — the Rust
+    harness recomputes it from the files; both sides must agree byte for byte."""
+
+    def test_registry_hash_is_sha256_over_sorted_deduplicated_digests_no_separator(self):
+        import hashlib
+
+        import build_frame as bf
+
+        a = "b" * 64
+        b = "a" * 64
+        expected = hashlib.sha256((b + a).encode("ascii")).hexdigest()
+        self.assertEqual(bf.registry_hash([a, b, a]), expected)
