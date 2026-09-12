@@ -215,8 +215,9 @@ check-docs-gates:
 	$(NIX) node scripts/check/docs-headings-ratchet.mjs
 	$(NIX) node --test "scripts/check/*.test.mjs" "scripts/ux/*.test.mjs"
 	# #331 PR-A (ADR 0112): esef-v2 python tooling unit checks (stdlib
-	# unittest, synthetic fixtures only — no real data, runs anywhere).
-	python3 -m unittest discover -s scripts/realdata/esef-v2/tests -p "test_*.py"
+	# unittest, synthetic fixtures only — no real data). Through $(NIX) like every
+	# sibling: the CI container has no host python3, only the dev shell does.
+	$(NIX) python3 -m unittest discover -s scripts/realdata/esef-v2/tests -p "test_*.py"
 	$(NIX) npm run release:version-check
 	$(NIX) npm run release:commit-msg-check
 	# G4 (ADR 0081 Q7 follow-up): a malformed escaped-defect table (wrong cell
