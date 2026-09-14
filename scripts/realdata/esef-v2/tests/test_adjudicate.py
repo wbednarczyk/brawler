@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sys
 import tempfile
@@ -71,6 +72,12 @@ def _seal_all(out: Path, reader: str, index: dict, answer_for, round_num: int = 
 
 def _write_occurrences(out: Path, occurrences: list[dict]) -> None:
     (out / "occurrences_v2.json").write_text(json.dumps(occurrences), encoding="utf-8")
+
+
+def _write_decisions(out: Path, decisions: dict, name: str = "decisions.json") -> Path:
+    path = out / name
+    path.write_text(json.dumps({"decisions": decisions}), encoding="utf-8")
+    return path
 
 
 class PrepareTests(unittest.TestCase):
@@ -802,6 +809,146 @@ class RereadClassPrepareTests(unittest.TestCase):
             _write_gt(out, slots)
             result = adj.prepare(out, seed=1)
             self.assertEqual(result["class_reread"], 0)
+
+
+class DecisionsTests(unittest.TestCase):
+    """#331 PR-B: an owner decisions file overrides one genuine disagreement
+    the other way, with a reason -- for a task the reader answered
+    differently from the machine slot only; agreeing/unsettled/unknown
+    tasks refuse the whole compare, no writes."""
+
+    def _prepared_and_sealed_disagreement(self, out: Path, **answer_overrides):
+        slot = _slot("Revenue", "machine", "42")
+        _write_gt(out, [slot])
+        adj.prepare(out, seed=5)
+        index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+        task_id = next(iter(index))
+        _seal_all(out, "reader_b", index, lambda tid, meta: _full_answer(slot, value="999", **answer_overrides))
+        return slot, task_id
+
+    def test_keep_machine_leaves_value_and_id_untouched_and_records_the_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot, task_id = self._prepared_and_sealed_disagreement(out)
+            old_slot_id = slot["slot_id"]
+            decisions_path = _write_decisions(
+                out, {task_id: {"keep": "machine", "reason": "readers answered a neighbouring fact", "decided_by": "owner"}}
+            )
+
+            adj.compare(out, decisions_path=decisions_path)
+
+            gt = json.loads((out / "ground_truth_v2.json").read_text())
+            new_slot = gt["slots"][0]
+            self.assertEqual(new_slot["verification"], "adjudicated")
+            self.assertEqual(new_slot["value"], "42")  # untouched -- the machine value stands
+            self.assertEqual(new_slot["slot_id"], old_slot_id)  # untouched -- no re-key
+            self.assertEqual(
+                new_slot["resolution_ref"],
+                {"decision": "keep_machine", "reason": "readers answered a neighbouring fact", "decided_by": "owner"},
+            )
+            resolutions = json.loads((out / "adjudication" / "resolutions.json").read_text())
+            self.assertEqual(resolutions[0]["outcome"], "adjudicated_keep_machine")
+            self.assertEqual(resolutions[0]["decisions_sha256"], hashlib.sha256(decisions_path.read_bytes()).hexdigest())
+
+    def test_keep_reader_applies_as_before(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot, task_id = self._prepared_and_sealed_disagreement(out, evidence_anchor=None)
+            decisions_path = _write_decisions(
+                out, {task_id: {"keep": "reader", "reason": "confirmed on a second filing page", "decided_by": "owner"}}
+            )
+
+            adj.compare(out, decisions_path=decisions_path)
+
+            gt = json.loads((out / "ground_truth_v2.json").read_text())
+            new_slot = gt["slots"][0]
+            self.assertEqual(new_slot["verification"], "adjudicated")
+            self.assertEqual(new_slot["value"], "999")
+            resolutions = json.loads((out / "adjudication" / "resolutions.json").read_text())
+            self.assertEqual(resolutions[0]["outcome"], "adjudicated")
+            self.assertEqual(resolutions[0]["decisions_sha256"], hashlib.sha256(decisions_path.read_bytes()).hexdigest())
+
+    def test_decision_on_an_agreeing_task_aborts_with_no_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "42")
+            _write_gt(out, [slot])
+            adj.prepare(out, seed=5)
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            task_id = next(iter(index))
+            _seal_all(out, "reader_b", index, lambda tid, meta: _full_answer(slot))  # agrees
+            decisions_path = _write_decisions(out, {task_id: {"keep": "machine", "reason": "n/a", "decided_by": "owner"}})
+
+            with self.assertRaises(adj.InvalidDecisionError):
+                adj.compare(out, decisions_path=decisions_path)
+
+            gt = json.loads((out / "ground_truth_v2.json").read_text())
+            self.assertEqual(gt["slots"][0]["value"], "42")
+            self.assertFalse((out / "adjudication" / "resolutions.json").exists())
+
+    def test_decision_on_an_unsettled_task_aborts_with_no_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot = _slot("Revenue", "machine", "42")
+            _write_gt(out, [slot])
+            adj.prepare(out, seed=5)
+            index = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            task_id = next(iter(index))
+            _seal_all(out, "reader_b", index, lambda tid, meta: {"unverified": True, "reason": "not legible"})
+            decisions_path = _write_decisions(out, {task_id: {"keep": "machine", "reason": "n/a", "decided_by": "owner"}})
+
+            with self.assertRaises(adj.InvalidDecisionError):
+                adj.compare(out, decisions_path=decisions_path)
+
+            self.assertFalse((out / "adjudication" / "resolutions.json").exists())
+
+    def test_decision_naming_an_unknown_task_id_aborts_with_no_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot, _task_id = self._prepared_and_sealed_disagreement(out)
+            decisions_path = _write_decisions(out, {"task_9999": {"keep": "machine", "reason": "n/a", "decided_by": "owner"}})
+
+            with self.assertRaises(adj.InvalidDecisionError):
+                adj.compare(out, decisions_path=decisions_path)
+
+            gt = json.loads((out / "ground_truth_v2.json").read_text())
+            self.assertEqual(gt["slots"][0]["value"], "42")
+            self.assertFalse((out / "adjudication" / "resolutions.json").exists())
+
+    def test_decision_with_out_of_domain_keep_aborts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot, task_id = self._prepared_and_sealed_disagreement(out)
+            decisions_path = _write_decisions(out, {task_id: {"keep": "bogus", "reason": "n/a", "decided_by": "owner"}})
+
+            with self.assertRaises(adj.InvalidDecisionError):
+                adj.compare(out, decisions_path=decisions_path)
+            self.assertFalse((out / "adjudication" / "resolutions.json").exists())
+
+    def test_decision_with_empty_reason_aborts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot, task_id = self._prepared_and_sealed_disagreement(out)
+            decisions_path = _write_decisions(out, {task_id: {"keep": "machine", "reason": "   ", "decided_by": "owner"}})
+
+            with self.assertRaises(adj.InvalidDecisionError):
+                adj.compare(out, decisions_path=decisions_path)
+            self.assertFalse((out / "adjudication" / "resolutions.json").exists())
+
+    def test_no_decisions_file_is_todays_behavior(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot, task_id = self._prepared_and_sealed_disagreement(out)  # differs, with evidence
+
+            result = adj.compare(out)  # no decisions_path at all
+
+            self.assertEqual(result["resolutions"], 1)
+            gt = json.loads((out / "ground_truth_v2.json").read_text())
+            self.assertEqual(gt["slots"][0]["verification"], "adjudicated")
+            self.assertEqual(gt["slots"][0]["value"], "999")
+            resolutions = json.loads((out / "adjudication" / "resolutions.json").read_text())
+            self.assertEqual(resolutions[0]["outcome"], "adjudicated")
+            self.assertNotIn("decisions_sha256", resolutions[0])
 
 
 if __name__ == "__main__":

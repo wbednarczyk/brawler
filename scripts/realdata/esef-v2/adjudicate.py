@@ -36,12 +36,20 @@ Three subcommands:
            `machine`), the disputed value never applied; unsettled, or
            multiple readers disagreeing -> stays/becomes `unverified`. The
            production app's extraction is never consulted; the only values
-           ever written are a reader's own, and only after validation.
+           ever written are a reader's own, and only after validation. An
+           optional `--decisions <path>` file (#331 PR-B) lets the owner
+           override one genuine disagreement the OTHER way, with a reason:
+           `keep: machine` -> `adjudicated_keep_machine`, the slot untouched,
+           the decision + reason recorded in `resolution_ref`; `keep:
+           reader` -> today's apply path (`adjudicated`). A decision on an
+           agreeing or unsettled task, or naming an unknown task id, aborts
+           the whole compare with NO writes; the decisions file's sha256 is
+           recorded on each resolution it decided.
 
 Usage:
     python3 adjudicate.py prepare --esef-v2-dir <dir> --seed <int>
     python3 adjudicate.py seal --esef-v2-dir <dir> <reader> <answers.json>
-    python3 adjudicate.py compare --esef-v2-dir <dir>
+    python3 adjudicate.py compare --esef-v2-dir <dir> [--decisions <path>]
 """
 from __future__ import annotations
 
@@ -63,6 +71,7 @@ NORMALIZED_ANSWER_FIELDS = ("value", "currency", "basis", "attribution", "fiscal
 VALID_BASES = {"consolidated", "standalone", "unknown"}
 VALID_ATTRIBUTIONS = {"total", "owners_of_parent", "nci"}
 VALID_PERIOD_TYPES = {"FY", "H1", "Q1", "Q2", "Q3", "Q4", "unknown"}
+VALID_DECISION_KEEP = {"machine", "reader"}
 
 
 class SealingClosedError(RuntimeError):
@@ -99,6 +108,14 @@ class IncompleteAdjudicationError(RuntimeError):
 class InvalidAnswerError(RuntimeError):
     """Raised when a sealed answer fails domain validation -- amendment W:
     the whole compare transaction fails, no partial writes."""
+
+
+class InvalidDecisionError(RuntimeError):
+    """Raised when the optional owner decisions file (#331 PR-B) is
+    malformed -- an out-of-domain `keep`, an empty `reason`, a decision
+    naming a task id absent from tasks_index.json, or a decision on a task
+    that agrees or is unsettled (a decision must answer a real
+    disagreement) -- all abort `compare` before any write."""
 
 
 def _adjudication_dir(esef_v2_dir: Path, round_num: int = 1) -> Path:
@@ -444,7 +461,32 @@ def _answer_normalized_tuple(answer: dict) -> tuple | None:
     )
 
 
-def compare(esef_v2_dir: Path, round_num: int = 1) -> dict:
+def _load_decisions(decisions_path: Path | None, index: dict) -> tuple[dict[str, dict], str | None]:
+    """Loads and validates the optional owner decisions file (#331 PR-B) --
+    the adjudicator overriding a genuine disagreement the OTHER way (the
+    machine label is right after all), with a reason, instead of the
+    automatic evidence-based resolution. Every check here runs before
+    `compare` touches anything: an unknown task id or a malformed
+    `keep`/`reason` aborts with no writes, same spirit as an invalid answer
+    (amendment W). Returns `({}, None)` when no file is given."""
+    if decisions_path is None:
+        return {}, None
+    raw = decisions_path.read_bytes()
+    decisions = json.loads(raw).get("decisions", {})
+    unknown = sorted(task_id for task_id in decisions if task_id not in index)
+    if unknown:
+        raise InvalidDecisionError(f"decision(s) name task id(s) not in tasks_index.json: {', '.join(unknown)}")
+    for task_id, decision in decisions.items():
+        if decision.get("keep") not in VALID_DECISION_KEEP:
+            raise InvalidDecisionError(
+                f"decision for {task_id!r}: keep must be one of {sorted(VALID_DECISION_KEEP)}, got {decision.get('keep')!r}"
+            )
+        if not isinstance(decision.get("reason"), str) or not decision["reason"].strip():
+            raise InvalidDecisionError(f"decision for {task_id!r}: reason must be a non-empty string")
+    return decisions, hashlib.sha256(raw).hexdigest()
+
+
+def compare(esef_v2_dir: Path, round_num: int = 1, decisions_path: Path | None = None) -> dict:
     adjudication_dir = _adjudication_dir(esef_v2_dir, round_num)
     lock = json.loads((adjudication_dir / "tasks.lock").read_text(encoding="utf-8"))
     _verify_bindings(esef_v2_dir, adjudication_dir, lock)
@@ -465,6 +507,7 @@ def compare(esef_v2_dir: Path, round_num: int = 1) -> dict:
         task_units[task_id] = json.loads(task_bytes).get("unit")
 
     index = json.loads((adjudication_dir / "tasks_index.json").read_text(encoding="utf-8"))
+    decisions, decisions_sha256 = _load_decisions(decisions_path, index)
     gt = json.loads((esef_v2_dir / "ground_truth_v2.json").read_text(encoding="utf-8"))
     slots_by_id = {s["slot_id"]: s for s in gt["slots"]}
 
@@ -510,6 +553,7 @@ def compare(esef_v2_dir: Path, round_num: int = 1) -> dict:
         evidence = next((a.get("evidence_anchor") for _r, a in readers if a.get("evidence_anchor")), None)
         any_unsettled = any(a.get("unverified") for _r, a in readers)
         answer_tuples = {_answer_normalized_tuple(a) for _r, a in readers if not a.get("unverified")}
+        decision = decisions.get(task_id)
 
         # Uniform outcomes regardless of why the task was picked (a
         # disagreement or an agreement-sample check are indistinguishable by
@@ -521,31 +565,50 @@ def compare(esef_v2_dir: Path, round_num: int = 1) -> dict:
         # systematic-error signal, LABELING.md step 6); a differing read
         # with NO evidence anchor becomes `unverified` -- amendment W: a
         # contradicted machine label never stays `machine` -- without ever
-        # applying the disputed value.
+        # applying the disputed value. #331 PR-B: an owner decision on a
+        # genuine disagreement (any of the differing branches above)
+        # overrides the automatic resolution either way; a decision on an
+        # agreeing or unsettled task is refused instead (it must answer a
+        # real disagreement).
         if any_unsettled or len(answer_tuples) != 1 or None in answer_tuples:
+            if decision is not None:
+                raise InvalidDecisionError(f"{task_id}: decision targets an unsettled task -- a decision must answer a real disagreement")
             outcome, new_verification = "unsettled", "unverified"
         else:
             answer_tuple = next(iter(answer_tuples))
             if answer_tuple == slot_tuple:
+                if decision is not None:
+                    raise InvalidDecisionError(f"{task_id}: decision targets an agreeing task -- a decision must answer a real disagreement")
                 outcome, new_verification = "agree", "second_read"
-            elif evidence is None:
+            elif decision is not None and decision["keep"] == "machine":
+                outcome, new_verification = "adjudicated_keep_machine", "adjudicated"
+                slot["resolution_ref"] = {
+                    "decision": "keep_machine",
+                    "reason": decision["reason"],
+                    "decided_by": decision.get("decided_by"),
+                }
+            elif evidence is None and decision is None:
                 outcome, new_verification = "rejected_missing_evidence", "unverified"
             else:
                 outcome, new_verification = "adjudicated", "adjudicated"
                 _apply_adjudicated_answer(slot, answer_tuple)
 
         slot["verification"] = new_verification
-        resolutions.append(
-            {
-                "task_id": task_id,
-                "slot_id": slot["slot_id"],  # re-read after a possible re-key
-                "event_id": meta["event_id"],
-                "task_kind": meta["task_kind"],
-                "outcome": outcome,
-                "evidence_anchor": evidence,
-                "readers": sorted(r for r, _ in readers),
-            }
-        )
+        resolution = {
+            "task_id": task_id,
+            "slot_id": slot["slot_id"],  # re-read after a possible re-key
+            "event_id": meta["event_id"],
+            "task_kind": meta["task_kind"],
+            "outcome": outcome,
+            "evidence_anchor": evidence,
+            "readers": sorted(r for r, _ in readers),
+        }
+        if decision is not None and outcome in ("adjudicated_keep_machine", "adjudicated"):
+            # Auditability: which decisions file approved this override
+            # (per-resolution, not top-level -- resolutions.json stays the
+            # same array shape for every task compare never decided).
+            resolution["decisions_sha256"] = decisions_sha256
+        resolutions.append(resolution)
 
     _assert_unique_slot_ids(gt["slots"])
     (adjudication_dir / "resolutions.json").write_text(
@@ -614,7 +677,12 @@ def main(argv: list[str] | None = None) -> int:
     p_seal.add_argument("reader")
     p_seal.add_argument("answers", type=Path)
 
-    sub.add_parser("compare")
+    p_compare = sub.add_parser("compare")
+    p_compare.add_argument(
+        "--decisions", type=Path, default=None, dest="decisions_path",
+        help="owner decisions file (#331 PR-B): overrides a specific genuine disagreement the other way "
+        "(keep: machine|reader, with a reason) instead of the automatic evidence-based resolution",
+    )
 
     args = parser.parse_args(argv)
     esef_v2_dir = Path(args.esef_v2_dir)
@@ -640,13 +708,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"adjudicate seal: sealed {len(sealed)} event file(s) for reader {args.reader!r}")
     elif args.command == "compare":
         try:
-            result = compare(esef_v2_dir, round_num=args.round_num)
+            result = compare(esef_v2_dir, round_num=args.round_num, decisions_path=args.decisions_path)
         except (
             IncompleteAdjudicationError,
             BindingMismatchError,
             SealHashMismatchError,
             InvalidAnswerError,
             TaskHashMismatchError,
+            InvalidDecisionError,
         ) as exc:
             print(f"adjudicate compare: refused -- {exc}")
             return 1
