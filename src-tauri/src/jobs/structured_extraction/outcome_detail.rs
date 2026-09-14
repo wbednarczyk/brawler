@@ -20,6 +20,16 @@ pub(super) struct RejectedFact {
     pub(super) value: String,
 }
 
+/// Whether `key` names a per-fact write-slot field (#509 decision 2) — a
+/// refusal on one of these costs a single fact, never the whole set. Any
+/// other key (e.g. `period_type`, a shared run-context field) is fatal.
+pub(super) fn is_fact_local_refusal(key: &str) -> bool {
+    matches!(
+        key,
+        "currency" | "value_numeric" | "attribution" | "data_quality"
+    )
+}
+
 /// Object-merges a detail-payload array under `key` onto `base` (never
 /// nested) — the shared core `quarantine_detail`/`rejected_detail` use.
 fn merge_detail_array(
@@ -57,4 +67,25 @@ pub(super) fn rejected_detail(rejected: &[RejectedFact], base: Option<String>) -
         .map(|r| serde_json::json!({ "metricKey": r.metric_key, "field": r.field, "value": r.value }))
         .collect();
     merge_detail_array("rejectedFacts", facts, base)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_fact_local_refusal_matches_exactly_the_four_per_fact_write_slot_fields() {
+        for key in ["currency", "value_numeric", "attribution", "data_quality"] {
+            assert!(is_fact_local_refusal(key), "{key} must be fact-local");
+        }
+        for key in [
+            "period_type",
+            "metric_key",
+            "origin",
+            "statement_group",
+            "unknown_key",
+        ] {
+            assert!(!is_fact_local_refusal(key), "{key} must NOT be fact-local");
+        }
+    }
 }

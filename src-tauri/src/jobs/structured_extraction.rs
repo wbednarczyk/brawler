@@ -1299,10 +1299,7 @@ pub(crate) fn run_structured_extraction(
                 // #509 decision 2: these four keys are per-fact write-slot
                 // fields; any other key/variant (e.g. `period_type`) is fatal.
                 Err(crate::storage::StorageError::InvalidFinancialsValue { key, value })
-                    if matches!(
-                        key,
-                        "currency" | "value_numeric" | "attribution" | "data_quality"
-                    ) =>
+                    if is_fact_local_refusal(key) =>
                 {
                     rejected.push(RejectedFact {
                         metric_key: fact.metric_key.clone(),
@@ -1490,7 +1487,9 @@ fn base_document_ref(slot_ref: &str) -> &str {
     slot_ref.split('#').next().unwrap_or(slot_ref)
 }
 mod outcome_detail;
-use outcome_detail::{quarantine_detail, rejected_detail, QuarantinedFact, RejectedFact};
+use outcome_detail::{
+    is_fact_local_refusal, quarantine_detail, rejected_detail, QuarantinedFact, RejectedFact,
+};
 
 #[cfg(test)]
 mod role_families_tests;

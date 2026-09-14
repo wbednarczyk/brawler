@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { JSX } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -8,6 +9,7 @@ import {
   rerunExtractionOutcome,
 } from "../../api/fundamentalsExtraction";
 import type { ExtractionOutcome, StructuredExtractionSummary } from "../../api/fundamentalsExtraction";
+import { LocaleContext, makeTextTranslator, makeTranslator } from "../locale";
 
 vi.mock("../../api/fundamentalsExtraction", () => ({
   listFlaggedExtractionOutcomes: vi.fn(),
@@ -16,6 +18,16 @@ vi.mock("../../api/fundamentalsExtraction", () => ({
 
 const listFlaggedExtractionOutcomesMock = vi.mocked(listFlaggedExtractionOutcomes);
 const rerunExtractionOutcomeMock = vi.mocked(rerunExtractionOutcome);
+
+// Pattern shared with CompanyHealthSection.test.tsx: exercise the Polish
+// locale for real rather than asserting against the default English context.
+function renderPl(ui: JSX.Element) {
+  return render(
+    <LocaleContext.Provider value={{ locale: "pl", t: makeTranslator("pl"), text: makeTextTranslator("pl") }}>
+      {ui}
+    </LocaleContext.Provider>,
+  );
+}
 
 // A fully-defaulted flagged outcome; each test overrides only the axis it exercises.
 function outcome(overrides: Partial<ExtractionOutcome> = {}): ExtractionOutcome {
@@ -278,12 +290,13 @@ describe("CoverageFlaggedPeriods", () => {
 
   // #509 (ADR 0100 dec. 4 amendment): the store refused one fact's typed field
   // as fact-local invalid (a non-currency unit landing in `currency`, e.g.)
-  // without aborting the run. The typed `field`/`value` pair must render as
-  // investor language, never the raw catalog key or JSON.
-  // `weighted_average_shares` (the real-world metric this defect hit) has no
-  // display name in the KPI label map, so `total_assets` stands in here to
-  // exercise `localizedKpiLabelForKey`'s mapped path (contract-flagged swap).
-  it("renders a rejectedFacts detail as a readable sentence, not raw JSON", async () => {
+  // without aborting the run. `administrative_expense` is the REAL-WORLD
+  // metric this defect class hits — it has no entry in either KPI label map
+  // (`kpiLabels.ts`), so `localizedKpiLabelForKey` would otherwise fall back
+  // to the raw catalog key (astra r1 P2, FINDING 1). The full sentence, not
+  // just its fragments, must render — a `"currency shares"` juxtaposition
+  // with no connecting words would satisfy a weaker per-word assertion.
+  it("renders a rejectedFacts detail as the full readable sentence with a humanized label (en)", async () => {
     listFlaggedExtractionOutcomesMock.mockResolvedValue([
       outcome({
         reasonCode: "validation_failed",
@@ -291,7 +304,9 @@ describe("CoverageFlaggedPeriods", () => {
         detailJson: JSON.stringify({
           failedIdentities: [],
           failedCrossChecks: [],
-          rejectedFacts: [{ metricKey: "total_assets", field: "currency", value: "shares" }],
+          rejectedFacts: [
+            { metricKey: "administrative_expense", field: "currency", value: "shares" },
+          ],
         }),
       }),
     ]);
@@ -299,20 +314,58 @@ describe("CoverageFlaggedPeriods", () => {
 
     expect(await screen.findByText("The figures failed a consistency check")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /2025 Q3/ }));
-    expect(await screen.findByText("Total assets")).toBeInTheDocument();
-    const detailValue = screen.getByText(/currency/);
-    expect(detailValue).toHaveTextContent("shares");
-    // No machine speak: raw keys, the catalog key, or braces never reach the UI.
+    // No entry for `administrative_expense` in either KPI label map — the
+    // humanized fallback, never the raw snake_case key.
+    expect(await screen.findByText("Administrative expense")).toBeInTheDocument();
     expect(
-      screen.queryByText(/rejectedFacts|metricKey|weighted_average_shares|[{[\]}]/),
+      await screen.findByText('held back: currency "shares" is not a valid value'),
+    ).toBeInTheDocument();
+    // No machine speak: the raw catalog key, JSON keys, or braces ever reach the UI.
+    expect(
+      screen.queryByText(/rejectedFacts|metricKey|administrative_expense|[{[\]}]/),
     ).not.toBeInTheDocument();
   });
 
-  // A set can carry a rejected fact (store refusal) alongside a quarantined one
+  // Same payload, Polish locale (astra r1 FINDING 1): the sentence and the
+  // "currency" field name translate; the metric label has no PL_KPI_LABELS
+  // entry either, so it renders the SAME humanized English words as the en
+  // case — a deliberate, flagged compromise (no generic fallback path exists
+  // in the KPI label map, and a dynamic catalog key can't route through the
+  // static `plText` table) — never the raw `administrative_expense` key.
+  it("renders a rejectedFacts detail as the full readable sentence (pl), no raw key", async () => {
+    listFlaggedExtractionOutcomesMock.mockResolvedValue([
+      outcome({
+        reasonCode: "validation_failed",
+        tier: "esef",
+        detailJson: JSON.stringify({
+          failedIdentities: [],
+          failedCrossChecks: [],
+          rejectedFacts: [
+            { metricKey: "administrative_expense", field: "currency", value: "shares" },
+          ],
+        }),
+      }),
+    ]);
+    renderPl(<CoverageFlaggedPeriods companyId="company_gpw_cdr" />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /2025 Q3/ }));
+    expect(await screen.findByText("Administrative expense")).toBeInTheDocument();
+    expect(
+      await screen.findByText('wstrzymano: waluta „shares” nie jest prawidłową wartością'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/rejectedFacts|metricKey|administrative_expense|[{[\]}]/),
+    ).not.toBeInTheDocument();
+  });
+
+  // A set can carry a rejected fact (store refusal) alongside quarantined ones
   // (the history-plausibility gate, `quarantine_detail`) folded onto the same
-  // outcome (ADR 0100 dec. 4 amendment composes them like `quarantine_detail`
-  // already does). Both must render, and neither leaks raw JSON.
-  it("renders rejectedFacts alongside quarantinedFacts, both readable, no raw keys", async () => {
+  // outcome. Both must render, and neither leaks raw JSON. The quarantine
+  // payload carries no currency (astra r1 P2, FINDING 2) and may be a share
+  // count, not money — a small-magnitude pair (share-count-like) and a
+  // large-magnitude pair (money-like) must BOTH render as plain locale-grouped
+  // numbers, never with an invented "PLN" suffix.
+  it("renders rejectedFacts alongside quarantinedFacts, no raw keys, no invented PLN", async () => {
     listFlaggedExtractionOutcomesMock.mockResolvedValue([
       outcome({
         reasonCode: "validation_failed",
@@ -322,6 +375,10 @@ describe("CoverageFlaggedPeriods", () => {
           failedCrossChecks: [],
           rejectedFacts: [{ metricKey: "total_assets", field: "currency", value: "shares" }],
           quarantinedFacts: [
+            // Share-count-like magnitude (chosen so its grouped digits are not
+            // a substring of the money-like pair's, below).
+            { metricKey: "shares_outstanding", value: "3000000", historyMedian: "800000" },
+            // Money-like magnitude.
             { metricKey: "net_profit", value: "999000000.00", historyMedian: "45000000.00" },
           ],
         }),
@@ -331,9 +388,16 @@ describe("CoverageFlaggedPeriods", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: /2025 Q3/ }));
     expect(await screen.findByText("Total assets")).toBeInTheDocument();
+    expect(await screen.findByText("Shares outstanding")).toBeInTheDocument();
     expect(await screen.findByText("Net profit")).toBeInTheDocument();
-    const quarantinedValue = screen.getByText(/999 M PLN/);
-    expect(quarantinedValue).toHaveTextContent("45 M PLN");
+    expect(
+      screen.getByText("held back: 3,000,000 is far from its own history (around 800,000)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("held back: 999,000,000 is far from its own history (around 45,000,000)"),
+    ).toBeInTheDocument();
+    // No invented unit — the payload never carried a currency.
+    expect(screen.queryByText(/PLN/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/rejectedFacts|quarantinedFacts|metricKey|historyMedian|[{[\]}]/),
     ).not.toBeInTheDocument();

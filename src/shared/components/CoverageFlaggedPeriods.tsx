@@ -175,6 +175,18 @@ function formatGateAmount(raw: unknown, locale: LocaleCode): string | null {
   return formatFinancialValue({ valueNumeric: numeric, currency: "PLN" }, locale);
 }
 
+// The history-plausibility quarantine's `value`/`historyMedian` (astra r1 P2,
+// FINDING 2) carry NO currency dimension in the payload — the flagged fact may
+// be a share count, not money, so reusing `formatGateAmount`'s hardcoded PLN
+// would invent a unit the data never carried. `valueKind: "count"` routes
+// `formatFinancialValue` to its unitless, unscaled, locale-grouped path —
+// shared formatting, not a bespoke one.
+function formatQuarantineAmount(raw: unknown, locale: LocaleCode): string | null {
+  const numeric = String(raw ?? "").trim();
+  if (numeric === "" || !Number.isFinite(Number(numeric))) return null;
+  return formatFinancialValue({ valueNumeric: numeric, valueKind: "count" }, locale);
+}
+
 // One failing check → a human sentence. Falls back to null when the detail
 // doesn't carry comparable amounts, so the caller can keep the generic path.
 function gateCheckValue(
@@ -194,8 +206,8 @@ function gateCheckValue(
       .replace("{value}", String(rawValue));
   }
   if (kind === "quarantinedFacts") {
-    const value = formatGateAmount(detail.value, locale);
-    const historyMedian = formatGateAmount(detail.historyMedian, locale);
+    const value = formatQuarantineAmount(detail.value, locale);
+    const historyMedian = formatQuarantineAmount(detail.historyMedian, locale);
     if (value === null || historyMedian === null) return null;
     return text("held back: {value} is far from its own history (around {historyMedian})")
       .replace("{value}", value)
@@ -225,6 +237,23 @@ function gateCheckValue(
   return `${base} ${text("(difference {residual})").replace("{residual}", residual)}`;
 }
 
+// `localizedKpiLabelForKey` falls back to the raw catalog key when NEITHER KPI
+// label map (`kpiLabels.ts`) has an entry for it (astra r1 P2, FINDING 1 — the
+// crosswalk has ~326 metric keys, the label maps a curated subset). Neither
+// map exposes a generic humanizing fallback to reuse, and a dynamic catalog
+// key can't route through the static `plText` table (an unbounded key set).
+// Humanizing beats showing `administrative_expense` verbatim in EITHER
+// locale — Polish deliberately shows the SAME humanized English words here
+// as a flagged compromise until the metric gets a real `PL_KPI_LABELS` entry;
+// that entry, not this fallback, is the fix for a specific missing metric.
+function humanizeMetricKey(metricKey: string): string {
+  return metricKey
+    .split("_")
+    .filter((word) => word !== "")
+    .map((word, index) => (index === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
 function gateCheckLabel(
   element: Record<string, unknown>,
   text: Translate,
@@ -235,7 +264,9 @@ function gateCheckLabel(
   if (typeof element.metricKey === "string" && element.metricKey.trim() !== "") {
     // A metric name is a KPI display name: it goes through the locale map, never
     // as the raw catalog key (ui-authoring § i18n).
-    return localizedKpiLabelForKey(element.metricKey, locale);
+    const metricKey = element.metricKey;
+    const label = localizedKpiLabelForKey(metricKey, locale);
+    return label === metricKey ? humanizeMetricKey(metricKey) : label;
   }
   return text("Failing check");
 }

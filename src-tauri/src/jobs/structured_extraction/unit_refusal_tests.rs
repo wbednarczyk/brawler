@@ -45,9 +45,13 @@ fn esef_package_revenue_and_share_count(shares_value: &str) -> Vec<u8> {
 
 /// Test C (#509): `Revenue` (PLN) + `WeightedAverageShares` (shares) both
 /// persist — the share count with `currency` NULL — and the run succeeds
-/// (red on master: `Err("invalid financials value for currency: shares")"`,
-/// since the projection copied the raw unit into `currency` and the store's
-/// #93 guard refused the whole write, aborting before any fact committed).
+/// (red on master: `Err("invalid financials value for currency: shares")`.
+/// `record_structured_fact` commits each fact in its OWN transaction, and
+/// `revenue` < `weighted_average_shares` lexically, so on master `Revenue`
+/// commits first and its transaction survives; `WeightedAverageShares`'s
+/// `currency: Some("shares")` then hits the #93 guard and the `?` propagates
+/// the error out of `run_structured_extraction`, aborting the FUNCTION —
+/// never the already-committed `Revenue` row).
 #[test]
 fn a_share_count_alongside_a_monetary_fact_persists_with_currency_null() {
     let bytes = esef_package_revenue_and_share_count("500000");
@@ -147,12 +151,30 @@ fn esef_package_bad_unit_before_valid_sibling() -> Vec<u8> {
 /// the outcome is `flagged`/`validation_failed` naming the rejection.
 #[test]
 fn a_monetary_fact_with_a_bad_unit_is_rejected_not_aborting_the_run() {
-    assert!(
-        "administrative_expense" < "revenue",
-        "the ordering claim this test rests on: the (basis, metric_key) \
-         BTreeMap slot key sorts admin_expense before revenue"
-    );
     let bytes = esef_package_bad_unit_before_valid_sibling();
+    // The ordering claim this test rests on, proven directly rather than
+    // assumed from key strings: `outcome.facts` is a straight
+    // `projected.facts.into_iter().map(...)` (pipeline.rs) over
+    // `project_period`'s `by_slot` `BTreeMap<(basis, metric_key), _>` — so
+    // THIS is the real candidate order the commit loop iterates for this
+    // exact package.
+    let generation = compute_layer1_generation(&bytes, DocumentRoute::ZipPackage);
+    let projected = crate::fundamentals::extraction::esef::projection::project_period(
+        &generation.facts,
+        "2025-12-31",
+        generation.has_presentation_linkbase,
+    );
+    let candidate_order: Vec<&str> = projected
+        .facts
+        .iter()
+        .map(|pf| pf.fact.metric_key.as_str())
+        .collect();
+    assert_eq!(
+        candidate_order,
+        vec!["administrative_expense", "revenue"],
+        "the refused fact must precede the persisted sibling in the exact \
+         sequence the commit loop iterates: {candidate_order:?}"
+    );
     let (state, company_id, document_id) = seed_document_with_bytes(
         "unit-refusal-d",
         "URD",
@@ -429,14 +451,90 @@ fn a_repeat_run_upserts_the_same_outcome_row_with_the_same_counts() {
     );
 }
 
-// Test E (#509, preservation) is NOT added: verified NOT reachable through
-// `run_structured_extraction`. `record_structured_fact`'s write path resolves
-// the period through `kpi_extraction::ensure_period` (`INSERT OR IGNORE`, no
-// validation) — never `financials::create_financial_period`, the ONLY
-// function that raises `InvalidFinancialsValue{key: "period_type"}` (the
-// manual-entry/MCP `ensure_financial_period` path). An empty `period_type`
-// passed to `run_structured_extraction` was measured to return `Ok`, not
-// `Err` — reported in the contract handover rather than asserted here as a
-// misleading red/green pair. The commit loop's "any other key/variant is
-// still fatal" branch stays as written (the honest, defensive default for a
-// StorageError this call site cannot currently produce).
+// Test E as literally specified (`period_type`-keyed `InvalidFinancialsValue`
+// via `run_structured_extraction`) is NOT added: verified NOT reachable.
+// `record_structured_fact`'s write path resolves the period through
+// `kpi_extraction::ensure_period` (`INSERT OR IGNORE`, no validation) — never
+// `financials::create_financial_period`, the ONLY function that raises
+// `InvalidFinancialsValue{key: "period_type"}` (the manual-entry/MCP
+// `ensure_financial_period` path). An empty `period_type` passed to
+// `run_structured_extraction` was measured to return `Ok`, not `Err`.
+// `a_database_failure_on_the_second_fact_still_aborts_the_run` below proves
+// the SAME claim ("any other key/variant is still fatal") through a route
+// that IS reachable at this call site (astra review r1, P2).
+
+/// Test E replacement (#509 P2, astra review r1): a reachable DATABASE
+/// failure — never a typed `InvalidFinancialsValue` — on the SECOND fact must
+/// still abort the whole run: `is_fact_local_refusal` only catches four named
+/// keys of one specific error variant, never a bare `StorageError::Sqlite`.
+/// Poison-trigger idiom (`docs/testing.md` § Failure-path tests: fault
+/// injection). `revenue` < `weighted_average_shares` lexically (the same
+/// candidate order test D proves through `project_period`), so `Revenue`
+/// commits FIRST in its own transaction; the trigger poisons the SECOND.
+#[test]
+fn a_database_failure_on_the_second_fact_still_aborts_the_run() {
+    let bytes = esef_package_revenue_and_share_count("500000");
+    let (state, company_id, document_id) = seed_document_with_bytes(
+        "unit-refusal-dbfail",
+        "URDB",
+        "Unit refusal DB failure",
+        "report.xbri",
+        &bytes,
+    );
+    let document = state.get_report_document(&document_id).expect("document");
+    let (fiscal_year, period_type, period_end) =
+        derive_report_period(&state, &document).expect("period derives");
+
+    let connection = state.checkout_for_tests().expect("checkout");
+    connection
+        .execute_batch(
+            "CREATE TRIGGER poison_weighted_average_shares BEFORE INSERT ON financial_facts \
+             WHEN NEW.definition_id = (SELECT id FROM kpi_definitions WHERE metric_key = 'weighted_average_shares') \
+             BEGIN SELECT RAISE(ABORT, 'weighted_average_shares poisoned for test'); END;",
+        )
+        .expect("install poison trigger");
+    drop(connection); // avoid a pool deadlock across the call below (#360/#376)
+
+    let result = run_structured_extraction(
+        &state,
+        &company_id,
+        &document_id,
+        fiscal_year,
+        period_type,
+        &period_end,
+        MODE_AUTOPILOT,
+    );
+    assert!(
+        result.is_err(),
+        "a reachable database failure is not a fact-local refusal — it must \
+         abort: {result:?}"
+    );
+
+    let facts = state
+        .list_financial_facts(crate::storage::ListFinancialFactsInput {
+            company_id: Some(company_id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("list facts");
+    assert!(
+        facts.iter().any(|f| f.metric_key == "revenue"),
+        "the first fact's OWN transaction already committed before the \
+         poisoned second fact was ever attempted: {facts:?}"
+    );
+    assert!(
+        !facts
+            .iter()
+            .any(|f| f.metric_key == "weighted_average_shares"),
+        "the poisoned fact must never persist: {facts:?}"
+    );
+
+    let outcomes = state
+        .fundamentals_provenance()
+        .list_extraction_outcomes(&company_id)
+        .expect("outcomes");
+    assert!(
+        outcomes.is_empty(),
+        "the early Err return skips record_outcome entirely — no row at all: {outcomes:?}"
+    );
+}
