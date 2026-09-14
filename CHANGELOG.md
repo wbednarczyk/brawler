@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.87.2 - 2026-09-14
+
+
+### Bug Fixes
+
+- **extraction**: currency is a property of the value kind — share counts no longer abort an ESEF filing, a refused fact is held back and shown in Coverage instead (#509, ADR 0100 dec. 4 amendment) (#515)
+
 ## v0.87.1 - 2026-09-12
 
 
