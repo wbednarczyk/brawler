@@ -632,7 +632,15 @@ fn coverage_counts(
         // job's strict role filter rejects. `no_linkbase_fallback_count` is
         // the persisted, reliable per-document signal — `0` whenever a
         // linkbase existed, unconditionally, regardless of what it covered.
+        //
+        // Trustworthy ONLY from `extractor_version >= 2` (astra r2): migration
+        // 0145 back-filled every pre-existing row's counter with the column
+        // default `0` — never a measurement — so a stale, un-rebuilt
+        // version-1 row's `0` must not be read as "a linkbase existed". A
+        // version-1 row (or a missing one) falls back to the same
+        // any-stored-fact-has-a-role heuristic as before.
         let has_presentation_linkbase = get_extraction(connection, document_id)?
+            .filter(|extraction| extraction.extractor_version >= 2)
             .map(|extraction| extraction.no_linkbase_fallback_count == 0)
             .unwrap_or_else(|| doc_facts.iter().any(|f| !f.roles.is_empty()));
         // The SAME document-wide selection `run_pipeline` applies (ADR 0100

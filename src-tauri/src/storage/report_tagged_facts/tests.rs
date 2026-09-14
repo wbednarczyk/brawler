@@ -479,6 +479,48 @@ fn coverage_counts_counts_non_primary_basis_occurrences_as_other_basis() {
     assert_eq!(counts.awaiting_name, 0);
 }
 
+/// Astra r2: migration 0145 back-filled every PRE-EXISTING (`extractor_
+/// version` 1) `report_tagged_fact_extractions` row's `no_linkbase_fallback_
+/// count` with the column default `0` — NOT measured evidence (the counter
+/// did not exist yet when those rows were written). Trusting `0` for such a
+/// row as "a linkbase existed" is exactly backwards for a legacy BARE
+/// instance that genuinely has none: its usable, roleless, crosswalk-
+/// resolvable facts must still fall back to the pre-epic dimensionless +
+/// crosswalk-resolved selection, never fail the strict role filter and land
+/// in `note_level`. The counter is trustworthy only from the extractor
+/// version that actually computes it (2 onward); a version-1 (or missing)
+/// row must use the existing heuristic (any stored fact with a role).
+#[test]
+fn coverage_counts_never_trusts_a_stale_version_1_no_linkbase_fallback_count() {
+    let mut connection = open_in_memory_database().expect("db");
+    seed_company_and_document(&connection, "c1", "doc1");
+
+    // Roleless (bare-instance shape) but usable, dimensionless, crosswalked.
+    let assets = basic_fact("reports/instance.xhtml", "f1", "Assets");
+    let liabilities = basic_fact("reports/instance.xhtml", "f2", "Liabilities");
+
+    // `extraction_with`'s defaults ARE the stale shape under test:
+    // `extractor_version: 1`, `no_linkbase_fallback_count: 0` — the migration
+    // 0145 backfill, never a real measurement.
+    let extraction = extraction_with(vec![assets, liabilities]);
+    assert_eq!(extraction.extractor_version, 1);
+    assert_eq!(extraction.no_linkbase_fallback_count, 0);
+
+    replace_tagged_facts(&mut connection, "doc1", "c1", &extraction).expect("replace");
+
+    let counts = coverage_counts(&connection, "c1").expect("coverage counts");
+    assert_eq!(
+        counts.projected, 2,
+        "a stale version-1 zero must never be read as linkbase evidence — \
+         the fallback must still project these roleless facts"
+    );
+    assert_eq!(
+        counts.note_level, 0,
+        "these facts must never be bucketed as note-level for a role they \
+         were never evidenced to lack"
+    );
+}
+
 /// sol round 4: a PRESENT derived-period row wins unconditionally. When
 /// the declared reporting date is absent from the tagged dates, the
 /// honest outcome is ZERO selected and everything comparative — never a
