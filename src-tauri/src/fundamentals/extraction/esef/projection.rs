@@ -229,7 +229,15 @@ pub fn project_period(
     // finding 3): statement basis (a multi-document package can carry a
     // standalone AND a consolidated filing — never merged) and metric key.
     // `period_start` is handled inside the group below.
-    let mut by_slot: BTreeMap<(&'static str, &'static str), Vec<&NewTaggedFact>> = BTreeMap::new();
+    // The group value carries the resolved entry's `value_kind` alongside its
+    // facts (#509 decision 1) — currency is decided from THIS, never from the
+    // raw unit measure, so a `count`/`percentage`/... concept can never reach
+    // `currency: Some(<unit>)` merely because Layer 1 happened to observe a
+    // unit-shaped string. `value_kind` is uniform per slot (entries sharing a
+    // `metric_key` agree on it — asserted by a crosswalk invariant test), so
+    // the first occurrence's is authoritative for the whole group.
+    let mut by_slot: BTreeMap<(&'static str, &'static str), (&'static str, Vec<&NewTaggedFact>)> =
+        BTreeMap::new();
     for f in precedence_survivors {
         // The crosswalk names STANDARD taxonomy concepts only (sol review
         // finding 1): an issuer-extension concept that reuses a standard
@@ -242,10 +250,13 @@ pub fn project_period(
             None
         };
         match entry {
-            Some(entry) => by_slot
-                .entry((basis_of(&f.package_entry_path).as_str(), entry.metric_key))
-                .or_default()
-                .push(f),
+            Some(entry) => {
+                by_slot
+                    .entry((basis_of(&f.package_entry_path).as_str(), entry.metric_key))
+                    .or_insert_with(|| (entry.value_kind, Vec::new()))
+                    .1
+                    .push(f);
+            }
             None => {
                 result
                     .uncrosswalked_concepts
@@ -265,7 +276,7 @@ pub fn project_period(
     // with the retired parser's `dedup_longest_duration`; sol review
     // finding 3). Only after that does value equality separate a repeat
     // from a typed conflict.
-    for ((basis_str, metric_key), mut occurrences) in by_slot {
+    for ((basis_str, metric_key), (value_kind, mut occurrences)) in by_slot {
         let longest_start: Option<String> = occurrences
             .iter()
             .filter(|f| f.period_type != "instant")
@@ -300,7 +311,14 @@ pub fn project_period(
                     value: first_value,
                     period: period_of(first),
                     basis: Some(basis),
-                    currency: first.unit_measure.clone(),
+                    // #509 decision 1: currency by `value_kind`, never a raw
+                    // unit copy — a non-monetary fact (count, percentage, ...)
+                    // must never reach the store's currency column at all.
+                    currency: if value_kind == "monetary" {
+                        first.unit_measure.clone()
+                    } else {
+                        None
+                    },
                     tier: SourceTier::Esef,
                     citation: first.concept_local_name.clone(),
                 },
@@ -721,6 +739,130 @@ mod tests {
 
         assert!(projected.facts.is_empty());
         assert_eq!(projected.non_primary_statement_skipped, 1);
+    }
+
+    /// Test A (#509, decision 1): currency is set by the crosswalk's
+    /// `value_kind` at the projection, never copied verbatim from the Layer 1
+    /// unit measure — a `count`-kind fact (`WeightedAverageShares`, unit
+    /// `shares`) must never reach `currency: Some("shares")` (master: it
+    /// does, and the store's #93 guard then refuses the whole write).
+    #[test]
+    fn currency_is_set_by_value_kind_not_copied_from_the_unit_measure() {
+        let shares = NewTaggedFact {
+            unit_measure: Some("shares".to_owned()),
+            ..duration_fact(
+                "WeightedAverageShares",
+                "shares_occ",
+                "1000000",
+                &["income"],
+            )
+        };
+        let projected = project_period(&[shares], "2025-12-31", true);
+        assert_eq!(projected.facts.len(), 1);
+        assert_eq!(
+            projected.facts[0].fact.currency, None,
+            "a count-kind fact must never carry a unit as its currency (red \
+             on master: Some(\"shares\"))"
+        );
+
+        let eps = duration_fact("BasicEarningsLossPerShare", "eps_occ", "1.23", &["income"]);
+        let projected_eps = project_period(&[eps], "2025-12-31", true);
+        assert_eq!(projected_eps.facts.len(), 1);
+        assert_eq!(
+            projected_eps.facts[0].fact.currency,
+            Some("PLN".to_owned()),
+            "preservation: a monetary fact still carries its unit as currency"
+        );
+
+        let revenue = duration_fact("Revenue", "rev_occ", "500", &["income"]);
+        let projected_revenue = project_period(&[revenue], "2025-12-31", true);
+        assert_eq!(projected_revenue.facts.len(), 1);
+        assert_eq!(
+            projected_revenue.facts[0].fact.currency,
+            Some("PLN".to_owned()),
+            "preservation: Revenue/PLN still projects Some(\"PLN\")"
+        );
+    }
+
+    /// Test B (#509, decision 5, ADR 0049 invariant): every crosswalk entry,
+    /// given a synthetic primary-role fact with a unit valid for its kind,
+    /// projects exactly one fact whose `currency` is `Some("PLN")` iff
+    /// `value_kind == "monetary"`, and every projected currency passes the
+    /// store's ISO shape guard (`None`, or exactly three ASCII letters). Red
+    /// on master for the two `count` entries (`WeightedAverageShares`,
+    /// `AdjustedWeightedAverageShares`): they project `Some("shares")`, 6
+    /// letters, not 3.
+    #[test]
+    fn every_crosswalk_entry_projects_currency_by_its_own_value_kind() {
+        for entry in ifrs_crosswalk::entries() {
+            let unit = if entry.value_kind == "monetary" {
+                "PLN"
+            } else {
+                "shares"
+            };
+            let fact = NewTaggedFact {
+                unit_measure: Some(unit.to_owned()),
+                concept_namespace_uri: IFRS_NS.to_owned(),
+                concept_local_name: entry.concept.to_owned(),
+                period_type: "duration".to_owned(),
+                period_start: Some("2025-01-01".to_owned()),
+                period_end: "2025-12-31".to_owned(),
+                value_numeric: Some("100".to_owned()),
+                roles: vec![role("income")],
+                fact_identity: format!("{}_occ", entry.concept),
+                ..Default::default()
+            };
+            let projected = project_period(&[fact], "2025-12-31", true);
+            assert_eq!(
+                projected.facts.len(),
+                1,
+                "{} must project exactly one fact",
+                entry.concept
+            );
+            let currency = &projected.facts[0].fact.currency;
+            if entry.value_kind == "monetary" {
+                assert_eq!(
+                    currency,
+                    &Some("PLN".to_owned()),
+                    "{} (monetary) must carry its unit as currency",
+                    entry.concept
+                );
+            } else {
+                assert_eq!(
+                    currency, &None,
+                    "{} ({}) must never carry a currency",
+                    entry.concept, entry.value_kind
+                );
+            }
+            if let Some(c) = currency {
+                assert!(
+                    c.len() == 3 && c.chars().all(|ch| ch.is_ascii_alphabetic()),
+                    "{}: projected currency {c:?} must pass the store's ISO shape guard",
+                    entry.concept
+                );
+            }
+        }
+    }
+
+    /// Test B (#509, decision 5): entries sharing a `metric_key` agree on
+    /// `value_kind` — the slot key stays `(basis, metric_key)`, never
+    /// `(basis, entry)` (ADR 0100 decision 2), so a per-slot currency-by-kind
+    /// rule would be ambiguous if aliases disagreed.
+    #[test]
+    fn crosswalk_entries_sharing_a_metric_key_agree_on_value_kind() {
+        let mut by_metric: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+        for entry in ifrs_crosswalk::entries() {
+            match by_metric.get(entry.metric_key) {
+                Some(kind) => assert_eq!(
+                    *kind, entry.value_kind,
+                    "metric_key {} carries conflicting value_kind across aliases",
+                    entry.metric_key
+                ),
+                None => {
+                    by_metric.insert(entry.metric_key, entry.value_kind);
+                }
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

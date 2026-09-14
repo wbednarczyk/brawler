@@ -276,6 +276,69 @@ describe("CoverageFlaggedPeriods", () => {
     expect(screen.queryByText(/[{[\]}]/)).not.toBeInTheDocument();
   });
 
+  // #509 (ADR 0100 dec. 4 amendment): the store refused one fact's typed field
+  // as fact-local invalid (a non-currency unit landing in `currency`, e.g.)
+  // without aborting the run. The typed `field`/`value` pair must render as
+  // investor language, never the raw catalog key or JSON.
+  // `weighted_average_shares` (the real-world metric this defect hit) has no
+  // display name in the KPI label map, so `total_assets` stands in here to
+  // exercise `localizedKpiLabelForKey`'s mapped path (contract-flagged swap).
+  it("renders a rejectedFacts detail as a readable sentence, not raw JSON", async () => {
+    listFlaggedExtractionOutcomesMock.mockResolvedValue([
+      outcome({
+        reasonCode: "validation_failed",
+        tier: "esef",
+        detailJson: JSON.stringify({
+          failedIdentities: [],
+          failedCrossChecks: [],
+          rejectedFacts: [{ metricKey: "total_assets", field: "currency", value: "shares" }],
+        }),
+      }),
+    ]);
+    render(<CoverageFlaggedPeriods companyId="company_gpw_cdr" />);
+
+    expect(await screen.findByText("The figures failed a consistency check")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /2025 Q3/ }));
+    expect(await screen.findByText("Total assets")).toBeInTheDocument();
+    const detailValue = screen.getByText(/currency/);
+    expect(detailValue).toHaveTextContent("shares");
+    // No machine speak: raw keys, the catalog key, or braces never reach the UI.
+    expect(
+      screen.queryByText(/rejectedFacts|metricKey|weighted_average_shares|[{[\]}]/),
+    ).not.toBeInTheDocument();
+  });
+
+  // A set can carry a rejected fact (store refusal) alongside a quarantined one
+  // (the history-plausibility gate, `quarantine_detail`) folded onto the same
+  // outcome (ADR 0100 dec. 4 amendment composes them like `quarantine_detail`
+  // already does). Both must render, and neither leaks raw JSON.
+  it("renders rejectedFacts alongside quarantinedFacts, both readable, no raw keys", async () => {
+    listFlaggedExtractionOutcomesMock.mockResolvedValue([
+      outcome({
+        reasonCode: "validation_failed",
+        tier: "esef",
+        detailJson: JSON.stringify({
+          failedIdentities: [],
+          failedCrossChecks: [],
+          rejectedFacts: [{ metricKey: "total_assets", field: "currency", value: "shares" }],
+          quarantinedFacts: [
+            { metricKey: "net_profit", value: "999000000.00", historyMedian: "45000000.00" },
+          ],
+        }),
+      }),
+    ]);
+    render(<CoverageFlaggedPeriods companyId="company_gpw_cdr" />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /2025 Q3/ }));
+    expect(await screen.findByText("Total assets")).toBeInTheDocument();
+    expect(await screen.findByText("Net profit")).toBeInTheDocument();
+    const quarantinedValue = screen.getByText(/999 M PLN/);
+    expect(quarantinedValue).toHaveTextContent("45 M PLN");
+    expect(
+      screen.queryByText(/rejectedFacts|quarantinedFacts|metricKey|historyMedian|[{[\]}]/),
+    ).not.toBeInTheDocument();
+  });
+
   // Guardrail-harvest (epic #229 T5): a `witness_disagreement` row's slot is an
   // AGGREGATOR PAGE, not a document — a re-extraction has nothing to re-read, so
   // the backend refuses it with a typed code. An action that cannot work must not

@@ -138,7 +138,36 @@ const GATE_DETAIL_KEYS = [
   // Epic #229 T5 (#192): a re-read of a stored slot disagreed with the committed
   // value. `actual` = the value on file, `expected` = the freshly read one.
   "valueDivergences",
+  // #509 (ADR 0100 dec. 4 amendment): the store refused one fact's typed field
+  // as fact-local invalid (e.g. a non-currency unit landing in `currency`) —
+  // never a run abort, the other facts in the set still commit. Element shape:
+  // `{ metricKey, field, value }` (the refused raw value, verbatim).
+  "rejectedFacts",
+  // History-plausibility quarantine (`quarantine_detail`,
+  // `src-tauri/src/jobs/structured_extraction.rs`): a fact ≥100× off its own
+  // stored history. Element shape: `{ metricKey, value, historyMedian }`.
+  "quarantinedFacts",
 ] as const;
+
+// The four fact-local fields a store refusal can name (ADR 0100 dec. 4
+// amendment) — the exact `data_model.md` `financial_facts` dimension/value
+// vocabulary, translated for the "held back" sentence. An unrecognized field
+// (a future backend addition) falls back to the raw token rather than hiding
+// which field was refused.
+function rejectedFactFieldLabel(field: string, text: Translate): string {
+  switch (field) {
+    case "currency":
+      return text("currency");
+    case "value_numeric":
+      return text("amount");
+    case "attribution":
+      return text("attribution");
+    case "data_quality":
+      return text("data quality");
+    default:
+      return field;
+  }
+}
 
 function formatGateAmount(raw: unknown, locale: LocaleCode): string | null {
   const numeric = String(raw ?? "").trim();
@@ -154,6 +183,24 @@ function gateCheckValue(
   text: Translate,
   locale: LocaleCode,
 ): string | null {
+  if (kind === "rejectedFacts") {
+    // The refused value is not necessarily numeric (a unit token like
+    // "shares", not an amount) — shown verbatim, never coerced or formatted.
+    const field = typeof detail.field === "string" ? detail.field : "";
+    const rawValue = detail.value;
+    if (field === "" || rawValue === undefined || rawValue === null) return null;
+    return text('held back: {field} "{value}" is not a valid value')
+      .replace("{field}", rejectedFactFieldLabel(field, text))
+      .replace("{value}", String(rawValue));
+  }
+  if (kind === "quarantinedFacts") {
+    const value = formatGateAmount(detail.value, locale);
+    const historyMedian = formatGateAmount(detail.historyMedian, locale);
+    if (value === null || historyMedian === null) return null;
+    return text("held back: {value} is far from its own history (around {historyMedian})")
+      .replace("{value}", value)
+      .replace("{historyMedian}", historyMedian);
+  }
   const actual = formatGateAmount(detail.actual, locale);
   const expected = formatGateAmount(detail.expected, locale);
   if (actual === null || expected === null) return null;
