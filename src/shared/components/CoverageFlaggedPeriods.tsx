@@ -138,12 +138,53 @@ const GATE_DETAIL_KEYS = [
   // Epic #229 T5 (#192): a re-read of a stored slot disagreed with the committed
   // value. `actual` = the value on file, `expected` = the freshly read one.
   "valueDivergences",
+  // #509 (ADR 0100 dec. 4 amendment): the store refused one fact's typed field
+  // as fact-local invalid (e.g. a non-currency unit landing in `currency`) —
+  // never a run abort, the other facts in the set still commit. Element shape:
+  // `{ metricKey, field, value }` (the refused raw value, verbatim).
+  "rejectedFacts",
+  // History-plausibility quarantine (`quarantine_detail`,
+  // `src-tauri/src/jobs/structured_extraction.rs`): a fact ≥100× off its own
+  // stored history. Element shape: `{ metricKey, value, historyMedian }`.
+  "quarantinedFacts",
 ] as const;
+
+// The four fact-local fields a store refusal can name (ADR 0100 dec. 4
+// amendment) — the exact `data_model.md` `financial_facts` dimension/value
+// vocabulary, translated for the "held back" sentence. An unrecognized field
+// (a future backend addition) falls back to the raw token rather than hiding
+// which field was refused.
+function rejectedFactFieldLabel(field: string, text: Translate): string {
+  switch (field) {
+    case "currency":
+      return text("currency");
+    case "value_numeric":
+      return text("amount");
+    case "attribution":
+      return text("attribution");
+    case "data_quality":
+      return text("data quality");
+    default:
+      return field;
+  }
+}
 
 function formatGateAmount(raw: unknown, locale: LocaleCode): string | null {
   const numeric = String(raw ?? "").trim();
   if (numeric === "" || !Number.isFinite(Number(numeric))) return null;
   return formatFinancialValue({ valueNumeric: numeric, currency: "PLN" }, locale);
+}
+
+// The history-plausibility quarantine's `value`/`historyMedian` (astra r1 P2,
+// FINDING 2) carry NO currency dimension in the payload — the flagged fact may
+// be a share count, not money, so reusing `formatGateAmount`'s hardcoded PLN
+// would invent a unit the data never carried. `valueKind: "count"` routes
+// `formatFinancialValue` to its unitless, unscaled, locale-grouped path —
+// shared formatting, not a bespoke one.
+function formatQuarantineAmount(raw: unknown, locale: LocaleCode): string | null {
+  const numeric = String(raw ?? "").trim();
+  if (numeric === "" || !Number.isFinite(Number(numeric))) return null;
+  return formatFinancialValue({ valueNumeric: numeric, valueKind: "count" }, locale);
 }
 
 // One failing check → a human sentence. Falls back to null when the detail
@@ -154,6 +195,24 @@ function gateCheckValue(
   text: Translate,
   locale: LocaleCode,
 ): string | null {
+  if (kind === "rejectedFacts") {
+    // The refused value is not necessarily numeric (a unit token like
+    // "shares", not an amount) — shown verbatim, never coerced or formatted.
+    const field = typeof detail.field === "string" ? detail.field : "";
+    const rawValue = detail.value;
+    if (field === "" || rawValue === undefined || rawValue === null) return null;
+    return text('held back: {field} "{value}" is not a valid value')
+      .replace("{field}", rejectedFactFieldLabel(field, text))
+      .replace("{value}", String(rawValue));
+  }
+  if (kind === "quarantinedFacts") {
+    const value = formatQuarantineAmount(detail.value, locale);
+    const historyMedian = formatQuarantineAmount(detail.historyMedian, locale);
+    if (value === null || historyMedian === null) return null;
+    return text("held back: {value} is far from its own history (around {historyMedian})")
+      .replace("{value}", value)
+      .replace("{historyMedian}", historyMedian);
+  }
   const actual = formatGateAmount(detail.actual, locale);
   const expected = formatGateAmount(detail.expected, locale);
   if (actual === null || expected === null) return null;
@@ -178,6 +237,23 @@ function gateCheckValue(
   return `${base} ${text("(difference {residual})").replace("{residual}", residual)}`;
 }
 
+// `localizedKpiLabelForKey` falls back to the raw catalog key when NEITHER KPI
+// label map (`kpiLabels.ts`) has an entry for it (astra r1 P2, FINDING 1 — the
+// crosswalk has ~326 metric keys, the label maps a curated subset). Neither
+// map exposes a generic humanizing fallback to reuse, and a dynamic catalog
+// key can't route through the static `plText` table (an unbounded key set).
+// Humanizing beats showing `administrative_expense` verbatim in EITHER
+// locale — Polish deliberately shows the SAME humanized English words here
+// as a flagged compromise until the metric gets a real `PL_KPI_LABELS` entry;
+// that entry, not this fallback, is the fix for a specific missing metric.
+function humanizeMetricKey(metricKey: string): string {
+  return metricKey
+    .split("_")
+    .filter((word) => word !== "")
+    .map((word, index) => (index === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
 function gateCheckLabel(
   element: Record<string, unknown>,
   text: Translate,
@@ -188,7 +264,9 @@ function gateCheckLabel(
   if (typeof element.metricKey === "string" && element.metricKey.trim() !== "") {
     // A metric name is a KPI display name: it goes through the locale map, never
     // as the raw catalog key (ui-authoring § i18n).
-    return localizedKpiLabelForKey(element.metricKey, locale);
+    const metricKey = element.metricKey;
+    const label = localizedKpiLabelForKey(metricKey, locale);
+    return label === metricKey ? humanizeMetricKey(metricKey) : label;
   }
   return text("Failing check");
 }

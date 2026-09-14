@@ -75,6 +75,8 @@ figures** lists the opposite case: values that *did* land but could not be fully
 verified, each with its period, metric, amount, the reader that produced it and
 the source label it was read from. Both are information, not homework: nothing
 waits for your click.
+A period can also be flagged because one figure was held back as invalid (the
+details name it) while the rest of the filing landed normally.
 
 Some cells are honestly empty: BiznesRadar's pages simply don't publish every
 line (no cash, no total liabilities, equity only for parent shareholders), so

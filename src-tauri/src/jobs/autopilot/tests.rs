@@ -1377,6 +1377,49 @@ fn a_legacy_run_re_arms_once_then_settles() {
     );
 }
 
+/// Test G (#509, decision 4): the concrete 3 → 4 bump this change makes — a
+/// terminal couldn't-extract run stamped `pipelineVersion: 3` re-arms once
+/// under the running build (now 4, #511 role families + #509 non-currency
+/// units), pinning THIS migration rather than only the relative "lower
+/// version" claim the sibling tests already cover.
+#[test]
+fn a_version_3_couldnt_extract_run_re_arms_under_version_4_a_version_4_run_does_not() {
+    assert_eq!(
+        crate::jobs::structured_extraction::EXTRACTION_PIPELINE_VERSION,
+        4,
+        "this test pins the concrete #509 bump (3 -> 4); update the literals \
+         here deliberately on the next bump"
+    );
+
+    let dir_v3 = unique_temp_dir("rearm-v3-to-v4-v3");
+    std::fs::create_dir_all(&dir_v3).expect("temp dir");
+    let state_v3 = AppState::with_data_dir(open_in_memory_database().expect("db"), dir_v3.clone());
+    let stamped_v3 = serde_json::json!({
+        "extractionAvailable": false,
+        "reason": crate::jobs::structured_extraction::reason::NO_DETERMINISTIC_TIER,
+        "pipelineVersion": 3,
+    });
+    let run_v3 = seed_terminal_unavailable_run(&state_v3, &dir_v3, "run_v3", stamped_v3);
+    assert!(
+        terminal_run_should_rearm(&state_v3, &run_v3),
+        "a run stamped pipelineVersion 3 must re-arm once under the running version 4"
+    );
+
+    let dir_v4 = unique_temp_dir("rearm-v3-to-v4-v4");
+    std::fs::create_dir_all(&dir_v4).expect("temp dir");
+    let state_v4 = AppState::with_data_dir(open_in_memory_database().expect("db"), dir_v4.clone());
+    let stamped_v4 = serde_json::json!({
+        "extractionAvailable": false,
+        "reason": crate::jobs::structured_extraction::reason::NO_DETERMINISTIC_TIER,
+        "pipelineVersion": 4,
+    });
+    let run_v4 = seed_terminal_unavailable_run(&state_v4, &dir_v4, "run_v4", stamped_v4);
+    assert!(
+        !terminal_run_should_rearm(&state_v4, &run_v4),
+        "a run already stamped pipelineVersion 4 must settle, never re-arm"
+    );
+}
+
 /// Regression: when the version gate is OPEN (a run stamped with a version
 /// LOWER than the current build — a genuine parser upgrade), a witness_fallback
 /// period still re-arms so the upgrade reaches it with real issuer data. The

@@ -1810,6 +1810,16 @@ export const plText: Record<string, string> = {
     "raport podaje {actual}, zewnętrzny serwis {expected}",
   "on file {actual}, re-read from the report {expected}":
     "zapisano {actual}, ponowny odczyt raportu {expected}",
+  // #509 (ADR 0100 dec. 4 amendment): fact-local store refusal / history-
+  // plausibility quarantine — readable "held back" rows next to the gate checks.
+  'held back: {field} "{value}" is not a valid value':
+    'wstrzymano: {field} „{value}” nie jest prawidłową wartością',
+  "currency": "waluta",
+  "amount": "kwota",
+  "attribution": "przypisanie",
+  "data quality": "jakość danych",
+  "held back: {value} is far from its own history (around {historyMedian})":
+    "wstrzymano: {value} znacznie odbiega od własnej historii (około {historyMedian})",
   "Data was recorded for this period": "Dane dla tego okresu zostały zapisane",
   "This period could not be recorded": "Tego okresu nie udało się zapisać",
   // Which reader attempted the document.

@@ -396,45 +396,6 @@ fn confirmation_state_for(_acceptance: Acceptance, _mode: &str) -> &'static str 
     "confirmed"
 }
 
-/// One fact held back by the runtime history-plausibility gate — its magnitude
-/// was ≥100× off its own stored history (a dropped `w tys.` multiplier or a note
-/// reference read as the value). Carries the figures the flagged-outcome detail
-/// cites so a reviewer sees *why* it was quarantined.
-struct QuarantinedFact {
-    metric_key: String,
-    value: rust_decimal::Decimal,
-    history_median: rust_decimal::Decimal,
-}
-
-/// The `validation_failed` detail for a set with one or more facts quarantined by
-/// the history-plausibility gate: each quarantined metric, its rejected value and
-/// the history median it defied, folded onto any identity/cross-check failures
-/// the same set already carried (so a set that both self-contradicted AND had a
-/// scale outlier records both). Object-merged, never nested, so the review
-/// surface reads one flat payload.
-fn quarantine_detail(quarantined: &[QuarantinedFact], base: Option<String>) -> Option<String> {
-    let facts: Vec<serde_json::Value> = quarantined
-        .iter()
-        .map(|q| {
-            serde_json::json!({
-                "metricKey": q.metric_key,
-                "value": q.value.to_string(),
-                "historyMedian": q.history_median.to_string(),
-            })
-        })
-        .collect();
-    let mut payload = base
-        .as_deref()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-        .and_then(|v| v.as_object().cloned())
-        .unwrap_or_default();
-    payload.insert(
-        "quarantinedFacts".to_owned(),
-        serde_json::Value::Array(facts),
-    );
-    serde_json::to_string(&serde_json::Value::Object(payload)).ok()
-}
-
 /// The derivation-grammar version stamped on every persisted period (migration
 /// 0109). A document's bytes are immutable once ingested, so the ONLY reason to
 /// re-derive a cached period is a change to the derivation grammar itself
@@ -464,7 +425,9 @@ pub const DERIVATION_VERSION: i64 = 2;
 /// Bump this whenever a tier/parser/derivation change alters what documents can
 /// be read. **Do not** bump for changes that cannot affect readability. A
 /// legacy stored run with no `pipelineVersion` reads as `0` and re-arms once.
-pub const EXTRACTION_PIPELINE_VERSION: u32 = 3;
+///
+/// `4`: #511 role families + #509 non-currency units.
+pub const EXTRACTION_PIPELINE_VERSION: u32 = 4;
 
 /// Re-intern a cached `period_type` string back to the `&'static str` the
 /// derivation returns. [`crate::report_diff::classify`] only ever yields these
@@ -1260,6 +1223,8 @@ pub(crate) fn run_structured_extraction(
     // extraction, so the medians this reads are already scale-cleaned on the
     // maintainer's machine — the check never modifies anything stored.
     let mut quarantined: Vec<QuarantinedFact> = Vec::new();
+    // Facts refused by a fact-local store guard (#509 decision 2).
+    let mut rejected: Vec<RejectedFact> = Vec::new();
     if outcome.acceptance.emits() {
         let validation_status = outcome.acceptance.validation_status();
         let tier = outcome.tier.map(|t| t.as_str()).unwrap_or("unknown");
@@ -1311,27 +1276,40 @@ pub(crate) fn run_structured_extraction(
                 continue;
             }
             let value = fact.value.to_string();
-            let commit = store
-                .record_structured_fact(StructuredFactInput {
-                    company_id,
-                    fiscal_year,
-                    period_type,
-                    period_end: Some(period_end),
-                    report_document_id,
-                    metric_key: &fact.metric_key,
-                    value_numeric: &value,
-                    currency: fact.currency.as_deref(),
-                    confirmation_state,
-                    source_tier: tier,
-                    extraction_method: "api",
-                    validation_status,
-                    drift_json: drift_json.as_deref(),
-                    citation: Some(&fact.citation),
-                    attribution: None,
-                    measure_window: None,
-                    data_quality: None,
-                })
-                .map_err(|e| e.to_string())?;
+            let commit = match store.record_structured_fact(StructuredFactInput {
+                company_id,
+                fiscal_year,
+                period_type,
+                period_end: Some(period_end),
+                report_document_id,
+                metric_key: &fact.metric_key,
+                value_numeric: &value,
+                currency: fact.currency.as_deref(),
+                confirmation_state,
+                source_tier: tier,
+                extraction_method: "api",
+                validation_status,
+                drift_json: drift_json.as_deref(),
+                citation: Some(&fact.citation),
+                attribution: None,
+                measure_window: None,
+                data_quality: None,
+            }) {
+                Ok(commit) => commit,
+                // #509 decision 2: these four keys are per-fact write-slot
+                // fields; any other key/variant (e.g. `period_type`) is fatal.
+                Err(crate::storage::StorageError::InvalidFinancialsValue { key, value })
+                    if is_fact_local_refusal(key) =>
+                {
+                    rejected.push(RejectedFact {
+                        metric_key: fact.metric_key.clone(),
+                        field: key,
+                        value,
+                    });
+                    continue;
+                }
+                Err(e) => return Err(e.to_string()),
+            };
             match commit {
                 crate::storage::StructuredFactCommit::Created(id) => produced_fact_ids.push(id),
                 // A higher tier took over a lower-tier slot (ADR 0086 dec. 3):
@@ -1402,20 +1380,23 @@ pub(crate) fn run_structured_extraction(
     // for every attempt, so a Flagged/Empty period leaves a durable, reviewable
     // trace instead of evaporating with the in-memory result.
     //
-    // Precedence of the set-level reason: a quarantine downgrades the acceptance
-    // to Flagged and forces a `validation_failed` reason naming the quarantined
-    // metric(s) — a persisted scale outlier is the most actionable signal.
-    // Otherwise the normal outcome reason (an honest gap, a drift, …).
-    let recorded_acceptance = if quarantined.is_empty() {
-        outcome.acceptance
-    } else {
+    // A quarantine OR a rejection (#509 decision 2) downgrades to Flagged /
+    // `validation_failed`, chaining both payload keys onto one detail.
+    let flagged = !quarantined.is_empty() || !rejected.is_empty();
+    let recorded_acceptance = if flagged {
         Acceptance::Flagged
+    } else {
+        outcome.acceptance
     };
-    let (reason_code, detail_json) = if !quarantined.is_empty() {
-        (
-            reason::VALIDATION_FAILED,
-            quarantine_detail(&quarantined, failing_check_detail(&outcome)),
-        )
+    let (reason_code, detail_json) = if flagged {
+        let mut detail = failing_check_detail(&outcome);
+        if !quarantined.is_empty() {
+            detail = quarantine_detail(&quarantined, detail);
+        }
+        if !rejected.is_empty() {
+            detail = rejected_detail(&rejected, detail);
+        }
+        (reason::VALIDATION_FAILED, detail)
     } else {
         (reason_for(&outcome), failing_check_detail(&outcome))
     };
@@ -1505,8 +1486,15 @@ pub(crate) fn rerun_extraction_outcome(
 fn base_document_ref(slot_ref: &str) -> &str {
     slot_ref.split('#').next().unwrap_or(slot_ref)
 }
+mod outcome_detail;
+use outcome_detail::{
+    is_fact_local_refusal, quarantine_detail, rejected_detail, QuarantinedFact, RejectedFact,
+};
+
 #[cfg(test)]
 mod role_families_tests;
+#[cfg(test)]
+mod unit_refusal_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3268,7 +3256,7 @@ mod tests {
     /// bridging each `(metric_key, value)` through the canonical KPI
     /// definition catalog — the "already known" prior period the comparative
     /// cross-check reads back via `stored_fact_set`.
-    fn seed_prior_period(
+    pub(super) fn seed_prior_period(
         state: &AppState,
         company_id: &str,
         fiscal_year: i64,
