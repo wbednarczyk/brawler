@@ -27,7 +27,10 @@ an event is disqualified for that event.
 3. **Task build** — `adjudicate.py prepare --seed <n>`: every machine/`unverified` disagreement class
    plus a **seeded, frozen 10 % sample of agreements** (minimum 10 tasks, or all when fewer) become
    indistinguishable task files (`adjudication/tasks/<id>.json`); `tasks.lock` pins their hashes.
-   The sample is frozen before any second read starts.
+   The sample is frozen before any second read starts. A task carries the slot's own identity —
+   concept, period, basis, window and its `attribution` — plus `attribution_dimension` (the
+   `{axis, member}` pair) when the slot came from a dimensioned occurrence, `null` otherwise; never a
+   value.
 4. **Second read** — the reader answers every task from the filing only (value, currency, period,
    basis, attribution as read; `unverified` + reason when the filing does not settle it) and the
    answers are **sealed** (`adjudicate.py seal <reader> <answers.json>` — hashed, timestamped, refused
@@ -39,6 +42,9 @@ an event is disqualified for that event.
    denominator, count pinned in the baseline).
 6. **Systematic-error rule** — if the agreement sample reveals a labeling error class (a transform,
    a sign convention, a namespace), the whole affected class is re-read before any floor is pinned.
+   `adjudicate.py prepare --round <n> --reread-class attribution_dimension|attribution_name` opens a
+   new round (`adjudication/round-<n>/`, isolated from earlier rounds) and adds every slot of the
+   named class to that round's own seeded sample, still indistinguishable.
 7. **Freeze** — `gt_version`, `key_map_version`, `normalization_version` and the corpus
    `registry_hash` are frozen together; any change bumps `measurement_version` and requires a new,
    deliberately promoted baseline (`make realdata-esef-promote`).

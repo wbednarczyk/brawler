@@ -151,6 +151,98 @@ class AttributionMappingTests(unittest.TestCase):
             self.assertEqual(len(gt["slots"]), 1)
             self.assertEqual(gt["slots"][0]["attribution"], "nci")
 
+    def test_unmapped_concept_name_suffix_owners_of_parent(self):
+        # #331 PR-B: a dimensionless concept absent from gt_key_map.json but
+        # whose OWN local name carries the attribution must not default to
+        # "total".
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:ComprehensiveIncomeAttributableToOwnersOfParent", "c1", "u1", "500"),
+            )
+            _write_manifest(out, _event(), doc)
+            gt = lbl.label_esef_v2(str(out))["ground_truth"]
+            self.assertEqual(len(gt["slots"]), 1)
+            self.assertFalse(gt["slots"][0]["mapped"])
+            self.assertEqual(gt["slots"][0]["attribution"], "owners_of_parent")
+
+    def test_unmapped_concept_name_suffix_nci_capital_c_spelling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:ComprehensiveIncomeAttributableToNonControllingInterests", "c1", "u1", "50"),
+            )
+            _write_manifest(out, _event(), doc)
+            gt = lbl.label_esef_v2(str(out))["ground_truth"]
+            self.assertEqual(len(gt["slots"]), 1)
+            self.assertEqual(gt["slots"][0]["attribution"], "nci")
+
+    def test_unmapped_concept_name_suffix_nci_lowercase_c_spelling(self):
+        # The IFRS taxonomy spells this suffix both ways across concepts --
+        # both must resolve to "nci".
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:ComprehensiveIncomeAttributableToNoncontrollingInterests", "c1", "u1", "50"),
+            )
+            _write_manifest(out, _event(), doc)
+            gt = lbl.label_esef_v2(str(out))["ground_truth"]
+            self.assertEqual(len(gt["slots"]), 1)
+            self.assertEqual(gt["slots"][0]["attribution"], "nci")
+
+    def test_unmapped_plain_concept_still_defaults_to_total(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:Inventories", "c1", "u1", "50"),
+            )
+            _write_manifest(out, _event(), doc)
+            gt = lbl.label_esef_v2(str(out))["ground_truth"]
+            self.assertEqual(len(gt["slots"]), 1)
+            self.assertFalse(gt["slots"][0]["mapped"])
+            self.assertEqual(gt["slots"][0]["attribution"], "total")
+
+    def test_mapped_concept_keeps_key_map_attribution_over_a_disagreeing_name_suffix(self):
+        # A mapped concept never falls through to the name-suffix rule, even
+        # when the two would disagree.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            key_map_path = out / "custom_key_map.json"
+            key_map_path.write_text(
+                json.dumps(
+                    {
+                        "key_map_version": 1,
+                        "entries": [
+                            {
+                                "concept": "XAttributableToOwnersOfParent",
+                                "metric_key": "x",
+                                "attribution": "total",
+                                "period_nature": "duration",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            doc = make_instance(
+                contexts=context("c1", start="2025-01-01", end="2025-12-31"),
+                units=unit("u1"),
+                facts=non_fraction("ifrs-full:XAttributableToOwnersOfParent", "c1", "u1", "50"),
+            )
+            _write_manifest(out, _event(), doc)
+            gt = lbl.label_esef_v2(str(out), key_map_path=key_map_path)["ground_truth"]
+            self.assertEqual(len(gt["slots"]), 1)
+            self.assertTrue(gt["slots"][0]["mapped"])
+            self.assertEqual(gt["slots"][0]["attribution"], "total")
+
 
 class OccurrenceEmissionTests(unittest.TestCase):
     def test_occurrences_carry_machine_verification_and_no_resolution_ref(self):

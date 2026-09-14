@@ -144,6 +144,30 @@ def currency_from_unit(unit_str: str | None) -> str | None:
     return code if len(code) == 3 and code.isalpha() and code.isupper() else None
 
 
+# #331 PR-B: for a concept absent from `gt_key_map.json`, its OWN local name
+# can carry attribution semantics -- suffix match only (a name that merely
+# CONTAINS one of these mid-string is not itself an attribution concept).
+# Case-sensitive: the IFRS taxonomy spells the NCI suffix both ways across
+# concepts, so both are checked.
+ATTRIBUTION_NAME_SUFFIXES = (
+    ("AttributableToOwnersOfParent", "owners_of_parent"),
+    ("AttributableToNonControllingInterests", "nci"),
+    ("AttributableToNoncontrollingInterests", "nci"),
+)
+
+
+def attribution_from_concept_name(concept_local: str) -> str | None:
+    """The attribution a concept's own local name evidences, or `None` when
+    it carries no such suffix. Used only for a DIMENSIONLESS occurrence of an
+    unmapped concept (`derive_slots`) -- a mapped concept keeps the key map,
+    and a dimensioned occurrence keeps `resolve_attribution`'s own
+    axis-member rule; both stay unaffected by this function."""
+    for suffix, attribution in ATTRIBUTION_NAME_SUFFIXES:
+        if concept_local.endswith(suffix):
+            return attribution
+    return None
+
+
 def resolve_attribution(base_attribution: str, dimensions: list[dict]) -> str | None:
     """Concept-level attribution (from the key map, or `total` for an
     unmapped concept) for a PRIMARY (no dimensions) occurrence, OR for an
@@ -270,7 +294,14 @@ def derive_slots(
         if not is_ifrs_concept(occ["concept_qname"]):
             continue
         info = concept_info.get(occ["concept_local"])
-        base_attribution = info["attribution"] if info else "total"  # amendment Q: unmapped concepts default to total
+        if info:
+            base_attribution = info["attribution"]
+        else:
+            # #331 PR-B: an unmapped concept's own local name can carry
+            # attribution (resolve_attribution ignores base_attribution
+            # whenever the occurrence carries any dimension, so this only
+            # ever takes effect for a dimensionless occurrence).
+            base_attribution = attribution_from_concept_name(occ["concept_local"]) or "total"
         attribution = resolve_attribution(base_attribution, occ["dimensions"])
         if attribution is None:
             if occ["dimensions"]:
