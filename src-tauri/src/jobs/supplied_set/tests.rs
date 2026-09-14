@@ -56,6 +56,7 @@ fn seed_history_fact(
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("seed history fact");
 }

@@ -211,6 +211,10 @@ fn a_linkbase_with_only_other_roles_does_not_take_the_no_linkbase_fallback() {
         &generation.facts,
         "2025-12-31",
         generation.has_presentation_linkbase,
+        crate::fundamentals::extraction::esef::projection::select_primary_basis(
+            &generation.facts,
+            generation.has_presentation_linkbase,
+        ),
     );
     assert!(
         projected.facts.is_empty(),
@@ -428,6 +432,10 @@ fn two_newly_recognised_roles_from_real_parsing_project_as_one_fact_when_values_
         &generation.facts,
         "2025-12-31",
         generation.has_presentation_linkbase,
+        crate::fundamentals::extraction::esef::projection::select_primary_basis(
+            &generation.facts,
+            generation.has_presentation_linkbase,
+        ),
     );
     assert_eq!(projected.facts.len(), 1);
     assert_eq!(projected.facts[0].fact.metric_key, "net_profit");
@@ -451,6 +459,10 @@ fn two_newly_recognised_roles_from_real_parsing_yield_a_conflict_when_values_div
         &generation.facts,
         "2025-12-31",
         generation.has_presentation_linkbase,
+        crate::fundamentals::extraction::esef::projection::select_primary_basis(
+            &generation.facts,
+            generation.has_presentation_linkbase,
+        ),
     );
     assert!(projected.facts.is_empty());
     assert_eq!(projected.conflicts.len(), 1);

@@ -1,5 +1,5 @@
-//! Layer 1 → Layer 2 projection for the ESEF tier (ADR 0100 decisions 1, 3,
-//! 4, 7; epic #398).
+//! Layer 1 → Layer 2 projection for the ESEF tier (ADR 0100 decisions 1, 2,
+//! 3, 4, 7; epic #398, #508).
 //!
 //! A pure function over Layer 1 raw tagged-fact rows
 //! (`crate::storage::NewTaggedFact` — the exact shape [`super::layer1`]
@@ -68,24 +68,57 @@ fn is_primary_statement(fact: &NewTaggedFact) -> bool {
     })
 }
 
-/// Statement basis for one instance of a multi-document package, derived
-/// from its entry path (epic #398 corpus evidence: TXT ships standalone and
-/// consolidated filings under Polish-named folders in one package; ESEF
-/// itself is a consolidated-IFRS mandate, so consolidated is the default).
-/// A heuristic over the only per-instance evidence the package carries —
-/// applied per instance so a standalone filing is never silently stamped
-/// consolidated (sol review finding 3).
-fn basis_of(package_entry_path: &str) -> StatementBasis {
+/// Instance-level basis EVIDENCE from the entry path (ADR 0100 decision 1,
+/// #508) — distinct from the store's two-valued [`StatementBasis`] because an
+/// instance's path can carry BOTH a standalone and a consolidated token at
+/// once (a genuinely unreadable case), which must never collapse into a
+/// silent default the way "neither token" legitimately does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InstanceBasis {
+    Consolidated,
+    Standalone,
+    /// Both a standalone and a consolidated token matched — never guessed,
+    /// excluded from projection and counted (`ambiguous_basis_skipped`).
+    Ambiguous,
+}
+
+/// Statement basis EVIDENCE for one instance of a multi-document package,
+/// derived from its entry path (epic #398 corpus evidence: TXT ships
+/// standalone and consolidated filings under Polish-named folders in one
+/// package; ESEF itself is a consolidated-IFRS mandate, so consolidated is
+/// the default when neither token is present). `unconsolidated` is a
+/// STANDALONE token whose substring would otherwise also match the bare
+/// `consolidated` token, so every `unconsolidated` occurrence is stripped
+/// before the consolidated check runs (ADR 0100 decision 1, #508).
+fn basis_of(package_entry_path: &str) -> InstanceBasis {
     let path = package_entry_path.to_lowercase();
-    if path.contains("jednostkow")
-        || path.contains("separate")
-        || path.contains("standalone")
-        || path.contains("unconsolidated")
-    {
-        StatementBasis::Standalone
-    } else {
-        StatementBasis::Consolidated
+    let has_unconsolidated = path.contains("unconsolidated");
+    let remainder = path.replace("unconsolidated", "");
+    let standalone_hit = has_unconsolidated
+        || remainder.contains("jednostkow")
+        || remainder.contains("separate")
+        || remainder.contains("standalone");
+    let consolidated_hit =
+        remainder.contains("skonsolidowan") || remainder.contains("consolidated");
+    match (standalone_hit, consolidated_hit) {
+        (true, true) => InstanceBasis::Ambiguous,
+        (true, false) => InstanceBasis::Standalone,
+        (false, true) | (false, false) => InstanceBasis::Consolidated,
     }
+}
+
+/// Whether `instance` (the entry-path evidence) is the document's SELECTED
+/// primary basis — `Ambiguous` never matches either, and NOTHING matches a
+/// `None` selection (no eligible primary-statement fact anywhere in the
+/// document, #508 decision 2).
+fn instance_matches_selected(instance: InstanceBasis, selected: Option<StatementBasis>) -> bool {
+    matches!(
+        (instance, selected),
+        (
+            InstanceBasis::Consolidated,
+            Some(StatementBasis::Consolidated)
+        ) | (InstanceBasis::Standalone, Some(StatementBasis::Standalone))
+    )
 }
 
 fn decimal_of(fact: &NewTaggedFact) -> Option<Decimal> {
@@ -120,8 +153,9 @@ pub struct ProjectedFact {
 pub struct SlotConflict {
     pub metric_key: String,
     pub period_end: String,
-    /// The instance's derived basis — a standalone and a consolidated filing
-    /// in one package are separate slots and never conflict with each other.
+    /// The document's ONE selected basis (#508 decision 2) — the other
+    /// filing in a mixed-basis package is dropped before slotting, so it can
+    /// never produce a conflict here at all.
     pub statement_basis: StatementBasis,
     pub contributing_fact_identities: Vec<String>,
 }
@@ -150,6 +184,92 @@ pub struct ProjectionResult {
     /// year-to-date — cumulative GPW reporting keeps the longest window;
     /// sol review finding 3). Counted, never a conflict.
     pub shorter_window_skipped: usize,
+    /// Crosswalk-resolved, primary-statement occurrences dropped because
+    /// their instance's basis is NOT the document's selected primary basis
+    /// (ADR 0100 decision 2, #508) — the other filing in a mixed-basis
+    /// package, kept as Layer 1 evidence but never projected.
+    pub non_primary_basis_skipped: usize,
+    /// Crosswalk-resolved, primary-statement occurrences dropped because
+    /// their instance's entry path carries BOTH a standalone and a
+    /// consolidated token (ADR 0100 decision 1, #508) — genuinely unreadable
+    /// basis evidence, never guessed.
+    pub ambiguous_basis_skipped: usize,
+}
+
+/// Step 1's eligibility test (dimensionless, with a usable value) as a
+/// reusable predicate — shared by `project_period` and `select_primary_basis`
+/// so the two can never drift (ADR 0100 decision 2, #508).
+fn has_usable_value(f: &NewTaggedFact) -> bool {
+    !f.is_dimensional && decimal_of(f).is_some()
+}
+
+/// Step 1's role predicate (with the no-linkbase fallback) as a reusable
+/// function.
+fn passes_role_filter(f: &NewTaggedFact, has_presentation_linkbase: bool) -> bool {
+    !has_presentation_linkbase || is_primary_statement(f)
+}
+
+/// A fresh concept -> crosswalk-entry map, built once per caller (`entries()`
+/// is a static table; this is just the lookup index over it).
+fn build_crosswalk(
+) -> std::collections::HashMap<&'static str, &'static ifrs_crosswalk::CrosswalkEntry> {
+    ifrs_crosswalk::entries()
+        .iter()
+        .map(|entry| (entry.concept, entry))
+        .collect()
+}
+
+/// Step 2's crosswalk resolution as a reusable function (sol review finding
+/// 1 still applies: only a STANDARD IFRS namespace concept ever resolves).
+fn resolve_crosswalk<'a>(
+    f: &NewTaggedFact,
+    crosswalk: &std::collections::HashMap<&str, &'a ifrs_crosswalk::CrosswalkEntry>,
+) -> Option<&'a ifrs_crosswalk::CrosswalkEntry> {
+    if ifrs_crosswalk::is_standard_ifrs_namespace(&f.concept_namespace_uri) {
+        crosswalk.get(f.concept_local_name.as_str()).copied()
+    } else {
+        None
+    }
+}
+
+/// The document's ONE primary statement basis (ADR 0100 decision 2, #508),
+/// selected ONCE over every Layer 1 row the document carries — never the
+/// period-filtered survivors a single `project_period` call sees, so the
+/// current AND comparative projections agree. Applies the EXACT primary-
+/// statement role filter and crosswalk resolution `project_period` itself
+/// applies (never a second copy): among facts that pass both, primary is
+/// `Consolidated` if any comes from a consolidated instance, else
+/// `Standalone` if any, else `None` (nothing eligible at all — the caller
+/// projects nothing). An instance whose entry path is `Ambiguous` never
+/// contributes evidence either way — it is excluded from selection exactly
+/// as it is excluded from projection.
+pub fn select_primary_basis(
+    layer1_facts: &[NewTaggedFact],
+    has_presentation_linkbase: bool,
+) -> Option<StatementBasis> {
+    let crosswalk = build_crosswalk();
+    let mut any_consolidated = false;
+    let mut any_standalone = false;
+    for f in layer1_facts {
+        if !has_usable_value(f) || !passes_role_filter(f, has_presentation_linkbase) {
+            continue;
+        }
+        if resolve_crosswalk(f, &crosswalk).is_none() {
+            continue;
+        }
+        match basis_of(&f.package_entry_path) {
+            InstanceBasis::Consolidated => any_consolidated = true,
+            InstanceBasis::Standalone => any_standalone = true,
+            InstanceBasis::Ambiguous => {}
+        }
+    }
+    if any_consolidated {
+        Some(StatementBasis::Consolidated)
+    } else if any_standalone {
+        Some(StatementBasis::Standalone)
+    } else {
+        None
+    }
 }
 
 /// Projects Layer 1 rows for exactly one `period_end` into Layer 2 ESEF
@@ -179,6 +299,7 @@ pub fn project_period(
     facts: &[NewTaggedFact],
     period_end: &str,
     has_presentation_linkbase: bool,
+    basis: Option<StatementBasis>,
 ) -> ProjectionResult {
     let mut result = ProjectionResult::default();
 
@@ -195,13 +316,7 @@ pub fn project_period(
         if decimal_of(f).is_none() {
             continue;
         }
-        if !has_presentation_linkbase {
-            // No linkbase evidence for this document at all — the role
-            // filter cannot be evaluated, so every dimensionless/valued row
-            // is a candidate (never a guess at which role it would have
-            // carried).
-            candidates.push(f);
-        } else if is_primary_statement(f) {
+        if passes_role_filter(f, has_presentation_linkbase) {
             candidates.push(f);
         } else {
             result.non_primary_statement_skipped += 1;
@@ -220,14 +335,11 @@ pub fn project_period(
     let precedence_survivors = candidates;
 
     // ---- Step 2: crosswalk resolution --------------------------------------
-    let crosswalk: std::collections::HashMap<&str, &ifrs_crosswalk::CrosswalkEntry> =
-        ifrs_crosswalk::entries()
-            .iter()
-            .map(|entry| (entry.concept, entry))
-            .collect();
-    // Grouped by the REAL slot dimensions this tier varies on (sol review
-    // finding 3): statement basis (a multi-document package can carry a
-    // standalone AND a consolidated filing — never merged) and metric key.
+    let crosswalk = build_crosswalk();
+    // Grouped by metric key: every surviving occurrence already shares the
+    // document's ONE selected basis (decision 2, #508) — a mixed-basis
+    // package's OTHER instance is dropped below, before it ever reaches this
+    // map, so the slot no longer needs basis as part of its key.
     // `period_start` is handled inside the group below.
     // The group value carries the resolved entry's `value_kind` alongside its
     // facts (#509 decision 1) — currency is decided from THIS, never from the
@@ -236,32 +348,34 @@ pub fn project_period(
     // unit-shaped string. `value_kind` is uniform per slot (entries sharing a
     // `metric_key` agree on it — asserted by a crosswalk invariant test), so
     // the first occurrence's is authoritative for the whole group.
-    let mut by_slot: BTreeMap<(&'static str, &'static str), (&'static str, Vec<&NewTaggedFact>)> =
-        BTreeMap::new();
+    let mut by_slot: BTreeMap<&'static str, (&'static str, Vec<&NewTaggedFact>)> = BTreeMap::new();
     for f in precedence_survivors {
         // The crosswalk names STANDARD taxonomy concepts only (sol review
         // finding 1): an issuer-extension concept that reuses a standard
         // local name (issuer-namespace `Revenue`) must never resolve to the
         // global key — it stays uncrosswalked until the owner promotes it
         // under its issuer-qualified identity (ADR 0100 decisions 2/10).
-        let entry = if ifrs_crosswalk::is_standard_ifrs_namespace(&f.concept_namespace_uri) {
-            crosswalk.get(f.concept_local_name.as_str())
-        } else {
-            None
+        let Some(entry) = resolve_crosswalk(f, &crosswalk) else {
+            result
+                .uncrosswalked_concepts
+                .insert(f.concept_local_name.clone());
+            result.uncrosswalked_fact_count += 1;
+            continue;
         };
-        match entry {
-            Some(entry) => {
+        // Decision 2 (#508): only the document's selected basis slots; the
+        // other filing's occurrences (and any genuinely ambiguous instance)
+        // are dropped HERE, never mixed into the same-metric slot.
+        match basis_of(&f.package_entry_path) {
+            InstanceBasis::Ambiguous => result.ambiguous_basis_skipped += 1,
+            instance if !instance_matches_selected(instance, basis) => {
+                result.non_primary_basis_skipped += 1;
+            }
+            _ => {
                 by_slot
-                    .entry((basis_of(&f.package_entry_path).as_str(), entry.metric_key))
+                    .entry(entry.metric_key)
                     .or_insert_with(|| (entry.value_kind, Vec::new()))
                     .1
                     .push(f);
-            }
-            None => {
-                result
-                    .uncrosswalked_concepts
-                    .insert(f.concept_local_name.clone());
-                result.uncrosswalked_fact_count += 1;
             }
         }
     }
@@ -276,7 +390,7 @@ pub fn project_period(
     // with the retired parser's `dedup_longest_duration`; sol review
     // finding 3). Only after that does value equality separate a repeat
     // from a typed conflict.
-    for ((basis_str, metric_key), (value_kind, mut occurrences)) in by_slot {
+    for (metric_key, (value_kind, mut occurrences)) in by_slot {
         let longest_start: Option<String> = occurrences
             .iter()
             .filter(|f| f.period_type != "instant")
@@ -290,11 +404,6 @@ pub fn project_period(
             result.shorter_window_skipped += before - occurrences.len();
         }
 
-        let basis = if basis_str == "standalone" {
-            StatementBasis::Standalone
-        } else {
-            StatementBasis::Consolidated
-        };
         let first = occurrences[0];
         let first_value = decimal_of(first).expect("filtered to a usable value in step 1");
         let all_agree = occurrences
@@ -310,7 +419,7 @@ pub fn project_period(
                     metric_key: metric_key.to_owned(),
                     value: first_value,
                     period: period_of(first),
-                    basis: Some(basis),
+                    basis,
                     // #509 decision 1: currency by `value_kind`, never a raw
                     // unit copy — a non-monetary fact (count, percentage, ...)
                     // must never reach the store's currency column at all.
@@ -328,7 +437,10 @@ pub fn project_period(
             result.conflicts.push(SlotConflict {
                 metric_key: metric_key.to_owned(),
                 period_end: period_end.to_owned(),
-                statement_basis: basis,
+                // `by_slot` only ever holds facts `instance_matches_selected`
+                // accepted (step 2), which requires `basis: Some(_)` — a
+                // non-empty slot proves a basis was actually selected.
+                statement_basis: basis.expect("non-empty slot implies a selected basis"),
                 contributing_fact_identities: identities,
             });
         }

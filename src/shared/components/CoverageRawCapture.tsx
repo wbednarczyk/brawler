@@ -69,6 +69,11 @@ export function CoverageRawCapture({ companyId, reloadKey = 0 }: Props) {
           { label: text("From notes"), value: counts.noteLevel },
           { label: text("No name yet"), value: counts.awaitingName },
           { label: text("Conflicting values"), value: counts.conflicting },
+          // Hidden at zero: a mixed-basis document is rare (ADR 0100 dec. 4
+          // amendment, #508) — a permanent zero row would read as noise.
+          ...(counts.otherBasis > 0
+            ? [{ label: text("Other statement basis"), value: counts.otherBasis }]
+            : []),
           // Hidden at zero: an unreadable number is rare, and a permanent
           // zero row would read as noise — but when one exists it MUST be
           // visible, or the "every number has a reason" sentence is false.

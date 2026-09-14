@@ -160,6 +160,7 @@ fn seed_fact(state: &AppState, company_id: &str, metric_key: &str, value: &str, 
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("seed fact");
 }

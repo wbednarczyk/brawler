@@ -40,4 +40,12 @@ unparsed: number,
  * the first, and shorter duration windows superseded by the cumulative
  * figure sharing their end date. Their reason is "already counted once".
  */
-repeated: number, };
+repeated: number, 
+/**
+ * Crosswalk-resolved, primary-statement occurrences dropped because they
+ * belong to the document's OTHER statement basis, or to a genuinely
+ * ambiguous instance (ADR 0100 decisions 1/2, #508) — kept as Layer 1
+ * evidence, never projected. Sum of `non_primary_basis_skipped` +
+ * `ambiguous_basis_skipped` over every period end in the document.
+ */
+otherBasis: number, };

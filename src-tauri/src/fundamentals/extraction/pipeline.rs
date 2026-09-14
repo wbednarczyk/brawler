@@ -18,7 +18,7 @@
 
 use std::collections::BTreeSet;
 
-use super::esef::projection::project_period;
+use super::esef::projection::{project_period, select_primary_basis};
 use super::{fact_set_for_period, ExtractedFact, SourceTier};
 use crate::fundamentals::validation::{
     completeness, validate, Completeness, FactSet, Status, Tolerance, ValidationReport,
@@ -231,10 +231,15 @@ pub fn run_pipeline(input: &PipelineInput<'_>) -> PipelineOutcome {
     // ADR 0100 decisions 1/4/7 (epic #398): the candidate set is a Layer 1
     // projection, not a fresh `parse_esef` pass — see `esef::projection`.
     if let Some(layer1_facts) = input.layer1_facts {
+        // ADR 0100 decision 2 (#508): ONE primary basis, selected once over
+        // the WHOLE document, reused for both the current and the
+        // comparative projection below — never re-derived per call.
+        let basis = select_primary_basis(layer1_facts, input.has_presentation_linkbase);
         let projected = project_period(
             layer1_facts,
             input.period_end,
             input.has_presentation_linkbase,
+            basis,
         );
         if !projected.facts.is_empty() {
             let set = fact_set_from_projection(&projected.facts);
@@ -245,7 +250,8 @@ pub fn run_pipeline(input: &PipelineInput<'_>) -> PipelineOutcome {
                 .prior_period_end
                 .map(|pe| {
                     fact_set_from_projection(
-                        &project_period(layer1_facts, pe, input.has_presentation_linkbase).facts,
+                        &project_period(layer1_facts, pe, input.has_presentation_linkbase, basis)
+                            .facts,
                     )
                 })
                 .filter(|s| !s.is_empty());

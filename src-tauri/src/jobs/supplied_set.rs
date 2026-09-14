@@ -115,7 +115,7 @@ pub fn validate_supplied_set(
     let history_keys: BTreeSet<String> = facts.iter().map(|f| f.metric_key.clone()).collect();
     let histories = state
         .financials()
-        .metric_histories(company_id, &history_keys, fiscal_year, period_type)
+        .metric_histories(company_id, &history_keys, fiscal_year, period_type, None)
         .map_err(|e| e.to_string())?;
     let empty_history: Vec<Decimal> = Vec::new();
 

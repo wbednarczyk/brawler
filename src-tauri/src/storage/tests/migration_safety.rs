@@ -6057,6 +6057,7 @@ mod migration_0144 {
                 attribution: None,
                 measure_window: None,
                 data_quality: None,
+                statement_basis: None,
             },
         )
         .expect("aggregator re-pull should succeed");

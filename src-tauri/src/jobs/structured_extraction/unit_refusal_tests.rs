@@ -163,6 +163,10 @@ fn a_monetary_fact_with_a_bad_unit_is_rejected_not_aborting_the_run() {
         &generation.facts,
         "2025-12-31",
         generation.has_presentation_linkbase,
+        crate::fundamentals::extraction::esef::projection::select_primary_basis(
+            &generation.facts,
+            generation.has_presentation_linkbase,
+        ),
     );
     let candidate_order: Vec<&str> = projected
         .facts

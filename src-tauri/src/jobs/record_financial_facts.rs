@@ -286,6 +286,7 @@ fn write_fact(
             attribution: fact.attribution,
             measure_window: fact.measure_window,
             data_quality: input.data_quality,
+            statement_basis: None,
         })
         .map_err(CommandError::from)?;
 

@@ -420,6 +420,7 @@ fn pull_one_page(
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .collect();
 

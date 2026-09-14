@@ -1788,6 +1788,10 @@ export const plText: Record<string, string> = {
   "From notes": "Z objaśnień",
   "No name yet": "Bez nazwy",
   "Conflicting values": "Sprzeczne wartości",
+  // "Rodzaj sprawozdania" is the investor's own term for jednostkowe
+  // (standalone) vs skonsolidowane (consolidated) — "podstawa" would be a
+  // translator's word, not the one an owner reads in a GPW filing.
+  "Other statement basis": "Inny rodzaj sprawozdania",
   "Positions the program doesn't know yet": "Pozycje, których program jeszcze nie zna",
   "As of a date": "stan na dzień",
   "For the period": "za okres",
