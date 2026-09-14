@@ -880,6 +880,39 @@ struct EventReport {
     unresolved_language: usize,
 }
 
+/// One replayed event's evidence (PR-B floors, #331, ADR 0112): the pre-run
+/// production inputs this event actually saw (`prior_existed`,
+/// `sufficient_history`), what production itself recorded for the attempt
+/// (`acceptance`/`reason_code`/`detail_json`/`run_error`), and — for floor
+/// events — replay's own matched count next to the SAME event's cold-start
+/// matched count, so a `replay_matched` vs `matched` divergence on the
+/// aggregate can be traced back to the specific issuer/event it comes from.
+/// Written only into the private `scoring-report-v2.json` (never the public
+/// metrics file, ADR 0091 dec. 4).
+#[derive(Debug, Clone, Serialize)]
+struct ReplayEventEvidence {
+    event_id: String,
+    issuer_id: String,
+    role: String,
+    prior_existed: bool,
+    sufficient_history: bool,
+    acceptance: Option<String>,
+    reason_code: Option<String>,
+    run_error: Option<String>,
+    /// Floor events: count of `Match` slot outcomes THIS replay run
+    /// produced. Other roles (`warmup`): `None` — replay never scores a
+    /// non-floor event.
+    matched: Option<usize>,
+    /// The same event's cold-start `matched` count, looked up from the
+    /// cold-start [`EventReport`]s the harness already built — `None` when
+    /// the event was never cold-started (`warmup`, which the cold-start pass
+    /// skips entirely).
+    cold_start_matched: Option<usize>,
+    /// The recorded outcome row's own structured detail (failing identity/
+    /// cross-checks and their residuals), when production wrote one.
+    detail_json: Option<String>,
+}
+
 /// One issuer's pooled counts across its floor events — the console's
 /// per-issuer table (finding 2), built from [`EventReport`]s rather than
 /// re-deriving anything from the id strings.
@@ -1068,12 +1101,15 @@ struct ColdStartRun {
     layer1_facts: Vec<Layer1Fact>,
     /// Production's OWN recorded verdict for this attempt
     /// (`fundamentals_provenance().get_extraction_outcome_for_slot`) —
-    /// `(acceptance, reason_code)`. `None` when no period could even be
-    /// derived (no extraction was attempted, so no outcome row exists) or the
-    /// outcome row itself is missing for some other reason; the caller
-    /// synthesizes a `no_period_derived`/`no_outcome_recorded` label for the
-    /// zero-output report in that case rather than leaving it unexplained.
-    recorded_outcome: Option<(String, String)>,
+    /// `(acceptance, reason_code, detail_json)`. `None` when no period could
+    /// even be derived (no extraction was attempted, so no outcome row
+    /// exists) or the outcome row itself is missing for some other reason;
+    /// the caller synthesizes a `no_period_derived`/`no_outcome_recorded`
+    /// label for the zero-output report in that case rather than leaving it
+    /// unexplained. `detail_json` (PR-B floors, #331) is the outcome row's
+    /// own structured detail — the failing identity/cross-checks and their
+    /// residuals — carried through unchanged for replay's per-event evidence.
+    recorded_outcome: Option<(String, String, Option<String>)>,
 }
 
 /// Amendment AD: a run only "exercised" the pre-run production inputs
@@ -1093,7 +1129,8 @@ fn replay_exercised_requires_no_run_error() {
             derived: None,
             run_error: run_error.map(str::to_owned),
             layer1_facts: Vec::new(),
-            recorded_outcome: recorded_outcome.then(|| ("accepted".to_owned(), "ok".to_owned())),
+            recorded_outcome: recorded_outcome
+                .then(|| ("accepted".to_owned(), "ok".to_owned(), None)),
         }
     }
 
@@ -1207,7 +1244,7 @@ fn seed_and_run_event(
             .get_extraction_outcome_for_slot(&company.id, &document.id, *fy, pt, pe)
             .ok()
             .flatten()
-            .map(|o| (o.acceptance, o.reason_code));
+            .map(|o| (o.acceptance, o.reason_code, o.detail_json));
     }
 
     let predictions = read_predictions(state, &company.id);
@@ -2075,8 +2112,8 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                 .as_ref()
                 .map(|(fy, pt, pe)| format!("{fy}/{pt}/{pe}"))
                 .unwrap_or_else(|| "none".to_owned()),
-            acceptance: run.recorded_outcome.as_ref().map(|(a, _)| a.clone()),
-            reason_code: run.recorded_outcome.as_ref().map(|(_, r)| r.clone()),
+            acceptance: run.recorded_outcome.as_ref().map(|(a, _, _)| a.clone()),
+            reason_code: run.recorded_outcome.as_ref().map(|(_, r, _)| r.clone()),
             prediction_count,
             matched: event_matched,
             missing: event_missing,
@@ -2171,12 +2208,13 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     let twin_compared = loose_twin_compared + internal_twin_compared;
 
     // ---- replay (diagnostic; one shared DB per issuer) ----------------------
-    let replay = run_replay(
+    let (replay, replay_events) = run_replay(
         &manifest,
         &gt_by_event,
         config.corpus_dir,
         &issuer_by_id,
         &resolved_map,
+        &event_reports,
     );
 
     let matched = all_slot_outcomes
@@ -2328,6 +2366,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             "derived_vs_labeled_period": derived_by_event,
             "slots": all_slot_details,
             "events": event_reports,
+            "replay_events": replay_events,
             "missing_by_concept": missing_by_concept
                 .iter()
                 .map(|((concept, attribution), count)| serde_json::json!({
@@ -2517,13 +2556,27 @@ fn score_fresh(
 /// event's own extraction call, the latter from the real quarantine gate's
 /// own input (`metric_histories`) over the event's own current-period metric
 /// keys, both inspected before each event runs.
+///
+/// PR-B floors (#331, ADR 0112): also returns one [`ReplayEventEvidence`] per
+/// replayed event — production's own recorded verdict plus, for floor
+/// events, replay's matched count next to the SAME event's cold-start
+/// matched count (looked up from `cold_start_event_reports`, the harness's
+/// own already-built cold-start per-event reports) — so a `replay_matched`
+/// vs `matched` divergence can be traced to the specific event it comes
+/// from. Private evidence only, never the public metrics file.
 fn run_replay(
     manifest: &Manifest,
     gt_by_event: &BTreeMap<&str, Vec<GtSlot>>,
     corpus_dir: &Path,
     issuer_by_id: &BTreeMap<&str, &Issuer>,
     resolved_map: &ResolvedKeyMap,
-) -> Replay {
+    cold_start_event_reports: &[EventReport],
+) -> (Replay, Vec<ReplayEventEvidence>) {
+    let cold_start_by_event: BTreeMap<&str, &EventReport> = cold_start_event_reports
+        .iter()
+        .map(|r| (r.event_id.as_str(), r))
+        .collect();
+
     let mut by_issuer: BTreeMap<&str, Vec<&Event>> = BTreeMap::new();
     for event in manifest
         .events
@@ -2540,6 +2593,7 @@ fn run_replay(
     let mut exercised_prior_check = 0usize;
     let mut exercised_quarantine = 0usize;
     let mut replay_matched = 0usize;
+    let mut replay_events: Vec<ReplayEventEvidence> = Vec::new();
 
     for (issuer_id, mut events) in by_issuer {
         events.sort_by(|a, b| {
@@ -2618,22 +2672,66 @@ fn run_replay(
             // prediction eligible scoring left as FALSE_POSITIVE.
             let filtered = prefilter_predictions(run.predictions, resolved_map);
             let score = score_event(&resolved.current, &filtered.eligible, &resolved_map.panel);
-            if event.role == "floor" {
-                replay_matched += score
+            let event_matched = (event.role == "floor").then(|| {
+                score
                     .slot_outcomes
                     .values()
                     .filter(|o| **o == Outcome::Match)
-                    .count();
+                    .count()
+            });
+            if let Some(m) = event_matched {
+                replay_matched += m;
             }
+
+            let cold_start_matched = cold_start_by_event
+                .get(event.event_id.as_str())
+                .map(|r| r.matched);
+            let acceptance = run.recorded_outcome.as_ref().map(|(a, _, _)| a.clone());
+            let reason_code = run.recorded_outcome.as_ref().map(|(_, r, _)| r.clone());
+            let detail_json = run
+                .recorded_outcome
+                .as_ref()
+                .and_then(|(_, _, d)| d.clone());
+
+            // Private console, like the existing per-event RUN ERROR/NOTE
+            // lines above — only floor events have a cold-start matched
+            // count to diff against.
+            if let (Some(replay_m), Some(cold_m)) = (event_matched, cold_start_matched) {
+                if replay_m != cold_m {
+                    eprintln!(
+                        "replay diff: {} cold={cold_m} replay={replay_m} acceptance={} reason={} prior_existed={prior_existed}",
+                        event.event_id,
+                        acceptance.as_deref().unwrap_or("none"),
+                        reason_code.as_deref().unwrap_or("none"),
+                    );
+                }
+            }
+
+            replay_events.push(ReplayEventEvidence {
+                event_id: event.event_id.clone(),
+                issuer_id: issuer_id.to_owned(),
+                role: event.role.clone(),
+                prior_existed,
+                sufficient_history,
+                acceptance,
+                reason_code,
+                run_error: run.run_error.clone(),
+                matched: event_matched,
+                cold_start_matched,
+                detail_json,
+            });
         }
     }
 
-    Replay {
-        events: events_replayed,
-        exercised_prior_check,
-        exercised_quarantine,
-        replay_matched,
-    }
+    (
+        Replay {
+            events: events_replayed,
+            exercised_prior_check,
+            exercised_quarantine,
+            replay_matched,
+        },
+        replay_events,
+    )
 }
 
 /// The company id for an issuer already seeded into `state` (replay reuses one
@@ -3327,6 +3425,132 @@ fn per_event_section_is_present_in_the_report() {
     assert_eq!(floor_pl["missing"], 0);
     assert!(floor_pl["prediction_count"].as_u64().unwrap() > 0);
     assert!(floor_pl["run_error"].is_null());
+}
+
+/// PR-B floors (#331, ADR 0112): `run_replay` records one
+/// [`ReplayEventEvidence`] per replayed event into the PRIVATE
+/// `scoring-report-v2.json` (`replay_events`) — warmup + both floor events
+/// (the twin is excluded from replay), `matched` set for the floor events,
+/// `cold_start_matched` populated from the cold-start per-event report ONLY
+/// for events the cold-start pass actually ran (never `warmup`, which it
+/// skips). The public `metrics.json` must carry no trace of it — its
+/// top-level key set stays byte-identical to before this evidence existed
+/// (ADR 0091 dec. 4: only `aggregates` ever leaves the private dir).
+#[test]
+fn replay_events_are_private_only_evidence() {
+    let dir = materialize_sample_corpus();
+    let out = dir.join("metrics.json");
+    let key_map_path = local_key_map_path();
+    let aggregates = run_measurement(MeasurementConfig {
+        corpus_dir: &dir,
+        key_map_path: &key_map_path,
+        metrics_out: Some(&out),
+        keyed_baseline: None,
+        required: false,
+    })
+    .expect("sample corpus must measure");
+
+    let metrics_json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out).expect("metrics file"))
+            .expect("metrics json");
+    let top_level_keys: BTreeSet<&str> = metrics_json
+        .as_object()
+        .expect("metrics json is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        top_level_keys,
+        BTreeSet::from([
+            "profile",
+            "status",
+            "measurement_version",
+            "gt_version",
+            "key_map_version",
+            "normalization_version",
+            "registry_hash",
+            "events",
+            "floor_events",
+            "issuers",
+            "gt_slots",
+            "unverified",
+            "matched",
+            "previously_correct_slots_lost",
+            "false_positives",
+            "zero_output_events",
+            "availability_all_periods",
+            "layer1_capture",
+            "labeled_capability",
+            "sensitivity",
+            "twin_agreement",
+            "replay",
+        ]),
+        "the public metrics.json must carry no new top-level field — replay_events is private-only"
+    );
+
+    let report: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("scoring-report-v2.json")).expect("scoring report"),
+    )
+    .expect("scoring report json");
+    let replay_events = report["replay_events"]
+        .as_array()
+        .expect("replay_events must be an array in the private report");
+    // warmup + floor_pl + floor_package — twin_en is excluded from replay.
+    assert_eq!(replay_events.len(), aggregates.replay.events);
+    assert_eq!(replay_events.len(), 3);
+
+    let expected_evidence_keys: BTreeSet<&str> = BTreeSet::from([
+        "event_id",
+        "issuer_id",
+        "role",
+        "prior_existed",
+        "sufficient_history",
+        "acceptance",
+        "reason_code",
+        "run_error",
+        "matched",
+        "cold_start_matched",
+        "detail_json",
+    ]);
+    for entry in replay_events {
+        let keys: BTreeSet<&str> = entry
+            .as_object()
+            .expect("replay event entry is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys, expected_evidence_keys, "entry {entry:?}");
+    }
+
+    let warmup = replay_events
+        .iter()
+        .find(|e| e["event_id"] == "iss_01/FY2024/pl/consolidated/warmup/v1")
+        .expect("warmup event must be present");
+    assert_eq!(warmup["role"], "warmup");
+    assert!(
+        warmup["matched"].is_null(),
+        "warmup is never scored as a floor event"
+    );
+    assert!(
+        warmup["cold_start_matched"].is_null(),
+        "warmup was never cold-started — the cold-start pass skips it entirely"
+    );
+
+    let floor_pl = replay_events
+        .iter()
+        .find(|e| e["event_id"] == "iss_01/FY2025/pl/consolidated/v1")
+        .expect("floor_pl event must be present");
+    assert_eq!(floor_pl["role"], "floor");
+    assert_eq!(floor_pl["issuer_id"], "iss_01");
+    assert_eq!(floor_pl["acceptance"], "accepted");
+    assert!(
+        floor_pl["matched"].is_number(),
+        "floor replay entries carry a numeric matched count"
+    );
+    assert_eq!(
+        floor_pl["cold_start_matched"], 16,
+        "floor_pl was cold-started — its cold-start matched count must be looked up from the harness's own per-event report"
+    );
 }
 
 /// Test 2d (fix wave 2, finding 2) — the per-issuer console table's own

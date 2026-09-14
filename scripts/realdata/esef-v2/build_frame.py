@@ -31,6 +31,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import calendar
 import hashlib
 import json
 import re
@@ -200,6 +201,20 @@ def months_between(start: str, end: str) -> int:
     return round(days / 30.4368)
 
 
+def _fiscal_month_of_start(start: str) -> int:
+    """A duration's start date, normalized to the fiscal month it actually
+    begins. #331 PR-B: filings commonly tag an annual/comparative duration
+    as `2022-12-31 -> 2023-12-31` (start = the LAST day of the prior month)
+    rather than `2023-01-01` -- pooling raw start months would then infer
+    December as the fiscal start instead of January. A start on the last
+    day of its month counts as the FIRST day of the next month (wrapping
+    December to January); every other start counts as its own month."""
+    year, month, day = (int(part) for part in start.split("-"))
+    if day == calendar.monthrange(year, month)[1]:
+        return 1 if month == 12 else month + 1
+    return month
+
+
 def classify_period_type(months: float, end_month: int, fiscal_start_month: int = 1) -> str:
     """`fiscal_start_month` (1-12) is the fiscal year's own first month,
     established from evidence elsewhere in the same filing (amendment L: "a
@@ -224,9 +239,11 @@ def classify_file(instances: list[dict], duration_concepts: set[str], doc_title:
     package) from filing evidence pooled across every member: primary period
     (longest current duration ending at the latest end date, chosen from
     every member's duration-concept occurrences), fiscal-year start (the
-    most common start month among ALL duration candidates in the file --
-    cumulative FY/H1/9M periods all start there), basis (member -> outer ->
-    cover-page precedence, astra r1 finding 8), language (xml:lang -> filename)."""
+    most common NORMALIZED start month among ALL duration candidates in the
+    file -- cumulative FY/H1/9M periods all start there; #331 PR-B:
+    `_fiscal_month_of_start` folds a last-day-of-prior-month start into its
+    true fiscal month before counting), basis (member -> outer -> cover-page
+    precedence, astra r1 finding 8), language (xml:lang -> filename)."""
     pooled: list[tuple[dict, dict]] = [
         (instance, occ)
         for instance in instances
@@ -272,7 +289,7 @@ def classify_file(instances: list[dict], duration_concepts: set[str], doc_title:
     primary_instance, chosen = max(at_latest, key=lambda pair: months_between(pair[1]["period"]["start"], pair[1]["period"]["end"]))
     start, end = chosen["period"]["start"], chosen["period"]["end"]
     months = months_between(start, end)
-    fiscal_start_month = Counter(int(occ["period"]["start"].split("-")[1]) for _inst, occ in pooled).most_common(1)[0][0]
+    fiscal_start_month = Counter(_fiscal_month_of_start(occ["period"]["start"]) for _inst, occ in pooled).most_common(1)[0][0]
     period_type = classify_period_type(months, int(end.split("-")[1]), fiscal_start_month)
     fiscal_year = int(end.split("-")[0])
 
