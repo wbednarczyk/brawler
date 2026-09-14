@@ -36,12 +36,23 @@ Three subcommands:
            `machine`), the disputed value never applied; unsettled, or
            multiple readers disagreeing -> stays/becomes `unverified`. The
            production app's extraction is never consulted; the only values
-           ever written are a reader's own, and only after validation.
+           ever written are a reader's own, and only after validation. An
+           optional `--decisions <path>` file (#331 PR-B) lets the owner
+           override one genuine disagreement the OTHER way, with a reason:
+           `keep: machine` -> `adjudicated_keep_machine`, the slot untouched;
+           `keep: reader` -> the apply path (`adjudicated`), but ONLY when a
+           reader also supplied an evidence_anchor -- an evidence-free
+           `keep: reader` aborts the whole compare with NO write (a reader
+           value is applied only with filing evidence). Either kind records
+           `{keep, reason, decided_by, decisions_sha256}` on the slot's
+           `resolution_ref` and on the resolution entry. A decision on an
+           agreeing or unsettled task, or naming an unknown task id, also
+           aborts the whole compare with NO writes.
 
 Usage:
     python3 adjudicate.py prepare --esef-v2-dir <dir> --seed <int>
     python3 adjudicate.py seal --esef-v2-dir <dir> <reader> <answers.json>
-    python3 adjudicate.py compare --esef-v2-dir <dir>
+    python3 adjudicate.py compare --esef-v2-dir <dir> [--decisions <path>]
 """
 from __future__ import annotations
 
@@ -53,15 +64,17 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from label_esef_v2 import build_slot_id, currency_from_unit
+from label_esef_v2 import attribution_from_concept_name, build_slot_id, currency_from_unit
 
 AGREEMENT_SAMPLE_FRACTION = 0.10
 MIN_TASKS = 10
 PROTOCOL_VERSION = 1
+REREAD_CLASSES = ("attribution_dimension", "attribution_name")
 NORMALIZED_ANSWER_FIELDS = ("value", "currency", "basis", "attribution", "fiscal_year", "period_type")
 VALID_BASES = {"consolidated", "standalone", "unknown"}
 VALID_ATTRIBUTIONS = {"total", "owners_of_parent", "nci"}
 VALID_PERIOD_TYPES = {"FY", "H1", "Q1", "Q2", "Q3", "Q4", "unknown"}
+VALID_DECISION_KEEP = {"machine", "reader"}
 
 
 class SealingClosedError(RuntimeError):
@@ -100,16 +113,74 @@ class InvalidAnswerError(RuntimeError):
     the whole compare transaction fails, no partial writes."""
 
 
-def _adjudication_dir(esef_v2_dir: Path) -> Path:
-    return esef_v2_dir / "adjudication"
+class InvalidDecisionError(RuntimeError):
+    """Raised when the optional owner decisions file (#331 PR-B) is
+    malformed -- an out-of-domain `keep`, an empty `reason`, a decision
+    naming a task id absent from tasks_index.json, or a decision on a task
+    that agrees or is unsettled (a decision must answer a real
+    disagreement) -- all abort `compare` before any write."""
+
+
+def _adjudication_dir(esef_v2_dir: Path, round_num: int = 1) -> Path:
+    """Round 1 keeps the pre-existing flat `adjudication/` layout (smaller
+    change, #331 PR-B); round N>1 writes into its own `adjudication/round-N/`
+    -- tasks, index, lock, seals and resolutions all per round."""
+    base = esef_v2_dir / "adjudication"
+    return base if round_num == 1 else base / f"round-{round_num}"
 
 
 def _file_sha256_or_none(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
 
 
-def prepare(esef_v2_dir: Path, seed: int) -> dict:
-    adjudication_dir = _adjudication_dir(esef_v2_dir)
+def _occurrences_by_id(esef_v2_dir: Path) -> dict[str, dict]:
+    path = esef_v2_dir / "occurrences_v2.json"
+    if not path.exists():
+        return {}
+    return {o["occurrence_id"]: o for o in json.loads(path.read_text(encoding="utf-8"))}
+
+
+def _attribution_dimension_for_slot(slot: dict, occurrences_by_id: dict) -> dict | str | None:
+    """The `{"axis":.., "member":..}` pair a slot's contributing occurrences
+    evidence for the attribution axis -- `None` when none carry a dimension,
+    or the literal string `"ambiguous"` when they disagree on the member
+    (#331 PR-B: never invent one)."""
+    members = set()
+    for oid in slot["contributing_occurrence_ids"]:
+        occ = occurrences_by_id.get(oid)
+        for d in (occ.get("dimensions") if occ else None) or ():
+            members.add((d.get("axis"), d.get("member")))
+    if not members:
+        return None
+    if len(members) > 1:
+        return "ambiguous"
+    axis, member = next(iter(members))
+    return {"axis": axis, "member": member}
+
+
+def _slot_has_dimensioned_occurrence(slot: dict, occurrences_by_id: dict) -> bool:
+    return any((occurrences_by_id.get(oid) or {}).get("dimensions") for oid in slot["contributing_occurrence_ids"])
+
+
+def _slots_in_reread_class(reread_class: str, slots: list[dict], occurrences_by_id: dict) -> list[dict]:
+    """LABELING.md step 6 (#331 PR-B): the two systematic labeling-error
+    classes found in the frozen agreement sample, each re-read IN FULL
+    before any floor is pinned."""
+    if reread_class == "attribution_dimension":
+        return [s for s in slots if _slot_has_dimensioned_occurrence(s, occurrences_by_id)]
+    if reread_class == "attribution_name":
+        return [
+            s
+            for s in slots
+            if not s["mapped"]
+            and not _slot_has_dimensioned_occurrence(s, occurrences_by_id)
+            and attribution_from_concept_name(s["concept_local"]) is not None
+        ]
+    raise ValueError(f"unknown reread class {reread_class!r} -- expected one of {REREAD_CLASSES}")
+
+
+def prepare(esef_v2_dir: Path, seed: int, round_num: int = 1, reread_class: str | list[str] | None = None) -> dict:
+    adjudication_dir = _adjudication_dir(esef_v2_dir, round_num)
     if (adjudication_dir / "tasks.lock").exists():
         raise PrepareExistsError(
             f"{adjudication_dir / 'tasks.lock'} already exists -- task/index/GT bindings are frozen by hash "
@@ -134,20 +205,42 @@ def prepare(esef_v2_dir: Path, seed: int) -> dict:
         needed = min(MIN_TASKS - len(chosen), len(remaining_pool))
         chosen += [(s, "agreement_sample") for s in remaining_pool[:needed]]
 
-    rng.shuffle(chosen)  # disagreement and agreement-sample tasks are indistinguishable, in random order
+    occurrences_by_id = _occurrences_by_id(esef_v2_dir)
+
+    class_reread_count = 0
+    # LABELING.md step 6: every named class (one name or several), added on
+    # top of the seeded base sample, deduped by slot (still
+    # indistinguishable -- shuffled together below).
+    reread_classes = [reread_class] if isinstance(reread_class, str) else list(reread_class or [])
+    for name in reread_classes:
+        chosen_slot_ids = {s["slot_id"] for s, _kind in chosen}
+        reread_slots = [
+            s for s in _slots_in_reread_class(name, gt["slots"], occurrences_by_id) if s["slot_id"] not in chosen_slot_ids
+        ]
+        chosen += [(s, "class_reread") for s in reread_slots]
+        class_reread_count += len(reread_slots)
+
+    rng.shuffle(chosen)  # disagreement / agreement-sample / class-reread tasks are indistinguishable, in random order
 
     tasks_dir = adjudication_dir / "tasks"
     tasks_dir.mkdir(parents=True, exist_ok=True)
 
     lock_tasks: list[dict] = []
     index: dict[str, dict] = {}
+    ambiguous_attribution_dimension = 0
     for i, (slot, kind) in enumerate(chosen, start=1):
         task_id = f"task_{i:04d}"
+        attribution_dimension = _attribution_dimension_for_slot(slot, occurrences_by_id)
+        if attribution_dimension == "ambiguous":
+            ambiguous_attribution_dimension += 1
+            attribution_dimension = None
         task = {
             "task_id": task_id,
             "event_id": slot["event_id"],
             "package_member": slot.get("package_member"),
             "concept_local": slot["concept_local"],
+            "attribution": slot["attribution"],  # slot identity, never a value (#331 PR-B)
+            "attribution_dimension": attribution_dimension,
             "basis": slot["basis"],
             "window": slot["window"],
             "fiscal_year": slot["fiscal_year"],
@@ -173,7 +266,13 @@ def prepare(esef_v2_dir: Path, seed: int) -> dict:
         "occurrences_sha256": _file_sha256_or_none(esef_v2_dir / "occurrences_v2.json"),
     }
     (adjudication_dir / "tasks.lock").write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
-    return {"tasks": len(chosen), "disagreements": len(disagreements), "agreement_sample": len(sample)}
+    return {
+        "tasks": len(chosen),
+        "disagreements": len(disagreements),
+        "agreement_sample": len(sample),
+        "class_reread": class_reread_count,
+        "ambiguous_attribution_dimension": ambiguous_attribution_dimension,
+    }
 
 
 def _verify_bindings(esef_v2_dir: Path, adjudication_dir: Path, lock: dict) -> None:
@@ -190,8 +289,8 @@ def _verify_bindings(esef_v2_dir: Path, adjudication_dir: Path, lock: dict) -> N
             raise BindingMismatchError(f"{path} no longer matches the hash tasks.lock bound it to at prepare time")
 
 
-def seal(esef_v2_dir: Path, reader: str, answers_path: Path) -> list[Path]:
-    adjudication_dir = _adjudication_dir(esef_v2_dir)
+def seal(esef_v2_dir: Path, reader: str, answers_path: Path, round_num: int = 1) -> list[Path]:
+    adjudication_dir = _adjudication_dir(esef_v2_dir, round_num)
     if (adjudication_dir / "resolutions.json").exists():
         raise SealingClosedError("compare has already run for this corpus; sealing is closed")
 
@@ -276,10 +375,17 @@ def _find_unregistered_seals(adjudication_dir: Path, registered_paths: set[Path]
     """A directory scan used ONLY to detect an EXTRA sealed file that
     `seals.lock` never registered -- the registry (not the directory)
     remains the source of truth for which seals to actually read (amendment
-    AB). Returns the first offending path, or `None`."""
+    AB). Returns the first offending path, or `None`. Round 1's flat layout
+    must not descend into a later round's own `round-N/` subdirectory --
+    round isolation is otherwise asymmetric (#331 PR-B review finding 2):
+    round N's scan never sees round 1's files (it starts inside round-N/),
+    but round 1's scan, unbounded, walked into round-N/ and rejected its
+    legitimate seals as unregistered."""
     for path in adjudication_dir.rglob("*.json"):
         if path.parent == adjudication_dir or path.parent.name == "tasks":
             continue  # tasks.lock / tasks_index.json / seals.lock / resolutions.json / adjudication/tasks/*
+        if path.relative_to(adjudication_dir).parts[0].startswith("round-"):
+            continue  # a later round's own subtree -- never this round's concern
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
@@ -365,8 +471,33 @@ def _answer_normalized_tuple(answer: dict) -> tuple | None:
     )
 
 
-def compare(esef_v2_dir: Path) -> dict:
-    adjudication_dir = _adjudication_dir(esef_v2_dir)
+def _load_decisions(decisions_path: Path | None, index: dict) -> tuple[dict[str, dict], str | None]:
+    """Loads and validates the optional owner decisions file (#331 PR-B) --
+    the adjudicator overriding a genuine disagreement the OTHER way (the
+    machine label is right after all), with a reason, instead of the
+    automatic evidence-based resolution. Every check here runs before
+    `compare` touches anything: an unknown task id or a malformed
+    `keep`/`reason` aborts with no writes, same spirit as an invalid answer
+    (amendment W). Returns `({}, None)` when no file is given."""
+    if decisions_path is None:
+        return {}, None
+    raw = decisions_path.read_bytes()
+    decisions = json.loads(raw).get("decisions", {})
+    unknown = sorted(task_id for task_id in decisions if task_id not in index)
+    if unknown:
+        raise InvalidDecisionError(f"decision(s) name task id(s) not in tasks_index.json: {', '.join(unknown)}")
+    for task_id, decision in decisions.items():
+        if decision.get("keep") not in VALID_DECISION_KEEP:
+            raise InvalidDecisionError(
+                f"decision for {task_id!r}: keep must be one of {sorted(VALID_DECISION_KEEP)}, got {decision.get('keep')!r}"
+            )
+        if not isinstance(decision.get("reason"), str) or not decision["reason"].strip():
+            raise InvalidDecisionError(f"decision for {task_id!r}: reason must be a non-empty string")
+    return decisions, hashlib.sha256(raw).hexdigest()
+
+
+def compare(esef_v2_dir: Path, round_num: int = 1, decisions_path: Path | None = None) -> dict:
+    adjudication_dir = _adjudication_dir(esef_v2_dir, round_num)
     lock = json.loads((adjudication_dir / "tasks.lock").read_text(encoding="utf-8"))
     _verify_bindings(esef_v2_dir, adjudication_dir, lock)
 
@@ -386,6 +517,7 @@ def compare(esef_v2_dir: Path) -> dict:
         task_units[task_id] = json.loads(task_bytes).get("unit")
 
     index = json.loads((adjudication_dir / "tasks_index.json").read_text(encoding="utf-8"))
+    decisions, decisions_sha256 = _load_decisions(decisions_path, index)
     gt = json.loads((esef_v2_dir / "ground_truth_v2.json").read_text(encoding="utf-8"))
     slots_by_id = {s["slot_id"]: s for s in gt["slots"]}
 
@@ -431,6 +563,7 @@ def compare(esef_v2_dir: Path) -> dict:
         evidence = next((a.get("evidence_anchor") for _r, a in readers if a.get("evidence_anchor")), None)
         any_unsettled = any(a.get("unverified") for _r, a in readers)
         answer_tuples = {_answer_normalized_tuple(a) for _r, a in readers if not a.get("unverified")}
+        decision = decisions.get(task_id)
 
         # Uniform outcomes regardless of why the task was picked (a
         # disagreement or an agreement-sample check are indistinguishable by
@@ -442,31 +575,79 @@ def compare(esef_v2_dir: Path) -> dict:
         # systematic-error signal, LABELING.md step 6); a differing read
         # with NO evidence anchor becomes `unverified` -- amendment W: a
         # contradicted machine label never stays `machine` -- without ever
-        # applying the disputed value.
+        # applying the disputed value. #331 PR-B: an owner decision on a
+        # genuine disagreement (any of the differing branches above)
+        # overrides the automatic resolution either way; a decision on an
+        # agreeing or unsettled task is refused instead (it must answer a
+        # real disagreement).
         if any_unsettled or len(answer_tuples) != 1 or None in answer_tuples:
+            if decision is not None:
+                raise InvalidDecisionError(f"{task_id}: decision targets an unsettled task -- a decision must answer a real disagreement")
             outcome, new_verification = "unsettled", "unverified"
         else:
             answer_tuple = next(iter(answer_tuples))
             if answer_tuple == slot_tuple:
+                if decision is not None:
+                    raise InvalidDecisionError(f"{task_id}: decision targets an agreeing task -- a decision must answer a real disagreement")
                 outcome, new_verification = "agree", "second_read"
-            elif evidence is None:
+            elif decision is not None and decision["keep"] == "machine":
+                outcome, new_verification = "adjudicated_keep_machine", "adjudicated"
+                slot["resolution_ref"] = {
+                    "keep": "machine",
+                    "reason": decision["reason"],
+                    "decided_by": decision.get("decided_by"),
+                    "decisions_sha256": decisions_sha256,
+                }
+            elif decision is not None and decision["keep"] == "reader" and evidence is None:
+                # A reader-override decision with NO reader evidence_anchor
+                # would apply an unverified value on the owner's say-so
+                # alone -- refused before any write; a reader value is
+                # applied only with filing evidence (#331 PR-B review
+                # finding 1).
+                raise InvalidDecisionError(
+                    f"{task_id}: decision keeps the reader value but no reader supplied an evidence_anchor -- "
+                    "a reader override is applied only with filing evidence"
+                )
+            elif evidence is None and decision is None:
                 outcome, new_verification = "rejected_missing_evidence", "unverified"
             else:
                 outcome, new_verification = "adjudicated", "adjudicated"
                 _apply_adjudicated_answer(slot, answer_tuple)
+                if decision is not None:
+                    # `_apply_adjudicated_answer` clears `resolution_ref` --
+                    # restore it with the decision's reason AFTER the apply
+                    # (#331 PR-B review finding 1: a reader-override decision
+                    # must not lose its reason).
+                    slot["resolution_ref"] = {
+                        "keep": "reader",
+                        "reason": decision["reason"],
+                        "decided_by": decision.get("decided_by"),
+                        "decisions_sha256": decisions_sha256,
+                    }
 
         slot["verification"] = new_verification
-        resolutions.append(
-            {
-                "task_id": task_id,
-                "slot_id": slot["slot_id"],  # re-read after a possible re-key
-                "event_id": meta["event_id"],
-                "task_kind": meta["task_kind"],
-                "outcome": outcome,
-                "evidence_anchor": evidence,
-                "readers": sorted(r for r, _ in readers),
-            }
-        )
+        resolution = {
+            "task_id": task_id,
+            "slot_id": slot["slot_id"],  # re-read after a possible re-key
+            "event_id": meta["event_id"],
+            "task_kind": meta["task_kind"],
+            "outcome": outcome,
+            "evidence_anchor": evidence,
+            "readers": sorted(r for r, _ in readers),
+        }
+        if decision is not None:
+            # Auditability: which decision (and decisions file) drove this
+            # resolution -- per-resolution, not top-level, so
+            # resolutions.json stays the same array shape for every task
+            # compare never decided. Reaching here with `decision is not
+            # None` means the branches above already resolved to
+            # `adjudicated_keep_machine` or `adjudicated` (every other
+            # decision path raised before this point).
+            resolution["keep"] = decision["keep"]
+            resolution["reason"] = decision["reason"]
+            resolution["decided_by"] = decision.get("decided_by")
+            resolution["decisions_sha256"] = decisions_sha256
+        resolutions.append(resolution)
 
     _assert_unique_slot_ids(gt["slots"])
     (adjudication_dir / "resolutions.json").write_text(
@@ -518,44 +699,62 @@ def _assert_unique_slot_ids(slots: list[dict]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--esef-v2-dir", required=True)
+    parser.add_argument(
+        "--round", type=int, default=1, dest="round_num",
+        help="adjudication round (#331 PR-B): round 1 uses the flat adjudication/ layout, round N>1 writes under adjudication/round-N/",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_prepare = sub.add_parser("prepare")
     p_prepare.add_argument("--seed", type=int, required=True)
+    p_prepare.add_argument(
+        "--reread-class", choices=REREAD_CLASSES, action="append", default=None,
+        help="LABELING.md step 6: add every slot of this systematic-error class on top of the seeded sample (repeatable)",
+    )
 
     p_seal = sub.add_parser("seal")
     p_seal.add_argument("reader")
     p_seal.add_argument("answers", type=Path)
 
-    sub.add_parser("compare")
+    p_compare = sub.add_parser("compare")
+    p_compare.add_argument(
+        "--decisions", type=Path, default=None, dest="decisions_path",
+        help="owner decisions file (#331 PR-B): overrides a specific genuine disagreement the other way "
+        "(keep: machine|reader, with a reason) instead of the automatic evidence-based resolution",
+    )
 
     args = parser.parse_args(argv)
     esef_v2_dir = Path(args.esef_v2_dir)
 
     if args.command == "prepare":
         try:
-            result = prepare(esef_v2_dir, args.seed)
+            result = prepare(esef_v2_dir, args.seed, round_num=args.round_num, reread_class=args.reread_class)
         except PrepareExistsError as exc:
             print(f"adjudicate prepare: refused -- {exc}")
             return 1
+        reread_note = f", {result['class_reread']} class-reread ({', '.join(args.reread_class)})" if args.reread_class else ""
         print(f"adjudicate prepare: {result['tasks']} tasks ({result['disagreements']} disagreements, "
-              f"{result['agreement_sample']} agreement-sample)")
+              f"{result['agreement_sample']} agreement-sample{reread_note})")
+        if result["ambiguous_attribution_dimension"]:
+            print(f"adjudicate prepare: {result['ambiguous_attribution_dimension']} task(s) have contributing "
+                  "occurrences that disagree on the attribution-dimension member -- attribution_dimension left null")
     elif args.command == "seal":
         try:
-            sealed = seal(esef_v2_dir, args.reader, args.answers)
+            sealed = seal(esef_v2_dir, args.reader, args.answers, round_num=args.round_num)
         except (SealingClosedError, ResealError, TaskHashMismatchError, BindingMismatchError) as exc:
             print(f"adjudicate seal: refused -- {exc}")
             return 1
         print(f"adjudicate seal: sealed {len(sealed)} event file(s) for reader {args.reader!r}")
     elif args.command == "compare":
         try:
-            result = compare(esef_v2_dir)
+            result = compare(esef_v2_dir, round_num=args.round_num, decisions_path=args.decisions_path)
         except (
             IncompleteAdjudicationError,
             BindingMismatchError,
             SealHashMismatchError,
             InvalidAnswerError,
             TaskHashMismatchError,
+            InvalidDecisionError,
         ) as exc:
             print(f"adjudicate compare: refused -- {exc}")
             return 1

@@ -137,6 +137,79 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(result["period_type"], "Q2")
         self.assertEqual(result["fiscal_year"], 2025)
 
+    def test_fiscal_start_normalizes_last_day_of_prior_month(self):
+        # #331 PR-B: a filing tags its annual AND comparative durations with
+        # a start dated the LAST day of the prior month (2022-12-31 ->
+        # 2023-12-31) rather than the fiscal month's own first day
+        # (2023-01-01). Pooling raw start months would infer a December
+        # fiscal start; normalized, both contexts start in January.
+        import esef_ixbrl as ix
+
+        doc = make_instance(
+            contexts=(
+                context("c_current", start="2022-12-31", end="2023-12-31")
+                + context("c_cmp", start="2021-12-31", end="2022-12-31")
+            ),
+            units=unit("u1"),
+            facts=(
+                non_fraction("ifrs-full:Revenue", "c_current", "u1", "1000")
+                + non_fraction("ifrs-full:Revenue", "c_cmp", "u1", "900")
+            ),
+        )
+        inst = ix.parse_instance(doc)
+        inst["package_member"] = None
+        inst["raw_bytes"] = doc
+        result = bf.classify_file([inst], self.duration, "ZZZ", "zzz.xhtml")
+        self.assertEqual(result["fiscal_start_month"], 1)
+        self.assertEqual(result["period_type"], "FY")
+        self.assertEqual(result["fiscal_year"], 2023)
+
+    def test_fiscal_start_normalizes_last_day_of_september_to_october(self):
+        # October-September filer: annual/comparative durations tagged with
+        # a start on the LAST day of September normalize to October, the
+        # true fiscal start -- not September.
+        import esef_ixbrl as ix
+
+        doc = make_instance(
+            contexts=(
+                context("c_current", start="2022-09-30", end="2023-09-30")
+                + context("c_cmp", start="2021-09-30", end="2022-09-30")
+            ),
+            units=unit("u1"),
+            facts=(
+                non_fraction("ifrs-full:Revenue", "c_current", "u1", "1000")
+                + non_fraction("ifrs-full:Revenue", "c_cmp", "u1", "900")
+            ),
+        )
+        inst = ix.parse_instance(doc)
+        inst["package_member"] = None
+        inst["raw_bytes"] = doc
+        result = bf.classify_file([inst], self.duration, "ZZZ", "zzz.xhtml")
+        self.assertEqual(result["fiscal_start_month"], 10)
+
+    def test_fiscal_start_keeps_first_day_of_month_start_unchanged(self):
+        # A start already on the FIRST day of a month (October 1) is not a
+        # last-day-of-prior-month tagging artifact -- it counts as its own
+        # month, unchanged.
+        import esef_ixbrl as ix
+
+        doc = make_instance(
+            contexts=(
+                context("c_current", start="2022-10-01", end="2023-09-30")
+                + context("c_cmp", start="2021-10-01", end="2022-09-30")
+            ),
+            units=unit("u1"),
+            facts=(
+                non_fraction("ifrs-full:Revenue", "c_current", "u1", "1000")
+                + non_fraction("ifrs-full:Revenue", "c_cmp", "u1", "900")
+            ),
+        )
+        inst = ix.parse_instance(doc)
+        inst["package_member"] = None
+        inst["raw_bytes"] = doc
+        result = bf.classify_file([inst], self.duration, "ZZZ", "zzz.xhtml")
+        self.assertEqual(result["fiscal_start_month"], 10)
+
     def test_irregular_duration_is_unknown(self):
         # 2-4/5-7/8-10/11-13 months are contiguous (Q1-4/H1/Q3-YTD/FY) --
         # only a span outside that whole 2-13 month range is irregular.

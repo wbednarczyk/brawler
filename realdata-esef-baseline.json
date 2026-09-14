@@ -1,5 +1,49 @@
 {
-  "_comment": "ESEF measurement v2 ratchet baseline (ADR 0112, #331). Aggregate NUMBERS ONLY — never a ticker, title, id, filename or value (ADR 0091 dec. 4). Measured by src-tauri/src/storage/tests/real_data_esef_v2.rs on the owner's private corpus, judged by scripts/check/realdata-ratchet.mjs --profile esef, run on demand via `make realdata-esef-check` (advisory ritual, never a required check). `status: unmeasured` = PR-A placeholder: the ratchet refuses to judge it; PR-B replaces it with the first measured run (measurement_version 1) and the private keyed baseline is promoted with `make realdata-esef-promote`.",
+  "_comment": "ESEF measurement v2 ratchet baseline (ADR 0112, #331). Aggregate NUMBERS ONLY — never a ticker, title, id, filename or value (ADR 0091 dec. 4). Measured 2026-09-14 by src-tauri/src/storage/tests/real_data_esef_v2.rs on the owner's private corpus (2026-09-10 snapshot; ground truth second-read in two blinded adjudication rounds), judged by scripts/check/realdata-ratchet.mjs --profile esef via `make realdata-esef-check` (advisory ritual, never a required check). The matching private keyed baseline was promoted with `make realdata-esef-promote`; any change to the key map, normalization list, ground truth or corpus bumps measurement_version and needs a deliberate rebaseline.",
   "profile": "esef",
-  "status": "unmeasured"
+  "status": "measured",
+  "measurement_version": 1,
+  "gt_version": "1",
+  "key_map_version": 1,
+  "normalization_version": 1,
+  "registry_hash": "1ba6e3ec615866f7950a9c9c1b6012d77e7f7962a16ece28c6eed0344de7df16",
+  "events": 20,
+  "floor_events": 20,
+  "issuers": 23,
+  "gt_slots": 310,
+  "unverified": 0,
+  "matched": 310,
+  "previously_correct_slots_lost": 0,
+  "false_positives": 0,
+  "zero_output_events": 0,
+  "availability_all_periods": {
+    "available": 310,
+    "eligible": 673
+  },
+  "layer1_capture": {
+    "captured": 4931,
+    "eligible": 4932,
+    "value_correct": 3961
+  },
+  "labeled_capability": {
+    "matched": 310,
+    "eligible": 5201
+  },
+  "sensitivity": {
+    "matched": 250,
+    "gt_slots": 250,
+    "excluded": 60,
+    "precision_matched": 250,
+    "precision_denominator": 250
+  },
+  "twin_agreement": {
+    "agree": 0,
+    "compared": 0
+  },
+  "replay": {
+    "events": 26,
+    "exercised_prior_check": 3,
+    "exercised_quarantine": 0,
+    "replay_matched": 294
+  }
 }

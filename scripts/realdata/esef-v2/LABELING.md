@@ -23,11 +23,18 @@ an event is disqualified for that event.
    evidence anchor quoted, before labeling.
 2. **First read** — `label_esef_v2.py` emits `occurrences_v2.json` (immutable) and derives
    `ground_truth_v2.json` slots (`verification: machine`). Conflicting duplicate occurrences become
-   `unverified` with both values kept in `resolution_ref`.
+   `unverified` with both values kept in `resolution_ref`. Attribution convention (owner-confirmed
+   2026-09-14): attribution comes only from an attribution-axis dimension member or from a concept
+   name ending in `AttributableToOwnersOfParent` / `AttributableToNonControllingInterests`
+   (`Noncontrolling` spelling too); a concept that itself names a portion (e.g. `NoncontrollingInterests`,
+   `DividendsPaidToNoncontrollingInterests…`) is `total` for its own concept.
 3. **Task build** — `adjudicate.py prepare --seed <n>`: every machine/`unverified` disagreement class
    plus a **seeded, frozen 10 % sample of agreements** (minimum 10 tasks, or all when fewer) become
    indistinguishable task files (`adjudication/tasks/<id>.json`); `tasks.lock` pins their hashes.
-   The sample is frozen before any second read starts.
+   The sample is frozen before any second read starts. A task carries the slot's own identity —
+   concept, period, basis, window and its `attribution` — plus `attribution_dimension` (the
+   `{axis, member}` pair) when the slot came from a dimensioned occurrence, `null` otherwise; never a
+   value.
 4. **Second read** — the reader answers every task from the filing only (value, currency, period,
    basis, attribution as read; `unverified` + reason when the filing does not settle it) and the
    answers are **sealed** (`adjudicate.py seal <reader> <answers.json>` — hashed, timestamped, refused
@@ -36,9 +43,21 @@ an event is disqualified for that event.
 5. **Compare** — `adjudicate.py compare` first re-verifies the lock (every locked task file + index + ground-truth/occurrence hashes) and every seal registered in `seals.lock` (a missing, altered or unregistered seal aborts), validates each answer (finite decimal; a three-letter currency for a monetary task unit and `null` for a shares/pure unit; basis/attribution/period domains — an invalid answer fails the whole compare, nothing is written), then compares sealed answers with the machine slots mechanically:
    agree → `second_read`; disagree with filing evidence → `adjudicated` (the evidence anchor is the
    record, the app's value is never consulted); unsettled, or contradicted without filing evidence → `unverified` (a contradicted `machine` label never stays `machine`; excluded from every
-   denominator, count pinned in the baseline).
+   denominator, count pinned in the baseline). An optional owner decisions file
+   (`adjudicate.py compare --decisions <path>`, `{"decisions": {"<task_id>": {"keep": "machine"|"reader",
+   "reason": ..., "decided_by": ...}}}`) overrides one genuine disagreement the other way: `keep: machine`
+   records `adjudicated_keep_machine` with the reason in `resolution_ref` and leaves the slot untouched;
+   `keep: reader` applies as usual. A decision naming an agreeing/unsettled task, or an unknown task id,
+   is refused before any write; its sha256 is recorded on each resolution it decided.
 6. **Systematic-error rule** — if the agreement sample reveals a labeling error class (a transform,
    a sign convention, a namespace), the whole affected class is re-read before any floor is pinned.
+   `--round` is a global option, given BEFORE the subcommand: `adjudicate.py --esef-v2-dir <dir>
+   --round 2 prepare --seed <n> --reread-class attribution_dimension --reread-class attribution_name`
+   opens a new round (`adjudication/round-<n>/`, isolated from earlier rounds) and adds every slot of
+   the named class to that round's own seeded sample, still indistinguishable; `seal` and `compare`
+   for that round take the same `--round 2` before the subcommand (`adjudicate.py --esef-v2-dir <dir>
+   --round 2 seal <reader> <answers.json>`, `adjudicate.py --esef-v2-dir <dir> --round 2 compare
+   [--decisions <path>]`).
 7. **Freeze** — `gt_version`, `key_map_version`, `normalization_version` and the corpus
    `registry_hash` are frozen together; any change bumps `measurement_version` and requires a new,
    deliberately promoted baseline (`make realdata-esef-promote`).

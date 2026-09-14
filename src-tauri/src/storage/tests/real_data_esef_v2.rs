@@ -217,6 +217,62 @@ struct Occurrence {
     /// other value (with the nullable fields above actually null) marks it
     /// `unresolved_occurrences` instead of Layer 1 capture eligible.
     parse_status: String,
+    /// Raw `{axis, member}` pairs exactly as `esef_ixbrl.py`'s
+    /// `parse_contexts` read them off the context's segment/scenario
+    /// (`explicitMember`/`typedMember` — the RAW lexical `dimension`
+    /// attribute/text, never namespace-expanded — the same form Layer 1's
+    /// own `ContextInfo::dims` captures from the identical source XML).
+    /// Empty for a dimensionless context, and for a corpus that predates
+    /// this field (#331 PR-B floors amendment: Layer 1 comparative capture
+    /// used to match concept+period alone, so a dimensional occurrence
+    /// could be checked against an arbitrary same-concept-and-period fact —
+    /// member ignored).
+    #[serde(default)]
+    dimensions: Vec<OccurrenceDimension>,
+    /// The raw iXBRL unit measure (`esef_ixbrl.py`'s `parse_units`:
+    /// `"iso4217:PLN"`, or `"num/den"` for a divide unit — never stripped to
+    /// a bare currency code there). `None` for a corpus that predates this
+    /// field, or genuinely unresolved metadata — never used to REJECT a
+    /// candidate fact, only to CONFIRM one when both sides carry a unit (a
+    /// real `parse_status: ok` numeric occurrence always does).
+    #[serde(default)]
+    unit: Option<String>,
+}
+
+/// One raw `{axis, member}` dimension pair off an occurrence's context, in
+/// the SAME raw lexical form Layer 1 stores in `dimensions_json`
+/// (`report_tagged_facts.rs`) — both sides parse the identical source XML
+/// attribute/text (`dimension` attribute, `explicitMember`/`typedMember`
+/// text), so no namespace expansion is needed or available on either side.
+#[derive(Debug, Deserialize)]
+struct OccurrenceDimension {
+    #[serde(default)]
+    axis: Option<String>,
+    #[serde(default)]
+    member: String,
+}
+
+impl Occurrence {
+    /// This occurrence's dimension set as an (axis -> member) map — the same
+    /// shape `Layer1Fact::dimension_set` parses `dimensions_json` into, so
+    /// the two sides compare by plain `BTreeMap` equality.
+    fn dimension_set(&self) -> BTreeMap<String, String> {
+        self.dimensions
+            .iter()
+            .map(|d| (d.axis.clone().unwrap_or_default(), d.member.clone()))
+            .collect()
+    }
+}
+
+/// The local (namespace-prefix-stripped) form of a raw unit measure —
+/// matching how Layer 1 capture stores `unit_measure` (`layer1.rs`'s
+/// `local_str`, and only the NUMERATOR for a divide unit, mirroring Layer
+/// 2's own "only the numerator/simple measure defines a unit's currency"
+/// convention): `"iso4217:PLN"` and `"iso4217:PLN/xbrli:shares"` both
+/// normalize to `"PLN"`.
+fn normalize_unit_measure(raw: &str) -> &str {
+    let numerator = raw.split('/').next().unwrap_or(raw);
+    numerator.rsplit(':').next().unwrap_or(numerator)
 }
 
 #[derive(Debug, Deserialize)]
@@ -880,6 +936,39 @@ struct EventReport {
     unresolved_language: usize,
 }
 
+/// One replayed event's evidence (PR-B floors, #331, ADR 0112): the pre-run
+/// production inputs this event actually saw (`prior_existed`,
+/// `sufficient_history`), what production itself recorded for the attempt
+/// (`acceptance`/`reason_code`/`detail_json`/`run_error`), and — for floor
+/// events — replay's own matched count next to the SAME event's cold-start
+/// matched count, so a `replay_matched` vs `matched` divergence on the
+/// aggregate can be traced back to the specific issuer/event it comes from.
+/// Written only into the private `scoring-report-v2.json` (never the public
+/// metrics file, ADR 0091 dec. 4).
+#[derive(Debug, Clone, Serialize)]
+struct ReplayEventEvidence {
+    event_id: String,
+    issuer_id: String,
+    role: String,
+    prior_existed: bool,
+    sufficient_history: bool,
+    acceptance: Option<String>,
+    reason_code: Option<String>,
+    run_error: Option<String>,
+    /// Floor events: count of `Match` slot outcomes THIS replay run
+    /// produced. Other roles (`warmup`): `None` — replay never scores a
+    /// non-floor event.
+    matched: Option<usize>,
+    /// The same event's cold-start `matched` count, looked up from the
+    /// cold-start [`EventReport`]s the harness already built — `None` when
+    /// the event was never cold-started (`warmup`, which the cold-start pass
+    /// skips entirely).
+    cold_start_matched: Option<usize>,
+    /// The recorded outcome row's own structured detail (failing identity/
+    /// cross-checks and their residuals), when production wrote one.
+    detail_json: Option<String>,
+}
+
 /// One issuer's pooled counts across its floor events — the console's
 /// per-issuer table (finding 2), built from [`EventReport`]s rather than
 /// re-deriving anything from the id strings.
@@ -1050,6 +1139,378 @@ struct Layer1Fact {
     period_start: Option<String>,
     period_end: String,
     value_numeric: Option<String>,
+    /// `report_tagged_facts.unit_measure` — already namespace-prefix-stripped
+    /// by Layer 1 capture (`layer1.rs`'s `local_str`). Amendment (#331 PR-B
+    /// floors): compared against the occurrence's own unit so comparative
+    /// capture never matches a same-concept-and-period fact in a DIFFERENT
+    /// unit.
+    unit_measure: Option<String>,
+    /// The raw `report_tagged_facts.dimensions_json` column — a JSON object
+    /// of `{axis: member}` in the SAME raw lexical form
+    /// `Occurrence::dimension_set` builds. `None`/absent for a dimensionless
+    /// fact.
+    dimensions_json: Option<String>,
+}
+
+impl Layer1Fact {
+    /// This fact's dimension set, parsed from `dimensions_json`: `Some` —
+    /// empty for a genuinely dimensionless fact (the column absent, never
+    /// dimensional) — when the column is absent or parses; `None` when it
+    /// is PRESENT but fails to parse into the `{axis: member}` shape (#331
+    /// PR-B fix wave, finding P2). A malformed column must never be
+    /// silently treated as dimensionless: that let a bad row match ANY
+    /// dimensionless occurrence sharing its concept/period/unit, even
+    /// earning bogus value-correct credit. `None` here makes the fact
+    /// unusable for matching — `capture_layer1` never captures with it, no
+    /// panic over one bad row either; [`count_invalid_dimension_facts`]
+    /// tallies these for the run's diagnostics.
+    fn dimension_set(&self) -> Option<BTreeMap<String, String>> {
+        match self.dimensions_json.as_deref() {
+            None => Some(BTreeMap::new()),
+            Some(json) => serde_json::from_str(json).ok(),
+        }
+    }
+}
+
+/// Diagnostic count of `facts` whose `dimensions_json` is present but
+/// unparseable (#331 PR-B fix wave, finding P2) — such a fact never
+/// captures anything (see [`Layer1Fact::dimension_set`]); many of them in a
+/// run signal a labeling/extraction QA problem worth surfacing. Private-
+/// report + console only, mirroring `unresolved_occurrences_total`'s
+/// existing precedent — never added to the public `Aggregates`/
+/// `metrics.json` key set.
+fn count_invalid_dimension_facts(facts: &[Layer1Fact]) -> usize {
+    facts
+        .iter()
+        .filter(|fact| fact.dimension_set().is_none())
+        .count()
+}
+
+/// One comparative GT occurrence's Layer 1 capture outcome against the
+/// document's stored facts (amendment Q, #331 PR-B floors) — pure and
+/// side-effect free so it's both what `run_measurement`'s loop calls per
+/// occurrence and what the unit test below exercises directly, never a
+/// second copy-pasted matcher. `captured` = a fact shares this occurrence's
+/// expanded concept, full context period, dimension set (`dims`, already
+/// `Occurrence::dimension_set`) AND unit measure (`unit`, already
+/// `normalize_unit_measure`d — `None` never rejects a candidate, only
+/// narrows among matches when both sides carry one). Several facts sharing
+/// that full identity with different values is a legitimate duplicate
+/// (amendment Q): captured is still counted once; `value_correct` is true if
+/// ANY of them parses to the occurrence's own decimal value.
+fn capture_layer1(
+    concept_qname: &str,
+    period: &OccurrencePeriod,
+    dims: &BTreeMap<String, String>,
+    unit: Option<&str>,
+    value: &str,
+    facts: &[Layer1Fact],
+) -> (bool, bool) {
+    let matches: Vec<&Layer1Fact> = facts
+        .iter()
+        .filter(|fact| {
+            let fact_qname = format!(
+                "{{{}}}{}",
+                fact.concept_namespace_uri, fact.concept_local_name
+            );
+            fact_qname == concept_qname
+                && period.matches_layer1(fact)
+                && fact.dimension_set().is_some_and(|d| d == *dims)
+                && match unit {
+                    // Asymmetry: a missing occurrence-side unit is "no
+                    // constraint" (matches anything), but a KNOWN occurrence
+                    // unit against a fact with no stored unit rejects — never
+                    // a silent wildcard. Numerator local measure only
+                    // (`normalize_unit_measure`); denominator and namespace
+                    // are not compared.
+                    Some(u) => fact.unit_measure.as_deref().map(normalize_unit_measure) == Some(u),
+                    None => true,
+                }
+        })
+        .collect();
+    if matches.is_empty() {
+        return (false, false);
+    }
+    let occurrence_value = value.parse::<Decimal>().ok();
+    let value_correct = matches.iter().any(|fact| {
+        fact.value_numeric
+            .as_deref()
+            .and_then(|v| v.parse::<Decimal>().ok())
+            == occurrence_value
+    });
+    (true, value_correct)
+}
+
+/// #331 PR-B floors red test: two comparative occurrences of the SAME
+/// concept and period, differing only by dimension member, each with their
+/// OWN Layer 1 fact at a DIFFERENT value. On the pre-fix matcher (concept +
+/// period only, `.find()`'s first hit) both occurrences resolve to the SAME
+/// (first) fact, so only one of the two reads value-correct. The fix must
+/// check each occurrence against its own member's fact: captured 2,
+/// value_correct 2.
+#[test]
+fn dimension_member_selects_its_own_fact_not_the_first_same_concept_and_period_one() {
+    let period = OccurrencePeriod::Duration {
+        start: "2024-01-01".to_owned(),
+        end: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}ProfitLoss";
+
+    let mut owners_dims = BTreeMap::new();
+    owners_dims.insert(
+        "ifrs-full:ComponentsOfEquityAxis".to_owned(),
+        "ifrs-full:OwnersOfParentMember".to_owned(),
+    );
+    let mut nci_dims = BTreeMap::new();
+    nci_dims.insert(
+        "ifrs-full:ComponentsOfEquityAxis".to_owned(),
+        "ifrs-full:NoncontrollingInterestsMember".to_owned(),
+    );
+
+    let fact = |dims: &BTreeMap<String, String>, value: &str| Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "ProfitLoss".to_owned(),
+        period_type: "duration".to_owned(),
+        period_start: Some("2024-01-01".to_owned()),
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some(value.to_owned()),
+        unit_measure: Some("PLN".to_owned()),
+        dimensions_json: Some(serde_json::to_string(dims).unwrap()),
+    };
+    // Owners-of-parent's fact listed FIRST — the pre-fix bug picked this one
+    // for both occurrences via `.find()`.
+    let facts = vec![fact(&owners_dims, "85000"), fact(&nci_dims, "5000")];
+
+    let (owners_captured, owners_correct) =
+        capture_layer1(concept, &period, &owners_dims, Some("PLN"), "85000", &facts);
+    let (nci_captured, nci_correct) =
+        capture_layer1(concept, &period, &nci_dims, Some("PLN"), "5000", &facts);
+
+    assert!(
+        owners_captured && nci_captured,
+        "both dimensional occurrences must be captured (own dimension set matches a fact)"
+    );
+    assert!(
+        owners_correct && nci_correct,
+        "each occurrence must be checked against ITS OWN member's fact — got owners_correct={owners_correct} nci_correct={nci_correct}"
+    );
+}
+
+/// #331 PR-B fix wave (finding P2): a fact whose `dimensions_json` fails to
+/// parse must never be captured — even by a dimensionless occurrence sharing
+/// its concept/period/unit. Pre-fix, `dimension_set()` swallowed the parse
+/// error into an empty map, so this malformed fact matched (and, since the
+/// value lines up too, even earned value-correct credit).
+#[test]
+fn malformed_dimensions_json_fact_is_never_captured() {
+    let period = OccurrencePeriod::Instant {
+        instant: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Assets";
+    let dimensionless = BTreeMap::new();
+
+    let fact = Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "Assets".to_owned(),
+        period_type: "instant".to_owned(),
+        period_start: None,
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("1000".to_owned()),
+        unit_measure: Some("PLN".to_owned()),
+        dimensions_json: Some("not valid json".to_owned()),
+    };
+
+    let (captured, value_correct) = capture_layer1(
+        concept,
+        &period,
+        &dimensionless,
+        Some("PLN"),
+        "1000",
+        &[fact],
+    );
+
+    assert!(
+        !captured,
+        "a malformed dimensions_json must never be captured, not silently treated as dimensionless"
+    );
+    assert!(!value_correct);
+}
+
+#[test]
+fn count_invalid_dimension_facts_counts_only_unparseable_json() {
+    let base = |dimensions_json: Option<String>| Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "Assets".to_owned(),
+        period_type: "instant".to_owned(),
+        period_start: None,
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("1000".to_owned()),
+        unit_measure: Some("PLN".to_owned()),
+        dimensions_json,
+    };
+    let valid_dims = {
+        let mut m = BTreeMap::new();
+        m.insert("axis".to_owned(), "member".to_owned());
+        serde_json::to_string(&m).unwrap()
+    };
+
+    let facts = vec![
+        base(None),                        // dimensionless — valid
+        base(Some(valid_dims)),            // parses fine — valid
+        base(Some("not json".to_owned())), // malformed — invalid
+        base(Some("[1,2,3]".to_owned())),  // valid JSON, wrong shape — invalid
+    ];
+
+    assert_eq!(count_invalid_dimension_facts(&facts), 2);
+}
+
+/// #331 PR-B fix wave (finding P3): the positive dimension test above would
+/// also pass a matcher that accepted any same-concept-and-period value —
+/// these negative cases pin down that a mismatched dimension/unit identity
+/// is actually rejected, not just that a matching one is accepted.
+#[test]
+fn different_dimension_member_is_not_captured() {
+    let period = OccurrencePeriod::Duration {
+        start: "2024-01-01".to_owned(),
+        end: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}ProfitLoss";
+
+    let mut occurrence_dims = BTreeMap::new();
+    occurrence_dims.insert(
+        "ifrs-full:ComponentsOfEquityAxis".to_owned(),
+        "ifrs-full:OwnersOfParentMember".to_owned(),
+    );
+    let mut fact_dims = BTreeMap::new();
+    fact_dims.insert(
+        "ifrs-full:ComponentsOfEquityAxis".to_owned(),
+        "ifrs-full:NoncontrollingInterestsMember".to_owned(),
+    );
+
+    let fact = Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "ProfitLoss".to_owned(),
+        period_type: "duration".to_owned(),
+        period_start: Some("2024-01-01".to_owned()),
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("5000".to_owned()),
+        unit_measure: Some("PLN".to_owned()),
+        dimensions_json: Some(serde_json::to_string(&fact_dims).unwrap()),
+    };
+
+    let (captured, value_correct) = capture_layer1(
+        concept,
+        &period,
+        &occurrence_dims,
+        Some("PLN"),
+        "5000",
+        &[fact],
+    );
+
+    assert!(
+        !captured,
+        "a fact tagged with a DIFFERENT dimension member must never match — same concept/period/unit is not enough"
+    );
+    assert!(!value_correct);
+}
+
+#[test]
+fn dimensionless_occurrence_does_not_capture_a_dimensional_fact() {
+    let period = OccurrencePeriod::Instant {
+        instant: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Assets";
+    let dimensionless = BTreeMap::new();
+
+    let mut fact_dims = BTreeMap::new();
+    fact_dims.insert(
+        "ifrs-full:SegmentsAxis".to_owned(),
+        "ifrs-full:RetailMember".to_owned(),
+    );
+
+    let fact = Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "Assets".to_owned(),
+        period_type: "instant".to_owned(),
+        period_start: None,
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("1000".to_owned()),
+        unit_measure: Some("PLN".to_owned()),
+        dimensions_json: Some(serde_json::to_string(&fact_dims).unwrap()),
+    };
+
+    let (captured, value_correct) = capture_layer1(
+        concept,
+        &period,
+        &dimensionless,
+        Some("PLN"),
+        "1000",
+        &[fact],
+    );
+
+    assert!(
+        !captured,
+        "a dimensionless occurrence must never capture a fact tagged with a dimension member"
+    );
+    assert!(!value_correct);
+}
+
+#[test]
+fn different_unit_measure_is_not_captured() {
+    let period = OccurrencePeriod::Instant {
+        instant: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Assets";
+    let dims = BTreeMap::new();
+
+    let fact = Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "Assets".to_owned(),
+        period_type: "instant".to_owned(),
+        period_start: None,
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("1000".to_owned()),
+        unit_measure: Some("EUR".to_owned()),
+        dimensions_json: None,
+    };
+
+    let (captured, value_correct) =
+        capture_layer1(concept, &period, &dims, Some("PLN"), "1000", &[fact]);
+
+    assert!(
+        !captured,
+        "same concept/period/dims but a DIFFERENT unit measure must never match"
+    );
+    assert!(!value_correct);
+}
+
+#[test]
+fn known_occurrence_unit_against_fact_with_no_stored_unit_is_not_captured() {
+    let period = OccurrencePeriod::Instant {
+        instant: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Assets";
+    let dims = BTreeMap::new();
+
+    let fact = Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "Assets".to_owned(),
+        period_type: "instant".to_owned(),
+        period_start: None,
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("1000".to_owned()),
+        unit_measure: None,
+        dimensions_json: None,
+    };
+
+    let (captured, value_correct) =
+        capture_layer1(concept, &period, &dims, Some("PLN"), "1000", &[fact]);
+
+    assert!(
+        !captured,
+        "a known occurrence unit against a fact with NO stored unit must reject, never treat the missing unit as a wildcard"
+    );
+    assert!(!value_correct);
 }
 
 /// The stored facts a fresh cold-start run produced for one event's company,
@@ -1068,12 +1529,15 @@ struct ColdStartRun {
     layer1_facts: Vec<Layer1Fact>,
     /// Production's OWN recorded verdict for this attempt
     /// (`fundamentals_provenance().get_extraction_outcome_for_slot`) —
-    /// `(acceptance, reason_code)`. `None` when no period could even be
-    /// derived (no extraction was attempted, so no outcome row exists) or the
-    /// outcome row itself is missing for some other reason; the caller
-    /// synthesizes a `no_period_derived`/`no_outcome_recorded` label for the
-    /// zero-output report in that case rather than leaving it unexplained.
-    recorded_outcome: Option<(String, String)>,
+    /// `(acceptance, reason_code, detail_json)`. `None` when no period could
+    /// even be derived (no extraction was attempted, so no outcome row
+    /// exists) or the outcome row itself is missing for some other reason;
+    /// the caller synthesizes a `no_period_derived`/`no_outcome_recorded`
+    /// label for the zero-output report in that case rather than leaving it
+    /// unexplained. `detail_json` (PR-B floors, #331) is the outcome row's
+    /// own structured detail — the failing identity/cross-checks and their
+    /// residuals — carried through unchanged for replay's per-event evidence.
+    recorded_outcome: Option<(String, String, Option<String>)>,
 }
 
 /// Amendment AD: a run only "exercised" the pre-run production inputs
@@ -1093,7 +1557,8 @@ fn replay_exercised_requires_no_run_error() {
             derived: None,
             run_error: run_error.map(str::to_owned),
             layer1_facts: Vec::new(),
-            recorded_outcome: recorded_outcome.then(|| ("accepted".to_owned(), "ok".to_owned())),
+            recorded_outcome: recorded_outcome
+                .then(|| ("accepted".to_owned(), "ok".to_owned(), None)),
         }
     }
 
@@ -1207,7 +1672,7 @@ fn seed_and_run_event(
             .get_extraction_outcome_for_slot(&company.id, &document.id, *fy, pt, pe)
             .ok()
             .flatten()
-            .map(|o| (o.acceptance, o.reason_code));
+            .map(|o| (o.acceptance, o.reason_code, o.detail_json));
     }
 
     let predictions = read_predictions(state, &company.id);
@@ -1223,6 +1688,8 @@ fn seed_and_run_event(
             period_start: f.period_start,
             period_end: f.period_end,
             value_numeric: f.value_numeric,
+            unit_measure: f.unit_measure,
+            dimensions_json: f.dimensions_json,
         })
         .collect();
 
@@ -1734,6 +2201,10 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     let mut layer1_captured = 0usize;
     let mut layer1_eligible = 0usize;
     let mut layer1_value_correct = 0usize;
+    // #331 PR-B fix wave (finding P2): facts whose dimensions_json failed to
+    // parse, diagnostic only — private report + console, never the public
+    // Aggregates/metrics.json key set.
+    let mut layer1_invalid_dimension_facts = 0usize;
     // Amendment AE: an occurrence the labeler couldn't fully parse (any of
     // parse_status/concept_qname/period/value missing or not "ok") — never
     // eligible for Layer 1 capture, never a panic, just visibly counted.
@@ -1836,10 +2307,16 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             // Amendment Q: Layer 1 capture is over comparative-period GT
             // OCCURRENCES (from `occurrences_v2.json`, raw evidence — never
             // the already-collapsed GT slots): captured = a raw tagged fact
-            // with the SAME EXPANDED concept (namespace URI + local name) AND
-            // the SAME FULL context period (instant, or start+end) — never a
-            // local-name-suffix-plus-end-date shortcut. Value-correct is
-            // computed separately.
+            // with the SAME EXPANDED concept (namespace URI + local name),
+            // the SAME FULL context period (instant, or start+end), the SAME
+            // dimension set and the SAME unit measure (#331 PR-B floors: the
+            // dimension/unit check was missing, so a dimensional occurrence
+            // could be checked against an arbitrary same-concept-and-period
+            // fact — `capture_layer1` below). Several Layer 1 facts sharing
+            // that full identity with different values is a legitimate
+            // duplicate: captured counts once, value-correct if ANY of them
+            // equals.
+            layer1_invalid_dimension_facts += count_invalid_dimension_facts(&run.layer1_facts);
             let empty_occurrences = Vec::new();
             let event_occurrences = occurrences_by_event
                 .get(event.event_id.as_str())
@@ -1865,22 +2342,19 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                     continue;
                 }
                 layer1_eligible += 1;
-                if let Some(fact) = run.layer1_facts.iter().find(|fact| {
-                    *concept_qname
-                        == format!(
-                            "{{{}}}{}",
-                            fact.concept_namespace_uri, fact.concept_local_name
-                        )
-                        && period.matches_layer1(fact)
-                }) {
+                let occurrence_dims = occurrence.dimension_set();
+                let occurrence_unit = occurrence.unit.as_deref().map(normalize_unit_measure);
+                let (captured, value_correct) = capture_layer1(
+                    concept_qname,
+                    period,
+                    &occurrence_dims,
+                    occurrence_unit,
+                    value,
+                    &run.layer1_facts,
+                );
+                if captured {
                     layer1_captured += 1;
-                    let occurrence_value = value.parse::<Decimal>().ok();
-                    if fact
-                        .value_numeric
-                        .as_deref()
-                        .and_then(|v| v.parse::<Decimal>().ok())
-                        == occurrence_value
-                    {
+                    if value_correct {
                         layer1_value_correct += 1;
                     }
                 }
@@ -2075,8 +2549,8 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                 .as_ref()
                 .map(|(fy, pt, pe)| format!("{fy}/{pt}/{pe}"))
                 .unwrap_or_else(|| "none".to_owned()),
-            acceptance: run.recorded_outcome.as_ref().map(|(a, _)| a.clone()),
-            reason_code: run.recorded_outcome.as_ref().map(|(_, r)| r.clone()),
+            acceptance: run.recorded_outcome.as_ref().map(|(a, _, _)| a.clone()),
+            reason_code: run.recorded_outcome.as_ref().map(|(_, r, _)| r.clone()),
             prediction_count,
             matched: event_matched,
             missing: event_missing,
@@ -2171,12 +2645,13 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     let twin_compared = loose_twin_compared + internal_twin_compared;
 
     // ---- replay (diagnostic; one shared DB per issuer) ----------------------
-    let replay = run_replay(
+    let (replay, replay_events) = run_replay(
         &manifest,
         &gt_by_event,
         config.corpus_dir,
         &issuer_by_id,
         &resolved_map,
+        &event_reports,
     );
 
     let matched = all_slot_outcomes
@@ -2308,6 +2783,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
         machine_v1_total,
         unresolved_language_total,
         unresolved_occurrences_total,
+        layer1_invalid_dimension_facts,
         precision_denominator,
         &event_reports,
         &by_issuer,
@@ -2328,6 +2804,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             "derived_vs_labeled_period": derived_by_event,
             "slots": all_slot_details,
             "events": event_reports,
+            "replay_events": replay_events,
             "missing_by_concept": missing_by_concept
                 .iter()
                 .map(|((concept, attribution), count)| serde_json::json!({
@@ -2336,6 +2813,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                 .collect::<Vec<_>>(),
             "unresolved_language_slots": unresolved_language_slots,
             "unresolved_occurrences": unresolved_occurrences_total,
+            "layer1_invalid_dimension_facts": layer1_invalid_dimension_facts,
         }),
     );
     // The run's own nonce (never handed in — `make realdata-esef-check`'s
@@ -2517,13 +2995,27 @@ fn score_fresh(
 /// event's own extraction call, the latter from the real quarantine gate's
 /// own input (`metric_histories`) over the event's own current-period metric
 /// keys, both inspected before each event runs.
+///
+/// PR-B floors (#331, ADR 0112): also returns one [`ReplayEventEvidence`] per
+/// replayed event — production's own recorded verdict plus, for floor
+/// events, replay's matched count next to the SAME event's cold-start
+/// matched count (looked up from `cold_start_event_reports`, the harness's
+/// own already-built cold-start per-event reports) — so a `replay_matched`
+/// vs `matched` divergence can be traced to the specific event it comes
+/// from. Private evidence only, never the public metrics file.
 fn run_replay(
     manifest: &Manifest,
     gt_by_event: &BTreeMap<&str, Vec<GtSlot>>,
     corpus_dir: &Path,
     issuer_by_id: &BTreeMap<&str, &Issuer>,
     resolved_map: &ResolvedKeyMap,
-) -> Replay {
+    cold_start_event_reports: &[EventReport],
+) -> (Replay, Vec<ReplayEventEvidence>) {
+    let cold_start_by_event: BTreeMap<&str, &EventReport> = cold_start_event_reports
+        .iter()
+        .map(|r| (r.event_id.as_str(), r))
+        .collect();
+
     let mut by_issuer: BTreeMap<&str, Vec<&Event>> = BTreeMap::new();
     for event in manifest
         .events
@@ -2540,6 +3032,7 @@ fn run_replay(
     let mut exercised_prior_check = 0usize;
     let mut exercised_quarantine = 0usize;
     let mut replay_matched = 0usize;
+    let mut replay_events: Vec<ReplayEventEvidence> = Vec::new();
 
     for (issuer_id, mut events) in by_issuer {
         events.sort_by(|a, b| {
@@ -2618,22 +3111,66 @@ fn run_replay(
             // prediction eligible scoring left as FALSE_POSITIVE.
             let filtered = prefilter_predictions(run.predictions, resolved_map);
             let score = score_event(&resolved.current, &filtered.eligible, &resolved_map.panel);
-            if event.role == "floor" {
-                replay_matched += score
+            let event_matched = (event.role == "floor").then(|| {
+                score
                     .slot_outcomes
                     .values()
                     .filter(|o| **o == Outcome::Match)
-                    .count();
+                    .count()
+            });
+            if let Some(m) = event_matched {
+                replay_matched += m;
             }
+
+            let cold_start_matched = cold_start_by_event
+                .get(event.event_id.as_str())
+                .map(|r| r.matched);
+            let acceptance = run.recorded_outcome.as_ref().map(|(a, _, _)| a.clone());
+            let reason_code = run.recorded_outcome.as_ref().map(|(_, r, _)| r.clone());
+            let detail_json = run
+                .recorded_outcome
+                .as_ref()
+                .and_then(|(_, _, d)| d.clone());
+
+            // Private console, like the existing per-event RUN ERROR/NOTE
+            // lines above — only floor events have a cold-start matched
+            // count to diff against.
+            if let (Some(replay_m), Some(cold_m)) = (event_matched, cold_start_matched) {
+                if replay_m != cold_m {
+                    eprintln!(
+                        "replay diff: {} cold={cold_m} replay={replay_m} acceptance={} reason={} prior_existed={prior_existed}",
+                        event.event_id,
+                        acceptance.as_deref().unwrap_or("none"),
+                        reason_code.as_deref().unwrap_or("none"),
+                    );
+                }
+            }
+
+            replay_events.push(ReplayEventEvidence {
+                event_id: event.event_id.clone(),
+                issuer_id: issuer_id.to_owned(),
+                role: event.role.clone(),
+                prior_existed,
+                sufficient_history,
+                acceptance,
+                reason_code,
+                run_error: run.run_error.clone(),
+                matched: event_matched,
+                cold_start_matched,
+                detail_json,
+            });
         }
     }
 
-    Replay {
-        events: events_replayed,
-        exercised_prior_check,
-        exercised_quarantine,
-        replay_matched,
-    }
+    (
+        Replay {
+            events: events_replayed,
+            exercised_prior_check,
+            exercised_quarantine,
+            replay_matched,
+        },
+        replay_events,
+    )
 }
 
 /// The company id for an issuer already seeded into `state` (replay reuses one
@@ -2656,6 +3193,7 @@ fn print_console_report(
     machine_v1_total: usize,
     unresolved_language_total: usize,
     unresolved_occurrences_total: usize,
+    layer1_invalid_dimension_facts: usize,
     precision_denominator: usize,
     event_reports: &[EventReport],
     by_issuer: &BTreeMap<&str, IssuerCounts>,
@@ -2713,12 +3251,13 @@ fn print_console_report(
         aggregates.twin_agreement.compared
     );
     eprintln!(
-        "availability_all_periods: {}/{}  layer1_capture: {}/{} (value_correct {})  unresolved_occurrences={}",
+        "availability_all_periods: {}/{}  layer1_capture: {}/{} (value_correct {}, invalid_dimension_facts {})  unresolved_occurrences={}",
         aggregates.availability_all_periods.available,
         aggregates.availability_all_periods.eligible,
         aggregates.layer1_capture.captured,
         aggregates.layer1_capture.eligible,
         aggregates.layer1_capture.value_correct,
+        layer1_invalid_dimension_facts,
         unresolved_occurrences_total
     );
     eprintln!(
@@ -3327,6 +3866,132 @@ fn per_event_section_is_present_in_the_report() {
     assert_eq!(floor_pl["missing"], 0);
     assert!(floor_pl["prediction_count"].as_u64().unwrap() > 0);
     assert!(floor_pl["run_error"].is_null());
+}
+
+/// PR-B floors (#331, ADR 0112): `run_replay` records one
+/// [`ReplayEventEvidence`] per replayed event into the PRIVATE
+/// `scoring-report-v2.json` (`replay_events`) — warmup + both floor events
+/// (the twin is excluded from replay), `matched` set for the floor events,
+/// `cold_start_matched` populated from the cold-start per-event report ONLY
+/// for events the cold-start pass actually ran (never `warmup`, which it
+/// skips). The public `metrics.json` must carry no trace of it — its
+/// top-level key set stays byte-identical to before this evidence existed
+/// (ADR 0091 dec. 4: only `aggregates` ever leaves the private dir).
+#[test]
+fn replay_events_are_private_only_evidence() {
+    let dir = materialize_sample_corpus();
+    let out = dir.join("metrics.json");
+    let key_map_path = local_key_map_path();
+    let aggregates = run_measurement(MeasurementConfig {
+        corpus_dir: &dir,
+        key_map_path: &key_map_path,
+        metrics_out: Some(&out),
+        keyed_baseline: None,
+        required: false,
+    })
+    .expect("sample corpus must measure");
+
+    let metrics_json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out).expect("metrics file"))
+            .expect("metrics json");
+    let top_level_keys: BTreeSet<&str> = metrics_json
+        .as_object()
+        .expect("metrics json is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        top_level_keys,
+        BTreeSet::from([
+            "profile",
+            "status",
+            "measurement_version",
+            "gt_version",
+            "key_map_version",
+            "normalization_version",
+            "registry_hash",
+            "events",
+            "floor_events",
+            "issuers",
+            "gt_slots",
+            "unverified",
+            "matched",
+            "previously_correct_slots_lost",
+            "false_positives",
+            "zero_output_events",
+            "availability_all_periods",
+            "layer1_capture",
+            "labeled_capability",
+            "sensitivity",
+            "twin_agreement",
+            "replay",
+        ]),
+        "the public metrics.json must carry no new top-level field — replay_events is private-only"
+    );
+
+    let report: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("scoring-report-v2.json")).expect("scoring report"),
+    )
+    .expect("scoring report json");
+    let replay_events = report["replay_events"]
+        .as_array()
+        .expect("replay_events must be an array in the private report");
+    // warmup + floor_pl + floor_package — twin_en is excluded from replay.
+    assert_eq!(replay_events.len(), aggregates.replay.events);
+    assert_eq!(replay_events.len(), 3);
+
+    let expected_evidence_keys: BTreeSet<&str> = BTreeSet::from([
+        "event_id",
+        "issuer_id",
+        "role",
+        "prior_existed",
+        "sufficient_history",
+        "acceptance",
+        "reason_code",
+        "run_error",
+        "matched",
+        "cold_start_matched",
+        "detail_json",
+    ]);
+    for entry in replay_events {
+        let keys: BTreeSet<&str> = entry
+            .as_object()
+            .expect("replay event entry is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys, expected_evidence_keys, "entry {entry:?}");
+    }
+
+    let warmup = replay_events
+        .iter()
+        .find(|e| e["event_id"] == "iss_01/FY2024/pl/consolidated/warmup/v1")
+        .expect("warmup event must be present");
+    assert_eq!(warmup["role"], "warmup");
+    assert!(
+        warmup["matched"].is_null(),
+        "warmup is never scored as a floor event"
+    );
+    assert!(
+        warmup["cold_start_matched"].is_null(),
+        "warmup was never cold-started — the cold-start pass skips it entirely"
+    );
+
+    let floor_pl = replay_events
+        .iter()
+        .find(|e| e["event_id"] == "iss_01/FY2025/pl/consolidated/v1")
+        .expect("floor_pl event must be present");
+    assert_eq!(floor_pl["role"], "floor");
+    assert_eq!(floor_pl["issuer_id"], "iss_01");
+    assert_eq!(floor_pl["acceptance"], "accepted");
+    assert!(
+        floor_pl["matched"].is_number(),
+        "floor replay entries carry a numeric matched count"
+    );
+    assert_eq!(
+        floor_pl["cold_start_matched"], 16,
+        "floor_pl was cold-started — its cold-start matched count must be looked up from the harness's own per-event report"
+    );
 }
 
 /// Test 2d (fix wave 2, finding 2) — the per-issuer console table's own
