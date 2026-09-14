@@ -217,6 +217,62 @@ struct Occurrence {
     /// other value (with the nullable fields above actually null) marks it
     /// `unresolved_occurrences` instead of Layer 1 capture eligible.
     parse_status: String,
+    /// Raw `{axis, member}` pairs exactly as `esef_ixbrl.py`'s
+    /// `parse_contexts` read them off the context's segment/scenario
+    /// (`explicitMember`/`typedMember` — the RAW lexical `dimension`
+    /// attribute/text, never namespace-expanded — the same form Layer 1's
+    /// own `ContextInfo::dims` captures from the identical source XML).
+    /// Empty for a dimensionless context, and for a corpus that predates
+    /// this field (#331 PR-B floors amendment: Layer 1 comparative capture
+    /// used to match concept+period alone, so a dimensional occurrence
+    /// could be checked against an arbitrary same-concept-and-period fact —
+    /// member ignored).
+    #[serde(default)]
+    dimensions: Vec<OccurrenceDimension>,
+    /// The raw iXBRL unit measure (`esef_ixbrl.py`'s `parse_units`:
+    /// `"iso4217:PLN"`, or `"num/den"` for a divide unit — never stripped to
+    /// a bare currency code there). `None` for a corpus that predates this
+    /// field, or genuinely unresolved metadata — never used to REJECT a
+    /// candidate fact, only to CONFIRM one when both sides carry a unit (a
+    /// real `parse_status: ok` numeric occurrence always does).
+    #[serde(default)]
+    unit: Option<String>,
+}
+
+/// One raw `{axis, member}` dimension pair off an occurrence's context, in
+/// the SAME raw lexical form Layer 1 stores in `dimensions_json`
+/// (`report_tagged_facts.rs`) — both sides parse the identical source XML
+/// attribute/text (`dimension` attribute, `explicitMember`/`typedMember`
+/// text), so no namespace expansion is needed or available on either side.
+#[derive(Debug, Deserialize)]
+struct OccurrenceDimension {
+    #[serde(default)]
+    axis: Option<String>,
+    #[serde(default)]
+    member: String,
+}
+
+impl Occurrence {
+    /// This occurrence's dimension set as an (axis -> member) map — the same
+    /// shape `Layer1Fact::dimension_set` parses `dimensions_json` into, so
+    /// the two sides compare by plain `BTreeMap` equality.
+    fn dimension_set(&self) -> BTreeMap<String, String> {
+        self.dimensions
+            .iter()
+            .map(|d| (d.axis.clone().unwrap_or_default(), d.member.clone()))
+            .collect()
+    }
+}
+
+/// The local (namespace-prefix-stripped) form of a raw unit measure —
+/// matching how Layer 1 capture stores `unit_measure` (`layer1.rs`'s
+/// `local_str`, and only the NUMERATOR for a divide unit, mirroring Layer
+/// 2's own "only the numerator/simple measure defines a unit's currency"
+/// convention): `"iso4217:PLN"` and `"iso4217:PLN/xbrli:shares"` both
+/// normalize to `"PLN"`.
+fn normalize_unit_measure(raw: &str) -> &str {
+    let numerator = raw.split('/').next().unwrap_or(raw);
+    numerator.rsplit(':').next().unwrap_or(numerator)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1083,6 +1139,134 @@ struct Layer1Fact {
     period_start: Option<String>,
     period_end: String,
     value_numeric: Option<String>,
+    /// `report_tagged_facts.unit_measure` — already namespace-prefix-stripped
+    /// by Layer 1 capture (`layer1.rs`'s `local_str`). Amendment (#331 PR-B
+    /// floors): compared against the occurrence's own unit so comparative
+    /// capture never matches a same-concept-and-period fact in a DIFFERENT
+    /// unit.
+    unit_measure: Option<String>,
+    /// The raw `report_tagged_facts.dimensions_json` column — a JSON object
+    /// of `{axis: member}` in the SAME raw lexical form
+    /// `Occurrence::dimension_set` builds. `None`/absent for a dimensionless
+    /// fact.
+    dimensions_json: Option<String>,
+}
+
+impl Layer1Fact {
+    /// This fact's dimension set, parsed from `dimensions_json` — empty for
+    /// a dimensionless fact (`None`, or malformed — comparative capture
+    /// treats a bad column as dimensionless rather than panicking a whole
+    /// measurement run over one bad row).
+    fn dimension_set(&self) -> BTreeMap<String, String> {
+        self.dimensions_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default()
+    }
+}
+
+/// One comparative GT occurrence's Layer 1 capture outcome against the
+/// document's stored facts (amendment Q, #331 PR-B floors) — pure and
+/// side-effect free so it's both what `run_measurement`'s loop calls per
+/// occurrence and what the unit test below exercises directly, never a
+/// second copy-pasted matcher. `captured` = a fact shares this occurrence's
+/// expanded concept, full context period, dimension set (`dims`, already
+/// `Occurrence::dimension_set`) AND unit measure (`unit`, already
+/// `normalize_unit_measure`d — `None` never rejects a candidate, only
+/// narrows among matches when both sides carry one). Several facts sharing
+/// that full identity with different values is a legitimate duplicate
+/// (amendment Q): captured is still counted once; `value_correct` is true if
+/// ANY of them parses to the occurrence's own decimal value.
+fn capture_layer1(
+    concept_qname: &str,
+    period: &OccurrencePeriod,
+    dims: &BTreeMap<String, String>,
+    unit: Option<&str>,
+    value: &str,
+    facts: &[Layer1Fact],
+) -> (bool, bool) {
+    let matches: Vec<&Layer1Fact> = facts
+        .iter()
+        .filter(|fact| {
+            let fact_qname = format!(
+                "{{{}}}{}",
+                fact.concept_namespace_uri, fact.concept_local_name
+            );
+            fact_qname == concept_qname
+                && period.matches_layer1(fact)
+                && fact.dimension_set() == *dims
+                && match unit {
+                    Some(u) => fact.unit_measure.as_deref().map(normalize_unit_measure) == Some(u),
+                    None => true,
+                }
+        })
+        .collect();
+    if matches.is_empty() {
+        return (false, false);
+    }
+    let occurrence_value = value.parse::<Decimal>().ok();
+    let value_correct = matches.iter().any(|fact| {
+        fact.value_numeric
+            .as_deref()
+            .and_then(|v| v.parse::<Decimal>().ok())
+            == occurrence_value
+    });
+    (true, value_correct)
+}
+
+/// #331 PR-B floors red test: two comparative occurrences of the SAME
+/// concept and period, differing only by dimension member, each with their
+/// OWN Layer 1 fact at a DIFFERENT value. On the pre-fix matcher (concept +
+/// period only, `.find()`'s first hit) both occurrences resolve to the SAME
+/// (first) fact, so only one of the two reads value-correct. The fix must
+/// check each occurrence against its own member's fact: captured 2,
+/// value_correct 2.
+#[test]
+fn dimension_member_selects_its_own_fact_not_the_first_same_concept_and_period_one() {
+    let period = OccurrencePeriod::Duration {
+        start: "2024-01-01".to_owned(),
+        end: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}ProfitLoss";
+
+    let mut owners_dims = BTreeMap::new();
+    owners_dims.insert(
+        "ifrs-full:ComponentsOfEquityAxis".to_owned(),
+        "ifrs-full:OwnersOfParentMember".to_owned(),
+    );
+    let mut nci_dims = BTreeMap::new();
+    nci_dims.insert(
+        "ifrs-full:ComponentsOfEquityAxis".to_owned(),
+        "ifrs-full:NoncontrollingInterestsMember".to_owned(),
+    );
+
+    let fact = |dims: &BTreeMap<String, String>, value: &str| Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "ProfitLoss".to_owned(),
+        period_type: "duration".to_owned(),
+        period_start: Some("2024-01-01".to_owned()),
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some(value.to_owned()),
+        unit_measure: Some("PLN".to_owned()),
+        dimensions_json: Some(serde_json::to_string(dims).unwrap()),
+    };
+    // Owners-of-parent's fact listed FIRST — the pre-fix bug picked this one
+    // for both occurrences via `.find()`.
+    let facts = vec![fact(&owners_dims, "85000"), fact(&nci_dims, "5000")];
+
+    let (owners_captured, owners_correct) =
+        capture_layer1(concept, &period, &owners_dims, Some("PLN"), "85000", &facts);
+    let (nci_captured, nci_correct) =
+        capture_layer1(concept, &period, &nci_dims, Some("PLN"), "5000", &facts);
+
+    assert!(
+        owners_captured && nci_captured,
+        "both dimensional occurrences must be captured (own dimension set matches a fact)"
+    );
+    assert!(
+        owners_correct && nci_correct,
+        "each occurrence must be checked against ITS OWN member's fact — got owners_correct={owners_correct} nci_correct={nci_correct}"
+    );
 }
 
 /// The stored facts a fresh cold-start run produced for one event's company,
@@ -1260,6 +1444,8 @@ fn seed_and_run_event(
             period_start: f.period_start,
             period_end: f.period_end,
             value_numeric: f.value_numeric,
+            unit_measure: f.unit_measure,
+            dimensions_json: f.dimensions_json,
         })
         .collect();
 
@@ -1873,10 +2059,15 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             // Amendment Q: Layer 1 capture is over comparative-period GT
             // OCCURRENCES (from `occurrences_v2.json`, raw evidence — never
             // the already-collapsed GT slots): captured = a raw tagged fact
-            // with the SAME EXPANDED concept (namespace URI + local name) AND
-            // the SAME FULL context period (instant, or start+end) — never a
-            // local-name-suffix-plus-end-date shortcut. Value-correct is
-            // computed separately.
+            // with the SAME EXPANDED concept (namespace URI + local name),
+            // the SAME FULL context period (instant, or start+end), the SAME
+            // dimension set and the SAME unit measure (#331 PR-B floors: the
+            // dimension/unit check was missing, so a dimensional occurrence
+            // could be checked against an arbitrary same-concept-and-period
+            // fact — `capture_layer1` below). Several Layer 1 facts sharing
+            // that full identity with different values is a legitimate
+            // duplicate: captured counts once, value-correct if ANY of them
+            // equals.
             let empty_occurrences = Vec::new();
             let event_occurrences = occurrences_by_event
                 .get(event.event_id.as_str())
@@ -1902,22 +2093,19 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                     continue;
                 }
                 layer1_eligible += 1;
-                if let Some(fact) = run.layer1_facts.iter().find(|fact| {
-                    *concept_qname
-                        == format!(
-                            "{{{}}}{}",
-                            fact.concept_namespace_uri, fact.concept_local_name
-                        )
-                        && period.matches_layer1(fact)
-                }) {
+                let occurrence_dims = occurrence.dimension_set();
+                let occurrence_unit = occurrence.unit.as_deref().map(normalize_unit_measure);
+                let (captured, value_correct) = capture_layer1(
+                    concept_qname,
+                    period,
+                    &occurrence_dims,
+                    occurrence_unit,
+                    value,
+                    &run.layer1_facts,
+                );
+                if captured {
                     layer1_captured += 1;
-                    let occurrence_value = value.parse::<Decimal>().ok();
-                    if fact
-                        .value_numeric
-                        .as_deref()
-                        .and_then(|v| v.parse::<Decimal>().ok())
-                        == occurrence_value
-                    {
+                    if value_correct {
                         layer1_value_correct += 1;
                     }
                 }

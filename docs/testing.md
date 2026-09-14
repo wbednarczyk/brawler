@@ -383,6 +383,8 @@ judges a run (`status: unmeasured` is refused; a version mismatch is "incomparab
 required"; an improvement is a stale baseline until promoted). Self-tested by
 `scripts/check/check-realdata-ratchet.sh`.
 
+**Measurement version 1 (2026-09-14, 2026-09-10 snapshot):** 20 floor events (annual ESEF packages) across 23 acceptance issuers, 310 current-period panel slots — **310 matched, 0 false positives, 0 zero-output events, 0 unverified**; labeled capability 310/5201 (the panel is a fraction of every labeled IFRS concept); all-period availability 310/673 (comparatives are captured, never written — ADR 0100 decision 7); Layer 1 comparative capture 4931/4932 occurrences, 3961 value-equal; sensitivity 250/250 with 60 convention-resolved rows removed. Ground truth: 6,696 slots, second read by blinded agent readers in two rounds (round 1 exposed two labeling-error classes — attribution from a dimension member and from a concept-name suffix — both fixed and fully re-read in round 2: 1,481 agreements, 10 owner decisions keeping the first read). Issuer replay: 294 of 310 — one issuer's newest annual report is flagged by the prior-period cross-check when its restated comparatives meet the stored previous year (#517). The three production defects the first run exposed (#511 role families, #509 non-currency units, #508 statement basis) are fixed; the floor is pinned at their fixed state.
+
 **Corpus recipe (owner, private):** `scripts/realdata/esef-v2/README.md` — `build_frame.py` (frame
 from the pinned snapshot by bytes and filing evidence, never from extraction results) →
 `label_esef_v2.py` (blind reference parser, occurrence-level) → `adjudicate.py prepare/seal/compare`
