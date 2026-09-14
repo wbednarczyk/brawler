@@ -86,6 +86,7 @@ fn seed_revenue_history(state: &AppState, company_id: &str, document_id: &str) {
                 attribution: None,
                 measure_window: None,
                 data_quality: None,
+                statement_basis: None,
             })
             .expect("seed revenue history");
     }
@@ -195,6 +196,7 @@ fn upgrades_an_aggregator_held_slot() {
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("seed aggregator fact");
 
@@ -244,6 +246,7 @@ fn diverges_from_an_issuer_held_slot_without_overwriting() {
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("seed issuer fact");
 
@@ -326,6 +329,7 @@ fn implausible_facts_are_reported_and_never_written() {
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("history 1");
     state
@@ -348,6 +352,7 @@ fn implausible_facts_are_reported_and_never_written() {
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("history 2");
 

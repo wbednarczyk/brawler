@@ -440,6 +440,7 @@ pub(crate) fn promote_uncrosswalked_concept_core(
                 attribution: None,
                 measure_window: None,
                 data_quality: None,
+                statement_basis: None,
             })
             .map_err(|error| error.to_string())?;
         if matches!(commit, StructuredFactCommit::Created(_)) {

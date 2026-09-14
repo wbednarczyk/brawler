@@ -2594,6 +2594,7 @@ fn run_replay(
                         &history_keys,
                         event.labeled_period.fiscal_year,
                         &event.labeled_period.period_type,
+                        None,
                     )
                     .unwrap_or_default()
                     .values()
@@ -3537,14 +3538,53 @@ fn unsupported_semantic_pair_never_matches_a_total_prediction() {
     assert_eq!(aggregates.labeled_capability.matched, 1);
 }
 
-/// Test 4 — the standalone package member's exclusive concept
-/// (`CurrentLiabilities`) is written with `statement_basis='consolidated'`
-/// (ADR 0095 default, every structured write) while GT expects `standalone`:
-/// a real, honest `BASIS_MISMATCH` on the PREDICTION side, while the GT slot
-/// itself resolves to `MISSING` (never a mismatch label — only MATCH/MISSING
-/// ever appear in `slot_outcomes`).
+/// Test 4 (#508 decision 7, rewritten): the scorer's `BASIS_MISMATCH` path,
+/// proven independently of production's stamped basis — a GT slot on
+/// `standalone` paired against a prediction on `consolidated` for the same
+/// metric/period classifies `BASIS_MISMATCH` (the pure `score_event`/
+/// `classify_pair` matcher, same seam Test 5 below exercises). Master relied
+/// on production mis-stamping the sample corpus's standalone member as
+/// `consolidated` (ADR 0095 default) to exercise this path; after #508 that
+/// fact is never written at all (dropped as a non-primary-basis occurrence,
+/// counted in `other_basis`), so this test supplies its own mismatched
+/// prediction instead of depending on that production behavior (sol r1 f7).
 #[test]
 fn basis_mismatch_counts_against_precision() {
+    let panel: BTreeSet<String> = sample_key_map().panel;
+    let gt = slot(
+        "s_basis",
+        "current_liabilities",
+        2025,
+        "FY",
+        "2025-12-31",
+        "standalone",
+        "total",
+        "reported",
+        "point_in_time",
+        "PLN",
+        "30000000",
+    );
+    let pred = prediction(
+        "p_basis",
+        "current_liabilities",
+        2025,
+        "FY",
+        "2025-12-31",
+        "consolidated",
+        "total",
+        "reported",
+        "point_in_time",
+        Some("PLN"),
+        "30000000",
+    );
+    let score = score_event(&[gt], &[pred], &panel);
+    assert_eq!(score.prediction_outcomes["p_basis"], Outcome::BasisMismatch);
+    assert_eq!(score.slot_outcomes["s_basis"], Outcome::Missing);
+
+    // Real-corpus half: the sample corpus's standalone member no longer
+    // mis-stamps `CurrentLiabilities` as `consolidated` at all — it is
+    // dropped by the projection (#508 decision 2) and never reaches the
+    // store, so it now scores MISSING, never a mismatch label.
     let dir = materialize_sample_corpus();
     let out = dir.join("metrics.json");
     let key_map_path = local_key_map_path();
@@ -3556,7 +3596,6 @@ fn basis_mismatch_counts_against_precision() {
         required: false,
     })
     .expect("sample corpus must measure");
-
     let report_raw =
         std::fs::read_to_string(dir.join("scoring-report-v2.json")).expect("scoring report");
     let report: serde_json::Value = serde_json::from_str(&report_raw).expect("scoring report json");
@@ -3564,14 +3603,10 @@ fn basis_mismatch_counts_against_precision() {
         .as_object()
         .expect("predictions object");
     assert!(
-        predictions.values().any(|v| v == "BASIS_MISMATCH"),
-        "the standalone-only prediction (stamped consolidated by production) must be paired as BASIS_MISMATCH: {predictions:?}"
+        !predictions.values().any(|v| v == "BASIS_MISMATCH"),
+        "the sample corpus's standalone member must never mis-stamp its way \
+         into a BASIS_MISMATCH prediction after #508: {predictions:?}"
     );
-    // The comparative-scope standalone slot never appears in slot_outcomes at
-    // all now (it is not current-period for its event's own labeled period —
-    // it shares the SAME period_end/fiscal_year/period_type as the event, so
-    // it actually IS current-period; assert it resolves to MISSING, never a
-    // mismatch label).
     let slot_outcomes = report["slot_outcomes"]
         .as_object()
         .expect("slot outcomes object");

@@ -310,6 +310,46 @@ mod tests {
         assert_eq!(run.status, "succeeded");
     }
 
+    /// #508 decision 6: the concrete 4 → 5 bump — a succeeded ESEF run
+    /// stamped `pipelineVersion: 4` (a re-extraction now stores the true
+    /// statement basis, not just a version-generic "some lower version")
+    /// is re-extraction-eligible under the running build (5).
+    #[test]
+    fn a_run_stamped_pipeline_version_4_is_eligible_under_version_5() {
+        assert_eq!(
+            EXTRACTION_PIPELINE_VERSION, 5,
+            "pins the concrete #508 bump"
+        );
+        let s = state();
+        let c = company(&s);
+        s.autopilot().set_mode(&c, "assist").expect("set mode");
+        let run_id = succeeded_run(
+            &s,
+            &c,
+            "doc1",
+            r#"{"extractionAvailable":true,"tier":"esef","pipelineVersion":4}"#,
+        );
+
+        let batch = enqueue_pipeline_reextraction(&s, &c).expect("enqueue batch");
+        let payload = s
+            .jobs()
+            .pending_payload(&batch.id)
+            .expect("payload")
+            .expect("job queued");
+        run_pipeline_reextraction_job(&s, &payload).expect("batch runs");
+
+        let completed = s
+            .pipeline_reextraction()
+            .get_batch(&batch.id)
+            .expect("get batch");
+        assert_eq!(completed.candidates_total, 1);
+        assert_eq!(completed.runs_enqueued, 1);
+        assert_eq!(completed.enqueued_run_ids, vec![run_id.clone()]);
+
+        let run = s.autopilot().get_run(&run_id).expect("get run");
+        assert_eq!(run.status, "pending", "rearm_run resets to pending/fetch");
+    }
+
     #[test]
     fn a_gap_run_and_a_non_esef_tier_run_are_never_selected() {
         let s = state();

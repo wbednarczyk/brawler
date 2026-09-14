@@ -18,6 +18,11 @@ use std::collections::BTreeSet;
 
 const END: &str = "2026-03-31";
 const PRIOR_END: &str = "2025-03-31";
+/// Every fixture below (bar the mixed-basis Test D, which selects its own)
+/// defaults to an empty `package_entry_path`, which `basis_of` classifies
+/// `Consolidated` — the selection the caller now passes explicitly (astra r1
+/// #4: `PipelineInput.basis`, never recomputed inside `run_pipeline`).
+const CONSOLIDATED: Option<StatementBasis> = Some(StatementBasis::Consolidated);
 
 fn d(v: i64) -> Decimal {
     Decimal::from(v)
@@ -90,6 +95,7 @@ fn esef_present_is_source_of_truth() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         ..Default::default()
     });
     assert_eq!(out.acceptance, Acceptance::Accepted);
@@ -115,6 +121,7 @@ fn no_projectable_layer1_rows_is_an_honest_empty_gap() {
         period_end: END,
         layer1_facts: Some(&[]),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         ..Default::default()
     });
     assert_eq!(out.acceptance, Acceptance::Empty);
@@ -137,6 +144,7 @@ fn esef_comparative_cross_check_matching_stored_prior_stays_accepted() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         prior_period_end: Some(PRIOR_END),
         prior: Some(&stored_prior),
         ..Default::default()
@@ -144,6 +152,111 @@ fn esef_comparative_cross_check_matching_stored_prior_stays_accepted() {
     assert_eq!(out.acceptance, Acceptance::Accepted);
     assert_eq!(out.tier, Some(SourceTier::Esef));
     assert!(out.facts.iter().all(|f| f.period.end_date() == END));
+}
+
+/// Test D (#508 decision 2): the contract's asymmetric fixture through
+/// `run_pipeline` — the mixed-basis CURRENT period identity passes
+/// (`Accepted`; master: `Flagged` — the last-write-wins merge lets the
+/// standalone `Assets` overwrite the consolidated one, breaking the
+/// identity), and a comparative-period value present ONLY in the standalone
+/// instance never reaches the comparative cross-check (master: it does,
+/// and — paired against a wildly different stored prior — flags the run
+/// too).
+#[test]
+fn mixed_basis_fixture_is_accepted_the_standalone_only_comparative_value_is_excluded() {
+    let consolidated_current = [
+        NewTaggedFact {
+            package_entry_path: "pkg/reports/skonsolidowane/instance.xhtml".to_owned(),
+            ..balance_fact("Assets", "cons_assets", END, 100_000_000)
+        },
+        NewTaggedFact {
+            package_entry_path: "pkg/reports/skonsolidowane/instance.xhtml".to_owned(),
+            ..balance_fact("Liabilities", "cons_liabilities", END, 60_000_000)
+        },
+        NewTaggedFact {
+            package_entry_path: "pkg/reports/skonsolidowane/instance.xhtml".to_owned(),
+            ..balance_fact("Equity", "cons_equity", END, 40_000_000)
+        },
+    ];
+    let standalone_current = NewTaggedFact {
+        package_entry_path: "pkg/reports/jednostkowe/instance.xhtml".to_owned(),
+        ..balance_fact("Assets", "solo_assets", END, 50_000_000)
+    };
+    let consolidated_prior = [
+        NewTaggedFact {
+            package_entry_path: "pkg/reports/skonsolidowane/instance.xhtml".to_owned(),
+            ..balance_fact("Assets", "cons_assets_prior", PRIOR_END, 40_000_000)
+        },
+        NewTaggedFact {
+            package_entry_path: "pkg/reports/skonsolidowane/instance.xhtml".to_owned(),
+            ..balance_fact(
+                "Liabilities",
+                "cons_liabilities_prior",
+                PRIOR_END,
+                18_000_000,
+            )
+        },
+        NewTaggedFact {
+            package_entry_path: "pkg/reports/skonsolidowane/instance.xhtml".to_owned(),
+            ..balance_fact("Equity", "cons_equity_prior", PRIOR_END, 22_000_000)
+        },
+    ];
+    let standalone_only_prior = NewTaggedFact {
+        package_entry_path: "pkg/reports/jednostkowe/instance.xhtml".to_owned(),
+        ..balance_fact(
+            "CurrentLiabilities",
+            "solo_current_liabilities_prior",
+            PRIOR_END,
+            99_000_000,
+        )
+    };
+
+    let mut facts = Vec::new();
+    facts.extend(consolidated_current);
+    facts.push(standalone_current);
+    facts.extend(consolidated_prior);
+    facts.push(standalone_only_prior);
+
+    // A wildly different stored prior for `current_liabilities`: if the
+    // standalone-only occurrence leaked into the comparative set (master),
+    // the cross-check would fail against this; after the fix it never
+    // reaches the comparative set, so there is nothing to compare.
+    let stored_prior = stored(&[
+        ("total_assets", 40_000_000),
+        ("total_liabilities", 18_000_000),
+        ("total_equity", 22_000_000),
+        ("current_liabilities", 1),
+    ]);
+
+    // Selected the same way the real job does: ONCE, over the whole
+    // document (astra r1 #4) — never a hardcoded stand-in, since correctly
+    // resolving to `Consolidated` from this mixed fixture IS the point.
+    let basis =
+        crate::fundamentals::extraction::esef::projection::select_primary_basis(&facts, true);
+    assert_eq!(basis, CONSOLIDATED);
+    let out = run_pipeline(&PipelineInput {
+        period_end: END,
+        layer1_facts: Some(&facts),
+        has_presentation_linkbase: true,
+        basis,
+        prior_period_end: Some(PRIOR_END),
+        prior: Some(&stored_prior),
+        ..Default::default()
+    });
+
+    assert_eq!(
+        out.acceptance,
+        Acceptance::Accepted,
+        "mixed-basis identity must pass once only the primary basis projects: {out:?}"
+    );
+    assert_eq!(out.tier, Some(SourceTier::Esef));
+    assert!(
+        !out.facts
+            .iter()
+            .any(|f| f.metric_key == "current_liabilities"),
+        "the standalone-only current-period metric must never emit either: {:?}",
+        out.facts
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +275,7 @@ fn zero_overlap_expected_keys_downgrades_to_accepted_unreviewed() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         expected_keys: Some(&expected),
         ..Default::default()
     });
@@ -182,6 +296,7 @@ fn overlapping_expected_keys_keeps_full_accepted() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         expected_keys: Some(&expected),
         ..Default::default()
     });
@@ -207,6 +322,7 @@ fn a_candidate_set_that_fails_validation_writes_no_facts() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         ..Default::default()
     });
     assert_eq!(out.acceptance, Acceptance::Flagged);
@@ -266,6 +382,7 @@ fn a_bare_instance_with_no_linkbase_still_projects_its_crosswalked_facts() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: false,
+        basis: CONSOLIDATED,
         ..Default::default()
     });
 

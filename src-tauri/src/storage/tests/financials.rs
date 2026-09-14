@@ -2213,7 +2213,7 @@ fn metric_histories_equals_n_single_metric_history_reads() {
 
     let batched = state
         .financials()
-        .metric_histories(&company.id, &keys, 2025, "FY")
+        .metric_histories(&company.id, &keys, 2025, "FY", None)
         .expect("batched read should query");
 
     // Every key present; the batched vector is byte-identical (values AND order)
@@ -2798,6 +2798,7 @@ fn seed_quality_fixture(state: &AppState) -> QualityFixture {
             attribution: None,
             measure_window: None,
             data_quality: Some("preliminary"),
+            statement_basis: None,
         })
         .expect("preliminary total_assets should record");
     state
@@ -2820,6 +2821,7 @@ fn seed_quality_fixture(state: &AppState) -> QualityFixture {
             attribution: None,
             measure_window: None,
             data_quality: None, // normalizes to "final"
+            statement_basis: None,
         })
         .expect("final total_assets should record");
 
@@ -2844,6 +2846,7 @@ fn seed_quality_fixture(state: &AppState) -> QualityFixture {
             attribution: None,
             measure_window: None,
             data_quality: Some("preliminary"),
+            statement_basis: None,
         })
         .expect("preliminary-only net_profit should record");
 
@@ -2868,6 +2871,7 @@ fn seed_quality_fixture(state: &AppState) -> QualityFixture {
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("final-only revenue should record");
 
@@ -2930,6 +2934,7 @@ fn stored_fact_set_for_cross_check_final_preferred_slot_once() {
             2025,
             "FY",
             SourceTier::HtmlAggregator,
+            None,
         )
         .expect("cross-check prior should query")
         .expect("A, B, C all survive a veto filter with no incoming outranking");
@@ -3066,7 +3071,7 @@ fn stored_fact_set_for_cross_check_esef_never_vetoed_by_agent_preliminary() {
 
     let prior = state
         .financials()
-        .stored_fact_set_for_cross_check(&fixture.company_id, 2025, "FY", SourceTier::Esef)
+        .stored_fact_set_for_cross_check(&fixture.company_id, 2025, "FY", SourceTier::Esef, None)
         .expect("cross-check prior should query")
         .expect("A and C's esef-tier facts still yield a prior");
 
@@ -3214,7 +3219,7 @@ fn metric_histories_batch_matches_single_read_final_preferred() {
         .collect();
     let batch = state
         .financials()
-        .metric_histories(&fixture.company_id, &keys, 2099, "FY")
+        .metric_histories(&fixture.company_id, &keys, 2099, "FY", None)
         .expect("batched metric histories should read");
 
     for key in &keys {
@@ -3882,6 +3887,7 @@ fn a_write_under_an_alias_source_lands_on_the_live_definition() {
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("the aliased write must be accepted");
 
@@ -3987,6 +3993,7 @@ fn an_alias_source_that_already_holds_facts_is_never_redirected() {
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("write accepted");
 
@@ -4038,6 +4045,7 @@ fn an_alias_source_that_already_holds_facts_is_never_redirected() {
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("company B write accepted");
     let b_facts = state

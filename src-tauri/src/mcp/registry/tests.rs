@@ -787,6 +787,7 @@ fn an_mcp_written_fact_is_upgradeable_by_a_later_issuer_tier_write() {
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("issuer re-observation");
     assert!(

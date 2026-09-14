@@ -247,10 +247,19 @@ fn run_pipeline_for(
         .financials()
         .stored_fact_set(company_id, fiscal_year - 1, period_type)
         .expect("stored fact set");
+    // Selected the same way the real job does: ONCE, over the whole
+    // document (astra r1 #4) — never recomputed inside `run_pipeline`.
+    let basis = layer1_facts.as_deref().and_then(|facts| {
+        crate::fundamentals::extraction::esef::projection::select_primary_basis(
+            facts,
+            has_presentation_linkbase,
+        )
+    });
     let input = PipelineInput {
         period_end,
         layer1_facts: layer1_facts.as_deref(),
         has_presentation_linkbase,
+        basis,
         prior: prior.as_ref(),
         prior_period_end: prior_end.as_deref(),
         expected_keys: None,

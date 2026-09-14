@@ -72,6 +72,7 @@ fn record_as(
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("record fact");
 }

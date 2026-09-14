@@ -486,6 +486,7 @@ fn undo_deletes_produced_facts_regardless_of_confirmation_state() {
             attribution: None,
             measure_window: None,
             data_quality: None,
+            statement_basis: None,
         })
         .expect("record structured fact");
     let fact_id = match fact_id {

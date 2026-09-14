@@ -78,6 +78,11 @@ waits for your click.
 A period can also be flagged because one figure was held back as invalid (the
 details name it) while the rest of the filing landed normally.
 
+When a filing carries both the group's (consolidated) and the parent company's
+own (standalone) statements, Brawler reads the consolidated ones; the
+standalone figures stay in the raw capture, counted as *Other statement basis*.
+A company that files only standalone statements gets them labelled standalone.
+
 Some cells are honestly empty: BiznesRadar's pages simply don't publish every
 line (no cash, no total liabilities, equity only for parent shareholders), so
 those figures exist only for periods with an ESEF filing.

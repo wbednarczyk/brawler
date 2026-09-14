@@ -417,6 +417,7 @@ fn extract_one(
         fiscal_year - 1,
         period_type,
         TIER,
+        None,
     )?;
     let expected = expected_primary_metric_keys(connection, &item.company_id)?;
     let (acceptance, _status) = validate_parsed_set(
@@ -492,6 +493,7 @@ fn extract_one(
                 attribution: None,
                 measure_window: None,
                 data_quality: None,
+                statement_basis: None,
             },
         )?;
 

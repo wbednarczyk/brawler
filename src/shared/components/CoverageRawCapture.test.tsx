@@ -1,9 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { JSX } from "react";
 import { render, screen } from "@testing-library/react";
 
 import { CoverageRawCapture } from "./CoverageRawCapture";
 import { getReportTaggedFactCoverage, listUncrosswalkedConcepts } from "../../api/taggedFactPromotion";
 import type { TaggedFactCoverageCounts } from "../../api/taggedFactPromotion";
+import { LocaleContext, makeTextTranslator, makeTranslator } from "../locale";
+
+// Pattern shared with CoverageFlaggedPeriods.test.tsx: exercise the Polish
+// locale for real rather than asserting against the default English context.
+function renderPl(ui: JSX.Element) {
+  return render(
+    <LocaleContext.Provider value={{ locale: "pl", t: makeTranslator("pl"), text: makeTextTranslator("pl") }}>
+      {ui}
+    </LocaleContext.Provider>,
+  );
+}
 
 vi.mock("../../api/taggedFactPromotion", () => ({
   getReportTaggedFactCoverage: vi.fn(),
@@ -25,6 +37,7 @@ function counts(overrides: Partial<TaggedFactCoverageCounts> = {}): TaggedFactCo
     conflicting: 7,
     unparsed: 0,
     repeated: 0,
+    otherBasis: 0,
     ...overrides,
   };
 }
@@ -50,6 +63,7 @@ describe("CoverageRawCapture", () => {
     // permanent zero row.
     expect(screen.queryByText("Could not be read")).not.toBeInTheDocument();
     expect(screen.queryByText("Repeated in the report")).not.toBeInTheDocument();
+    expect(screen.queryByText("Other statement basis")).not.toBeInTheDocument();
     expect(getReportTaggedFactCoverageMock).toHaveBeenCalledWith("company_gpw_cdr");
   });
 
@@ -61,8 +75,24 @@ describe("CoverageRawCapture", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
+  it("a non-primary statement basis occurrence is visible with its own stated reason", async () => {
+    getReportTaggedFactCoverageMock.mockResolvedValue(counts({ otherBasis: 2 }));
+    render(<CoverageRawCapture companyId="company_gpw_cdr" />);
+
+    expect(await screen.findByText("Other statement basis")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
+  it("shows the non-primary statement basis reason in Polish", async () => {
+    getReportTaggedFactCoverageMock.mockResolvedValue(counts({ otherBasis: 2 }));
+    renderPl(<CoverageRawCapture companyId="company_gpw_cdr" />);
+
+    expect(await screen.findByText("Inny rodzaj sprawozdania")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
   it("renders nothing for a company with no tagged capture yet", async () => {
-    getReportTaggedFactCoverageMock.mockResolvedValue(counts({ rawStored: 0, projected: 0, comparative: 0, dimensional: 0, noteLevel: 0, awaitingName: 0, conflicting: 0, unparsed: 0, repeated: 0 }));
+    getReportTaggedFactCoverageMock.mockResolvedValue(counts({ rawStored: 0, projected: 0, comparative: 0, dimensional: 0, noteLevel: 0, awaitingName: 0, conflicting: 0, unparsed: 0, repeated: 0, otherBasis: 0 }));
     const { container } = render(<CoverageRawCapture companyId="company_gpw_cdr" />);
 
     // Wait for the fetch to settle without asserting on a specific string —

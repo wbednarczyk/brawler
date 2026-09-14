@@ -272,13 +272,18 @@ fn real_data_extraction_recall_precision() {
             .stored_fact_set(&company.id, doc.fiscal_year - 1, &doc.period_type)
             .expect("stored fact set");
 
+        // This harness's `SourceFormat` has no ZIP-package concept (unlike
+        // `t7_cbf_corpus`'s `run_new`) — every xhtml document routes bare, so
+        // it never carries linkbase evidence. The basis is selected the same
+        // way the real job does: ONCE, over the whole document (astra r1 #4).
+        let basis = layer1_facts.as_deref().and_then(|facts| {
+            crate::fundamentals::extraction::esef::projection::select_primary_basis(facts, false)
+        });
         let input = PipelineInput {
             period_end: &doc.period_end,
             layer1_facts: layer1_facts.as_deref(),
-            // This harness's `SourceFormat` has no ZIP-package concept (unlike
-            // `t7_cbf_corpus`'s `run_new`) — every xhtml document routes bare,
-            // so it never carries linkbase evidence.
             has_presentation_linkbase: false,
+            basis,
             prior: prior.as_ref(),
             prior_period_end: prior_end.as_deref(),
             expected_keys: None,
