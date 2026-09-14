@@ -343,3 +343,96 @@ fn a_consolidated_only_prior_period_abstains_under_a_standalone_basis_filter() {
         "a standalone filter must never see the consolidated-only history"
     );
 }
+
+/// Astra r1 #1 (P2): coverage must select the SAME linkbase evidence the
+/// pipeline does. A package whose linkbase declares roles for a concept NONE
+/// of the tagged facts use makes `has_presentation_linkbase = true` for the
+/// JOB (the parsed role map is non-empty — `compute_layer1_generation`), but
+/// the coverage read previously derived `false` (no STORED fact ended up
+/// with a role attached) — letting coverage's no-linkbase fallback
+/// crosswalk-resolve facts the pipeline's strict role filter correctly
+/// rejects, so the pipeline selects nothing while coverage claimed a
+/// consolidated set and counted the standalone occurrences as `other_basis`.
+/// Parity: coverage's `other_basis` must equal the pipeline's own
+/// `non_primary_basis_skipped + ambiguous_basis_skipped` for the SAME bytes.
+#[test]
+fn coverage_selects_the_same_linkbase_evidence_the_pipeline_does() {
+    let consolidated = instant_instance(&[
+        ("Assets", "100000000"),
+        ("Liabilities", "60000000"),
+        ("Equity", "40000000"),
+    ]);
+    let standalone =
+        instant_instance(&[("Assets", "50000000"), ("CurrentLiabilities", "30000000")]);
+    // The linkbase maps ONLY an unrelated concept — every tagged fact above
+    // ends up with an EMPTY role vector, even though the package genuinely
+    // carries linkbase evidence (a non-empty parsed role map).
+    let pre_xml = presentation_linkbase_xml(&[("SomeUnrelatedConcept", "ias_1_role-210000")]);
+    let bytes = minimal_zip(&[
+        (
+            "pkg/reports/skonsolidowane/instance.xhtml",
+            consolidated.as_bytes(),
+        ),
+        (
+            "pkg/reports/jednostkowe/instance.xhtml",
+            standalone.as_bytes(),
+        ),
+        ("pkg/www/instance_pre.xml", pre_xml.as_bytes()),
+    ]);
+
+    let (state, company_id, document_id) =
+        seed_document_with_bytes("basis-parity", "BSP", "Basis Parity", "report.xbri", &bytes);
+    let document = state.get_report_document(&document_id).expect("document");
+    let (fiscal_year, period_type, period_end) =
+        derive_report_period(&state, &document).expect("period derives");
+    run_structured_extraction(
+        &state,
+        &company_id,
+        &document_id,
+        fiscal_year,
+        period_type,
+        &period_end,
+        MODE_AUTOPILOT,
+    )
+    .expect("run must not abort");
+
+    // The pipeline's own evidence, computed independently of coverage.
+    let generation = compute_layer1_generation(&bytes, DocumentRoute::ZipPackage);
+    assert!(
+        generation.has_presentation_linkbase,
+        "the linkbase parsed with content — the job sees real evidence"
+    );
+    let basis = select_primary_basis(&generation.facts, generation.has_presentation_linkbase);
+    let mut period_ends: Vec<&str> = generation
+        .facts
+        .iter()
+        .map(|f| f.period_end.as_str())
+        .collect();
+    period_ends.sort_unstable();
+    period_ends.dedup();
+    let mut expected_other_basis = 0i64;
+    for period_end in period_ends {
+        let projected = crate::fundamentals::extraction::esef::projection::project_period(
+            &generation.facts,
+            period_end,
+            generation.has_presentation_linkbase,
+            basis,
+        );
+        expected_other_basis +=
+            projected.non_primary_basis_skipped as i64 + projected.ambiguous_basis_skipped as i64;
+    }
+
+    let coverage = state
+        .report_tagged_facts()
+        .coverage_counts(&company_id)
+        .expect("coverage counts");
+    assert_eq!(
+        coverage.other_basis, expected_other_basis,
+        "coverage must select the SAME linkbase evidence the pipeline does"
+    );
+    assert_eq!(
+        expected_other_basis, 0,
+        "the strict role filter correctly rejects every fact here — nothing \
+         should ever reach crosswalk resolution to be counted as other_basis"
+    );
+}

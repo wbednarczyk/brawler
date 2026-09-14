@@ -288,6 +288,63 @@ fn select_primary_basis_an_ineligible_consolidated_instance_never_suppresses_a_s
     assert_eq!(basis, Some(StatementBasis::Standalone));
 }
 
+/// Astra r1 #2 (spec amended, code kept as-is): a consolidated instance
+/// whose MAPPED primary facts are all UNPARSEABLE (`has_usable_value`
+/// rejects them first) must never suppress a usable standalone set — those
+/// are stored under their true standalone label.
+#[test]
+fn select_primary_basis_a_consolidated_instance_with_only_unparseable_values_selects_standalone() {
+    let unparseable_consolidated = [
+        NewTaggedFact {
+            package_entry_path: "reports/skonsolidowane/raport.xhtml".to_owned(),
+            value_numeric: None,
+            ..balance_fact("Assets", "cons_assets", "0")
+        },
+        NewTaggedFact {
+            package_entry_path: "reports/skonsolidowane/raport.xhtml".to_owned(),
+            value_numeric: None,
+            ..balance_fact("Liabilities", "cons_liabilities", "0")
+        },
+    ];
+    let standalone = [
+        NewTaggedFact {
+            package_entry_path: "reports/jednostkowe/raport.xhtml".to_owned(),
+            ..balance_fact("Assets", "solo_assets", "50")
+        },
+        NewTaggedFact {
+            package_entry_path: "reports/jednostkowe/raport.xhtml".to_owned(),
+            ..balance_fact("Liabilities", "solo_liabilities", "20")
+        },
+    ];
+    let mut facts = Vec::new();
+    facts.extend(unparseable_consolidated);
+    facts.extend(standalone);
+
+    let basis = select_primary_basis(&facts, true);
+    assert_eq!(
+        basis,
+        Some(StatementBasis::Standalone),
+        "an unparseable consolidated value is never eligible evidence — it \
+         must not suppress the usable standalone set"
+    );
+
+    // The projection stores the standalone facts under their TRUE label.
+    let projected = project_period(&facts, "2025-12-31", true, basis);
+    let mut got: Vec<(&str, Option<StatementBasis>)> = projected
+        .facts
+        .iter()
+        .map(|pf| (pf.fact.metric_key.as_str(), pf.fact.basis))
+        .collect();
+    got.sort_by(|a, b| a.0.cmp(b.0));
+    assert_eq!(
+        got,
+        vec![
+            ("total_assets", Some(StatementBasis::Standalone)),
+            ("total_liabilities", Some(StatementBasis::Standalone)),
+        ]
+    );
+}
+
 /// Test B: instance order must never change the outcome — a pure OR over
 /// evidence, never a first-wins pick.
 #[test]
@@ -359,6 +416,47 @@ fn projection_on_the_asymmetric_fixture_keeps_only_the_consolidated_slots() {
     assert!(projected.conflicts.is_empty());
     assert_eq!(projected.non_primary_basis_skipped, 2);
     assert_eq!(projected.ambiguous_basis_skipped, 0);
+}
+
+/// Astra r1 #3: a MAPPED, genuinely ambiguous occurrence (both tokens in its
+/// entry path) is excluded and counted (`ambiguous_basis_skipped`), separate
+/// from a non-primary-basis drop; an UNMAPPED occurrence from the SAME
+/// ambiguous instance is never counted there too — crosswalk resolution
+/// runs before the ambiguity check, so it stays purely `uncrosswalked`.
+#[test]
+fn an_ambiguous_instance_counts_only_its_mapped_occurrence() {
+    let selected = NewTaggedFact {
+        package_entry_path: "reports/skonsolidowane/raport.xhtml".to_owned(),
+        ..balance_fact("Assets", "cons_occ", "150")
+    };
+    let mapped_ambiguous = NewTaggedFact {
+        package_entry_path: "reports/consolidated-and-standalone/raport.xhtml".to_owned(),
+        ..balance_fact("Liabilities", "amb_occ", "60")
+    };
+    let unmapped_ambiguous = NewTaggedFact {
+        package_entry_path: "reports/consolidated-and-standalone/raport.xhtml".to_owned(),
+        ..balance_fact("SomeUncrosswalkedExtension", "amb_unk_occ", "1")
+    };
+    let facts = [selected, mapped_ambiguous, unmapped_ambiguous];
+    let basis = select_primary_basis(&facts, true);
+    assert_eq!(basis, CONSOLIDATED);
+    let projected = project_period(&facts, "2025-12-31", true, basis);
+
+    assert_eq!(
+        projected.facts.len(),
+        1,
+        "only the consolidated Assets projects"
+    );
+    assert_eq!(projected.facts[0].fact.metric_key, "total_assets");
+    assert_eq!(
+        projected.ambiguous_basis_skipped, 1,
+        "only the MAPPED ambiguous occurrence counts here"
+    );
+    assert_eq!(projected.non_primary_basis_skipped, 0);
+    assert!(projected
+        .uncrosswalked_concepts
+        .contains("SomeUncrosswalkedExtension"));
+    assert_eq!(projected.uncrosswalked_fact_count, 1);
 }
 
 /// An issuer-extension concept that reuses a STANDARD local name must

@@ -403,8 +403,10 @@ fn coverage_counts_buckets_a_documents_facts_by_projection_outcome() {
 /// balanced identity (`Assets 100 = Liabilities 60 + Equity 40`) plus a
 /// standalone instance duplicating `Assets` (50) AND carrying its own
 /// exclusive `CurrentLiabilities` (30) — both standalone occurrences are
-/// crosswalk-resolved, primary-statement facts dropped for basis alone,
-/// so `other_basis == 2`, never conflated with `note_level`/`conflicting`.
+/// crosswalk-resolved, primary-statement facts dropped for basis alone —
+/// PLUS a mapped occurrence from a genuinely AMBIGUOUS instance (entry path
+/// carrying both a consolidated and a standalone token, astra r1 #3), so
+/// `other_basis == 3`, never conflated with `note_level`/`conflicting`.
 #[test]
 fn coverage_counts_counts_non_primary_basis_occurrences_as_other_basis() {
     let mut connection = open_in_memory_database().expect("db");
@@ -436,6 +438,19 @@ fn coverage_counts_counts_non_primary_basis_occurrences_as_other_basis() {
     standalone_current_liabilities.roles = vec![role("balance")];
     standalone_current_liabilities.value_numeric = Some("30".to_owned());
 
+    // Astra r1 #3: a mapped occurrence from a genuinely AMBIGUOUS instance —
+    // its entry path carries BOTH a consolidated and a standalone token, so
+    // it is excluded from projection and counted, but never as a
+    // non-primary-basis drop.
+    let mut ambiguous_equity = basic_fact(
+        "reports/skonsolidowane-i-jednostkowe/i.xhtml",
+        "f6",
+        "Equity",
+    );
+    ambiguous_equity.period_type = "instant".to_owned();
+    ambiguous_equity.roles = vec![role("balance")];
+    ambiguous_equity.value_numeric = Some("999".to_owned());
+
     replace_tagged_facts(
         &mut connection,
         "doc1",
@@ -446,16 +461,18 @@ fn coverage_counts_counts_non_primary_basis_occurrences_as_other_basis() {
             equity,
             standalone_assets,
             standalone_current_liabilities,
+            ambiguous_equity,
         ]),
     )
     .expect("replace");
 
     let counts = coverage_counts(&connection, "c1").expect("coverage counts");
-    assert_eq!(counts.raw_stored, 5);
+    assert_eq!(counts.raw_stored, 6);
     assert_eq!(counts.projected, 3, "the three consolidated facts");
     assert_eq!(
-        counts.other_basis, 2,
-        "the standalone Assets duplicate + its exclusive CurrentLiabilities"
+        counts.other_basis, 3,
+        "the standalone Assets duplicate + its exclusive CurrentLiabilities \
+         + the mapped ambiguous Equity occurrence"
     );
     assert_eq!(counts.conflicting, 0, "different bases never conflict");
     assert_eq!(counts.note_level, 0);

@@ -621,7 +621,20 @@ fn coverage_counts(
     let mut repeated = 0i64;
     let mut other_basis = 0i64;
     for (document_id, doc_facts) in &by_document {
-        let has_presentation_linkbase = doc_facts.iter().any(|f| !f.roles.is_empty());
+        // The SAME linkbase evidence the job sees (astra r1 #1): the parsed
+        // presentation-linkbase role map can be non-empty (a real `*_pre.xml`
+        // exists) while covering none of THIS document's tagged concepts —
+        // every stored fact then carries an empty role vector even though
+        // `compute_layer1_generation` correctly saw `has_presentation_
+        // linkbase = true`. Inferring the flag from "did any stored fact end
+        // up with a role" would disagree with the job in exactly that case,
+        // letting the no-linkbase fallback here crosswalk-resolve facts the
+        // job's strict role filter rejects. `no_linkbase_fallback_count` is
+        // the persisted, reliable per-document signal — `0` whenever a
+        // linkbase existed, unconditionally, regardless of what it covered.
+        let has_presentation_linkbase = get_extraction(connection, document_id)?
+            .map(|extraction| extraction.no_linkbase_fallback_count == 0)
+            .unwrap_or_else(|| doc_facts.iter().any(|f| !f.roles.is_empty()));
         // The SAME document-wide selection `run_pipeline` applies (ADR 0100
         // decision 2, #508) — never a second, independently-derived basis,
         // so the Coverage read model can never disagree with what actually

@@ -18,6 +18,11 @@ use std::collections::BTreeSet;
 
 const END: &str = "2026-03-31";
 const PRIOR_END: &str = "2025-03-31";
+/// Every fixture below (bar the mixed-basis Test D, which selects its own)
+/// defaults to an empty `package_entry_path`, which `basis_of` classifies
+/// `Consolidated` — the selection the caller now passes explicitly (astra r1
+/// #4: `PipelineInput.basis`, never recomputed inside `run_pipeline`).
+const CONSOLIDATED: Option<StatementBasis> = Some(StatementBasis::Consolidated);
 
 fn d(v: i64) -> Decimal {
     Decimal::from(v)
@@ -90,6 +95,7 @@ fn esef_present_is_source_of_truth() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         ..Default::default()
     });
     assert_eq!(out.acceptance, Acceptance::Accepted);
@@ -115,6 +121,7 @@ fn no_projectable_layer1_rows_is_an_honest_empty_gap() {
         period_end: END,
         layer1_facts: Some(&[]),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         ..Default::default()
     });
     assert_eq!(out.acceptance, Acceptance::Empty);
@@ -137,6 +144,7 @@ fn esef_comparative_cross_check_matching_stored_prior_stays_accepted() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         prior_period_end: Some(PRIOR_END),
         prior: Some(&stored_prior),
         ..Default::default()
@@ -220,10 +228,17 @@ fn mixed_basis_fixture_is_accepted_the_standalone_only_comparative_value_is_excl
         ("current_liabilities", 1),
     ]);
 
+    // Selected the same way the real job does: ONCE, over the whole
+    // document (astra r1 #4) — never a hardcoded stand-in, since correctly
+    // resolving to `Consolidated` from this mixed fixture IS the point.
+    let basis =
+        crate::fundamentals::extraction::esef::projection::select_primary_basis(&facts, true);
+    assert_eq!(basis, CONSOLIDATED);
     let out = run_pipeline(&PipelineInput {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis,
         prior_period_end: Some(PRIOR_END),
         prior: Some(&stored_prior),
         ..Default::default()
@@ -260,6 +275,7 @@ fn zero_overlap_expected_keys_downgrades_to_accepted_unreviewed() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         expected_keys: Some(&expected),
         ..Default::default()
     });
@@ -280,6 +296,7 @@ fn overlapping_expected_keys_keeps_full_accepted() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         expected_keys: Some(&expected),
         ..Default::default()
     });
@@ -305,6 +322,7 @@ fn a_candidate_set_that_fails_validation_writes_no_facts() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: true,
+        basis: CONSOLIDATED,
         ..Default::default()
     });
     assert_eq!(out.acceptance, Acceptance::Flagged);
@@ -364,6 +382,7 @@ fn a_bare_instance_with_no_linkbase_still_projects_its_crosswalked_facts() {
         period_end: END,
         layer1_facts: Some(&facts),
         has_presentation_linkbase: false,
+        basis: CONSOLIDATED,
         ..Default::default()
     });
 

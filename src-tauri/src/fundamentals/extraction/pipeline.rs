@@ -18,8 +18,8 @@
 
 use std::collections::BTreeSet;
 
-use super::esef::projection::{project_period, select_primary_basis};
-use super::{fact_set_for_period, ExtractedFact, SourceTier};
+use super::esef::projection::project_period;
+use super::{fact_set_for_period, ExtractedFact, SourceTier, StatementBasis};
 use crate::fundamentals::validation::{
     completeness, validate, Completeness, FactSet, Status, Tolerance, ValidationReport,
 };
@@ -48,6 +48,13 @@ pub struct PipelineInput<'a> {
     /// fallback (dimensionless + crosswalk-resolved, no role filter)
     /// instead. Irrelevant when `layer1_facts` is `None`.
     pub has_presentation_linkbase: bool,
+    /// The document's ONE primary statement basis (ADR 0100 decision 2,
+    /// #508), selected ONCE by the caller (the job's own single
+    /// `select_primary_basis` call over the whole document) — `run_pipeline`
+    /// uses this for BOTH the current and comparative projection, never
+    /// recomputing it. `None` when `layer1_facts` is `None`/irrelevant, or
+    /// when the document has no eligible primary-statement fact anywhere.
+    pub basis: Option<StatementBasis>,
     /// Previously-stored facts for the immediately prior period. Doubles as
     /// **both** inputs `validate` takes for cross-period checks: the
     /// cash-flow tie's opening balance, and the comparative cross-check's
@@ -231,10 +238,11 @@ pub fn run_pipeline(input: &PipelineInput<'_>) -> PipelineOutcome {
     // ADR 0100 decisions 1/4/7 (epic #398): the candidate set is a Layer 1
     // projection, not a fresh `parse_esef` pass — see `esef::projection`.
     if let Some(layer1_facts) = input.layer1_facts {
-        // ADR 0100 decision 2 (#508): ONE primary basis, selected once over
-        // the WHOLE document, reused for both the current and the
-        // comparative projection below — never re-derived per call.
-        let basis = select_primary_basis(layer1_facts, input.has_presentation_linkbase);
+        // ADR 0100 decision 2 (#508): the caller selected this ONCE over the
+        // WHOLE document (its own single `select_primary_basis` call) —
+        // reused here for both the current and the comparative projection,
+        // never re-derived (astra r1 #4: compute the basis once).
+        let basis = input.basis;
         let projected = project_period(
             layer1_facts,
             input.period_end,

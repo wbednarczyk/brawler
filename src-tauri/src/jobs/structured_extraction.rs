@@ -1175,8 +1175,7 @@ pub(crate) fn run_structured_extraction(
     // from storage — so a Layer 1 write failure above can never silently
     // widen or narrow what Layer 2 projects from.
     let layer1 = compute_layer1_generation(&bytes, route);
-    // The document's ONE primary basis (ADR 0100 decision 2, #508), needed
-    // here for the basis-aware cross-check/history reads below.
+    // The document's ONE primary basis (ADR 0100 decision 2, #508).
     let basis = select_primary_basis(&layer1.facts, layer1.has_presentation_linkbase);
     let basis_str = basis.map(StatementBasis::as_str);
 
@@ -1201,6 +1200,7 @@ pub(crate) fn run_structured_extraction(
         period_end,
         layer1_facts: Some(&layer1.facts),
         has_presentation_linkbase: layer1.has_presentation_linkbase,
+        basis,
         prior: stored_prior.as_ref(),
         prior_period_end: prior_end.as_deref(),
         expected_keys: expected_keys.as_ref(),
