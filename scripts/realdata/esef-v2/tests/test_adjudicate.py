@@ -715,6 +715,32 @@ class RoundTests(unittest.TestCase):
             round1_resolutions = json.loads((out / "adjudication" / "resolutions.json").read_text())
             self.assertEqual(len(round1_resolutions), 1)  # round 1's own resolutions, untouched
 
+    def test_round_1_compare_ignores_a_pre_existing_round_2s_seal_files(self):
+        # #331 PR-B review finding 2: round isolation must be symmetric.
+        # Round 2's own unregistered-seal scan never sees round 1's files
+        # (it starts inside adjudication/round-2/), but round 1's flat-layout
+        # scan is otherwise unbounded and would walk INTO adjudication/round-2/
+        # and reject round 2's legitimate seal as "unregistered" -- even
+        # though round 1 is prepared/sealed/compared entirely after round 2.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot1 = _slot("Revenue", "machine", "42")
+            _write_gt(out, [slot1])
+
+            adj.prepare(out, seed=2, round_num=2)
+            index2 = json.loads((out / "adjudication" / "round-2" / "tasks_index.json").read_text())
+            _seal_all(out, "reader_a", index2, lambda tid, meta: _full_answer(slot1), round_num=2)
+
+            adj.prepare(out, seed=1, round_num=1)
+            index1 = json.loads((out / "adjudication" / "tasks_index.json").read_text())
+            _seal_all(out, "reader_a", index1, lambda tid, meta: _full_answer(slot1), round_num=1)
+
+            result = adj.compare(out, round_num=1)  # must succeed, never read round-2 files
+
+            self.assertEqual(result["resolutions"], 1)
+            self.assertTrue((out / "adjudication" / "resolutions.json").exists())
+            self.assertFalse((out / "adjudication" / "round-2" / "resolutions.json").exists())
+
 
 class RereadClassSelectionTests(unittest.TestCase):
     """Direct tests of the class-selection predicate -- LABELING.md step 6."""
@@ -844,16 +870,44 @@ class DecisionsTests(unittest.TestCase):
             self.assertEqual(new_slot["slot_id"], old_slot_id)  # untouched -- no re-key
             self.assertEqual(
                 new_slot["resolution_ref"],
-                {"decision": "keep_machine", "reason": "readers answered a neighbouring fact", "decided_by": "owner"},
+                {
+                    "keep": "machine",
+                    "reason": "readers answered a neighbouring fact",
+                    "decided_by": "owner",
+                    "decisions_sha256": hashlib.sha256(decisions_path.read_bytes()).hexdigest(),
+                },
             )
             resolutions = json.loads((out / "adjudication" / "resolutions.json").read_text())
             self.assertEqual(resolutions[0]["outcome"], "adjudicated_keep_machine")
+            self.assertEqual(resolutions[0]["keep"], "machine")
+            self.assertEqual(resolutions[0]["reason"], "readers answered a neighbouring fact")
+            self.assertEqual(resolutions[0]["decided_by"], "owner")
             self.assertEqual(resolutions[0]["decisions_sha256"], hashlib.sha256(decisions_path.read_bytes()).hexdigest())
 
-    def test_keep_reader_applies_as_before(self):
+    def test_keep_reader_without_evidence_anchor_aborts_with_no_writes(self):
+        # #331 PR-B review finding 1: a `keep: reader` decision on a
+        # disagreement where NO reader supplied an evidence_anchor would
+        # apply an unverified value on the owner's say-so alone -- refused
+        # before any write, same spirit as `rejected_missing_evidence`.
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             slot, task_id = self._prepared_and_sealed_disagreement(out, evidence_anchor=None)
+            decisions_path = _write_decisions(
+                out, {task_id: {"keep": "reader", "reason": "confirmed on a second filing page", "decided_by": "owner"}}
+            )
+
+            with self.assertRaises(adj.InvalidDecisionError):
+                adj.compare(out, decisions_path=decisions_path)
+
+            gt = json.loads((out / "ground_truth_v2.json").read_text())
+            self.assertEqual(gt["slots"][0]["value"], "42")  # untouched
+            self.assertIsNone(gt["slots"][0]["resolution_ref"])
+            self.assertFalse((out / "adjudication" / "resolutions.json").exists())
+
+    def test_keep_reader_with_evidence_anchor_applies_and_records_the_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slot, task_id = self._prepared_and_sealed_disagreement(out)  # default answer carries evidence_anchor
             decisions_path = _write_decisions(
                 out, {task_id: {"keep": "reader", "reason": "confirmed on a second filing page", "decided_by": "owner"}}
             )
@@ -864,8 +918,20 @@ class DecisionsTests(unittest.TestCase):
             new_slot = gt["slots"][0]
             self.assertEqual(new_slot["verification"], "adjudicated")
             self.assertEqual(new_slot["value"], "999")
+            self.assertEqual(
+                new_slot["resolution_ref"],
+                {
+                    "keep": "reader",
+                    "reason": "confirmed on a second filing page",
+                    "decided_by": "owner",
+                    "decisions_sha256": hashlib.sha256(decisions_path.read_bytes()).hexdigest(),
+                },
+            )
             resolutions = json.loads((out / "adjudication" / "resolutions.json").read_text())
             self.assertEqual(resolutions[0]["outcome"], "adjudicated")
+            self.assertEqual(resolutions[0]["keep"], "reader")
+            self.assertEqual(resolutions[0]["reason"], "confirmed on a second filing page")
+            self.assertEqual(resolutions[0]["decided_by"], "owner")
             self.assertEqual(resolutions[0]["decisions_sha256"], hashlib.sha256(decisions_path.read_bytes()).hexdigest())
 
     def test_decision_on_an_agreeing_task_aborts_with_no_writes(self):
@@ -949,6 +1015,46 @@ class DecisionsTests(unittest.TestCase):
             resolutions = json.loads((out / "adjudication" / "resolutions.json").read_text())
             self.assertEqual(resolutions[0]["outcome"], "adjudicated")
             self.assertNotIn("decisions_sha256", resolutions[0])
+
+
+class CliParsingTests(unittest.TestCase):
+    """#331 PR-B review finding 3: `--round` (like `--esef-v2-dir`) is
+    registered on the TOP-LEVEL parser, before `add_subparsers` -- argparse
+    requires it BEFORE the subcommand name, not after. Exercises the working
+    form end to end through `main()` for all three subcommands."""
+
+    def test_round_is_a_global_option_before_the_subcommand_for_prepare_seal_and_compare(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            slots = [_slot(f"Concept{i}", "machine", "1") for i in range(20)]
+            name_slot = _slot("ComprehensiveIncomeAttributableToOwnersOfParent", "machine", "9", attribution="owners_of_parent")
+            name_slot["mapped"] = False
+            slots.append(name_slot)
+            _write_gt(out, slots)
+            _write_occurrences(out, [{"occurrence_id": s["contributing_occurrence_ids"][0], "dimensions": []} for s in slots])
+
+            rc = adj.main([
+                "--esef-v2-dir", str(out), "--round", "2", "prepare",
+                "--seed", "1", "--reread-class", "attribution_dimension", "--reread-class", "attribution_name",
+            ])
+            self.assertEqual(rc, 0)
+            self.assertTrue((out / "adjudication" / "round-2" / "tasks.lock").exists())
+
+            index = json.loads((out / "adjudication" / "round-2" / "tasks_index.json").read_text())
+            slots_by_id = {s["slot_id"]: s for s in slots}
+            answers = {task_id: _full_answer(slots_by_id[meta["slot_id"]]) for task_id, meta in index.items()}
+            answers_path = out / "reader_a-answers.json"
+            answers_path.write_text(json.dumps({"answers": answers}), encoding="utf-8")
+
+            rc = adj.main(["--esef-v2-dir", str(out), "--round", "2", "seal", "reader_a", str(answers_path)])
+            self.assertEqual(rc, 0)
+            event_id = next(iter(index.values()))["event_id"]
+            self.assertTrue((out / "adjudication" / "round-2" / event_id / "reader_a.json").exists())
+
+            decisions_path = _write_decisions(out, {})
+            rc = adj.main(["--esef-v2-dir", str(out), "--round", "2", "compare", "--decisions", str(decisions_path)])
+            self.assertEqual(rc, 0)
+            self.assertTrue((out / "adjudication" / "round-2" / "resolutions.json").exists())
 
 
 if __name__ == "__main__":

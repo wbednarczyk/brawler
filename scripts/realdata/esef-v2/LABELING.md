@@ -51,9 +51,13 @@ an event is disqualified for that event.
    is refused before any write; its sha256 is recorded on each resolution it decided.
 6. **Systematic-error rule** — if the agreement sample reveals a labeling error class (a transform,
    a sign convention, a namespace), the whole affected class is re-read before any floor is pinned.
-   `adjudicate.py prepare --round <n> --reread-class attribution_dimension|attribution_name` opens a
-   new round (`adjudication/round-<n>/`, isolated from earlier rounds) and adds every slot of the
-   named class to that round's own seeded sample, still indistinguishable.
+   `--round` is a global option, given BEFORE the subcommand: `adjudicate.py --esef-v2-dir <dir>
+   --round 2 prepare --seed <n> --reread-class attribution_dimension --reread-class attribution_name`
+   opens a new round (`adjudication/round-<n>/`, isolated from earlier rounds) and adds every slot of
+   the named class to that round's own seeded sample, still indistinguishable; `seal` and `compare`
+   for that round take the same `--round 2` before the subcommand (`adjudicate.py --esef-v2-dir <dir>
+   --round 2 seal <reader> <answers.json>`, `adjudicate.py --esef-v2-dir <dir> --round 2 compare
+   [--decisions <path>]`).
 7. **Freeze** — `gt_version`, `key_map_version`, `normalization_version` and the corpus
    `registry_hash` are frozen together; any change bumps `measurement_version` and requires a new,
    deliberately promoted baseline (`make realdata-esef-promote`).

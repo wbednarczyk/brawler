@@ -1153,16 +1153,37 @@ struct Layer1Fact {
 }
 
 impl Layer1Fact {
-    /// This fact's dimension set, parsed from `dimensions_json` — empty for
-    /// a dimensionless fact (`None`, or malformed — comparative capture
-    /// treats a bad column as dimensionless rather than panicking a whole
-    /// measurement run over one bad row).
-    fn dimension_set(&self) -> BTreeMap<String, String> {
-        self.dimensions_json
-            .as_deref()
-            .and_then(|json| serde_json::from_str(json).ok())
-            .unwrap_or_default()
+    /// This fact's dimension set, parsed from `dimensions_json`: `Some` —
+    /// empty for a genuinely dimensionless fact (the column absent, never
+    /// dimensional) — when the column is absent or parses; `None` when it
+    /// is PRESENT but fails to parse into the `{axis: member}` shape (#331
+    /// PR-B fix wave, finding P2). A malformed column must never be
+    /// silently treated as dimensionless: that let a bad row match ANY
+    /// dimensionless occurrence sharing its concept/period/unit, even
+    /// earning bogus value-correct credit. `None` here makes the fact
+    /// unusable for matching — `capture_layer1` never captures with it, no
+    /// panic over one bad row either; [`count_invalid_dimension_facts`]
+    /// tallies these for the run's diagnostics.
+    fn dimension_set(&self) -> Option<BTreeMap<String, String>> {
+        match self.dimensions_json.as_deref() {
+            None => Some(BTreeMap::new()),
+            Some(json) => serde_json::from_str(json).ok(),
+        }
     }
+}
+
+/// Diagnostic count of `facts` whose `dimensions_json` is present but
+/// unparseable (#331 PR-B fix wave, finding P2) — such a fact never
+/// captures anything (see [`Layer1Fact::dimension_set`]); many of them in a
+/// run signal a labeling/extraction QA problem worth surfacing. Private-
+/// report + console only, mirroring `unresolved_occurrences_total`'s
+/// existing precedent — never added to the public `Aggregates`/
+/// `metrics.json` key set.
+fn count_invalid_dimension_facts(facts: &[Layer1Fact]) -> usize {
+    facts
+        .iter()
+        .filter(|fact| fact.dimension_set().is_none())
+        .count()
 }
 
 /// One comparative GT occurrence's Layer 1 capture outcome against the
@@ -1194,8 +1215,14 @@ fn capture_layer1(
             );
             fact_qname == concept_qname
                 && period.matches_layer1(fact)
-                && fact.dimension_set() == *dims
+                && fact.dimension_set().is_some_and(|d| d == *dims)
                 && match unit {
+                    // Asymmetry: a missing occurrence-side unit is "no
+                    // constraint" (matches anything), but a KNOWN occurrence
+                    // unit against a fact with no stored unit rejects — never
+                    // a silent wildcard. Numerator local measure only
+                    // (`normalize_unit_measure`); denominator and namespace
+                    // are not compared.
                     Some(u) => fact.unit_measure.as_deref().map(normalize_unit_measure) == Some(u),
                     None => true,
                 }
@@ -1267,6 +1294,223 @@ fn dimension_member_selects_its_own_fact_not_the_first_same_concept_and_period_o
         owners_correct && nci_correct,
         "each occurrence must be checked against ITS OWN member's fact — got owners_correct={owners_correct} nci_correct={nci_correct}"
     );
+}
+
+/// #331 PR-B fix wave (finding P2): a fact whose `dimensions_json` fails to
+/// parse must never be captured — even by a dimensionless occurrence sharing
+/// its concept/period/unit. Pre-fix, `dimension_set()` swallowed the parse
+/// error into an empty map, so this malformed fact matched (and, since the
+/// value lines up too, even earned value-correct credit).
+#[test]
+fn malformed_dimensions_json_fact_is_never_captured() {
+    let period = OccurrencePeriod::Instant {
+        instant: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Assets";
+    let dimensionless = BTreeMap::new();
+
+    let fact = Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "Assets".to_owned(),
+        period_type: "instant".to_owned(),
+        period_start: None,
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("1000".to_owned()),
+        unit_measure: Some("PLN".to_owned()),
+        dimensions_json: Some("not valid json".to_owned()),
+    };
+
+    let (captured, value_correct) = capture_layer1(
+        concept,
+        &period,
+        &dimensionless,
+        Some("PLN"),
+        "1000",
+        &[fact],
+    );
+
+    assert!(
+        !captured,
+        "a malformed dimensions_json must never be captured, not silently treated as dimensionless"
+    );
+    assert!(!value_correct);
+}
+
+#[test]
+fn count_invalid_dimension_facts_counts_only_unparseable_json() {
+    let base = |dimensions_json: Option<String>| Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "Assets".to_owned(),
+        period_type: "instant".to_owned(),
+        period_start: None,
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("1000".to_owned()),
+        unit_measure: Some("PLN".to_owned()),
+        dimensions_json,
+    };
+    let valid_dims = {
+        let mut m = BTreeMap::new();
+        m.insert("axis".to_owned(), "member".to_owned());
+        serde_json::to_string(&m).unwrap()
+    };
+
+    let facts = vec![
+        base(None),                        // dimensionless — valid
+        base(Some(valid_dims)),            // parses fine — valid
+        base(Some("not json".to_owned())), // malformed — invalid
+        base(Some("[1,2,3]".to_owned())),  // valid JSON, wrong shape — invalid
+    ];
+
+    assert_eq!(count_invalid_dimension_facts(&facts), 2);
+}
+
+/// #331 PR-B fix wave (finding P3): the positive dimension test above would
+/// also pass a matcher that accepted any same-concept-and-period value —
+/// these negative cases pin down that a mismatched dimension/unit identity
+/// is actually rejected, not just that a matching one is accepted.
+#[test]
+fn different_dimension_member_is_not_captured() {
+    let period = OccurrencePeriod::Duration {
+        start: "2024-01-01".to_owned(),
+        end: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}ProfitLoss";
+
+    let mut occurrence_dims = BTreeMap::new();
+    occurrence_dims.insert(
+        "ifrs-full:ComponentsOfEquityAxis".to_owned(),
+        "ifrs-full:OwnersOfParentMember".to_owned(),
+    );
+    let mut fact_dims = BTreeMap::new();
+    fact_dims.insert(
+        "ifrs-full:ComponentsOfEquityAxis".to_owned(),
+        "ifrs-full:NoncontrollingInterestsMember".to_owned(),
+    );
+
+    let fact = Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "ProfitLoss".to_owned(),
+        period_type: "duration".to_owned(),
+        period_start: Some("2024-01-01".to_owned()),
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("5000".to_owned()),
+        unit_measure: Some("PLN".to_owned()),
+        dimensions_json: Some(serde_json::to_string(&fact_dims).unwrap()),
+    };
+
+    let (captured, value_correct) = capture_layer1(
+        concept,
+        &period,
+        &occurrence_dims,
+        Some("PLN"),
+        "5000",
+        &[fact],
+    );
+
+    assert!(
+        !captured,
+        "a fact tagged with a DIFFERENT dimension member must never match — same concept/period/unit is not enough"
+    );
+    assert!(!value_correct);
+}
+
+#[test]
+fn dimensionless_occurrence_does_not_capture_a_dimensional_fact() {
+    let period = OccurrencePeriod::Instant {
+        instant: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Assets";
+    let dimensionless = BTreeMap::new();
+
+    let mut fact_dims = BTreeMap::new();
+    fact_dims.insert(
+        "ifrs-full:SegmentsAxis".to_owned(),
+        "ifrs-full:RetailMember".to_owned(),
+    );
+
+    let fact = Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "Assets".to_owned(),
+        period_type: "instant".to_owned(),
+        period_start: None,
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("1000".to_owned()),
+        unit_measure: Some("PLN".to_owned()),
+        dimensions_json: Some(serde_json::to_string(&fact_dims).unwrap()),
+    };
+
+    let (captured, value_correct) = capture_layer1(
+        concept,
+        &period,
+        &dimensionless,
+        Some("PLN"),
+        "1000",
+        &[fact],
+    );
+
+    assert!(
+        !captured,
+        "a dimensionless occurrence must never capture a fact tagged with a dimension member"
+    );
+    assert!(!value_correct);
+}
+
+#[test]
+fn different_unit_measure_is_not_captured() {
+    let period = OccurrencePeriod::Instant {
+        instant: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Assets";
+    let dims = BTreeMap::new();
+
+    let fact = Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "Assets".to_owned(),
+        period_type: "instant".to_owned(),
+        period_start: None,
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("1000".to_owned()),
+        unit_measure: Some("EUR".to_owned()),
+        dimensions_json: None,
+    };
+
+    let (captured, value_correct) =
+        capture_layer1(concept, &period, &dims, Some("PLN"), "1000", &[fact]);
+
+    assert!(
+        !captured,
+        "same concept/period/dims but a DIFFERENT unit measure must never match"
+    );
+    assert!(!value_correct);
+}
+
+#[test]
+fn known_occurrence_unit_against_fact_with_no_stored_unit_is_not_captured() {
+    let period = OccurrencePeriod::Instant {
+        instant: "2024-12-31".to_owned(),
+    };
+    let concept = "{https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full}Assets";
+    let dims = BTreeMap::new();
+
+    let fact = Layer1Fact {
+        concept_namespace_uri: "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full".to_owned(),
+        concept_local_name: "Assets".to_owned(),
+        period_type: "instant".to_owned(),
+        period_start: None,
+        period_end: "2024-12-31".to_owned(),
+        value_numeric: Some("1000".to_owned()),
+        unit_measure: None,
+        dimensions_json: None,
+    };
+
+    let (captured, value_correct) =
+        capture_layer1(concept, &period, &dims, Some("PLN"), "1000", &[fact]);
+
+    assert!(
+        !captured,
+        "a known occurrence unit against a fact with NO stored unit must reject, never treat the missing unit as a wildcard"
+    );
+    assert!(!value_correct);
 }
 
 /// The stored facts a fresh cold-start run produced for one event's company,
@@ -1957,6 +2201,10 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
     let mut layer1_captured = 0usize;
     let mut layer1_eligible = 0usize;
     let mut layer1_value_correct = 0usize;
+    // #331 PR-B fix wave (finding P2): facts whose dimensions_json failed to
+    // parse, diagnostic only — private report + console, never the public
+    // Aggregates/metrics.json key set.
+    let mut layer1_invalid_dimension_facts = 0usize;
     // Amendment AE: an occurrence the labeler couldn't fully parse (any of
     // parse_status/concept_qname/period/value missing or not "ok") — never
     // eligible for Layer 1 capture, never a panic, just visibly counted.
@@ -2068,6 +2316,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
             // that full identity with different values is a legitimate
             // duplicate: captured counts once, value-correct if ANY of them
             // equals.
+            layer1_invalid_dimension_facts += count_invalid_dimension_facts(&run.layer1_facts);
             let empty_occurrences = Vec::new();
             let event_occurrences = occurrences_by_event
                 .get(event.event_id.as_str())
@@ -2534,6 +2783,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
         machine_v1_total,
         unresolved_language_total,
         unresolved_occurrences_total,
+        layer1_invalid_dimension_facts,
         precision_denominator,
         &event_reports,
         &by_issuer,
@@ -2563,6 +2813,7 @@ pub(crate) fn run_measurement(config: MeasurementConfig<'_>) -> Option<Aggregate
                 .collect::<Vec<_>>(),
             "unresolved_language_slots": unresolved_language_slots,
             "unresolved_occurrences": unresolved_occurrences_total,
+            "layer1_invalid_dimension_facts": layer1_invalid_dimension_facts,
         }),
     );
     // The run's own nonce (never handed in — `make realdata-esef-check`'s
@@ -2942,6 +3193,7 @@ fn print_console_report(
     machine_v1_total: usize,
     unresolved_language_total: usize,
     unresolved_occurrences_total: usize,
+    layer1_invalid_dimension_facts: usize,
     precision_denominator: usize,
     event_reports: &[EventReport],
     by_issuer: &BTreeMap<&str, IssuerCounts>,
@@ -2999,12 +3251,13 @@ fn print_console_report(
         aggregates.twin_agreement.compared
     );
     eprintln!(
-        "availability_all_periods: {}/{}  layer1_capture: {}/{} (value_correct {})  unresolved_occurrences={}",
+        "availability_all_periods: {}/{}  layer1_capture: {}/{} (value_correct {}, invalid_dimension_facts {})  unresolved_occurrences={}",
         aggregates.availability_all_periods.available,
         aggregates.availability_all_periods.eligible,
         aggregates.layer1_capture.captured,
         aggregates.layer1_capture.eligible,
         aggregates.layer1_capture.value_correct,
+        layer1_invalid_dimension_facts,
         unresolved_occurrences_total
     );
     eprintln!(

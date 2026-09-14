@@ -39,12 +39,15 @@ Three subcommands:
            ever written are a reader's own, and only after validation. An
            optional `--decisions <path>` file (#331 PR-B) lets the owner
            override one genuine disagreement the OTHER way, with a reason:
-           `keep: machine` -> `adjudicated_keep_machine`, the slot untouched,
-           the decision + reason recorded in `resolution_ref`; `keep:
-           reader` -> today's apply path (`adjudicated`). A decision on an
-           agreeing or unsettled task, or naming an unknown task id, aborts
-           the whole compare with NO writes; the decisions file's sha256 is
-           recorded on each resolution it decided.
+           `keep: machine` -> `adjudicated_keep_machine`, the slot untouched;
+           `keep: reader` -> the apply path (`adjudicated`), but ONLY when a
+           reader also supplied an evidence_anchor -- an evidence-free
+           `keep: reader` aborts the whole compare with NO write (a reader
+           value is applied only with filing evidence). Either kind records
+           `{keep, reason, decided_by, decisions_sha256}` on the slot's
+           `resolution_ref` and on the resolution entry. A decision on an
+           agreeing or unsettled task, or naming an unknown task id, also
+           aborts the whole compare with NO writes.
 
 Usage:
     python3 adjudicate.py prepare --esef-v2-dir <dir> --seed <int>
@@ -372,10 +375,17 @@ def _find_unregistered_seals(adjudication_dir: Path, registered_paths: set[Path]
     """A directory scan used ONLY to detect an EXTRA sealed file that
     `seals.lock` never registered -- the registry (not the directory)
     remains the source of truth for which seals to actually read (amendment
-    AB). Returns the first offending path, or `None`."""
+    AB). Returns the first offending path, or `None`. Round 1's flat layout
+    must not descend into a later round's own `round-N/` subdirectory --
+    round isolation is otherwise asymmetric (#331 PR-B review finding 2):
+    round N's scan never sees round 1's files (it starts inside round-N/),
+    but round 1's scan, unbounded, walked into round-N/ and rejected its
+    legitimate seals as unregistered."""
     for path in adjudication_dir.rglob("*.json"):
         if path.parent == adjudication_dir or path.parent.name == "tasks":
             continue  # tasks.lock / tasks_index.json / seals.lock / resolutions.json / adjudication/tasks/*
+        if path.relative_to(adjudication_dir).parts[0].startswith("round-"):
+            continue  # a later round's own subtree -- never this round's concern
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
@@ -583,15 +593,37 @@ def compare(esef_v2_dir: Path, round_num: int = 1, decisions_path: Path | None =
             elif decision is not None and decision["keep"] == "machine":
                 outcome, new_verification = "adjudicated_keep_machine", "adjudicated"
                 slot["resolution_ref"] = {
-                    "decision": "keep_machine",
+                    "keep": "machine",
                     "reason": decision["reason"],
                     "decided_by": decision.get("decided_by"),
+                    "decisions_sha256": decisions_sha256,
                 }
+            elif decision is not None and decision["keep"] == "reader" and evidence is None:
+                # A reader-override decision with NO reader evidence_anchor
+                # would apply an unverified value on the owner's say-so
+                # alone -- refused before any write; a reader value is
+                # applied only with filing evidence (#331 PR-B review
+                # finding 1).
+                raise InvalidDecisionError(
+                    f"{task_id}: decision keeps the reader value but no reader supplied an evidence_anchor -- "
+                    "a reader override is applied only with filing evidence"
+                )
             elif evidence is None and decision is None:
                 outcome, new_verification = "rejected_missing_evidence", "unverified"
             else:
                 outcome, new_verification = "adjudicated", "adjudicated"
                 _apply_adjudicated_answer(slot, answer_tuple)
+                if decision is not None:
+                    # `_apply_adjudicated_answer` clears `resolution_ref` --
+                    # restore it with the decision's reason AFTER the apply
+                    # (#331 PR-B review finding 1: a reader-override decision
+                    # must not lose its reason).
+                    slot["resolution_ref"] = {
+                        "keep": "reader",
+                        "reason": decision["reason"],
+                        "decided_by": decision.get("decided_by"),
+                        "decisions_sha256": decisions_sha256,
+                    }
 
         slot["verification"] = new_verification
         resolution = {
@@ -603,10 +635,17 @@ def compare(esef_v2_dir: Path, round_num: int = 1, decisions_path: Path | None =
             "evidence_anchor": evidence,
             "readers": sorted(r for r, _ in readers),
         }
-        if decision is not None and outcome in ("adjudicated_keep_machine", "adjudicated"):
-            # Auditability: which decisions file approved this override
-            # (per-resolution, not top-level -- resolutions.json stays the
-            # same array shape for every task compare never decided).
+        if decision is not None:
+            # Auditability: which decision (and decisions file) drove this
+            # resolution -- per-resolution, not top-level, so
+            # resolutions.json stays the same array shape for every task
+            # compare never decided. Reaching here with `decision is not
+            # None` means the branches above already resolved to
+            # `adjudicated_keep_machine` or `adjudicated` (every other
+            # decision path raised before this point).
+            resolution["keep"] = decision["keep"]
+            resolution["reason"] = decision["reason"]
+            resolution["decided_by"] = decision.get("decided_by")
             resolution["decisions_sha256"] = decisions_sha256
         resolutions.append(resolution)
 
