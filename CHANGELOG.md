@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.87.3 - 2026-09-14
+
+
+### Bug Fixes
+
+- **extraction**: one statement basis per ESEF document, stored under its true label — consolidated and standalone never mix in the identity check, the prior-year check or the stored facts (#508, ADR 0100 dec. 4 amendment) (#516)
+
 ## v0.87.2 - 2026-09-14
 
 
